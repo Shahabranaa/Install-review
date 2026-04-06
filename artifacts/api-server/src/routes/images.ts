@@ -89,6 +89,71 @@ router.patch("/images/:id", async (req, res): Promise<void> => {
   res.json(UpdateImageResponse.parse(serialize(image)));
 });
 
+// POST /images/:id/review - submit a full structured review with flags, decision, notes
+router.post("/images/:id/review", async (req, res): Promise<void> => {
+  const imageId = parseInt(req.params.id, 10);
+  if (isNaN(imageId)) { res.status(400).json({ error: "Invalid image id" }); return; }
+
+  const body = req.body as {
+    reviewedBy?: string;
+    decision?: string;
+    notes?: string | null;
+    flags?: Array<{ category: string; code: string }>;
+  };
+
+  const { reviewedBy, decision, notes, flags = [] } = body;
+
+  if (!reviewedBy || typeof reviewedBy !== "string" || reviewedBy.trim() === "") {
+    res.status(400).json({ error: "reviewedBy is required" }); return;
+  }
+  if (!decision || !["approved", "rejected", "flagged"].includes(decision)) {
+    res.status(400).json({ error: "decision must be approved, rejected, or flagged" }); return;
+  }
+
+  const severityMap: Record<string, string> = {
+    safety: "critical",
+    installation_quality: "high",
+    completeness: "high",
+    context_mismatch: "medium",
+    evidence_quality: "medium",
+    image_quality: "low",
+  };
+
+  const [image] = await db.update(imagesTable).set({
+    reviewStatus: decision,
+    reviewedBy,
+    reviewedAt: new Date(),
+    notes: notes ?? undefined,
+    updatedAt: new Date(),
+  }).where(eq(imagesTable.id, imageId)).returning();
+
+  if (!image) { res.status(404).json({ error: "Image not found" }); return; }
+
+  // Clear prior review issues and replace
+  await db.delete(issuesTable).where(eq(issuesTable.imageId, imageId));
+
+  if (flags.length > 0) {
+    await db.insert(issuesTable).values(flags.map((f) => ({
+      imageId,
+      type: f.category,
+      severity: severityMap[f.category] ?? "medium",
+      description: f.code,
+      resolved: false,
+    })));
+  }
+
+  // Record the decision
+  await db.insert(decisionsTable).values({
+    imageId,
+    approvedBy: reviewedBy,
+    decision,
+    notes: notes ?? null,
+  });
+
+  const issues = await db.select().from(issuesTable).where(eq(issuesTable.imageId, imageId));
+  res.json(serialize({ ...image, issues }));
+});
+
 router.post("/images/:id/approve", async (req, res): Promise<void> => {
   const params = ApproveImageParams.safeParse(req.params);
   if (!params.success) {
