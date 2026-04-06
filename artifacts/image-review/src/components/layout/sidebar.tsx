@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Image as ImageIcon, CheckSquare, FolderGit2, FileText, Settings, Building2 } from "lucide-react";
+import { LayoutDashboard, Image as ImageIcon, CheckSquare, FolderGit2, FileText, Settings, Building2, HardDrive } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -7,6 +7,7 @@ const navigation = [
   { name: "Projects", href: "/projects", icon: FolderGit2 },
   { name: "Phases", href: "/phases", icon: CheckSquare },
   { name: "Images", href: "/images", icon: ImageIcon },
+  { name: "Google Drive", href: "/drive", icon: HardDrive },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

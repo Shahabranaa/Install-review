@@ -9,6 +9,7 @@ import Phases from "@/pages/phases";
 import Images from "@/pages/images";
 import Documents from "@/pages/documents";
 import Settings from "@/pages/settings";
+import Drive from "@/pages/drive";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ function Router() {
         <Route path="/phases" component={Phases} />
         <Route path="/images" component={Images} />
         <Route path="/documents" component={Documents} />
+        <Route path="/drive" component={Drive} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

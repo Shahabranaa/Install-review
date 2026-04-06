@@ -9,6 +9,7 @@ import issuesRouter from "./issues";
 import decisionsRouter from "./decisions";
 import documentsRouter from "./documents";
 import dashboardRouter from "./dashboard";
+import driveRouter from "./drive";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(issuesRouter);
 router.use(decisionsRouter);
 router.use(documentsRouter);
 router.use(dashboardRouter);
+router.use(driveRouter);
 
 export default router;
