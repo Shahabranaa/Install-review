@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   X, CheckCircle2, XCircle, AlertTriangle, Clock, HardDrive,
   ChevronDown, ChevronUp, Image as ImageIcon, User, FileText,
@@ -333,9 +334,10 @@ export function ImageReviewModal({
     },
   });
 
+  const { isReviewer } = useAuth();
   const flagCount = checkedFlags.size;
   const hasSafetyFlags = Array.from(checkedFlags.values()).some((cat) => cat === "safety");
-  const canSubmit = reviewedBy.trim().length > 0 && !reviewMutation.isPending;
+  const canSubmit = isReviewer && reviewedBy.trim().length > 0 && !reviewMutation.isPending;
 
   const imgSrc = image?.imageUrl ?? undefined;
   const filename = image?.filename ?? `Image #${imageId}`;
@@ -487,7 +489,12 @@ export function ImageReviewModal({
 
           {/* Sticky footer */}
           <div className="border-t px-4 py-3 flex-shrink-0 space-y-2">
-            {!reviewedBy.trim() && (
+            {!isReviewer && (
+              <div className="rounded-md bg-slate-50 dark:bg-slate-900 border px-3 py-2 text-xs text-muted-foreground text-center">
+                You have view-only access. Contact an admin to get reviewer permissions.
+              </div>
+            )}
+            {isReviewer && !reviewedBy.trim() && (
               <p className="text-xs text-amber-600 text-center">Enter your name to submit a review</p>
             )}
             <div className="grid grid-cols-2 gap-2">

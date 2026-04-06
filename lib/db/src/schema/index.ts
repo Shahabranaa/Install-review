@@ -6,3 +6,4 @@ export * from "./images";
 export * from "./issues";
 export * from "./decisions";
 export * from "./documents";
+export * from "./users";
