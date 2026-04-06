@@ -1,0 +1,248 @@
+01 — PRODUCT OVERVIEW
+Product Name
+Installation Image Review App (working name)
+Problem
+Installation teams capture hundreds of images, but:
+No consistent quality control
+Time wasted manually reviewing images
+Hard to prove installation completion
+Document generation is slow and manual
+Solution
+A web-based review system that:
+pulls images from AppSheet (via Google Drive + Sheets)
+uses AI to review images and flag issues
+groups images by installation phase
+helps admins decide if a phase is complete
+generates documents once completion is confirmed
+Users
+Admin reviewers (primary)
+QA teams
+Project managers
+MVP Goal
+Enable admins to:
+see all images by project/site/phase
+review AI-flagged issues
+approve or reject phase completion
+generate a simple completion/report document
+Success Criteria (MVP)
+Images automatically appear in dashboard
+AI flags obvious issues reliably
+Admin can review and override quickly
+Phase completion status is visible and accurate
+A report can be generated from approved data
+02 — MVP SCOPE
+IN SCOPE (must work for launch)
+Image ingestion from Google Drive + Sheets
+Admin review dashboard
+AI review per image
+Issue flagging system
+Phase grouping
+Phase status logic
+Human approval / override
+Basic document generation (template-based)
+Audit trail (who approved what)
+OUT OF SCOPE (later)
+Mobile app
+Offline sync redesign
+Auto-learning AI from corrections
+Advanced analytics dashboards
+Complex permissions system
+Multi-project enterprise features
+Real-time notifications
+Full document builder system
+👉 This is important: keep this tight or you’ll slow everything down.
+
+03 — CORE WORKFLOWS
+Workflow 1 — Image Ingestion
+Technician captures image in AppSheet
+Image stored in Google Drive
+Metadata written to Google Sheets
+System detects new image record
+Image appears in review dashboard
+
+Workflow 2 — AI Image Review
+New image is sent to AI review service
+AI analyzes image
+AI returns:
+issue flags
+confidence score
+suggested status
+Results stored against image
+
+Workflow 3 — Admin Review
+Admin opens dashboard
+Filters by project / site / phase
+Sees:
+images
+AI flags
+status indicators
+Admin can:
+approve image
+reject image
+override AI decision
+
+Workflow 4 — Phase Evaluation
+System groups images by phase
+System checks:
+required images present
+AI results
+issue severity
+System assigns phase status:
+Complete
+Incomplete
+Needs Review
+
+Workflow 5 — Final Approval + Document
+Admin reviews phase
+Admin approves completion
+System unlocks document generation
+Document generated using:
+images
+metadata
+results
+Document stored and linked to phase
+
+04 — BUSINESS RULES
+AI Responsibilities
+AI SHOULD:
+detect image quality issues
+detect missing or unclear evidence
+identify possible installation defects
+flag duplicates or wrong assets
+assign confidence score
+suggest status
+AI SHOULD NOT:
+approve completion
+make final decisions
+override human input
+
+Issue Severity Levels
+Critical (blocks completion)
+missing component
+clear installation defect
+wrong asset/location
+completely unusable image
+Warning
+blurry image
+poor angle
+partial visibility
+Info
+duplicate image
+minor quality issue
+
+Phase Completion Logic
+A phase can be AUTO-COMPLETE only if:
+all required images are present
+no critical issues
+AI confidence above threshold
+metadata matches expected values
+
+MUST GO TO HUMAN REVIEW if:
+missing images
+any critical issue
+low confidence
+conflicting results
+
+Human Actions
+approve phase
+reject phase
+override AI flags
+mark issues as accepted
+
+Document Generation Rules
+Document can ONLY be generated if:
+phase is approved
+no unresolved critical issues
+all required data exists
+approval is logged
+
+05 — DATA MODEL (MVP)
+Keep this simple. This is enough to build.
+Project
+project_id
+name
+Site
+site_id
+project_id
+name
+Location / Asset
+location_id
+site_id
+type (tower, cable, etc.)
+Installation Phase
+phase_id
+location_id
+phase_type
+status
+
+Image Record
+image_id
+drive_file_id
+project_id
+site_id
+location_id
+phase_id
+uploaded_at
+uploaded_by
+metadata fields
+review_status
+
+AI Review Result
+review_id
+image_id
+issues[]
+confidence
+suggested_status
+
+Issue Flag
+issue_id
+image_id
+type
+severity
+description
+
+Review Decision
+decision_id
+image_id or phase_id
+approved_by
+decision
+timestamp
+
+Document Record
+document_id
+phase_id
+generated_at
+file_link
+
+06 — UI SCREENS
+Keep this minimal for MVP:
+1. Dashboard
+project/site selection
+phase status overview
+2. Image Review Queue
+list of images
+filters (phase, status, issues)
+3. Image Detail View
+image
+AI results
+issue list
+approve/reject
+4. Phase Detail Page
+required vs received images
+issue summary
+phase status
+approve button
+5. Document Page
+generate document
+download/view
+
+07 — OPEN QUESTIONS (IMPORTANT)
+You should answer these before build starts:
+What defines “required images” per phase?
+Do we already have a checklist? (you probably do in AppSheet)
+What AI model will be used?
+Where will AI run? (API vs local service)
+What document format? (PDF likely)
+How strict should auto-complete be?
+Do we need versioning of documents?
+
