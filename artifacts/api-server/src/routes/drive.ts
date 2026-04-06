@@ -1,6 +1,15 @@
 // Google Drive integration via Replit Connectors SDK
 import { Router, type IRouter } from "express";
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { eq, and } from "drizzle-orm";
+import {
+  db,
+  projectsTable,
+  sitesTable,
+  locationsTable,
+  phasesTable,
+  imagesTable,
+} from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -222,6 +231,198 @@ router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
   } catch (err: unknown) {
     console.error("Drive image error:", err);
     res.status(500).json({ error: "Failed to proxy image" });
+  }
+});
+
+// POST /api/drive/sync - import all images from a Drive folder into the DB
+router.post("/drive/sync", async (req, res): Promise<void> => {
+  try {
+    const connectors = new ReplitConnectors();
+    const { folderId, folderName = "Drive Import" } = req.body as { folderId: string; folderName?: string };
+
+    if (!folderId) {
+      res.status(400).json({ error: "folderId is required" });
+      return;
+    }
+
+    // ── 1. Find or create Project ────────────────────────────────────────────
+    const DRIVE_PROJECT_NAME = "Google Drive Imports";
+    let project = (await db.select().from(projectsTable)
+      .where(eq(projectsTable.name, DRIVE_PROJECT_NAME))
+      .limit(1))[0];
+
+    if (!project) {
+      [project] = await db.insert(projectsTable).values({
+        name: DRIVE_PROJECT_NAME,
+        description: "Images automatically synced from Google Drive.",
+      }).returning();
+    }
+
+    // ── 2. Find or create Site (one per Drive folder) ─────────────────────────
+    const siteName = folderName;
+    let site = (await db.select().from(sitesTable)
+      .where(and(eq(sitesTable.projectId, project.id), eq(sitesTable.name, siteName)))
+      .limit(1))[0];
+
+    if (!site) {
+      [site] = await db.insert(sitesTable).values({
+        projectId: project.id,
+        name: siteName,
+        address: `Drive Folder ID: ${folderId}`,
+      }).returning();
+    }
+
+    // ── 3. Find or create Location ────────────────────────────────────────────
+    let location = (await db.select().from(locationsTable)
+      .where(and(eq(locationsTable.siteId, site.id), eq(locationsTable.name, siteName)))
+      .limit(1))[0];
+
+    if (!location) {
+      [location] = await db.insert(locationsTable).values({
+        siteId: site.id,
+        name: siteName,
+        type: "Drive Folder",
+        notes: `Google Drive folder: ${folderId}`,
+      }).returning();
+    }
+
+    // ── 4. Find or create Phase ───────────────────────────────────────────────
+    let phase = (await db.select().from(phasesTable)
+      .where(and(eq(phasesTable.locationId, location.id), eq(phasesTable.phaseType, "Drive Sync")))
+      .limit(1))[0];
+
+    if (!phase) {
+      [phase] = await db.insert(phasesTable).values({
+        locationId: location.id,
+        phaseType: "Drive Sync",
+        status: "needs_review",
+        requiredImageCount: 0,
+      }).returning();
+    }
+
+    // ── 5. Fetch all images from Drive folder ─────────────────────────────────
+    const imageMimeTypes = [
+      "image/jpeg", "image/png", "image/gif", "image/webp",
+      "image/bmp", "image/heic", "image/tiff",
+    ];
+    const imageMimeFilter = imageMimeTypes.map((m) => `mimeType = '${m}'`).join(" or ");
+    const q = `'${folderId}' in parents and (${imageMimeFilter}) and trashed = false`;
+
+    const params = new URLSearchParams({
+      q,
+      fields: "files(id,name,mimeType,modifiedTime,size)",
+      orderBy: "name",
+      pageSize: "200",
+      includeItemsFromAllDrives: "true",
+      supportsAllDrives: "true",
+    });
+
+    const driveRes = await connectors.proxy("google-drive", `/drive/v3/files?${params}`, { method: "GET" });
+    if (!driveRes.ok) {
+      const err = await driveRes.text();
+      res.status(driveRes.status).json({ error: `Drive API error: ${err}` });
+      return;
+    }
+    const driveData = await driveRes.json() as { files: { id: string; name: string; mimeType: string; modifiedTime?: string; size?: string }[] };
+    const driveFiles = driveData.files ?? [];
+
+    // ── 6. Get existing driveFileIds to avoid duplicates ──────────────────────
+    const existingRows = await db.select({ driveFileId: imagesTable.driveFileId })
+      .from(imagesTable)
+      .where(eq(imagesTable.phaseId, phase.id));
+    const existingIds = new Set(existingRows.map((r) => r.driveFileId).filter(Boolean));
+
+    // ── 7. Insert new images ──────────────────────────────────────────────────
+    const toInsert = driveFiles.filter((f) => !existingIds.has(f.id));
+    let synced = 0;
+
+    for (const f of toInsert) {
+      await db.insert(imagesTable).values({
+        driveFileId: f.id,
+        imageUrl: `/api/drive/image/${f.id}`,
+        projectId: project.id,
+        siteId: site.id,
+        locationId: location.id,
+        phaseId: phase.id,
+        filename: f.name,
+        uploadedBy: "Google Drive Sync",
+        reviewStatus: "pending",
+        uploadedAt: f.modifiedTime ? new Date(f.modifiedTime) : new Date(),
+      });
+      synced++;
+    }
+
+    // Update phase required count
+    await db.update(phasesTable)
+      .set({ requiredImageCount: existingIds.size + synced })
+      .where(eq(phasesTable.id, phase.id));
+
+    res.json({
+      synced,
+      skipped: driveFiles.length - synced,
+      total: driveFiles.length,
+      phaseId: phase.id,
+      projectId: project.id,
+      siteId: site.id,
+      folderName,
+    });
+  } catch (err: unknown) {
+    console.error("Drive sync error:", err);
+    res.status(500).json({ error: "Failed to sync from Drive" });
+  }
+});
+
+// GET /api/drive/sync-status - check how many images from a folder are already imported
+router.get("/drive/sync-status", async (req, res): Promise<void> => {
+  try {
+    const { folderId } = req.query as { folderId?: string };
+    if (!folderId) {
+      res.status(400).json({ error: "folderId is required" });
+      return;
+    }
+    // Count images already in DB for this folder (by checking driveFileId prefix pattern isn't practical,
+    // so we check via phase in the "Google Drive Imports" project)
+    const project = (await db.select().from(projectsTable)
+      .where(eq(projectsTable.name, "Google Drive Imports"))
+      .limit(1))[0];
+
+    if (!project) {
+      res.json({ imported: 0 });
+      return;
+    }
+
+    // Find the site whose address contains the folderId
+    const sites = await db.select().from(sitesTable)
+      .where(and(eq(sitesTable.projectId, project.id)));
+    const matchingSite = sites.find((s) => s.address?.includes(folderId));
+
+    if (!matchingSite) {
+      res.json({ imported: 0 });
+      return;
+    }
+
+    const locations = await db.select().from(locationsTable)
+      .where(eq(locationsTable.siteId, matchingSite.id));
+    if (locations.length === 0) {
+      res.json({ imported: 0 });
+      return;
+    }
+
+    const phases = await db.select().from(phasesTable)
+      .where(eq(phasesTable.locationId, locations[0].id));
+    if (phases.length === 0) {
+      res.json({ imported: 0 });
+      return;
+    }
+
+    const images = await db.select({ id: imagesTable.id })
+      .from(imagesTable)
+      .where(eq(imagesTable.phaseId, phases[0].id));
+
+    res.json({ imported: images.length, phaseId: phases[0].id });
+  } catch (err: unknown) {
+    console.error("Drive sync-status error:", err);
+    res.status(500).json({ error: "Failed to check sync status" });
   }
 });
 

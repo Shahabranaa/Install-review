@@ -1,15 +1,16 @@
 import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Folder, Image as ImageIcon, ChevronRight, Home, HardDrive,
   AlertCircle, RefreshCw, X, ExternalLink, ZoomIn, Link as LinkIcon,
-  Search, ArrowLeft
+  Search, ArrowLeft, Download, CheckCircle2, Loader2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -37,7 +38,19 @@ interface DriveFile {
 interface DriveStatus {
   connected: boolean;
   user?: { displayName?: string; emailAddress?: string };
-  storageQuota?: { usage?: string; limit?: string };
+}
+
+interface SyncResult {
+  synced: number;
+  skipped: number;
+  total: number;
+  phaseId: number;
+  folderName: string;
+}
+
+interface SyncStatus {
+  imported: number;
+  phaseId?: number;
 }
 
 interface BreadcrumbItem {
@@ -46,9 +59,7 @@ interface BreadcrumbItem {
 }
 
 function extractFolderIdFromUrl(input: string): string | null {
-  // Direct folder ID (alphanumeric, ~33 chars)
   if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) return input.trim();
-  // Google Drive folder URL patterns
   const patterns = [
     /\/folders\/([a-zA-Z0-9_-]+)/,
     /id=([a-zA-Z0-9_-]+)/,
@@ -69,7 +80,7 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-// ─── Hooks ─────────────────────────────────────────────────────────────────
+// ─── Hooks ──────────────────────────────────────────────────────────────────
 
 function useDriveStatus() {
   return useQuery<DriveStatus>({
@@ -83,7 +94,7 @@ function useDriveStatus() {
   });
 }
 
-function useDriveFolders(parentId: string, enabled = true) {
+function useDriveFolders(parentId: string) {
   return useQuery<{ folders: DriveFolder[] }>({
     queryKey: ["drive-folders", parentId],
     queryFn: async () => {
@@ -94,12 +105,11 @@ function useDriveFolders(parentId: string, enabled = true) {
       if (!res.ok) throw new Error("Failed to load folders");
       return res.json();
     },
-    enabled,
     staleTime: 60000,
   });
 }
 
-function useDriveFiles(folderId: string, enabled = true) {
+function useDriveFiles(folderId: string) {
   return useQuery<{ files: DriveFile[] }>({
     queryKey: ["drive-files", folderId],
     queryFn: async () => {
@@ -110,12 +120,24 @@ function useDriveFiles(folderId: string, enabled = true) {
       if (!res.ok) throw new Error("Failed to load files");
       return res.json();
     },
-    enabled,
     staleTime: 60000,
   });
 }
 
-function useFolderInfo(folderId: string, enabled = true) {
+function useSyncStatus(folderId: string, enabled: boolean) {
+  return useQuery<SyncStatus>({
+    queryKey: ["drive-sync-status", folderId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/drive/sync-status?folderId=${folderId}`);
+      if (!res.ok) return { imported: 0 };
+      return res.json();
+    },
+    enabled: enabled && !!folderId && folderId !== "root",
+    staleTime: 10000,
+  });
+}
+
+function useFolderInfo(folderId: string, enabled: boolean) {
   return useQuery<DriveFolder>({
     queryKey: ["drive-folder-info", folderId],
     queryFn: async () => {
@@ -129,7 +151,7 @@ function useFolderInfo(folderId: string, enabled = true) {
   });
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function DriveImage({ file, onClick }: { file: DriveFile; onClick: () => void }) {
   const [imgError, setImgError] = useState(false);
@@ -154,7 +176,7 @@ function DriveImage({ file, onClick }: { file: DriveFile; onClick: () => void })
             className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
           />
         )}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
           <ZoomIn className="w-7 h-7 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
       </div>
@@ -199,7 +221,6 @@ function ImageLightbox({ file, onClose }: { file: DriveFile; onClose: () => void
           )}
           {file.size && <span>{formatBytes(Number(file.size))}</span>}
           {file.modifiedTime && <span>Modified {new Date(file.modifiedTime).toLocaleDateString()}</span>}
-          {file.mimeType && <span>{file.mimeType}</span>}
         </div>
       </div>
     </div>
@@ -209,27 +230,15 @@ function ImageLightbox({ file, onClose }: { file: DriveFile; onClose: () => void
 function FolderEntryInput({ onNavigate }: { onNavigate: (id: string, name: string) => void }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
-
   const folderId = value ? extractFolderIdFromUrl(value) : null;
   const { data: folderInfo, isLoading, isError } = useFolderInfo(folderId ?? "", !!folderId);
 
   const handleGo = () => {
     const id = extractFolderIdFromUrl(value);
-    if (!id) {
-      setError("Please enter a valid Google Drive folder URL or folder ID.");
-      return;
-    }
-    if (folderInfo?.name) {
-      onNavigate(id, folderInfo.name);
-      setValue("");
-      setError("");
-    } else if (isError) {
-      setError("Folder not accessible. Make sure you have permission to view it.");
-    } else {
-      onNavigate(id, `Folder (${id.slice(0, 8)}…)`);
-      setValue("");
-      setError("");
-    }
+    if (!id) { setError("Please enter a valid Google Drive folder URL or folder ID."); return; }
+    if (isError) { setError("Folder not accessible. Check permissions and try again."); return; }
+    onNavigate(id, folderInfo?.name ?? `Folder (${id.slice(0, 8)}…)`);
+    setValue(""); setError("");
   };
 
   return (
@@ -239,7 +248,7 @@ function FolderEntryInput({ onNavigate }: { onNavigate: (id: string, name: strin
         <div>
           <p className="text-sm font-medium">Browse a specific folder</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Paste a Google Drive folder URL or folder ID to browse its contents directly.
+            Copy a Google Drive folder URL and paste it here to view its contents.
           </p>
         </div>
       </div>
@@ -252,7 +261,7 @@ function FolderEntryInput({ onNavigate }: { onNavigate: (id: string, name: strin
           className="text-sm"
         />
         <Button onClick={handleGo} disabled={!value || isLoading} size="sm">
-          {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Go"}
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Go"}
         </Button>
       </div>
       {folderInfo?.name && folderId && (
@@ -265,7 +274,80 @@ function FolderEntryInput({ onNavigate }: { onNavigate: (id: string, name: strin
   );
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// Sync button for current folder
+function SyncFolderButton({ folderId, folderName, fileCount }: { folderId: string; folderName: string; fileCount: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: syncStatus, refetch: refetchStatus } = useSyncStatus(folderId, true);
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE}/api/drive/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId, folderName }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Sync failed" }));
+        throw new Error(err.error ?? "Sync failed");
+      }
+      return res.json() as Promise<SyncResult>;
+    },
+    onSuccess: (result) => {
+      refetchStatus();
+      queryClient.invalidateQueries({ queryKey: ["images"] });
+      toast({
+        title: result.synced > 0 ? `Synced ${result.synced} image${result.synced !== 1 ? "s" : ""}` : "Already up to date",
+        description: result.synced > 0
+          ? `${result.synced} new image${result.synced !== 1 ? "s" : ""} imported. ${result.skipped > 0 ? `${result.skipped} already existed.` : ""} They are now in the Image Review queue.`
+          : `All ${result.total} images were already imported.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const alreadyImported = syncStatus?.imported ?? 0;
+  const allImported = alreadyImported > 0 && alreadyImported >= fileCount;
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 px-4 py-3">
+      <HardDrive className="w-5 h-5 text-blue-500 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">
+          {allImported
+            ? `${alreadyImported} image${alreadyImported !== 1 ? "s" : ""} already imported`
+            : fileCount > 0
+              ? `${fileCount} image${fileCount !== 1 ? "s" : ""} in this folder`
+              : "Import images to the review queue"}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {allImported
+            ? "This folder is synced. Run again to pick up new files."
+            : "Import all images from this folder into the review queue."}
+        </p>
+      </div>
+      <Button
+        onClick={() => syncMutation.mutate()}
+        disabled={syncMutation.isPending}
+        size="sm"
+        variant={allImported ? "outline" : "default"}
+        className="flex-shrink-0"
+      >
+        {syncMutation.isPending ? (
+          <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Syncing…</>
+        ) : syncMutation.isSuccess && syncMutation.data?.synced === 0 ? (
+          <><CheckCircle2 className="w-4 h-4 mr-1.5 text-green-600" /> Up to date</>
+        ) : (
+          <><Download className="w-4 h-4 mr-1.5" /> Import to App</>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Drive() {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([{ id: "root", name: "My Drive" }]);
@@ -273,22 +355,13 @@ export default function Drive() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const currentFolder = breadcrumbs[breadcrumbs.length - 1];
+  const isRoot = currentFolder.id === "root";
 
   const { data: status } = useDriveStatus();
-  const {
-    data: foldersData,
-    isLoading: foldersLoading,
-    error: foldersError,
-    refetch: refetchFolders,
-  } = useDriveFolders(currentFolder.id);
-  const {
-    data: filesData,
-    isLoading: filesLoading,
-    error: filesError,
-    refetch: refetchFiles,
-  } = useDriveFiles(currentFolder.id);
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError, refetch: refetchFolders } = useDriveFolders(currentFolder.id);
+  const { data: filesData, isLoading: filesLoading, error: filesError, refetch: refetchFiles } = useDriveFiles(currentFolder.id);
 
-  const navigateToFolder = useCallback((folder: DriveFolder | { id: string; name: string }) => {
+  const navigateToFolder = useCallback((folder: { id: string; name: string }) => {
     setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
     setSearchQuery("");
   }, []);
@@ -316,7 +389,7 @@ export default function Drive() {
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <HardDrive className="w-6 h-6 text-blue-500" /> Google Drive
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Browse and view installation images from your connected Drive.</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Browse folders and import images into the review queue.</p>
         </div>
         <div className="flex items-center gap-3 mt-1">
           {status?.connected ? (
@@ -334,19 +407,13 @@ export default function Drive() {
               <AlertCircle className="w-3 h-3 mr-1" /> Not connected
             </Badge>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { refetchFolders(); refetchFiles(); }}
-            disabled={isLoading}
-          >
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
+          <Button variant="outline" size="sm" onClick={() => { refetchFolders(); refetchFiles(); }} disabled={isLoading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Breadcrumb + Search bar */}
+      {/* Breadcrumb + Search */}
       <div className="flex items-center justify-between px-6 py-1.5 gap-3">
         <nav className="flex items-center gap-1 text-sm flex-wrap">
           {breadcrumbs.map((crumb, index) => (
@@ -354,7 +421,7 @@ export default function Drive() {
               {index > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
               <button
                 onClick={() => navigateToBreadcrumb(index)}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors max-w-[160px] truncate ${
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors max-w-[180px] truncate ${
                   index === breadcrumbs.length - 1
                     ? "font-medium text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -379,8 +446,7 @@ export default function Drive() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-5">
-        {/* Error */}
+      <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
         {hasError && !isLoading && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <AlertCircle className="w-10 h-10 text-destructive mb-3" />
@@ -392,9 +458,9 @@ export default function Drive() {
           </div>
         )}
 
-        {/* Loading skeletons */}
         {isLoading && (
           <div className="space-y-5 pt-2">
+            <Skeleton className="h-16 w-full rounded-lg" />
             <div>
               <Skeleton className="h-4 w-20 mb-3" />
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -410,24 +476,25 @@ export default function Drive() {
           </div>
         )}
 
-        {/* Content */}
         {!isLoading && !hasError && (
           <>
-            {/* Back button when inside a sub-folder */}
-            {breadcrumbs.length > 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-1 -ml-1"
-                onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
-              >
+            {/* Back button */}
+            {!isRoot && (
+              <Button variant="ghost" size="sm" className="-ml-1" onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}>
                 <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
               </Button>
             )}
 
-            {/* Folder URL input — shown only at root to guide users */}
-            {currentFolder.id === "root" && (
-              <FolderEntryInput onNavigate={(id, name) => navigateToFolder({ id, name })} />
+            {/* Root: folder URL input */}
+            {isRoot && <FolderEntryInput onNavigate={navigateToFolder} />}
+
+            {/* Sub-folder: Sync button (when images exist) */}
+            {!isRoot && (
+              <SyncFolderButton
+                folderId={currentFolder.id}
+                folderName={currentFolder.name}
+                fileCount={filesData?.files.length ?? 0}
+              />
             )}
 
             {/* Folders */}
@@ -469,7 +536,7 @@ export default function Drive() {
             {folders.length === 0 && files.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <HardDrive className="w-14 h-14 text-muted-foreground/30 mb-4" />
-                {currentFolder.id === "root" ? (
+                {isRoot ? (
                   <>
                     <p className="text-base font-medium text-muted-foreground">No files visible yet</p>
                     <p className="text-sm text-muted-foreground/70 mt-1 max-w-sm">
@@ -488,10 +555,7 @@ export default function Drive() {
         )}
       </div>
 
-      {/* Lightbox */}
-      {selectedImage && (
-        <ImageLightbox file={selectedImage} onClose={() => setSelectedImage(null)} />
-      )}
+      {selectedImage && <ImageLightbox file={selectedImage} onClose={() => setSelectedImage(null)} />}
     </div>
   );
 }
