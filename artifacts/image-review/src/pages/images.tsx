@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Image as ImageIcon, Camera, Clock, CheckCircle2, XCircle,
   HardDrive, AlertTriangle,
@@ -11,9 +12,56 @@ import {
 import { format } from "date-fns";
 import { ImageReviewModal } from "@/components/ImageReviewModal";
 
+type StatusTab = "all" | "pending" | "approved" | "rejected" | "flagged";
+
+const TAB_DEFS: {
+  value: StatusTab;
+  label: string;
+  icon: React.ElementType;
+  colorClass: string;
+  emptyMsg: string;
+}[] = [
+  {
+    value: "all",
+    label: "All",
+    icon: ImageIcon,
+    colorClass: "",
+    emptyMsg: "The review queue is currently empty.",
+  },
+  {
+    value: "pending",
+    label: "Pending",
+    icon: Clock,
+    colorClass: "text-slate-500",
+    emptyMsg: "No images are awaiting review.",
+  },
+  {
+    value: "approved",
+    label: "Approved",
+    icon: CheckCircle2,
+    colorClass: "text-green-600",
+    emptyMsg: "No images have been approved yet.",
+  },
+  {
+    value: "rejected",
+    label: "Rejected",
+    icon: XCircle,
+    colorClass: "text-destructive",
+    emptyMsg: "No images have been rejected.",
+  },
+  {
+    value: "flagged",
+    label: "Flagged",
+    icon: AlertTriangle,
+    colorClass: "text-amber-500",
+    emptyMsg: "No images have been flagged.",
+  },
+];
+
 export default function Images() {
   const { data: images, isLoading } = useListImages();
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<StatusTab>("all");
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -30,8 +78,24 @@ export default function Images() {
     }
   };
 
-  const driveImages = images?.filter((img) => img.driveFileId) ?? [];
-  const localImages = images?.filter((img) => !img.driveFileId) ?? [];
+  const allImages = images ?? [];
+
+  const countFor = (status: StatusTab) =>
+    status === "all"
+      ? allImages.length
+      : allImages.filter((i) => i.reviewStatus === status).length;
+
+  const filteredImages =
+    activeTab === "all"
+      ? allImages
+      : allImages.filter((i) => i.reviewStatus === activeTab);
+
+  const driveImages = filteredImages.filter((img) => img.driveFileId);
+  const localImages = filteredImages.filter((img) => !img.driveFileId);
+
+  const allDriveImages = allImages.filter((img) => img.driveFileId);
+
+  const activeTabDef = TAB_DEFS.find((t) => t.value === activeTab)!;
 
   return (
     <>
@@ -51,29 +115,57 @@ export default function Images() {
         </div>
 
         {/* Stats row */}
-        {!isLoading && images && images.length > 0 && (
+        {!isLoading && allImages.length > 0 && (
           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <ImageIcon className="w-3.5 h-3.5" />{images.length} total
+              <ImageIcon className="w-3.5 h-3.5" />{allImages.length} total
             </span>
             <span className="flex items-center gap-1.5 text-green-600">
-              <CheckCircle2 className="w-3.5 h-3.5" />{images.filter((i) => i.reviewStatus === "approved").length} approved
+              <CheckCircle2 className="w-3.5 h-3.5" />{countFor("approved")} approved
             </span>
             <span className="flex items-center gap-1.5 text-amber-600">
-              <AlertTriangle className="w-3.5 h-3.5" />{images.filter((i) => i.reviewStatus === "flagged").length} flagged
+              <AlertTriangle className="w-3.5 h-3.5" />{countFor("flagged")} flagged
             </span>
             <span className="flex items-center gap-1.5 text-slate-500">
-              <Clock className="w-3.5 h-3.5" />{images.filter((i) => i.reviewStatus === "pending").length} pending
+              <Clock className="w-3.5 h-3.5" />{countFor("pending")} pending
             </span>
             <span className="flex items-center gap-1.5 text-destructive">
-              <XCircle className="w-3.5 h-3.5" />{images.filter((i) => i.reviewStatus === "rejected").length} rejected
+              <XCircle className="w-3.5 h-3.5" />{countFor("rejected")} rejected
             </span>
-            {driveImages.length > 0 && (
+            {allDriveImages.length > 0 && (
               <span className="flex items-center gap-1.5 text-blue-600">
-                <HardDrive className="w-3.5 h-3.5" />{driveImages.length} from Drive
+                <HardDrive className="w-3.5 h-3.5" />{allDriveImages.length} from Drive
               </span>
             )}
           </div>
+        )}
+
+        {/* Status tabs */}
+        {!isLoading && allImages.length > 0 && (
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusTab)}>
+            <TabsList className="h-auto flex-wrap gap-1 p-1">
+              {TAB_DEFS.map((tab) => {
+                const Icon = tab.icon;
+                const count = countFor(tab.value);
+                return (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm"
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${tab.colorClass}`} />
+                    {tab.label}
+                    <Badge
+                      variant="secondary"
+                      className="ml-0.5 h-5 min-w-5 px-1.5 text-xs font-semibold"
+                    >
+                      {count}
+                    </Badge>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
         )}
 
         {/* Loading */}
@@ -83,8 +175,8 @@ export default function Images() {
           </div>
         )}
 
-        {/* Empty */}
-        {!isLoading && images?.length === 0 && (
+        {/* Empty — no images at all */}
+        {!isLoading && allImages.length === 0 && (
           <Card className="flex flex-col items-center justify-center p-12 text-center bg-muted/50 border-dashed">
             <Camera className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold">No images to review</h3>
@@ -98,8 +190,19 @@ export default function Images() {
           </Card>
         )}
 
+        {/* Empty — tab has no images but others exist */}
+        {!isLoading && allImages.length > 0 && filteredImages.length === 0 && (
+          <Card className="flex flex-col items-center justify-center p-10 text-center bg-muted/30 border-dashed">
+            <activeTabDef.icon className={`h-10 w-10 mb-3 ${activeTabDef.colorClass || "text-muted-foreground"}`} />
+            <h3 className="text-base font-semibold">{activeTabDef.emptyMsg}</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Switch to <strong>All</strong> to see the full queue.
+            </p>
+          </Card>
+        )}
+
         {/* Grid */}
-        {!isLoading && images && images.length > 0 && (
+        {!isLoading && filteredImages.length > 0 && (
           <div className="space-y-8">
             {/* Drive-imported images */}
             {driveImages.length > 0 && (
