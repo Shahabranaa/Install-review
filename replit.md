@@ -35,7 +35,7 @@ Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Im
 - Project: CVOW (Coastal Virginia Offshore Wind)
 - 3 OSPs: T1L11, T2G07, T3G15
 - 36 strings (A01–L03, 12 per OSP)
-- 176 towers with GPS coordinates and progress status (177th location in source sheet is an OSP-type, correctly excluded)
+- 177 towers with GPS coordinates and progress status (T2G07 OSP is also position 1 on string B02, counted as a tower)
 - Google Sheets source: `1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw`
 - Seeded via `seed-cvow.ts` (TypeScript; run via tsx); data fetched from Google Sheets API using OAuth token from Replit Google Drive connector
 

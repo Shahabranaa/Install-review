@@ -290,12 +290,15 @@ async function main() {
   let skippedTowers = 0;
 
   for (const loc of locationData) {
-    // Skip OSP-type locations (already inserted)
-    if (
+    const isOspType =
       loc.locationType.toLowerCase().includes("osp") ||
       loc.locationType.toLowerCase().includes("substation") ||
-      loc.locationType.toLowerCase().includes("sub-station")
-    ) {
+      loc.locationType.toLowerCase().includes("sub-station");
+
+    // OSP-type locations that also have a string name are counted as towers
+    // (e.g. T2G07 is both an OSP substation and position 1 on string B02)
+    if (isOspType && !loc.stringName) {
+      // Pure OSP (no string association) — already inserted as location, skip tower insert
       continue;
     }
 
@@ -316,7 +319,8 @@ async function main() {
       lat: loc.lat ?? null,
       lng: loc.lng ?? null,
       progressStatus: loc.progressStatus || "",
-      locationType: loc.locationType || "Tower",
+      // OSP dual-purpose rows are physically tower positions on the string
+      locationType: isOspType ? "Tower" : (loc.locationType || "Tower"),
       connectedTo: null,
       countOnString: null,
     });
@@ -328,6 +332,26 @@ async function main() {
   console.log(
     `Summary: 1 project, 1 site, ${Object.keys(ospIdMap).length} OSPs, ${Object.keys(stringIdMap).length} strings, ${towerCount} towers`,
   );
+
+  // Fail loudly if counts don't match expectations
+  const expectedTowers = 177;
+  const expectedStrings = 36;
+  const expectedOsps = 3;
+  const actualOsps = Object.keys(ospIdMap).length;
+  const actualStrings = Object.keys(stringIdMap).length;
+  if (actualOsps !== expectedOsps) {
+    console.error(`ASSERTION FAILED: expected ${expectedOsps} OSPs, inserted ${actualOsps}`);
+    process.exit(1);
+  }
+  if (actualStrings !== expectedStrings) {
+    console.error(`ASSERTION FAILED: expected ${expectedStrings} strings, inserted ${actualStrings}`);
+    process.exit(1);
+  }
+  if (towerCount !== expectedTowers) {
+    console.error(`ASSERTION FAILED: expected ${expectedTowers} towers, inserted ${towerCount}`);
+    process.exit(1);
+  }
+  console.log(`Assertions passed: ${actualOsps} OSPs, ${actualStrings} strings, ${towerCount} towers`);
   process.exit(0);
 }
 
