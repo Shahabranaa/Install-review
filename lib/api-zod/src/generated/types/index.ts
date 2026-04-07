@@ -45,3 +45,5 @@ export * from "./updateIssueBody";
 export * from "./updatePhaseBody";
 export * from "./updateProjectBody";
 export * from "./updateSiteBody";
+export * from "./stringRecord";
+export * from "./towerRecord";

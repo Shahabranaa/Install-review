@@ -11,6 +11,8 @@ import Images from "@/pages/images";
 import Documents from "@/pages/documents";
 import Settings from "@/pages/settings";
 import Drive from "@/pages/drive";
+import Strings from "@/pages/strings";
+import Towers from "@/pages/towers";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -45,6 +47,8 @@ function ProtectedRouter() {
         <Route path="/images" component={Images} />
         <Route path="/documents" component={Documents} />
         <Route path="/drive" component={Drive} />
+        <Route path="/strings" component={Strings} />
+        <Route path="/towers" component={Towers} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

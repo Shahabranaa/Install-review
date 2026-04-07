@@ -743,3 +743,82 @@ export const GetRecentActivityResponseItem = zod.object({
 export const GetRecentActivityResponse = zod.array(
   GetRecentActivityResponseItem,
 );
+
+/**
+ * @summary List all strings for a location
+ */
+export const ListStringsQueryParams = zod.object({
+  locationId: zod.coerce.number().optional(),
+});
+
+export const ListStringsResponseItem = zod.object({
+  id: zod.number(),
+  locationId: zod.number(),
+  name: zod.string(),
+  stringNumber: zod.number().nullish(),
+  status: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListStringsResponse = zod.array(ListStringsResponseItem);
+
+/**
+ * @summary Get a string
+ */
+export const GetStringParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetStringResponse = zod.object({
+  id: zod.number(),
+  locationId: zod.number(),
+  name: zod.string(),
+  stringNumber: zod.number().nullish(),
+  status: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary List all towers for a string
+ */
+export const ListTowersQueryParams = zod.object({
+  stringId: zod.coerce.number().optional(),
+  locationId: zod.coerce.number().optional(),
+});
+
+export const ListTowersResponseItem = zod.object({
+  id: zod.number(),
+  stringId: zod.number(),
+  name: zod.string(),
+  lat: zod.number().nullish(),
+  lng: zod.number().nullish(),
+  progressStatus: zod.string(),
+  locationType: zod.string(),
+  connectedTo: zod.string().nullish(),
+  countOnString: zod.number().nullish(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListTowersResponse = zod.array(ListTowersResponseItem);
+
+/**
+ * @summary Get a tower
+ */
+export const GetTowerParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTowerResponse = zod.object({
+  id: zod.number(),
+  stringId: zod.number(),
+  name: zod.string(),
+  lat: zod.number().nullish(),
+  lng: zod.number().nullish(),
+  progressStatus: zod.string(),
+  locationType: zod.string(),
+  connectedTo: zod.string().nullish(),
+  countOnString: zod.number().nullish(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});

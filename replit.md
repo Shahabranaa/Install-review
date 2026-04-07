@@ -25,3 +25,39 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Project: Installation Image Review App
+
+### Hierarchy
+Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Images → Issues/Decisions/Documents
+
+### CVOW Data
+- Project: CVOW (Coastal Virginia Offshore Wind)
+- 3 OSPs: T1L11, T2G07, T3G15
+- 36 strings (A01–L03, 12 per OSP)
+- 176 towers with GPS coordinates and progress status
+- Google Sheets source: `1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw`
+- Seeded via `seed-cvow.sql` (generated from Google Sheets via code execution sandbox and run via psql)
+
+### Auth
+- Default admin: `admin` / `admin123` (seeded on server startup)
+- Access levels: `admin` (full), `reviewer` (review submissions), `viewer` (read-only)
+
+### API Routes (api-server)
+- Standard CRUD: `/api/projects`, `/api/sites`, `/api/locations`, `/api/phases`, `/api/images`, `/api/issues`, `/api/decisions`, `/api/documents`, `/api/users`
+- CVOW data: `GET /api/strings`, `GET /api/strings/:id`, `GET /api/towers`, `GET /api/towers/:id`
+- Auth: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
+- Drive: `/api/drive/*`
+
+### Frontend Pages (image-review)
+Dashboard, Projects, Strings, Towers, Phases, Images, Google Drive, Documents, Settings
+
+### New Files (CVOW task)
+- `lib/db/src/schema/strings.ts` — stringsTable schema
+- `lib/db/src/schema/towers.ts` — towersTable schema
+- `artifacts/api-server/src/routes/strings.ts` — strings + towers GET routes
+- `artifacts/api-server/src/seed-cvow.ts` — TypeScript seed script (tsx)
+- `artifacts/api-server/seed-cvow.mjs` — plain ESM seed script (alternative)
+- `lib/api-client-react/src/generated/strings-towers.ts` — React Query hooks for strings/towers
+- `artifacts/image-review/src/pages/strings.tsx` — Strings browse page
+- `artifacts/image-review/src/pages/towers.tsx` — Towers browse page with search and filtering
