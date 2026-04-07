@@ -22,17 +22,28 @@ import {
 const SHEET_ID = "1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw";
 
 async function getAccessToken(): Promise<string> {
-  const connectors = new ReplitConnectors();
-  const connections = await connectors.listConnections("google-drive");
-  if (!connections || connections.length === 0) {
-    throw new Error("No Google Drive connections found");
+  // Fallback 1: explicit env var (useful for CI / standalone runs)
+  if (process.env.GOOGLE_DRIVE_ACCESS_TOKEN) {
+    return process.env.GOOGLE_DRIVE_ACCESS_TOKEN;
   }
-  const conn = connections[0] as { settings?: { access_token?: string } };
-  const token = conn.settings?.access_token;
-  if (!token) {
-    throw new Error("No access_token in Google Drive connection settings");
+
+  // Fallback 2: Replit connectors SDK (works when running inside Replit server context)
+  try {
+    const connectors = new ReplitConnectors();
+    const connections = await connectors.listConnections("google-drive");
+    if (connections && connections.length > 0) {
+      const conn = connections[0] as { settings?: { access_token?: string } };
+      const token = conn.settings?.access_token;
+      if (token) return token;
+    }
+  } catch {
+    // SDK not available in this environment
   }
-  return token;
+
+  throw new Error(
+    "No Google Drive access token available. " +
+    "Set GOOGLE_DRIVE_ACCESS_TOKEN env var or run inside the Replit environment."
+  );
 }
 
 async function fetchSheet(

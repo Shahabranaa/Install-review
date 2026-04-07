@@ -16,7 +16,7 @@ const STATUS_COLORS: Record<string, string> = {
   Pending: "bg-yellow-100 text-yellow-800",
   pending: "bg-yellow-100 text-yellow-800",
   "Not Started": "bg-slate-100 text-slate-700",
-  Excluded: "bg-red-100 text-red-700",
+  Excluded: "bg-slate-100 text-slate-500",
   "": "bg-slate-100 text-slate-500",
 };
 

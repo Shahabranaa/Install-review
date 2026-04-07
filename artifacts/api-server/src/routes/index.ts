@@ -13,6 +13,7 @@ import documentsRouter from "./documents";
 import dashboardRouter from "./dashboard";
 import driveRouter from "./drive";
 import stringsRouter from "./strings";
+import towersRouter from "./towers";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,7 @@ router.use(projectsRouter);
 router.use(sitesRouter);
 router.use(locationsRouter);
 router.use(stringsRouter);
+router.use(towersRouter);
 router.use(phasesRouter);
 router.use(imagesRouter);
 router.use(issuesRouter);
