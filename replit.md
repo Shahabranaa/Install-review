@@ -35,9 +35,9 @@ Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Im
 - Project: CVOW (Coastal Virginia Offshore Wind)
 - 3 OSPs: T1L11, T2G07, T3G15
 - 36 strings (A01–L03, 12 per OSP)
-- 176 towers with GPS coordinates and progress status
+- 176 towers with GPS coordinates and progress status (177th location in source sheet is an OSP-type, correctly excluded)
 - Google Sheets source: `1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw`
-- Seeded via `seed-cvow.sql` (generated from Google Sheets via code execution sandbox and run via psql)
+- Seeded via `seed-cvow.ts` (TypeScript; run via tsx); data fetched from Google Sheets API using OAuth token from Replit Google Drive connector
 
 ### Auth
 - Default admin: `admin` / `admin123` (seeded on server startup)
@@ -55,9 +55,9 @@ Dashboard, Projects, Strings, Towers, Phases, Images, Google Drive, Documents, S
 ### New Files (CVOW task)
 - `lib/db/src/schema/strings.ts` — stringsTable schema
 - `lib/db/src/schema/towers.ts` — towersTable schema
-- `artifacts/api-server/src/routes/strings.ts` — strings + towers GET routes
-- `artifacts/api-server/src/seed-cvow.ts` — TypeScript seed script (tsx)
-- `artifacts/api-server/seed-cvow.mjs` — plain ESM seed script (alternative)
+- `artifacts/api-server/src/routes/strings.ts` — GET /strings, POST /strings, GET /strings/:id
+- `artifacts/api-server/src/routes/towers.ts` — GET /towers (supports stringId + locationId filters), POST /towers, GET /towers/:id
+- `artifacts/api-server/src/seed-cvow.ts` — TypeScript seed script (tsx; supports GOOGLE_DRIVE_ACCESS_TOKEN env fallback)
 - `lib/api-client-react/src/generated/strings-towers.ts` — React Query hooks for strings/towers
-- `artifacts/image-review/src/pages/strings.tsx` — Strings browse page
-- `artifacts/image-review/src/pages/towers.tsx` — Towers browse page with search and filtering
+- `artifacts/image-review/src/pages/strings.tsx` — Strings browse page (grouped by OSP)
+- `artifacts/image-review/src/pages/towers.tsx` — Towers browse page with OSP/string filter and search

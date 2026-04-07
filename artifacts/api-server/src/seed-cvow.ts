@@ -225,7 +225,7 @@ async function main() {
   // ─── INSERT SITE ────────────────────────────────────────────────────────────
   const [site] = await db
     .insert(sitesTable)
-    .values({ projectId: project.id, name: "CVOW Offshore Site", description: "Main offshore wind farm site" })
+    .values({ projectId: project.id, name: "CVOW", address: null })
     .returning();
   console.log(`  Site inserted: id=${site.id}`);
 
