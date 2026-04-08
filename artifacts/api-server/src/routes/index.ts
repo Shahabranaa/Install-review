@@ -12,6 +12,7 @@ import decisionsRouter from "./decisions";
 import documentsRouter from "./documents";
 import dashboardRouter from "./dashboard";
 import driveRouter from "./drive";
+import photosRouter from "./photos";
 import stringsRouter from "./strings";
 import towersRouter from "./towers";
 
@@ -32,5 +33,6 @@ router.use(decisionsRouter);
 router.use(documentsRouter);
 router.use(dashboardRouter);
 router.use(driveRouter);
+router.use(photosRouter);
 
 export default router;

@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Image as ImageIcon, CheckSquare, FolderGit2,
   FileText, Settings, Building2, HardDrive, LogOut, ShieldCheck,
-  ClipboardCheck, Eye, Network, Wind,
+  ClipboardCheck, Eye, Network, Wind, Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ const navigation = [
   { name: "Towers", href: "/towers", icon: Wind },
   { name: "Phases", href: "/phases", icon: CheckSquare },
   { name: "Images", href: "/images", icon: ImageIcon },
+  { name: "Drive Photos", href: "/drive-photos", icon: Camera },
   { name: "Google Drive", href: "/drive", icon: HardDrive },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
