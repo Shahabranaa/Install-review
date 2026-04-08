@@ -30,7 +30,6 @@ const navigation = [
   { name: "Towers",    href: "/towers",    icon: Wind },
   { name: "Phases",    href: "/phases",    icon: CheckSquare },
   { name: "Documents", href: "/documents", icon: FileText },
-  { name: "Settings",  href: "/settings",  icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -140,6 +139,28 @@ export function AppSidebar() {
             )}
           </div>
         </nav>
+      </div>
+
+      {/* Settings — pinned above user footer */}
+      <div className="px-2 pb-2 pt-1 border-t border-sidebar-border flex-shrink-0">
+        <Link href="/settings">
+          <div
+            className={cn(
+              "flex items-center px-2 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors",
+              location === "/settings"
+                ? "bg-sidebar-primary/10 text-sidebar-primary"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            )}
+          >
+            <Settings
+              className={cn(
+                "mr-3 h-5 w-5 flex-shrink-0",
+                location === "/settings" ? "text-sidebar-primary" : "text-sidebar-foreground/50"
+              )}
+            />
+            Settings
+          </div>
+        </Link>
       </div>
 
       {/* User info + logout */}
