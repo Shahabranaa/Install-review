@@ -36,8 +36,8 @@ let _auth: GoogleAuth | null = null;
 function getAuth(): GoogleAuth {
   if (_auth) return _auth;
 
-  const email = process.env["GOOGLE_DRIVE_CLIENT_EMAIL"];
-  const rawKey = process.env["GOOGLE_DRIVE_PRIVATE_KEY"];
+  const email = process.env["GOOGLE_DRIVE_CLIENT_EMAIL"]?.trim();
+  const rawKey = process.env["GOOGLE_DRIVE_PRIVATE_KEY"]?.trim();
 
   if (!email || !rawKey) {
     throw new Error("GOOGLE_DRIVE_CLIENT_EMAIL and GOOGLE_DRIVE_PRIVATE_KEY must be set");
