@@ -523,7 +523,7 @@ export default function DrivePhotos() {
       <div className="p-6 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Drive Photos</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Images</h1>
             <p className="text-muted-foreground mt-1">
               Photos from CVOW SmartBuild — click any image to view full metadata.
             </p>
