@@ -1,0 +1,11 @@
+{
+  "buildCommand": "pnpm install && pnpm --filter @workspace/image-review run build",
+  "outputDirectory": "artifacts/image-review/dist/public",
+  "env": {
+    "BASE_PATH": "/"
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api).*)", "destination": "/index.html" }
+  ]
+}

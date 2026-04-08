@@ -80,7 +80,7 @@ router.get("/drive/folders", async (req, res): Promise<void> => {
       return;
     }
 
-    const data: DriveFilesResponse = await response.json();
+    const data = await response.json() as DriveFilesResponse;
     res.json({ folders: data.files ?? [], nextPageToken: data.nextPageToken });
   } catch (err: unknown) {
     console.error("Drive folders error:", err);
@@ -126,7 +126,7 @@ router.get("/drive/files", async (req, res): Promise<void> => {
       return;
     }
 
-    const data: DriveFilesResponse = await response.json();
+    const data = await response.json() as DriveFilesResponse;
     res.json({ files: data.files ?? [], nextPageToken: data.nextPageToken });
   } catch (err: unknown) {
     console.error("Drive files error:", err);
@@ -166,7 +166,7 @@ router.get("/drive/search", async (req, res): Promise<void> => {
       return;
     }
 
-    const data: DriveFilesResponse = await response.json();
+    const data = await response.json() as DriveFilesResponse;
     res.json({ results: data.files ?? [] });
   } catch (err: unknown) {
     console.error("Drive search error:", err);

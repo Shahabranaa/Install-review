@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, type SQL } from "drizzle-orm";
 import { db, issuesTable, imagesTable } from "@workspace/db";
 import {
   ListIssuesQueryParams,
@@ -21,7 +21,7 @@ router.get("/issues", async (req, res): Promise<void> => {
   let issues;
   if (queryParams.success) {
     const { imageId, phaseId, severity, resolved } = queryParams.data;
-    const conditions = [];
+    const conditions: SQL[] = [];
     if (imageId) {
       conditions.push(eq(issuesTable.imageId, imageId));
     } else if (phaseId) {

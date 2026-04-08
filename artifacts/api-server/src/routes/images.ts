@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, type SQL } from "drizzle-orm";
 import { db, imagesTable, issuesTable, decisionsTable } from "@workspace/db";
 import {
   ListImagesQueryParams,
@@ -26,7 +26,7 @@ router.get("/images", async (req, res): Promise<void> => {
   let images;
   if (queryParams.success) {
     const { projectId, siteId, locationId, phaseId, reviewStatus } = queryParams.data;
-    const conditions = [];
+    const conditions: SQL[] = [];
     if (phaseId) conditions.push(eq(imagesTable.phaseId, phaseId));
     if (locationId) conditions.push(eq(imagesTable.locationId, locationId));
     if (siteId) conditions.push(eq(imagesTable.siteId, siteId));
