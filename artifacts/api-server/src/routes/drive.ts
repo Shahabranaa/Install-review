@@ -58,7 +58,8 @@ router.get("/drive/status", async (_req, res): Promise<void> => {
     );
 
     if (!response.ok) {
-      res.json({ connected: false, reason: `Drive API returned ${response.status}` });
+      const body = await response.text().catch(() => "");
+      res.json({ connected: false, reason: `Drive API returned ${response.status}`, detail: body });
       return;
     }
 
