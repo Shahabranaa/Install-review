@@ -1,6 +1,4 @@
-// Google Drive integration via Replit Connectors SDK
 import { Router, type IRouter } from "express";
-import { ReplitConnectors } from "@replit/connectors-sdk";
 import { eq, and } from "drizzle-orm";
 import {
   db,
@@ -10,6 +8,7 @@ import {
   phasesTable,
   imagesTable,
 } from "@workspace/db";
+import { driveRequest, isDriveConfigured } from "../lib/google-drive";
 
 const router: IRouter = Router();
 
@@ -45,19 +44,49 @@ const IMAGE_MIME_TYPES = [
   "image/tiff",
 ];
 
-// GET /api/drive/folders - list folders in Drive
-// With parentId: list subfolders of that parent
-// Without parentId or with parentId="root": list all accessible folders (broad search)
-router.get("/drive/folders", async (req, res): Promise<void> => {
+// GET /api/drive/status - check if Drive service account is configured and reachable
+router.get("/drive/status", async (_req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.json({ connected: false, reason: "Service account credentials not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
+    const response = await driveRequest(
+      "/about",
+      new URLSearchParams({ fields: "user,storageQuota" }),
+    );
+
+    if (!response.ok) {
+      res.json({ connected: false, reason: `Drive API returned ${response.status}` });
+      return;
+    }
+
+    const data = await response.json() as {
+      user?: { displayName?: string; emailAddress?: string };
+      storageQuota?: { usage?: string; limit?: string };
+    };
+    res.json({ connected: true, user: data.user, storageQuota: data.storageQuota });
+  } catch (err: unknown) {
+    console.error("Drive status error:", err);
+    res.json({ connected: false, reason: "Failed to reach Drive API" });
+  }
+});
+
+// GET /api/drive/folders - list folders in Drive
+router.get("/drive/folders", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
+  try {
     const parentId = req.query.parentId as string | undefined;
 
     let q: string;
     if (parentId && parentId !== "root") {
       q = `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     } else {
-      // Broad search — returns all folders the OAuth token can see
       q = `mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     }
 
@@ -70,9 +99,7 @@ router.get("/drive/folders", async (req, res): Promise<void> => {
       supportsAllDrives: "true",
     });
 
-    const response = await connectors.proxy("google-drive", `/drive/v3/files?${params}`, {
-      method: "GET",
-    });
+    const response = await driveRequest("/files", params);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -88,10 +115,14 @@ router.get("/drive/folders", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/drive/files - list image files in a folder (or broadly)
+// GET /api/drive/files - list image files in a folder
 router.get("/drive/files", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
     const folderId = req.query.folderId as string | undefined;
     const pageToken = req.query.pageToken as string | undefined;
 
@@ -101,13 +132,13 @@ router.get("/drive/files", async (req, res): Promise<void> => {
     if (folderId && folderId !== "root") {
       q = `'${folderId}' in parents and (${imageMimeFilter}) and trashed = false`;
     } else {
-      // Broad search — all images accessible via token
       q = `(${imageMimeFilter}) and trashed = false`;
     }
 
     const params = new URLSearchParams({
       q,
-      fields: "files(id,name,mimeType,thumbnailLink,webViewLink,webContentLink,modifiedTime,createdTime,size,imageMediaMetadata),nextPageToken",
+      fields:
+        "files(id,name,mimeType,thumbnailLink,webViewLink,webContentLink,modifiedTime,createdTime,size,imageMediaMetadata),nextPageToken",
       orderBy: "modifiedTime desc",
       pageSize: "100",
       includeItemsFromAllDrives: "true",
@@ -116,9 +147,7 @@ router.get("/drive/files", async (req, res): Promise<void> => {
 
     if (pageToken) params.set("pageToken", pageToken);
 
-    const response = await connectors.proxy("google-drive", `/drive/v3/files?${params}`, {
-      method: "GET",
-    });
+    const response = await driveRequest("/files", params);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -136,8 +165,12 @@ router.get("/drive/files", async (req, res): Promise<void> => {
 
 // GET /api/drive/search - search files/folders by name
 router.get("/drive/search", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
     const nameQuery = req.query.name as string;
     if (!nameQuery) {
       res.status(400).json({ error: "name query parameter required" });
@@ -156,9 +189,7 @@ router.get("/drive/search", async (req, res): Promise<void> => {
       supportsAllDrives: "true",
     });
 
-    const response = await connectors.proxy("google-drive", `/drive/v3/files?${params}`, {
-      method: "GET",
-    });
+    const response = await driveRequest("/files", params);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -176,8 +207,12 @@ router.get("/drive/search", async (req, res): Promise<void> => {
 
 // GET /api/drive/folder-info/:folderId - get metadata for a specific folder
 router.get("/drive/folder-info/:folderId", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
     const { folderId } = req.params;
 
     const params = new URLSearchParams({
@@ -185,11 +220,7 @@ router.get("/drive/folder-info/:folderId", async (req, res): Promise<void> => {
       supportsAllDrives: "true",
     });
 
-    const response = await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${folderId}?${params}`,
-      { method: "GET" }
-    );
+    const response = await driveRequest(`/files/${folderId}`, params);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -207,15 +238,20 @@ router.get("/drive/folder-info/:folderId", async (req, res): Promise<void> => {
 
 // GET /api/drive/image/:fileId - proxy/stream image from Drive
 router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
     const { fileId } = req.params;
 
-    const response = await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
-      { method: "GET" }
-    );
+    const params = new URLSearchParams({
+      alt: "media",
+      supportsAllDrives: "true",
+    });
+
+    const response = await driveRequest(`/files/${fileId}`, params);
 
     if (!response.ok) {
       res.status(response.status).json({ error: "Failed to fetch image" });
@@ -236,9 +272,16 @@ router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
 
 // POST /api/drive/sync - import all images from a Drive folder into the DB
 router.post("/drive/sync", async (req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Drive not configured" });
+    return;
+  }
+
   try {
-    const connectors = new ReplitConnectors();
-    const { folderId, folderName = "Drive Import" } = req.body as { folderId: string; folderName?: string };
+    const { folderId, folderName = "Drive Import" } = req.body as {
+      folderId: string;
+      folderName?: string;
+    };
 
     if (!folderId) {
       res.status(400).json({ error: "folderId is required" });
@@ -247,65 +290,94 @@ router.post("/drive/sync", async (req, res): Promise<void> => {
 
     // ── 1. Find or create Project ────────────────────────────────────────────
     const DRIVE_PROJECT_NAME = "Google Drive Imports";
-    let project = (await db.select().from(projectsTable)
-      .where(eq(projectsTable.name, DRIVE_PROJECT_NAME))
-      .limit(1))[0];
+    let project = (
+      await db
+        .select()
+        .from(projectsTable)
+        .where(eq(projectsTable.name, DRIVE_PROJECT_NAME))
+        .limit(1)
+    )[0];
 
     if (!project) {
-      [project] = await db.insert(projectsTable).values({
-        name: DRIVE_PROJECT_NAME,
-        description: "Images automatically synced from Google Drive.",
-      }).returning();
+      [project] = await db
+        .insert(projectsTable)
+        .values({
+          name: DRIVE_PROJECT_NAME,
+          description: "Images automatically synced from Google Drive.",
+        })
+        .returning();
     }
 
     // ── 2. Find or create Site (one per Drive folder) ─────────────────────────
     const siteName = folderName;
-    let site = (await db.select().from(sitesTable)
-      .where(and(eq(sitesTable.projectId, project.id), eq(sitesTable.name, siteName)))
-      .limit(1))[0];
+    let site = (
+      await db
+        .select()
+        .from(sitesTable)
+        .where(and(eq(sitesTable.projectId, project.id), eq(sitesTable.name, siteName)))
+        .limit(1)
+    )[0];
 
     if (!site) {
-      [site] = await db.insert(sitesTable).values({
-        projectId: project.id,
-        name: siteName,
-        address: `Drive Folder ID: ${folderId}`,
-      }).returning();
+      [site] = await db
+        .insert(sitesTable)
+        .values({
+          projectId: project.id,
+          name: siteName,
+          address: `Drive Folder ID: ${folderId}`,
+        })
+        .returning();
     }
 
     // ── 3. Find or create Location ────────────────────────────────────────────
-    let location = (await db.select().from(locationsTable)
-      .where(and(eq(locationsTable.siteId, site.id), eq(locationsTable.name, siteName)))
-      .limit(1))[0];
+    let location = (
+      await db
+        .select()
+        .from(locationsTable)
+        .where(and(eq(locationsTable.siteId, site.id), eq(locationsTable.name, siteName)))
+        .limit(1)
+    )[0];
 
     if (!location) {
-      [location] = await db.insert(locationsTable).values({
-        siteId: site.id,
-        name: siteName,
-        type: "Drive Folder",
-        notes: `Google Drive folder: ${folderId}`,
-      }).returning();
+      [location] = await db
+        .insert(locationsTable)
+        .values({
+          siteId: site.id,
+          name: siteName,
+          type: "Drive Folder",
+          notes: `Google Drive folder: ${folderId}`,
+        })
+        .returning();
     }
 
     // ── 4. Find or create Phase ───────────────────────────────────────────────
-    let phase = (await db.select().from(phasesTable)
-      .where(and(eq(phasesTable.locationId, location.id), eq(phasesTable.phaseType, "Drive Sync")))
-      .limit(1))[0];
+    let phase = (
+      await db
+        .select()
+        .from(phasesTable)
+        .where(
+          and(
+            eq(phasesTable.locationId, location.id),
+            eq(phasesTable.phaseType, "Drive Sync"),
+          ),
+        )
+        .limit(1)
+    )[0];
 
     if (!phase) {
-      [phase] = await db.insert(phasesTable).values({
-        locationId: location.id,
-        phaseType: "Drive Sync",
-        status: "needs_review",
-        requiredImageCount: 0,
-      }).returning();
+      [phase] = await db
+        .insert(phasesTable)
+        .values({
+          locationId: location.id,
+          phaseType: "Drive Sync",
+          status: "needs_review",
+          requiredImageCount: 0,
+        })
+        .returning();
     }
 
     // ── 5. Fetch all images from Drive folder ─────────────────────────────────
-    const imageMimeTypes = [
-      "image/jpeg", "image/png", "image/gif", "image/webp",
-      "image/bmp", "image/heic", "image/tiff",
-    ];
-    const imageMimeFilter = imageMimeTypes.map((m) => `mimeType = '${m}'`).join(" or ");
+    const imageMimeFilter = IMAGE_MIME_TYPES.map((m) => `mimeType = '${m}'`).join(" or ");
     const q = `'${folderId}' in parents and (${imageMimeFilter}) and trashed = false`;
 
     const params = new URLSearchParams({
@@ -317,17 +389,27 @@ router.post("/drive/sync", async (req, res): Promise<void> => {
       supportsAllDrives: "true",
     });
 
-    const driveRes = await connectors.proxy("google-drive", `/drive/v3/files?${params}`, { method: "GET" });
+    const driveRes = await driveRequest("/files", params);
     if (!driveRes.ok) {
-      const err = await driveRes.text();
-      res.status(driveRes.status).json({ error: `Drive API error: ${err}` });
+      const errText = await driveRes.text();
+      res.status(driveRes.status).json({ error: `Drive API error: ${errText}` });
       return;
     }
-    const driveData = await driveRes.json() as { files: { id: string; name: string; mimeType: string; modifiedTime?: string; size?: string }[] };
+
+    const driveData = (await driveRes.json()) as {
+      files: {
+        id: string;
+        name: string;
+        mimeType: string;
+        modifiedTime?: string;
+        size?: string;
+      }[];
+    };
     const driveFiles = driveData.files ?? [];
 
     // ── 6. Get existing driveFileIds to avoid duplicates ──────────────────────
-    const existingRows = await db.select({ driveFileId: imagesTable.driveFileId })
+    const existingRows = await db
+      .select({ driveFileId: imagesTable.driveFileId })
       .from(imagesTable)
       .where(eq(imagesTable.phaseId, phase.id));
     const existingIds = new Set(existingRows.map((r) => r.driveFileId).filter(Boolean));
@@ -353,7 +435,8 @@ router.post("/drive/sync", async (req, res): Promise<void> => {
     }
 
     // Update phase required count
-    await db.update(phasesTable)
+    await db
+      .update(phasesTable)
       .set({ requiredImageCount: existingIds.size + synced })
       .where(eq(phasesTable.id, phase.id));
 
@@ -380,20 +463,24 @@ router.get("/drive/sync-status", async (req, res): Promise<void> => {
       res.status(400).json({ error: "folderId is required" });
       return;
     }
-    // Count images already in DB for this folder (by checking driveFileId prefix pattern isn't practical,
-    // so we check via phase in the "Google Drive Imports" project)
-    const project = (await db.select().from(projectsTable)
-      .where(eq(projectsTable.name, "Google Drive Imports"))
-      .limit(1))[0];
+
+    const project = (
+      await db
+        .select()
+        .from(projectsTable)
+        .where(eq(projectsTable.name, "Google Drive Imports"))
+        .limit(1)
+    )[0];
 
     if (!project) {
       res.json({ imported: 0 });
       return;
     }
 
-    // Find the site whose address contains the folderId
-    const sites = await db.select().from(sitesTable)
-      .where(and(eq(sitesTable.projectId, project.id)));
+    const sites = await db
+      .select()
+      .from(sitesTable)
+      .where(eq(sitesTable.projectId, project.id));
     const matchingSite = sites.find((s) => s.address?.includes(folderId));
 
     if (!matchingSite) {
@@ -401,21 +488,26 @@ router.get("/drive/sync-status", async (req, res): Promise<void> => {
       return;
     }
 
-    const locations = await db.select().from(locationsTable)
+    const locations = await db
+      .select()
+      .from(locationsTable)
       .where(eq(locationsTable.siteId, matchingSite.id));
     if (locations.length === 0) {
       res.json({ imported: 0 });
       return;
     }
 
-    const phases = await db.select().from(phasesTable)
+    const phases = await db
+      .select()
+      .from(phasesTable)
       .where(eq(phasesTable.locationId, locations[0].id));
     if (phases.length === 0) {
       res.json({ imported: 0 });
       return;
     }
 
-    const images = await db.select({ id: imagesTable.id })
+    const images = await db
+      .select({ id: imagesTable.id })
       .from(imagesTable)
       .where(eq(imagesTable.phaseId, phases[0].id));
 
@@ -423,29 +515,6 @@ router.get("/drive/sync-status", async (req, res): Promise<void> => {
   } catch (err: unknown) {
     console.error("Drive sync-status error:", err);
     res.status(500).json({ error: "Failed to check sync status" });
-  }
-});
-
-// GET /api/drive/status - check if Drive is connected
-router.get("/drive/status", async (_req, res): Promise<void> => {
-  try {
-    const connectors = new ReplitConnectors();
-    const response = await connectors.proxy("google-drive", "/drive/v3/about?fields=user,storageQuota", {
-      method: "GET",
-    });
-
-    if (!response.ok) {
-      res.json({ connected: false });
-      return;
-    }
-
-    const data = await response.json() as {
-      user?: { displayName?: string; emailAddress?: string };
-      storageQuota?: { usage?: string; limit?: string };
-    };
-    res.json({ connected: true, user: data.user, storageQuota: data.storageQuota });
-  } catch {
-    res.json({ connected: false });
   }
 });
 
