@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -458,9 +459,16 @@ function StringSection({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DrivePhotos() {
+  const search = useSearch();
+  const params = new URLSearchParams(search);
+  const approvalFilter = params.get("approval") ?? "";   // "Approved" | "Rejected" | "Pending" | ""
+
   const [selectedTower, setSelectedTower] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; fileId: string } | null>(null);
+
+  // Reset tower selection when approval filter changes
+  useEffect(() => { setSelectedTower(null); }, [approvalFilter]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<SheetResponse>({
     queryKey: ["photos-sheet"],
@@ -486,6 +494,7 @@ export default function DrivePhotos() {
 
   const allPhotos = data?.photos ?? [];
   let filtered = allPhotos;
+  if (approvalFilter) filtered = filtered.filter(p => (p.approval ?? "").toLowerCase() === approvalFilter.toLowerCase());
   if (selectedTower) filtered = filtered.filter(p => p.locationLink === selectedTower);
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
@@ -523,7 +532,12 @@ export default function DrivePhotos() {
       <div className="p-6 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Images</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Images
+              {approvalFilter && (
+                <span className="ml-3 text-lg font-normal text-muted-foreground">· {approvalFilter}</span>
+              )}
+            </h1>
             <p className="text-muted-foreground mt-1">
               Photos from CVOW SmartBuild — click any image to view full metadata.
             </p>
