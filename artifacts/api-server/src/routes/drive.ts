@@ -69,7 +69,13 @@ router.get("/drive/status", async (_req, res): Promise<void> => {
     res.json({ connected: true, user: data.user, storageQuota: data.storageQuota });
   } catch (err: unknown) {
     console.error("Drive status error:", err);
-    res.json({ connected: false, reason: "Failed to reach Drive API" });
+    const msg = err instanceof Error ? err.message : String(err);
+    const reason = msg.includes("account not found")
+      ? "Service account not found — ensure the Google Drive API is enabled in your Google Cloud project"
+      : msg.includes("invalid_grant")
+      ? `Google auth error: ${msg}`
+      : "Failed to reach Drive API";
+    res.json({ connected: false, reason });
   }
 });
 
