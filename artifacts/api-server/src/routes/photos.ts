@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, sheetPhotosTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
@@ -532,6 +532,44 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
   } catch (err: unknown) {
     console.error("Photo resolve error:", err);
     res.status(500).json({ error: "Failed to resolve photo" });
+  }
+});
+
+// GET /api/photos/stats — counts for the dashboard
+router.get("/photos/stats", async (_req, res): Promise<void> => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*)::int                                                                AS total,
+        COUNT(*) FILTER (WHERE LOWER(approval) IN ('verified','approved'))::int     AS approved,
+        COUNT(*) FILTER (WHERE LOWER(approval) IN ('rejected'))::int                AS rejected,
+        COUNT(*) FILTER (WHERE LOWER(approval) NOT IN ('verified','approved','rejected'))::int AS pending,
+        COUNT(*) FILTER (WHERE
+          creation_date IS NOT NULL
+          AND creation_date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
+          AND TO_DATE(creation_date, 'DD/MM/YYYY') >= CURRENT_DATE - INTERVAL '7 days'
+        )::int AS this_week,
+        COUNT(*) FILTER (WHERE
+          creation_date IS NOT NULL
+          AND creation_date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'
+          AND TO_DATE(creation_date, 'DD/MM/YYYY') >= DATE_TRUNC('month', CURRENT_DATE)
+        )::int AS this_month
+      FROM sheet_photos
+    `);
+    // Drizzle execute() wraps pg QueryResult — rows live in result.rows
+    const rows = Array.isArray(result) ? result : (result as unknown as { rows: unknown[] }).rows;
+    const row = rows[0] as { total: number; approved: number; rejected: number; pending: number; this_week: number; this_month: number };
+
+    res.json({
+      total:     row.total     ?? 0,
+      approved:  row.approved  ?? 0,
+      rejected:  row.rejected  ?? 0,
+      pending:   row.pending   ?? 0,
+      thisWeek:  row.this_week  ?? 0,
+      thisMonth: row.this_month ?? 0,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
