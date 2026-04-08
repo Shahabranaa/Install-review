@@ -378,6 +378,11 @@ function FullscreenViewer({
   );
 }
 
+// ─── natural sort helper ──────────────────────────────────────────────────────
+function natSort(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 // ─── Phase section ────────────────────────────────────────────────────────────
 
 function PhaseSection({
@@ -390,6 +395,10 @@ function PhaseSection({
   onOpen: (photo: PhotoRecord, fileId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  // Sort photos by required image order (numeric)
+  const sorted = [...photos].sort((a, b) =>
+    (Number(a.reqImgOrder) || 9999) - (Number(b.reqImgOrder) || 9999)
+  );
   return (
     <div className="space-y-3">
       <button className="flex items-center gap-2 w-full text-left" onClick={() => setExpanded(e => !e)}>
@@ -399,7 +408,7 @@ function PhaseSection({
       </button>
       {expanded && (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 pl-6">
-          {photos.map(p => (
+          {sorted.map(p => (
             <PhotoCard key={p.photoId || `${p.locationLink}-${p.cableLink}-${p.label}`} photo={p} onOpen={onOpen} />
           ))}
         </div>
@@ -432,23 +441,65 @@ function StringSection({
     return oa - ob;
   });
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border rounded-lg overflow-hidden bg-card">
       <button
-        className="flex items-center gap-3 w-full p-4 bg-muted/50 hover:bg-muted text-left transition-colors"
+        className="flex items-center gap-3 w-full px-4 py-3 bg-muted/40 hover:bg-muted/70 text-left transition-colors"
         onClick={() => setExpanded(e => !e)}
       >
         {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-        <Wind className="w-4 h-4 text-blue-500 flex-shrink-0" />
-        <span className="font-semibold">{stringName}</span>
-        <Badge variant="outline" className="ml-1 text-xs">{photos.length} photos</Badge>
+        <Network className="w-4 h-4 text-blue-500 flex-shrink-0" />
+        <span className="font-semibold text-sm">{stringName}</span>
+        <Badge variant="outline" className="ml-1 text-xs">{photos.length}</Badge>
         <span className="text-xs text-muted-foreground ml-auto">{sortedPhases.length} phase{sortedPhases.length !== 1 ? "s" : ""}</span>
       </button>
       {expanded && (
-        <div className="p-4 space-y-6 divide-y divide-border">
+        <div className="px-4 pb-4 pt-3 space-y-5 divide-y divide-border">
           {sortedPhases.map(([phase, phasePhotos]) => (
             <div key={phase} className="pt-4 first:pt-0">
               <PhaseSection phase={phase} photos={phasePhotos} onOpen={onOpen} />
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── OSP section ──────────────────────────────────────────────────────────────
+
+function OspSection({
+  ospName,
+  stringMap,
+  onOpen,
+}: {
+  ospName: string;
+  stringMap: Map<string, PhotoRecord[]>;
+  onOpen: (photo: PhotoRecord, fileId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const sortedStrings = [...stringMap.entries()].sort(([a], [b]) => natSort(a, b));
+  const total = [...stringMap.values()].reduce((s, v) => s + v.length, 0);
+
+  return (
+    <div className="rounded-xl border-2 border-border overflow-hidden shadow-sm">
+      {/* OSP header */}
+      <button
+        className="flex items-center gap-3 w-full px-5 py-4 bg-sidebar text-left transition-colors hover:bg-muted/60"
+        onClick={() => setExpanded(e => !e)}
+      >
+        {expanded ? <ChevronDown className="w-5 h-5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />}
+        <Wind className="w-5 h-5 text-primary flex-shrink-0" />
+        <span className="font-bold text-base">{ospName}</span>
+        <Badge className="ml-1 text-xs">{total}</Badge>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {sortedStrings.length} string{sortedStrings.length !== 1 ? "s" : ""}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="p-4 space-y-3 bg-background">
+          {sortedStrings.map(([stringName, photos]) => (
+            <StringSection key={stringName} stringName={stringName} photos={photos} onOpen={onOpen} />
           ))}
         </div>
       )}
@@ -508,13 +559,18 @@ export default function DrivePhotos() {
     );
   }
 
-  const byString = new Map<string, PhotoRecord[]>();
+  // Build 3-level hierarchy: OSP → String → photos
+  const byOsp = new Map<string, Map<string, PhotoRecord[]>>();
   for (const p of filtered) {
-    const key = p.cableLink || "Unknown String";
-    if (!byString.has(key)) byString.set(key, []);
-    byString.get(key)!.push(p);
+    const osp = p.locationLink || "Unknown OSP";
+    const str = p.cableLink   || "Unknown String";
+    if (!byOsp.has(osp)) byOsp.set(osp, new Map());
+    const strMap = byOsp.get(osp)!;
+    if (!strMap.has(str)) strMap.set(str, []);
+    strMap.get(str)!.push(p);
   }
-  const sortedStrings = [...byString.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const sortedOsps = [...byOsp.entries()].sort(([a], [b]) => natSort(a, b));
+
   const towers = data?.meta.towers ?? [];
   const photoCount = filtered.filter(p => p.type === "photo").length;
   const sigCount   = filtered.filter(p => p.type === "signature").length;
@@ -553,18 +609,18 @@ export default function DrivePhotos() {
             <span><strong className="text-foreground">{filtered.length}</strong> records</span>
             <span><strong className="text-foreground">{photoCount}</strong> photos</span>
             <span><strong className="text-foreground">{sigCount}</strong> signatures</span>
-            <span><strong className="text-foreground">{towers.length}</strong> towers</span>
+            <span><strong className="text-foreground">{sortedOsps.length}</strong> OSPs</span>
           </div>
         )}
 
         {!isLoading && towers.length > 0 && (
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-muted-foreground font-medium">Tower:</span>
-            <Button size="sm" variant={!selectedTower ? "default" : "outline"} onClick={() => setSelectedTower(null)} className="h-7 text-xs">
-              All ({towers.length})
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <span className="text-xs text-muted-foreground font-medium mr-1">OSP:</span>
+            <Button size="sm" variant={!selectedTower ? "default" : "outline"} onClick={() => setSelectedTower(null)} className="h-7 text-xs rounded-full">
+              All
             </Button>
             {towers.map(t => (
-              <Button key={t} size="sm" variant={selectedTower === t ? "default" : "outline"} onClick={() => setSelectedTower(t)} className="h-7 text-xs">
+              <Button key={t} size="sm" variant={selectedTower === t ? "default" : "outline"} onClick={() => setSelectedTower(t)} className="h-7 text-xs rounded-full">
                 {t}
               </Button>
             ))}
@@ -624,10 +680,10 @@ export default function DrivePhotos() {
           </Card>
         )}
 
-        {!isLoading && !error && sortedStrings.length > 0 && (
+        {!isLoading && !error && sortedOsps.length > 0 && (
           <div className="space-y-4">
-            {sortedStrings.map(([stringName, photos]) => (
-              <StringSection key={stringName} stringName={stringName} photos={photos} onOpen={handleOpen} />
+            {sortedOsps.map(([ospName, stringMap]) => (
+              <OspSection key={ospName} ospName={ospName} stringMap={stringMap} onOpen={handleOpen} />
             ))}
           </div>
         )}
