@@ -48,9 +48,19 @@ Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Im
 - CVOW data: `GET /api/strings`, `GET /api/strings/:id`, `GET /api/towers`, `GET /api/towers/:id`
 - Auth: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - Drive: `/api/drive/*`
+- Photos from sheet: `GET /api/photos/sheet`, `GET /api/photos/resolve/:photoId`, `GET /api/photos/db/:photoId`, `PATCH /api/photos/db/:photoId`, `POST /api/photos/cache-clear`
+
+### Google Sheets / Drive Photo Integration
+- Spreadsheet: `1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw` — `Photo` tab (48 columns)
+- Drive root: `CVOWSmartBuild-5695074` (ID: `1Fe5rOXrcgw1lJnYUC4c9jlZe2j5Ukp52`)
+- Signature/drawing files: `Photo_Images/` (ID: `1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0`)
+- Stamped photo uploads: `Photo_Images_2_Stamped_v2/` (ID: `18dMOuEuKFu_prnx9FW_FW1y2nFUebW6C`) → `{OSP}/{Tower}/{String}/filename`
+- Global Drive search does NOT find files; must search within specific parent folder
+- `sheet_photos` DB table stores all 48 spreadsheet columns + resolved `drive_file_id`
+- Sheet cache TTL: 5 minutes; file ID cache: permanent per server lifetime
 
 ### Frontend Pages (image-review)
-Dashboard, Projects, Strings, Towers, Phases, Images, Google Drive, Documents, Settings
+Dashboard, Projects, Strings, Towers, Phases, Images, Drive Photos, Google Drive, Documents, Settings
 
 ### New Files (CVOW task)
 - `lib/db/src/schema/strings.ts` — stringsTable schema

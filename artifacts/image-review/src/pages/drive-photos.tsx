@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import {
   Image as ImageIcon,
   Camera,
@@ -20,28 +21,67 @@ import {
   Pencil,
   ChevronDown,
   ChevronRight,
+  MapPin,
+  User,
+  Calendar,
+  Hash,
+  Network,
+  Activity,
+  FileText,
+  MessageSquare,
 } from "lucide-react";
+
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PhotoRecord {
   photoId: string;
-  label: string;
-  status: string;
-  approval: string;
+  photoUpload: string;
+  resizedPhoto: string;
+  signatureCapture: string;
+  drawingMarkup: string;
   type: "photo" | "signature" | "drawing" | "unknown";
   filePath: string;
-  tower: string;
-  string: string;
-  phase: string;
+  cableLink: string;
+  cableSide: string;
+  locationLink: string;
+  photoType: string;
+  phaseLink: string;
   phaseOrder: string;
+  photoString: string;
   reqImgType: string;
   reqImgOrder: string;
-  createdAt: string;
-  createdBy: string;
+  photoResponse: string;
+  dataCaptureResponse: string;
   comments: string;
-  response: string;
+  terminationCompletedBy: string;
+  continuingNotes: string;
+  previousResponseImport: string;
+  approval: string;
+  status: string;
+  reviewDetails: string;
+  label: string;
+  parentControl: string;
+  parent: string;
+  creationDateTime: string;
+  creationDate: string;
+  creationUser: string;
+  creationLocation: string;
+  editCount: string;
+  editDateTime: string;
+  editDate: string;
+  editUser: string;
+  editLocation: string;
+  updateFlag: string;
+  automationTrigger: string;
+  formType: string;
+  testFlag: string;
+  temp: string;
+  temp2: string;
+  temp3: string;
+  temp4: string;
+  resizedChecked: string;
 }
 
 interface SheetResponse {
@@ -52,8 +92,8 @@ interface SheetResponse {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getStatusBadge(status: string, approval: string) {
-  const s = (status ?? "").toLowerCase();
   const a = (approval ?? "").toLowerCase();
+  const s = (status ?? "").toLowerCase();
   if (a === "approved" || a === "checked")
     return <Badge className="bg-green-600 text-white text-xs"><CheckCircle2 className="w-2.5 h-2.5 mr-1" />Approved</Badge>;
   if (s === "pending")
@@ -76,14 +116,38 @@ function formatPhase(phase: string) {
   return phase.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// ─── Photo card with lazy Drive image loading ─────────────────────────────────
+function MetaRow({ label, value, icon }: { label: string; value?: string | null; icon?: React.ReactNode }) {
+  if (!value) return null;
+  return (
+    <div className="flex gap-2 text-xs">
+      {icon && <span className="text-muted-foreground mt-0.5 flex-shrink-0 w-3.5">{icon}</span>}
+      <div className="flex-1 min-w-0">
+        <span className="text-muted-foreground">{label}: </span>
+        <span className="text-foreground break-words">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function MetaSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const hasContent = Boolean(children);
+  if (!hasContent) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">{title}</p>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+// ─── Photo card ───────────────────────────────────────────────────────────────
 
 function PhotoCard({
   photo,
-  onFullscreen,
+  onOpen,
 }: {
   photo: PhotoRecord;
-  onFullscreen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, fileId: string) => void;
 }) {
   const { data: resolved } = useQuery<{ photoId: string; fileId: string } | null>({
     queryKey: ["photo-resolve", photo.photoId],
@@ -103,9 +167,8 @@ function PhotoCard({
   return (
     <Card
       className={`overflow-hidden group transition-all duration-200 ${imageUrl ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""}`}
-      onClick={() => imageUrl && resolved?.fileId && onFullscreen(photo, resolved.fileId)}
+      onClick={() => imageUrl && resolved?.fileId && onOpen(photo, resolved.fileId)}
     >
-      {/* Image area */}
       <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
         {imageUrl ? (
           <>
@@ -120,10 +183,8 @@ function PhotoCard({
             </div>
           </>
         ) : photo.filePath ? (
-          <div className="flex flex-col items-center gap-2 text-muted-foreground/50">
-            <div className="animate-pulse">
-              <ImageIcon className="w-8 h-8" />
-            </div>
+          <div className="flex flex-col items-center gap-2 text-muted-foreground/50 animate-pulse">
+            <ImageIcon className="w-8 h-8" />
             <span className="text-xs">Loading…</span>
           </div>
         ) : (
@@ -132,8 +193,6 @@ function PhotoCard({
             <span className="text-xs">No image</span>
           </div>
         )}
-
-        {/* Type badge */}
         <div className="absolute top-1.5 left-1.5">
           <div className="bg-black/50 text-white rounded px-1.5 py-0.5 flex items-center gap-1 text-xs backdrop-blur-sm">
             {getTypeIcon(photo.type)}
@@ -141,26 +200,18 @@ function PhotoCard({
           </div>
         </div>
       </div>
-
       <CardContent className="p-3 space-y-2">
-        {/* Label */}
         <p className="text-xs font-medium leading-snug line-clamp-2" title={photo.label}>
           {photo.label || <span className="text-muted-foreground italic">No label</span>}
         </p>
-
-        {/* Status row */}
         <div className="flex items-center justify-between gap-1 flex-wrap">
           {getStatusBadge(photo.status, photo.approval)}
-          {photo.reqImgType && (
-            <span className="text-xs font-mono text-muted-foreground">{photo.reqImgType}</span>
-          )}
+          {photo.reqImgType && <span className="text-xs font-mono text-muted-foreground">{photo.reqImgType}</span>}
         </div>
-
-        {/* Meta */}
-        {(photo.createdBy || photo.response) && (
+        {(photo.creationUser || photo.photoResponse) && (
           <div className="text-xs text-muted-foreground space-y-0.5">
-            {photo.createdBy && <div className="truncate">{photo.createdBy.replace(/@.*/, "")}</div>}
-            {photo.response && <div className="truncate text-blue-600">→ {photo.response}</div>}
+            {photo.creationUser && <div className="truncate">{photo.creationUser.replace(/@.*/, "")}</div>}
+            {photo.photoResponse && <div className="truncate text-blue-600">→ {photo.photoResponse}</div>}
           </div>
         )}
       </CardContent>
@@ -182,42 +233,145 @@ function FullscreenViewer({
   const imageUrl = `${BASE_URL}api/drive/image/${fileId}`;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/90 flex flex-col"
-      onClick={onClose}
-    >
-      {/* Header */}
-      <div
-        className="flex items-start justify-between p-4 text-white flex-shrink-0"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex-1 min-w-0 mr-4">
-          <p className="font-semibold text-sm leading-snug">{photo.label || photo.photoId}</p>
-          <div className="flex items-center gap-3 mt-1 text-xs text-white/60 flex-wrap">
-            <span>{photo.tower}</span>
-            {photo.string && <><span>·</span><span>{photo.string}</span></>}
-            {photo.phase && <><span>·</span><span className="truncate max-w-[200px]">{formatPhase(photo.phase)}</span></>}
-            {photo.createdAt && <><span>·</span><span>{photo.createdAt.split(" ")[0]}</span></>}
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col overflow-hidden">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-1.5 text-white/50 text-xs">
+            {getTypeIcon(photo.type)}
+            <span className="capitalize">{photo.type}</span>
           </div>
-          {photo.comments && (
-            <p className="text-xs text-white/50 mt-1 italic">{photo.comments}</p>
-          )}
+          <Separator orientation="vertical" className="h-4 bg-white/20" />
+          <span className="text-white text-sm font-medium truncate">{photo.label || photo.photoId}</span>
         </div>
         <button
-          className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors flex-shrink-0"
+          className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors flex-shrink-0 ml-4"
           onClick={onClose}
         >
-          <X className="w-5 h-5 text-white" />
+          <X className="w-4 h-4 text-white" />
         </button>
       </div>
 
-      {/* Image */}
-      <div className="flex-1 flex items-center justify-center overflow-hidden px-4 pb-4" onClick={e => e.stopPropagation()}>
-        <img
-          src={imageUrl}
-          alt={photo.label || photo.photoId}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-        />
+      {/* Body: image + metadata panel */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Image */}
+        <div className="flex-1 flex items-center justify-center p-4 min-w-0">
+          <img
+            src={imageUrl}
+            alt={photo.label || photo.photoId}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
+        </div>
+
+        {/* Metadata panel */}
+        <div className="w-80 flex-shrink-0 bg-background/95 border-l border-white/10 overflow-y-auto">
+          <div className="p-4 space-y-5">
+
+            {/* Identity */}
+            <MetaSection title="Identity">
+              <MetaRow label="Photo ID" value={photo.photoId} icon={<Hash className="w-3 h-3" />} />
+              <MetaRow label="Form Type" value={photo.formType} icon={<FileText className="w-3 h-3" />} />
+              <MetaRow label="Photo Type" value={photo.photoType} icon={<Activity className="w-3 h-3" />} />
+              <MetaRow label="Parent" value={photo.parent} />
+              <MetaRow label="Parent Control" value={photo.parentControl} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Location & Phase */}
+            <MetaSection title="Location & Phase">
+              <MetaRow label="Tower" value={photo.locationLink} icon={<Wind className="w-3 h-3" />} />
+              <MetaRow label="Cable" value={photo.cableLink} icon={<Network className="w-3 h-3" />} />
+              <MetaRow label="Cable Side" value={photo.cableSide} />
+              <MetaRow label="String" value={photo.photoString} />
+              <MetaRow label="Phase" value={photo.phaseLink ? formatPhase(photo.phaseLink) : ""} icon={<Activity className="w-3 h-3" />} />
+              <MetaRow label="Phase Order" value={photo.phaseOrder} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Required Image */}
+            <MetaSection title="Required Image">
+              <MetaRow label="Type" value={photo.reqImgType} icon={<Hash className="w-3 h-3" />} />
+              <MetaRow label="Order" value={photo.reqImgOrder} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Status & Review */}
+            <MetaSection title="Status & Review">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Approval:</span>
+                {getStatusBadge(photo.status, photo.approval)}
+              </div>
+              <MetaRow label="Status" value={photo.status} />
+              <MetaRow label="Review Details" value={photo.reviewDetails} icon={<MessageSquare className="w-3 h-3" />} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Responses */}
+            <MetaSection title="Responses">
+              <MetaRow label="Photo Response" value={photo.photoResponse} />
+              <MetaRow label="Data Capture" value={photo.dataCaptureResponse} />
+              <MetaRow label="Previous Import" value={photo.previousResponseImport} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Notes & Comments */}
+            <MetaSection title="Notes & Comments">
+              <MetaRow label="Comments" value={photo.comments} icon={<MessageSquare className="w-3 h-3" />} />
+              <MetaRow label="Continuing Notes" value={photo.continuingNotes} />
+              <MetaRow label="Termination By" value={photo.terminationCompletedBy} icon={<User className="w-3 h-3" />} />
+            </MetaSection>
+
+            <Separator />
+
+            {/* Creation */}
+            <MetaSection title="Creation">
+              <MetaRow label="Date/Time" value={photo.creationDateTime} icon={<Calendar className="w-3 h-3" />} />
+              <MetaRow label="Date" value={photo.creationDate} />
+              <MetaRow label="User" value={photo.creationUser} icon={<User className="w-3 h-3" />} />
+              <MetaRow label="Location" value={photo.creationLocation} icon={<MapPin className="w-3 h-3" />} />
+            </MetaSection>
+
+            {(photo.editCount || photo.editDateTime || photo.editUser) && (
+              <>
+                <Separator />
+                <MetaSection title="Last Edit">
+                  <MetaRow label="Edit Count" value={photo.editCount} icon={<Hash className="w-3 h-3" />} />
+                  <MetaRow label="Date/Time" value={photo.editDateTime} icon={<Calendar className="w-3 h-3" />} />
+                  <MetaRow label="Date" value={photo.editDate} />
+                  <MetaRow label="User" value={photo.editUser} icon={<User className="w-3 h-3" />} />
+                  <MetaRow label="Location" value={photo.editLocation} icon={<MapPin className="w-3 h-3" />} />
+                </MetaSection>
+              </>
+            )}
+
+            {(photo.automationTrigger || photo.updateFlag || photo.testFlag || photo.resizedChecked) && (
+              <>
+                <Separator />
+                <MetaSection title="System">
+                  <MetaRow label="Automation Trigger" value={photo.automationTrigger} />
+                  <MetaRow label="Update Flag" value={photo.updateFlag} />
+                  <MetaRow label="Test Flag" value={photo.testFlag} />
+                  <MetaRow label="Resized Checked" value={photo.resizedChecked} />
+                </MetaSection>
+              </>
+            )}
+
+            {/* File paths */}
+            <Separator />
+            <MetaSection title="Files">
+              <MetaRow label="Photo Upload" value={photo.photoUpload} />
+              <MetaRow label="Resized Photo" value={photo.resizedPhoto} />
+              <MetaRow label="Signature" value={photo.signatureCapture} />
+              <MetaRow label="Drawing" value={photo.drawingMarkup} />
+            </MetaSection>
+
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -228,33 +382,24 @@ function FullscreenViewer({
 function PhaseSection({
   phase,
   photos,
-  onFullscreen,
+  onOpen,
 }: {
   phase: string;
   photos: PhotoRecord[];
-  onFullscreen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, fileId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-
   return (
     <div className="space-y-3">
-      <button
-        className="flex items-center gap-2 w-full text-left group"
-        onClick={() => setExpanded(e => !e)}
-      >
-        {expanded ? (
-          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        )}
+      <button className="flex items-center gap-2 w-full text-left" onClick={() => setExpanded(e => !e)}>
+        {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
         <span className="font-semibold text-sm">{formatPhase(phase)}</span>
         <Badge variant="secondary" className="text-xs ml-1">{photos.length}</Badge>
       </button>
-
       {expanded && (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 pl-6">
           {photos.map(p => (
-            <PhotoCard key={p.photoId || `${p.tower}-${p.string}-${p.label}`} photo={p} onFullscreen={onFullscreen} />
+            <PhotoCard key={p.photoId || `${p.locationLink}-${p.cableLink}-${p.label}`} photo={p} onOpen={onOpen} />
           ))}
         </div>
       )}
@@ -267,51 +412,41 @@ function PhaseSection({
 function StringSection({
   stringName,
   photos,
-  onFullscreen,
+  onOpen,
 }: {
   stringName: string;
   photos: PhotoRecord[];
-  onFullscreen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, fileId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-
-  // Group by phase
   const byPhase = new Map<string, PhotoRecord[]>();
   for (const p of photos) {
-    const key = p.phase || "Uncategorised";
+    const key = p.phaseLink || "Uncategorised";
     if (!byPhase.has(key)) byPhase.set(key, []);
     byPhase.get(key)!.push(p);
   }
-
-  // Sort phases by phaseOrder then name
-  const sortedPhases = [...byPhase.entries()].sort(([ka, va], [kb, vb]) => {
+  const sortedPhases = [...byPhase.entries()].sort(([, va], [, vb]) => {
     const oa = Number(va[0]?.phaseOrder) || 999;
     const ob = Number(vb[0]?.phaseOrder) || 999;
-    return oa !== ob ? oa - ob : ka.localeCompare(kb);
+    return oa - ob;
   });
-
   return (
     <div className="border rounded-lg overflow-hidden">
       <button
         className="flex items-center gap-3 w-full p-4 bg-muted/50 hover:bg-muted text-left transition-colors"
         onClick={() => setExpanded(e => !e)}
       >
-        {expanded ? (
-          <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        )}
+        {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
         <Wind className="w-4 h-4 text-blue-500 flex-shrink-0" />
         <span className="font-semibold">{stringName}</span>
         <Badge variant="outline" className="ml-1 text-xs">{photos.length} photos</Badge>
         <span className="text-xs text-muted-foreground ml-auto">{sortedPhases.length} phase{sortedPhases.length !== 1 ? "s" : ""}</span>
       </button>
-
       {expanded && (
         <div className="p-4 space-y-6 divide-y divide-border">
           {sortedPhases.map(([phase, phasePhotos]) => (
             <div key={phase} className="pt-4 first:pt-0">
-              <PhaseSection phase={phase} photos={phasePhotos} onFullscreen={onFullscreen} />
+              <PhaseSection phase={phase} photos={phasePhotos} onOpen={onOpen} />
             </div>
           ))}
         </div>
@@ -340,7 +475,7 @@ export default function DrivePhotos() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const handleFullscreen = useCallback((photo: PhotoRecord, fileId: string) => {
+  const handleOpen = useCallback((photo: PhotoRecord, fileId: string) => {
     setFullscreen({ photo, fileId });
   }, []);
 
@@ -349,34 +484,29 @@ export default function DrivePhotos() {
     refetch();
   };
 
-  // Filter photos
   const allPhotos = data?.photos ?? [];
   let filtered = allPhotos;
-  if (selectedTower) filtered = filtered.filter(p => p.tower === selectedTower);
+  if (selectedTower) filtered = filtered.filter(p => p.locationLink === selectedTower);
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(p =>
       p.label.toLowerCase().includes(q) ||
       p.reqImgType.toLowerCase().includes(q) ||
-      p.phase.toLowerCase().includes(q) ||
-      p.string.toLowerCase().includes(q) ||
-      p.tower.toLowerCase().includes(q) ||
+      p.phaseLink.toLowerCase().includes(q) ||
+      p.cableLink.toLowerCase().includes(q) ||
+      p.locationLink.toLowerCase().includes(q) ||
       p.photoId.toLowerCase().includes(q)
     );
   }
 
-  // Group by string then phase
   const byString = new Map<string, PhotoRecord[]>();
   for (const p of filtered) {
-    const key = p.string || "Unknown String";
+    const key = p.cableLink || "Unknown String";
     if (!byString.has(key)) byString.set(key, []);
     byString.get(key)!.push(p);
   }
   const sortedStrings = [...byString.entries()].sort(([a], [b]) => a.localeCompare(b));
-
   const towers = data?.meta.towers ?? [];
-
-  // Stats
   const photoCount = filtered.filter(p => p.type === "photo").length;
   const sigCount   = filtered.filter(p => p.type === "signature").length;
 
@@ -391,26 +521,19 @@ export default function DrivePhotos() {
       )}
 
       <div className="p-6 space-y-5">
-        {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Drive Photos</h1>
             <p className="text-muted-foreground mt-1">
-              Photos from the CVOW SmartBuild spreadsheet, served directly from Google Drive.
+              Photos from CVOW SmartBuild — click any image to view full metadata.
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClearCache}
-            disabled={isFetching}
-          >
+          <Button variant="outline" size="sm" onClick={handleClearCache} disabled={isFetching}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
             {isFetching ? "Refreshing…" : "Refresh"}
           </Button>
         </div>
 
-        {/* Stats */}
         {!isLoading && data && (
           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
             <span><strong className="text-foreground">{filtered.length}</strong> records</span>
@@ -420,55 +543,38 @@ export default function DrivePhotos() {
           </div>
         )}
 
-        {/* Tower filter */}
         {!isLoading && towers.length > 0 && (
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-xs text-muted-foreground font-medium">Tower:</span>
-            <Button
-              size="sm"
-              variant={selectedTower === null ? "default" : "outline"}
-              onClick={() => setSelectedTower(null)}
-              className="h-7 text-xs"
-            >
+            <Button size="sm" variant={!selectedTower ? "default" : "outline"} onClick={() => setSelectedTower(null)} className="h-7 text-xs">
               All ({towers.length})
             </Button>
             {towers.map(t => (
-              <Button
-                key={t}
-                size="sm"
-                variant={selectedTower === t ? "default" : "outline"}
-                onClick={() => setSelectedTower(t)}
-                className="h-7 text-xs"
-              >
+              <Button key={t} size="sm" variant={selectedTower === t ? "default" : "outline"} onClick={() => setSelectedTower(t)} className="h-7 text-xs">
                 {t}
               </Button>
             ))}
           </div>
         )}
 
-        {/* Search */}
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             className="pl-9 h-9"
-            placeholder="Search by label, type, phase…"
+            placeholder="Search label, type, phase, tower…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
           {searchQuery && (
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => setSearchQuery("")}
-            >
+            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearchQuery("")}>
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
-        {/* Loading */}
         {isLoading && (
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {Array.from({ length: 12 }).map((_, i) => (
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {Array.from({ length: 10 }).map((_, i) => (
               <div key={i} className="space-y-2">
                 <Skeleton className="aspect-[4/3] rounded-lg" />
                 <Skeleton className="h-3 w-3/4" />
@@ -478,7 +584,6 @@ export default function DrivePhotos() {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <Card className="border-destructive bg-destructive/5">
             <CardContent className="pt-6 flex items-center gap-3">
@@ -491,7 +596,6 @@ export default function DrivePhotos() {
           </Card>
         )}
 
-        {/* Empty */}
         {!isLoading && !error && filtered.length === 0 && (
           <Card className="border-dashed bg-muted/30">
             <CardContent className="pt-10 pb-10 flex flex-col items-center text-center gap-3">
@@ -506,16 +610,10 @@ export default function DrivePhotos() {
           </Card>
         )}
 
-        {/* Content */}
         {!isLoading && !error && sortedStrings.length > 0 && (
           <div className="space-y-4">
             {sortedStrings.map(([stringName, photos]) => (
-              <StringSection
-                key={stringName}
-                stringName={stringName}
-                photos={photos}
-                onFullscreen={handleFullscreen}
-              />
+              <StringSection key={stringName} stringName={stringName} photos={photos} onOpen={handleOpen} />
             ))}
           </div>
         )}

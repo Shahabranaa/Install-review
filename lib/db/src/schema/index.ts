@@ -9,3 +9,4 @@ export * from "./issues";
 export * from "./decisions";
 export * from "./documents";
 export * from "./users";
+export * from "./sheet-photos";

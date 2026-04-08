@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, sheetPhotosTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
 
@@ -8,40 +10,74 @@ const router: IRouter = Router();
 
 export interface PhotoRecord {
   photoId: string;
-  label: string;
-  status: string;
-  approval: string;
+  // Files
+  photoUpload: string;
+  resizedPhoto: string;
+  signatureCapture: string;
+  drawingMarkup: string;
+  // Derived
   type: "photo" | "signature" | "drawing" | "unknown";
   filePath: string;
-  tower: string;
-  string: string;
-  phase: string;
+  // Location / phase
+  cableLink: string;
+  cableSide: string;
+  locationLink: string;
+  photoType: string;
+  phaseLink: string;
   phaseOrder: string;
+  photoString: string;
+  // Required image
   reqImgType: string;
   reqImgOrder: string;
-  createdAt: string;
-  createdBy: string;
+  // Responses & notes
+  photoResponse: string;
+  dataCaptureResponse: string;
   comments: string;
-  response: string;
+  terminationCompletedBy: string;
+  continuingNotes: string;
+  previousResponseImport: string;
+  // Status & review
+  approval: string;
+  status: string;
+  reviewDetails: string;
+  // Label & hierarchy
+  label: string;
+  parentControl: string;
+  parent: string;
+  // Creation info
+  creationDateTime: string;
+  creationDate: string;
+  creationUser: string;
+  creationLocation: string;
+  // Edit info
+  editCount: string;
+  editDateTime: string;
+  editDate: string;
+  editUser: string;
+  editLocation: string;
+  // System
+  updateFlag: string;
+  automationTrigger: string;
+  formType: string;
+  testFlag: string;
+  temp: string;
+  temp2: string;
+  temp3: string;
+  temp4: string;
+  resizedChecked: string;
 }
 
 // ─── Known folder IDs ────────────────────────────────────────────────────────
 
-// Photo_Images (signatures / basic uploads)
-const PHOTO_IMAGES_FOLDER_ID = "1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0";
-// Photo_Images_2_Stamped_v2 (stamped photo uploads, organised by OSP/Tower/String)
+const PHOTO_IMAGES_FOLDER_ID         = "1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0";
 const PHOTO_IMAGES_2_STAMPED_FOLDER_ID = "18dMOuEuKFu_prnx9FW_FW1y2nFUebW6C";
 
 // ─── In-memory caches ────────────────────────────────────────────────────────
 
-// Sheet data cache (5 minute TTL)
 let sheetCache: { data: PhotoRecord[]; ts: number } | null = null;
 const SHEET_TTL_MS = 5 * 60 * 1000;
 
-// Drive file-id cache: photoId → fileId (permanent)
-const fileIdCache = new Map<string, string | null>();
-
-// Folder ID cache: "parentId/name" → childFolderId
+const fileIdCache  = new Map<string, string | null>();
 const folderIdCache = new Map<string, string | null>();
 
 // ─── Drive helpers ────────────────────────────────────────────────────────────
@@ -49,7 +85,6 @@ const folderIdCache = new Map<string, string | null>();
 async function findChildFolder(parentId: string, name: string): Promise<string | null> {
   const key = `${parentId}/${name}`;
   if (folderIdCache.has(key)) return folderIdCache.get(key)!;
-
   try {
     const safeName = name.replace(/'/g, "\\'");
     const params = new URLSearchParams({
@@ -89,50 +124,29 @@ async function searchFileInFolder(folderId: string, photoId: string): Promise<st
   }
 }
 
-/**
- * Resolve a PhotoRecord's Drive file ID using path-aware folder navigation.
- * Signature/drawing files: search in Photo_Images/
- * Photo_Upload files: parse path, navigate OSP→Tower→String subfolders
- */
 async function resolveFileId(photo: PhotoRecord): Promise<string | null> {
   const { photoId, type, filePath } = photo;
   if (!photoId) return null;
-
   if (fileIdCache.has(photoId)) return fileIdCache.get(photoId)!;
 
   let fileId: string | null = null;
 
   if (type === "signature" || type === "drawing") {
-    // Files live in Photo_Images/
     fileId = await searchFileInFolder(PHOTO_IMAGES_FOLDER_ID, photoId);
   } else if (type === "photo" && filePath) {
-    // Path format: /Photo_Images_2_Stamped_v2/{OSP}/{Tower}/{String}/filename
-    // or: Photo_Images_2_Stamped_v2/{OSP}/{Tower}/{String}/filename
     const parts = filePath.replace(/^\//, "").split("/");
-    // parts[0] = Photo_Images_2_Stamped_v2, parts[1] = OSP, parts[2] = Tower, parts[3] = String
     if (parts.length >= 4) {
-      const ospName    = parts[1];
-      const towerName  = parts[2];
-      const stringName = parts[3];
-
-      const ospId    = await findChildFolder(PHOTO_IMAGES_2_STAMPED_FOLDER_ID, ospName);
+      const ospId = await findChildFolder(PHOTO_IMAGES_2_STAMPED_FOLDER_ID, parts[1]);
       if (ospId) {
-        const towerId = await findChildFolder(ospId, towerName);
+        const towerId = await findChildFolder(ospId, parts[2]);
         if (towerId) {
-          const stringId = await findChildFolder(towerId, stringName);
-          if (stringId) {
-            fileId = await searchFileInFolder(stringId, photoId);
-          }
+          const stringId = await findChildFolder(towerId, parts[3]);
+          if (stringId) fileId = await searchFileInFolder(stringId, photoId);
         }
       }
     }
-
-    // Fallback: try Photo_Images
-    if (!fileId) {
-      fileId = await searchFileInFolder(PHOTO_IMAGES_FOLDER_ID, photoId);
-    }
+    if (!fileId) fileId = await searchFileInFolder(PHOTO_IMAGES_FOLDER_ID, photoId);
   } else if (filePath) {
-    // Unknown type: try Photo_Images as fallback
     fileId = await searchFileInFolder(PHOTO_IMAGES_FOLDER_ID, photoId);
   }
 
@@ -140,99 +154,273 @@ async function resolveFileId(photo: PhotoRecord): Promise<string | null> {
   return fileId;
 }
 
-// ─── Spreadsheet helpers ─────────────────────────────────────────────────────
+// ─── Sheet parsing ────────────────────────────────────────────────────────────
 
-async function fetchSheetPhotos(): Promise<PhotoRecord[]> {
-  const now = Date.now();
-  if (sheetCache && now - sheetCache.ts < SHEET_TTL_MS) return sheetCache.data;
-
-  const response = await sheetsRequest(`/${SPREADSHEET_ID}/values/Photo!A1:AQ2000`);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Sheets API ${response.status}: ${text}`);
-  }
-
-  const data = await response.json() as { values?: string[][] };
-  const rows = data.values ?? [];
+function parseRows(rows: string[][]): PhotoRecord[] {
   if (rows.length === 0) return [];
-
   const headers = rows[0];
   const idx = (name: string) => headers.indexOf(name);
 
   const H = {
-    photoUpload:  idx("Photo_Upload"),
-    sigCapture:   idx("Signature_Capture"),
-    drawMarkup:   idx("Drawing_Markup"),
-    cableLink:    idx("Photo_Cable_Link"),
-    locationLink: idx("Photo_Location_Link"),
-    phaseLink:    idx("Photo_Installation_Phase_Link"),
-    phaseOrder:   idx("Photo_Installation_Phase_Order"),
-    reqImgType:   idx("Req_Img_Type"),
-    reqImgOrder:  idx("Req_Img_Order"),
-    label:        idx("Photo_Label"),
-    status:       idx("Photo_Status"),
-    approval:     idx("Photo_Approval"),
-    response:     idx("Photo_Response"),
-    comments:     idx("Photo_Comments"),
-    photoId:      idx("PhotoID"),
-    createdAt:    idx("CreationDateTime"),
-    createdBy:    idx("CreationUser"),
+    photoUpload:            idx("Photo_Upload"),
+    resizedPhoto:           idx("Resized_Photo"),
+    sigCapture:             idx("Signature_Capture"),
+    drawMarkup:             idx("Drawing_Markup"),
+    cableLink:              idx("Photo_Cable_Link"),
+    cableSide:              idx("Photo_Cable_Side"),
+    locationLink:           idx("Photo_Location_Link"),
+    photoType:              idx("Photo_Type"),
+    phaseLink:              idx("Photo_Installation_Phase_Link"),
+    phaseOrder:             idx("Photo_Installation_Phase_Order"),
+    reqImgType:             idx("Req_Img_Type"),
+    reqImgOrder:            idx("Req_Img_Order"),
+    photoResponse:          idx("Photo_Response"),
+    dataCaptureResponse:    idx("Photo_Data_Capture_Response"),
+    comments:               idx("Photo_Comments"),
+    terminationCompletedBy: idx("Termination_Completed_By"),
+    approval:               idx("Photo_Approval"),
+    status:                 idx("Photo_Status"),
+    reviewDetails:          idx("Photo_Review_Details"),
+    previousResponseImport: idx("Previous_Response_Import"),
+    continuingNotes:        idx("Continuing_Notes"),
+    label:                  idx("Photo_Label"),
+    parentControl:          idx("Photo_Parent_Control"),
+    parent:                 idx("Photo_Parent"),
+    photoId:                idx("PhotoID"),
+    creationDateTime:       idx("CreationDateTime"),
+    creationDate:           idx("CreationDate"),
+    creationUser:           idx("CreationUser"),
+    creationLocation:       idx("CreationLocation"),
+    editCount:              idx("EditCount"),
+    editDateTime:           idx("EditDateTime"),
+    editDate:               idx("EditDate"),
+    editUser:               idx("EditUser"),
+    editLocation:           idx("EditLocation"),
+    updateFlag:             idx("Update"),
+    automationTrigger:      idx("Automation_Trigger"),
+    formType:               idx("Form_Type"),
+    testFlag:               idx("Test_Flag"),
+    photoString:            idx("Photo_String"),
+    temp:                   idx("Temp"),
+    temp2:                  idx("Temp2"),
+    temp3:                  idx("Temp3"),
+    temp4:                  idx("Temp4"),
+    resizedChecked:         idx("Resized_Checked"),
   };
 
-  const photos: PhotoRecord[] = [];
+  const get = (r: string[], i: number) => (i >= 0 ? r[i] ?? "" : "");
 
+  const photos: PhotoRecord[] = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    const photoId = r[H.photoId] ?? "";
-    const upload  = r[H.photoUpload] ?? "";
-    const sig     = r[H.sigCapture]  ?? "";
-    const draw    = r[H.drawMarkup]  ?? "";
-    const tower   = r[H.locationLink] ?? "";
-    const cable   = r[H.cableLink]   ?? "";
+    const photoId = get(r, H.photoId);
+    const upload  = get(r, H.photoUpload);
+    const sig     = get(r, H.sigCapture);
+    const draw    = get(r, H.drawMarkup);
+    const tower   = get(r, H.locationLink);
+    const cable   = get(r, H.cableLink);
 
     if (!photoId && !upload && !sig && !draw) continue;
     if (!tower && !cable) continue;
 
     let filePath = "";
     let type: PhotoRecord["type"] = "unknown";
-
-    if (upload)     { filePath = upload; type = "photo";     }
-    else if (sig)   { filePath = sig;    type = "signature"; }
-    else if (draw)  { filePath = draw;   type = "drawing";   }
+    if (upload)    { filePath = upload; type = "photo";     }
+    else if (sig)  { filePath = sig;    type = "signature"; }
+    else if (draw) { filePath = draw;   type = "drawing";   }
 
     photos.push({
       photoId,
-      label:       r[H.label]      ?? "",
-      status:      r[H.status]     ?? "",
-      approval:    r[H.approval]   ?? "",
+      photoUpload:            upload,
+      resizedPhoto:           get(r, H.resizedPhoto),
+      signatureCapture:       sig,
+      drawingMarkup:          draw,
       type,
       filePath,
-      tower,
-      string:      cable,
-      phase:       r[H.phaseLink]  ?? "",
-      phaseOrder:  r[H.phaseOrder] ?? "",
-      reqImgType:  r[H.reqImgType] ?? "",
-      reqImgOrder: r[H.reqImgOrder]?? "",
-      createdAt:   r[H.createdAt]  ?? "",
-      createdBy:   r[H.createdBy]  ?? "",
-      comments:    r[H.comments]   ?? "",
-      response:    r[H.response]   ?? "",
+      cableLink:              cable,
+      cableSide:              get(r, H.cableSide),
+      locationLink:           tower,
+      photoType:              get(r, H.photoType),
+      phaseLink:              get(r, H.phaseLink),
+      phaseOrder:             get(r, H.phaseOrder),
+      photoString:            get(r, H.photoString),
+      reqImgType:             get(r, H.reqImgType),
+      reqImgOrder:            get(r, H.reqImgOrder),
+      photoResponse:          get(r, H.photoResponse),
+      dataCaptureResponse:    get(r, H.dataCaptureResponse),
+      comments:               get(r, H.comments),
+      terminationCompletedBy: get(r, H.terminationCompletedBy),
+      continuingNotes:        get(r, H.continuingNotes),
+      previousResponseImport: get(r, H.previousResponseImport),
+      approval:               get(r, H.approval),
+      status:                 get(r, H.status),
+      reviewDetails:          get(r, H.reviewDetails),
+      label:                  get(r, H.label),
+      parentControl:          get(r, H.parentControl),
+      parent:                 get(r, H.parent),
+      creationDateTime:       get(r, H.creationDateTime),
+      creationDate:           get(r, H.creationDate),
+      creationUser:           get(r, H.creationUser),
+      creationLocation:       get(r, H.creationLocation),
+      editCount:              get(r, H.editCount),
+      editDateTime:           get(r, H.editDateTime),
+      editDate:               get(r, H.editDate),
+      editUser:               get(r, H.editUser),
+      editLocation:           get(r, H.editLocation),
+      updateFlag:             get(r, H.updateFlag),
+      automationTrigger:      get(r, H.automationTrigger),
+      formType:               get(r, H.formType),
+      testFlag:               get(r, H.testFlag),
+      temp:                   get(r, H.temp),
+      temp2:                  get(r, H.temp2),
+      temp3:                  get(r, H.temp3),
+      temp4:                  get(r, H.temp4),
+      resizedChecked:         get(r, H.resizedChecked),
     });
   }
-
-  sheetCache = { data: photos, ts: now };
   return photos;
+}
+
+async function fetchSheetPhotos(): Promise<PhotoRecord[]> {
+  const now = Date.now();
+  if (sheetCache && now - sheetCache.ts < SHEET_TTL_MS) return sheetCache.data;
+
+  const response = await sheetsRequest(`/${SPREADSHEET_ID}/values/Photo!A1:BF2000`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Sheets API ${response.status}: ${text}`);
+  }
+
+  const data = await response.json() as { values?: string[][] };
+  const photos = parseRows(data.values ?? []);
+  sheetCache = { data: photos, ts: now };
+
+  // Upsert to DB in background (don't await — keep response fast)
+  upsertPhotosToDb(photos).catch(e =>
+    console.error("Background sheet_photos upsert error:", e)
+  );
+
+  return photos;
+}
+
+// ─── DB upsert ────────────────────────────────────────────────────────────────
+
+async function upsertPhotosToDb(photos: PhotoRecord[]): Promise<void> {
+  if (photos.length === 0) return;
+  const BATCH = 50;
+  for (let i = 0; i < photos.length; i += BATCH) {
+    const batch = photos.slice(i, i + BATCH);
+    const values = batch.map(p => ({
+      photoId:                p.photoId || null,
+      photoUpload:            p.photoUpload   || null,
+      resizedPhoto:           p.resizedPhoto  || null,
+      signatureCapture:       p.signatureCapture || null,
+      drawingMarkup:          p.drawingMarkup || null,
+      cableLink:              p.cableLink     || null,
+      cableSide:              p.cableSide     || null,
+      locationLink:           p.locationLink  || null,
+      photoType:              p.photoType     || null,
+      phaseLink:              p.phaseLink     || null,
+      phaseOrder:             p.phaseOrder    || null,
+      photoString:            p.photoString   || null,
+      reqImgType:             p.reqImgType    || null,
+      reqImgOrder:            p.reqImgOrder   || null,
+      photoResponse:          p.photoResponse || null,
+      dataCaptureResponse:    p.dataCaptureResponse || null,
+      comments:               p.comments      || null,
+      terminationCompletedBy: p.terminationCompletedBy || null,
+      continuingNotes:        p.continuingNotes || null,
+      previousResponseImport: p.previousResponseImport || null,
+      approval:               p.approval      || null,
+      status:                 p.status        || null,
+      reviewDetails:          p.reviewDetails || null,
+      label:                  p.label         || null,
+      parentControl:          p.parentControl || null,
+      parent:                 p.parent        || null,
+      creationDateTime:       p.creationDateTime || null,
+      creationDate:           p.creationDate  || null,
+      creationUser:           p.creationUser  || null,
+      creationLocation:       p.creationLocation || null,
+      editCount:              p.editCount     || null,
+      editDateTime:           p.editDateTime  || null,
+      editDate:               p.editDate      || null,
+      editUser:               p.editUser      || null,
+      editLocation:           p.editLocation  || null,
+      updateFlag:             p.updateFlag    || null,
+      automationTrigger:      p.automationTrigger || null,
+      formType:               p.formType      || null,
+      testFlag:               p.testFlag      || null,
+      temp:                   p.temp          || null,
+      temp2:                  p.temp2         || null,
+      temp3:                  p.temp3         || null,
+      temp4:                  p.temp4         || null,
+      resizedChecked:         p.resizedChecked || null,
+      syncedAt:               new Date(),
+    }));
+    await db
+      .insert(sheetPhotosTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: sheetPhotosTable.photoId,
+        set: {
+          photoUpload:            sheetPhotosTable.photoUpload,
+          resizedPhoto:           sheetPhotosTable.resizedPhoto,
+          signatureCapture:       sheetPhotosTable.signatureCapture,
+          drawingMarkup:          sheetPhotosTable.drawingMarkup,
+          cableLink:              sheetPhotosTable.cableLink,
+          cableSide:              sheetPhotosTable.cableSide,
+          locationLink:           sheetPhotosTable.locationLink,
+          photoType:              sheetPhotosTable.photoType,
+          phaseLink:              sheetPhotosTable.phaseLink,
+          phaseOrder:             sheetPhotosTable.phaseOrder,
+          photoString:            sheetPhotosTable.photoString,
+          reqImgType:             sheetPhotosTable.reqImgType,
+          reqImgOrder:            sheetPhotosTable.reqImgOrder,
+          photoResponse:          sheetPhotosTable.photoResponse,
+          dataCaptureResponse:    sheetPhotosTable.dataCaptureResponse,
+          comments:               sheetPhotosTable.comments,
+          terminationCompletedBy: sheetPhotosTable.terminationCompletedBy,
+          continuingNotes:        sheetPhotosTable.continuingNotes,
+          previousResponseImport: sheetPhotosTable.previousResponseImport,
+          approval:               sheetPhotosTable.approval,
+          status:                 sheetPhotosTable.status,
+          reviewDetails:          sheetPhotosTable.reviewDetails,
+          label:                  sheetPhotosTable.label,
+          parentControl:          sheetPhotosTable.parentControl,
+          parent:                 sheetPhotosTable.parent,
+          creationDateTime:       sheetPhotosTable.creationDateTime,
+          creationDate:           sheetPhotosTable.creationDate,
+          creationUser:           sheetPhotosTable.creationUser,
+          creationLocation:       sheetPhotosTable.creationLocation,
+          editCount:              sheetPhotosTable.editCount,
+          editDateTime:           sheetPhotosTable.editDateTime,
+          editDate:               sheetPhotosTable.editDate,
+          editUser:               sheetPhotosTable.editUser,
+          editLocation:           sheetPhotosTable.editLocation,
+          updateFlag:             sheetPhotosTable.updateFlag,
+          automationTrigger:      sheetPhotosTable.automationTrigger,
+          formType:               sheetPhotosTable.formType,
+          testFlag:               sheetPhotosTable.testFlag,
+          temp:                   sheetPhotosTable.temp,
+          temp2:                  sheetPhotosTable.temp2,
+          temp3:                  sheetPhotosTable.temp3,
+          temp4:                  sheetPhotosTable.temp4,
+          resizedChecked:         sheetPhotosTable.resizedChecked,
+          syncedAt:               new Date(),
+        },
+      });
+  }
+  console.log(`[sheet-photos] Upserted ${photos.length} records to DB`);
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// GET /api/photos/sheet - all photo records from the spreadsheet
+// GET /api/photos/sheet
 router.get("/photos/sheet", async (req, res): Promise<void> => {
   if (!isSheetsConfigured()) {
     res.status(503).json({ error: "Google Sheets not configured" });
     return;
   }
-
   try {
     let photos = await fetchSheetPhotos();
 
@@ -240,60 +428,105 @@ router.get("/photos/sheet", async (req, res): Promise<void> => {
     const string = req.query.string as string | undefined;
     const phase  = req.query.phase  as string | undefined;
 
-    if (tower)  photos = photos.filter(p => p.tower === tower);
-    if (string) photos = photos.filter(p => p.string === string);
-    if (phase)  photos = photos.filter(p => p.phase === phase);
+    if (tower)  photos = photos.filter(p => p.locationLink === tower);
+    if (string) photos = photos.filter(p => p.cableLink === string);
+    if (phase)  photos = photos.filter(p => p.phaseLink === phase);
 
     const allPhotos = await fetchSheetPhotos();
-    const towers  = [...new Set(allPhotos.map(p => p.tower).filter(Boolean))].sort();
-    const strings = [...new Set(allPhotos.map(p => p.string).filter(Boolean))].sort();
-    const phases  = [...new Set(allPhotos.map(p => p.phase).filter(Boolean))].sort();
+    const towers  = [...new Set(allPhotos.map(p => p.locationLink).filter(Boolean))].sort();
+    const strings = [...new Set(allPhotos.map(p => p.cableLink).filter(Boolean))].sort();
+    const phases  = [...new Set(allPhotos.map(p => p.phaseLink).filter(Boolean))].sort();
 
     res.json({ photos, meta: { total: photos.length, towers, strings, phases } });
   } catch (err: unknown) {
     console.error("Photos sheet error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: msg });
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-// GET /api/photos/resolve/:photoId - resolve a photoId to a Drive file ID
-router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
-  if (!isSheetsConfigured()) {
-    res.status(503).json({ error: "Drive not configured" });
-    return;
+// GET /api/photos/db/:photoId — read a single record from DB
+router.get("/photos/db/:photoId", async (req, res): Promise<void> => {
+  try {
+    const record = await db
+      .select()
+      .from(sheetPhotosTable)
+      .where(eq(sheetPhotosTable.photoId, req.params.photoId))
+      .limit(1);
+    if (!record[0]) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(record[0]);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
 
+// PATCH /api/photos/db/:photoId — update review fields
+router.patch("/photos/db/:photoId", async (req, res): Promise<void> => {
+  try {
+    const allowed = ["approval", "status", "reviewDetails", "comments"] as const;
+    const update: Record<string, string> = {};
+    for (const k of allowed) {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
+    if (Object.keys(update).length === 0) {
+      res.status(400).json({ error: "No valid fields to update" });
+      return;
+    }
+    await db
+      .update(sheetPhotosTable)
+      .set({ ...update, updatedAt: new Date() })
+      .where(eq(sheetPhotosTable.photoId, req.params.photoId));
+    res.json({ ok: true });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/photos/resolve/:photoId
+router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
+  if (!isSheetsConfigured()) { res.status(503).json({ error: "Drive not configured" }); return; }
   try {
     const { photoId } = req.params;
     if (!photoId || !/^[a-f0-9]{6,12}$/i.test(photoId)) {
-      res.status(400).json({ error: "Invalid photoId" });
+      res.status(400).json({ error: "Invalid photoId" }); return;
+    }
+
+    // Check DB cache first
+    const dbRow = await db
+      .select({ driveFileId: sheetPhotosTable.driveFileId })
+      .from(sheetPhotosTable)
+      .where(eq(sheetPhotosTable.photoId, photoId))
+      .limit(1);
+    if (dbRow[0]?.driveFileId) {
+      fileIdCache.set(photoId, dbRow[0].driveFileId);
+      res.json({ photoId, fileId: dbRow[0].driveFileId });
       return;
     }
 
-    // Try to find the photo record in the cached sheet data to know the type/path
     const allPhotos = await fetchSheetPhotos();
-    const record = allPhotos.find(p => p.photoId === photoId);
+    const record = allPhotos.find(p => p.photoId === photoId) ?? {
+      photoId, photoUpload: "", resizedPhoto: "", signatureCapture: "",
+      drawingMarkup: "", type: "unknown" as const, filePath: "",
+      cableLink: "", cableSide: "", locationLink: "", photoType: "",
+      phaseLink: "", phaseOrder: "", photoString: "", reqImgType: "",
+      reqImgOrder: "", photoResponse: "", dataCaptureResponse: "",
+      comments: "", terminationCompletedBy: "", continuingNotes: "",
+      previousResponseImport: "", approval: "", status: "",
+      reviewDetails: "", label: "", parentControl: "", parent: "",
+      creationDateTime: "", creationDate: "", creationUser: "",
+      creationLocation: "", editCount: "", editDateTime: "", editDate: "",
+      editUser: "", editLocation: "", updateFlag: "", automationTrigger: "",
+      formType: "", testFlag: "", temp: "", temp2: "", temp3: "", temp4: "",
+      resizedChecked: "",
+    };
 
-    if (!record && !fileIdCache.has(photoId)) {
-      // Create a minimal record for fallback resolution
-      const fallback: PhotoRecord = {
-        photoId, label: "", status: "", approval: "", type: "unknown",
-        filePath: "", tower: "", string: "", phase: "", phaseOrder: "",
-        reqImgType: "", reqImgOrder: "", createdAt: "", createdBy: "",
-        comments: "", response: "",
-      };
-      const fileId = await resolveFileId(fallback);
-      if (!fileId) { res.status(404).json({ error: "File not found in Drive" }); return; }
-      res.json({ photoId, fileId });
-      return;
-    }
+    const fileId = await resolveFileId(record);
+    if (!fileId) { res.status(404).json({ error: "File not found in Drive" }); return; }
 
-    const fileId = record ? await resolveFileId(record) : fileIdCache.get(photoId) ?? null;
-    if (!fileId) {
-      res.status(404).json({ error: "File not found in Drive" });
-      return;
-    }
+    // Persist resolved fileId to DB
+    await db
+      .update(sheetPhotosTable)
+      .set({ driveFileId: fileId })
+      .where(eq(sheetPhotosTable.photoId, photoId));
 
     res.json({ photoId, fileId });
   } catch (err: unknown) {
@@ -302,7 +535,7 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
   }
 });
 
-// POST /api/photos/cache-clear - clear all caches
+// POST /api/photos/cache-clear
 router.post("/photos/cache-clear", (_req, res): void => {
   sheetCache = null;
   fileIdCache.clear();
