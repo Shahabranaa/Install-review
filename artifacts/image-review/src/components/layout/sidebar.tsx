@@ -104,7 +104,7 @@ export function AppSidebar() {
                 )}
                 aria-hidden="true"
               />
-              <span className="flex-1 text-left">Images</span>
+              <span className="flex-1 text-left">Photos</span>
               {imagesOpen
                 ? <ChevronDown className="h-4 w-4 opacity-60" />
                 : <ChevronRight className="h-4 w-4 opacity-60" />}

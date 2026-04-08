@@ -589,7 +589,7 @@ export default function DrivePhotos() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              Images
+              Photos
               {approvalFilter && (
                 <span className="ml-3 text-lg font-normal text-muted-foreground">· {approvalFilter}</span>
               )}
