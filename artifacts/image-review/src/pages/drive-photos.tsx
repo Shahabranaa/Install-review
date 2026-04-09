@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useContext, createContext } from "react";
 import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import ReactCrop, { type Crop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 import {
   Image as ImageIcon,
   Camera,
@@ -30,9 +33,14 @@ import {
   Activity,
   FileText,
   MessageSquare,
+  ClipboardCheck,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
+
+// ─── Review overrides context ─────────────────────────────────────────────────
+// Maps photoId → override approval string so cards update immediately after review
+const ReviewOverridesContext = createContext<Map<string, string>>(new Map());
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,12 +103,12 @@ interface SheetResponse {
 function getStatusBadge(status: string, approval: string) {
   const a = (approval ?? "").toLowerCase();
   const s = (status ?? "").toLowerCase();
-  if (a === "approved" || a === "checked")
+  if (a === "approved" || a === "checked" || a === "verified")
     return <Badge className="bg-green-600 text-white text-xs"><CheckCircle2 className="w-2.5 h-2.5 mr-1" />Approved</Badge>;
-  if (s === "pending")
+  if (a === "rejected" || s === "rejected")
+    return <Badge variant="destructive" className="text-xs"><AlertTriangle className="w-2.5 h-2.5 mr-1" />Rejected</Badge>;
+  if (s === "pending" || a === "unchecked" || !a)
     return <Badge className="bg-amber-500 text-white text-xs"><Clock className="w-2.5 h-2.5 mr-1" />Pending</Badge>;
-  if (s === "rejected")
-    return <Badge variant="destructive" className="text-xs">Rejected</Badge>;
   return <Badge variant="outline" className="text-xs">{status || "—"}</Badge>;
 }
 
@@ -150,6 +158,9 @@ function PhotoCard({
   photo: PhotoRecord;
   onOpen: (photo: PhotoRecord, fileId: string) => void;
 }) {
+  const reviewOverrides = useContext(ReviewOverridesContext);
+  const effectiveApproval = reviewOverrides.get(photo.photoId) ?? photo.approval;
+
   const { data: resolved } = useQuery<{ photoId: string; fileId: string } | null>({
     queryKey: ["photo-resolve", photo.photoId],
     queryFn: async () => {
@@ -206,7 +217,7 @@ function PhotoCard({
           {photo.label || <span className="text-muted-foreground italic">No label</span>}
         </p>
         <div className="flex items-center justify-between gap-1 flex-wrap">
-          {getStatusBadge(photo.status, photo.approval)}
+          {getStatusBadge(photo.status, effectiveApproval)}
           {photo.reqImgType && <span className="text-xs font-mono text-muted-foreground">{photo.reqImgType}</span>}
         </div>
         {(photo.creationUser || photo.photoResponse) && (
@@ -222,16 +233,92 @@ function PhotoCard({
 
 // ─── Fullscreen viewer ────────────────────────────────────────────────────────
 
+// ─── DB review data type ──────────────────────────────────────────────────────
+interface DbReview {
+  approval: string | null;
+  reviewComment: string | null;
+  cropX: number | null;
+  cropY: number | null;
+  cropWidth: number | null;
+  cropHeight: number | null;
+}
+
 function FullscreenViewer({
   photo,
   fileId,
   onClose,
+  onReview,
 }: {
   photo: PhotoRecord;
   fileId: string;
   onClose: () => void;
+  onReview: (photoId: string, approval: string) => void;
 }) {
   const imageUrl = `${BASE_URL}api/drive/image/${fileId}`;
+
+  // Review panel state
+  const [reviewMode, setReviewMode] = useState(false);
+  const [decision, setDecision] = useState<"Approved" | "Rejected" | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
+  const [crop, setCrop] = useState<Crop>({ unit: "%", x: 0, y: 0, width: 0, height: 0 });
+  const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [dbReview, setDbReview] = useState<DbReview | null>(null);
+
+  // Fetch existing DB review on open
+  useEffect(() => {
+    if (!photo.photoId) return;
+    fetch(`${BASE_URL}api/photos/db/${photo.photoId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((rec: DbReview | null) => { if (rec) setDbReview(rec); })
+      .catch(() => {});
+  }, [photo.photoId]);
+
+  const enterReviewMode = () => {
+    if (dbReview) {
+      const a = (dbReview.approval ?? "").toLowerCase();
+      setDecision(a === "approved" ? "Approved" : a === "rejected" ? "Rejected" : null);
+      setReviewComment(dbReview.reviewComment ?? "");
+      if (dbReview.cropWidth != null && dbReview.cropWidth > 0) {
+        setCrop({ unit: "%", x: dbReview.cropX ?? 0, y: dbReview.cropY ?? 0, width: dbReview.cropWidth, height: dbReview.cropHeight ?? 0 });
+      } else {
+        setCrop({ unit: "%", x: 0, y: 0, width: 0, height: 0 });
+      }
+    }
+    setSaved(false);
+    setReviewMode(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!decision) return;
+    setSubmitting(true);
+    try {
+      const body: Record<string, string | number | null> = {
+        approval: decision,
+        status: decision,
+        reviewComment: reviewComment.trim() || null,
+        cropX: crop.width > 0 ? crop.x : null,
+        cropY: crop.width > 0 ? crop.y : null,
+        cropWidth: crop.width > 0 ? crop.width : null,
+        cropHeight: crop.width > 0 ? crop.height : null,
+      };
+      const r = await fetch(`${BASE_URL}api/photos/db/${photo.photoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        setSaved(true);
+        setDbReview({ approval: decision, reviewComment: reviewComment.trim() || null, cropX: body.cropX as number | null, cropY: body.cropY as number | null, cropWidth: body.cropWidth as number | null, cropHeight: body.cropHeight as number | null });
+        onReview(photo.photoId, decision);
+        setTimeout(() => { setReviewMode(false); setSaved(false); }, 1500);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const effectiveApproval = dbReview?.approval ?? photo.approval;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 flex flex-col overflow-hidden">
@@ -245,133 +332,282 @@ function FullscreenViewer({
           <Separator orientation="vertical" className="h-4 bg-white/20" />
           <span className="text-white text-sm font-medium truncate">{photo.label || photo.photoId}</span>
         </div>
-        <button
-          className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors flex-shrink-0 ml-4"
-          onClick={onClose}
-        >
-          <X className="w-4 h-4 text-white" />
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+          {!reviewMode ? (
+            <button
+              onClick={enterReviewMode}
+              className="flex items-center gap-1.5 rounded-full bg-primary/80 hover:bg-primary px-3 py-1.5 text-xs text-white font-medium transition-colors"
+            >
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              Review
+            </button>
+          ) : (
+            <button
+              onClick={() => setReviewMode(false)}
+              className="flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs text-white font-medium transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors"
+            onClick={onClose}
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
       </div>
 
-      {/* Body: image + metadata panel */}
+      {/* Body: image + side panel */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Image */}
-        <div className="flex-1 flex items-center justify-center p-4 min-w-0">
-          <img
-            src={imageUrl}
-            alt={photo.label || photo.photoId}
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-          />
+        {/* Image area */}
+        <div className="flex-1 flex items-center justify-center p-4 min-w-0 overflow-auto bg-black/60">
+          {reviewMode ? (
+            <ReactCrop
+              crop={crop}
+              onChange={(_, percentCrop) => setCrop(percentCrop)}
+              className="max-w-full max-h-full"
+            >
+              <img
+                src={imageUrl}
+                alt={photo.label || photo.photoId}
+                style={{ maxHeight: "calc(100vh - 8rem)", objectFit: "contain" }}
+              />
+            </ReactCrop>
+          ) : (
+            <img
+              src={imageUrl}
+              alt={photo.label || photo.photoId}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          )}
         </div>
 
-        {/* Metadata panel */}
+        {/* Right panel */}
         <div className="w-80 flex-shrink-0 bg-background/95 border-l border-white/10 overflow-y-auto">
-          <div className="p-4 space-y-5">
-
-            {/* Identity */}
-            <MetaSection title="Identity">
-              <MetaRow label="Photo ID" value={photo.photoId} icon={<Hash className="w-3 h-3" />} />
-              <MetaRow label="Form Type" value={photo.formType} icon={<FileText className="w-3 h-3" />} />
-              <MetaRow label="Photo Type" value={photo.photoType} icon={<Activity className="w-3 h-3" />} />
-              <MetaRow label="Parent" value={photo.parent} />
-              <MetaRow label="Parent Control" value={photo.parentControl} />
-            </MetaSection>
-
-            <Separator />
-
-            {/* Location & Phase */}
-            <MetaSection title="Location & Phase">
-              <MetaRow label="Tower" value={photo.locationLink} icon={<Wind className="w-3 h-3" />} />
-              <MetaRow label="Cable" value={photo.cableLink} icon={<Network className="w-3 h-3" />} />
-              <MetaRow label="Cable Side" value={photo.cableSide} />
-              <MetaRow label="String" value={photo.photoString} />
-              <MetaRow label="Phase" value={photo.phaseLink ? formatPhase(photo.phaseLink) : ""} icon={<Activity className="w-3 h-3" />} />
-              <MetaRow label="Phase Order" value={photo.phaseOrder} />
-            </MetaSection>
-
-            <Separator />
-
-            {/* Required Image */}
-            <MetaSection title="Required Image">
-              <MetaRow label="Type" value={photo.reqImgType} icon={<Hash className="w-3 h-3" />} />
-              <MetaRow label="Order" value={photo.reqImgOrder} />
-            </MetaSection>
-
-            <Separator />
-
-            {/* Status & Review */}
-            <MetaSection title="Status & Review">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Approval:</span>
-                {getStatusBadge(photo.status, photo.approval)}
+          {reviewMode ? (
+            /* ── Review panel ─────────────────────────────────── */
+            <div className="p-4 space-y-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1">Review Photo</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Drag on the image to crop. Pick a decision and optionally add a comment, then save.</p>
               </div>
-              <MetaRow label="Status" value={photo.status} />
-              <MetaRow label="Review Details" value={photo.reviewDetails} icon={<MessageSquare className="w-3 h-3" />} />
-            </MetaSection>
 
-            <Separator />
+              <Separator />
 
-            {/* Responses */}
-            <MetaSection title="Responses">
-              <MetaRow label="Photo Response" value={photo.photoResponse} />
-              <MetaRow label="Data Capture" value={photo.dataCaptureResponse} />
-              <MetaRow label="Previous Import" value={photo.previousResponseImport} />
-            </MetaSection>
+              {/* Decision */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">Decision</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setDecision("Approved")}
+                    className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 py-2.5 text-sm font-medium transition-all ${
+                      decision === "Approved"
+                        ? "border-green-500 bg-green-500/20 text-green-400"
+                        : "border-white/10 bg-white/5 text-white/60 hover:border-green-500/40 hover:text-green-400"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setDecision("Rejected")}
+                    className={`flex-1 flex items-center justify-center gap-2 rounded-lg border-2 py-2.5 text-sm font-medium transition-all ${
+                      decision === "Rejected"
+                        ? "border-red-500 bg-red-500/20 text-red-400"
+                        : "border-white/10 bg-white/5 text-white/60 hover:border-red-500/40 hover:text-red-400"
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Reject
+                  </button>
+                </div>
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Notes & Comments */}
-            <MetaSection title="Notes & Comments">
-              <MetaRow label="Comments" value={photo.comments} icon={<MessageSquare className="w-3 h-3" />} />
-              <MetaRow label="Continuing Notes" value={photo.continuingNotes} />
-              <MetaRow label="Termination By" value={photo.terminationCompletedBy} icon={<User className="w-3 h-3" />} />
-            </MetaSection>
+              {/* Crop status */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">Crop region</p>
+                {crop.width > 0 ? (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-green-400">
+                      Selected ({Math.round(crop.width)}% × {Math.round(crop.height)}%)
+                    </span>
+                    <button
+                      onClick={() => setCrop({ unit: "%", x: 0, y: 0, width: 0, height: 0 })}
+                      className="text-muted-foreground hover:text-white underline transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Drag on the image to highlight a specific area (optional).</p>
+                )}
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Creation */}
-            <MetaSection title="Creation">
-              <MetaRow label="Date/Time" value={photo.creationDateTime} icon={<Calendar className="w-3 h-3" />} />
-              <MetaRow label="Date" value={photo.creationDate} />
-              <MetaRow label="User" value={photo.creationUser} icon={<User className="w-3 h-3" />} />
-              <MetaRow label="Location" value={photo.creationLocation} icon={<MapPin className="w-3 h-3" />} />
-            </MetaSection>
+              {/* Comment */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">Comment</p>
+                <Textarea
+                  placeholder="Add review notes…"
+                  value={reviewComment}
+                  onChange={e => setReviewComment(e.target.value)}
+                  rows={4}
+                  className="text-sm resize-none"
+                />
+              </div>
 
-            {(photo.editCount || photo.editDateTime || photo.editUser) && (
-              <>
-                <Separator />
-                <MetaSection title="Last Edit">
-                  <MetaRow label="Edit Count" value={photo.editCount} icon={<Hash className="w-3 h-3" />} />
-                  <MetaRow label="Date/Time" value={photo.editDateTime} icon={<Calendar className="w-3 h-3" />} />
-                  <MetaRow label="Date" value={photo.editDate} />
-                  <MetaRow label="User" value={photo.editUser} icon={<User className="w-3 h-3" />} />
-                  <MetaRow label="Location" value={photo.editLocation} icon={<MapPin className="w-3 h-3" />} />
-                </MetaSection>
-              </>
-            )}
+              <Separator />
 
-            {(photo.automationTrigger || photo.updateFlag || photo.testFlag || photo.resizedChecked) && (
-              <>
-                <Separator />
-                <MetaSection title="System">
-                  <MetaRow label="Automation Trigger" value={photo.automationTrigger} />
-                  <MetaRow label="Update Flag" value={photo.updateFlag} />
-                  <MetaRow label="Test Flag" value={photo.testFlag} />
-                  <MetaRow label="Resized Checked" value={photo.resizedChecked} />
-                </MetaSection>
-              </>
-            )}
+              {/* Save */}
+              {saved ? (
+                <div className="flex items-center gap-2 justify-center py-2 text-green-400 text-sm font-medium">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Saved successfully
+                </div>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={!decision || submitting}
+                  className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all ${
+                    decision === "Approved"
+                      ? "bg-green-600 hover:bg-green-500 text-white disabled:opacity-40"
+                      : decision === "Rejected"
+                      ? "bg-red-600 hover:bg-red-500 text-white disabled:opacity-40"
+                      : "bg-white/10 text-white/30 cursor-not-allowed"
+                  }`}
+                >
+                  {submitting ? "Saving…" : decision ? `Save — ${decision}` : "Choose Approve or Reject first"}
+                </button>
+              )}
+            </div>
+          ) : (
+            /* ── Metadata panel ───────────────────────────────── */
+            <div className="p-4 space-y-5">
 
-            {/* File paths */}
-            <Separator />
-            <MetaSection title="Files">
-              <MetaRow label="Photo Upload" value={photo.photoUpload} />
-              <MetaRow label="Resized Photo" value={photo.resizedPhoto} />
-              <MetaRow label="Signature" value={photo.signatureCapture} />
-              <MetaRow label="Drawing" value={photo.drawingMarkup} />
-            </MetaSection>
+              {/* Current review status (if reviewed) */}
+              {effectiveApproval && !["unchecked", "pending", ""].includes(effectiveApproval.toLowerCase()) && (
+                <>
+                  <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-muted-foreground">Review decision:</span>
+                      {getStatusBadge(photo.status, effectiveApproval)}
+                    </div>
+                    {dbReview?.reviewComment && (
+                      <p className="text-xs text-foreground">{dbReview.reviewComment}</p>
+                    )}
+                  </div>
+                  <Separator />
+                </>
+              )}
 
-          </div>
+              {/* Identity */}
+              <MetaSection title="Identity">
+                <MetaRow label="Photo ID" value={photo.photoId} icon={<Hash className="w-3 h-3" />} />
+                <MetaRow label="Form Type" value={photo.formType} icon={<FileText className="w-3 h-3" />} />
+                <MetaRow label="Photo Type" value={photo.photoType} icon={<Activity className="w-3 h-3" />} />
+                <MetaRow label="Parent" value={photo.parent} />
+                <MetaRow label="Parent Control" value={photo.parentControl} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Location & Phase */}
+              <MetaSection title="Location & Phase">
+                <MetaRow label="Tower" value={photo.locationLink} icon={<Wind className="w-3 h-3" />} />
+                <MetaRow label="Cable" value={photo.cableLink} icon={<Network className="w-3 h-3" />} />
+                <MetaRow label="Cable Side" value={photo.cableSide} />
+                <MetaRow label="String" value={photo.photoString} />
+                <MetaRow label="Phase" value={photo.phaseLink ? formatPhase(photo.phaseLink) : ""} icon={<Activity className="w-3 h-3" />} />
+                <MetaRow label="Phase Order" value={photo.phaseOrder} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Required Image */}
+              <MetaSection title="Required Image">
+                <MetaRow label="Type" value={photo.reqImgType} icon={<Hash className="w-3 h-3" />} />
+                <MetaRow label="Order" value={photo.reqImgOrder} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Status & Review */}
+              <MetaSection title="Status & Review">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Approval:</span>
+                  {getStatusBadge(photo.status, effectiveApproval)}
+                </div>
+                <MetaRow label="Status" value={photo.status} />
+                <MetaRow label="Review Details" value={photo.reviewDetails} icon={<MessageSquare className="w-3 h-3" />} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Responses */}
+              <MetaSection title="Responses">
+                <MetaRow label="Photo Response" value={photo.photoResponse} />
+                <MetaRow label="Data Capture" value={photo.dataCaptureResponse} />
+                <MetaRow label="Previous Import" value={photo.previousResponseImport} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Notes & Comments */}
+              <MetaSection title="Notes & Comments">
+                <MetaRow label="Comments" value={photo.comments} icon={<MessageSquare className="w-3 h-3" />} />
+                <MetaRow label="Continuing Notes" value={photo.continuingNotes} />
+                <MetaRow label="Termination By" value={photo.terminationCompletedBy} icon={<User className="w-3 h-3" />} />
+              </MetaSection>
+
+              <Separator />
+
+              {/* Creation */}
+              <MetaSection title="Creation">
+                <MetaRow label="Date/Time" value={photo.creationDateTime} icon={<Calendar className="w-3 h-3" />} />
+                <MetaRow label="Date" value={photo.creationDate} />
+                <MetaRow label="User" value={photo.creationUser} icon={<User className="w-3 h-3" />} />
+                <MetaRow label="Location" value={photo.creationLocation} icon={<MapPin className="w-3 h-3" />} />
+              </MetaSection>
+
+              {(photo.editCount || photo.editDateTime || photo.editUser) && (
+                <>
+                  <Separator />
+                  <MetaSection title="Last Edit">
+                    <MetaRow label="Edit Count" value={photo.editCount} icon={<Hash className="w-3 h-3" />} />
+                    <MetaRow label="Date/Time" value={photo.editDateTime} icon={<Calendar className="w-3 h-3" />} />
+                    <MetaRow label="Date" value={photo.editDate} />
+                    <MetaRow label="User" value={photo.editUser} icon={<User className="w-3 h-3" />} />
+                    <MetaRow label="Location" value={photo.editLocation} icon={<MapPin className="w-3 h-3" />} />
+                  </MetaSection>
+                </>
+              )}
+
+              {(photo.automationTrigger || photo.updateFlag || photo.testFlag || photo.resizedChecked) && (
+                <>
+                  <Separator />
+                  <MetaSection title="System">
+                    <MetaRow label="Automation Trigger" value={photo.automationTrigger} />
+                    <MetaRow label="Update Flag" value={photo.updateFlag} />
+                    <MetaRow label="Test Flag" value={photo.testFlag} />
+                    <MetaRow label="Resized Checked" value={photo.resizedChecked} />
+                  </MetaSection>
+                </>
+              )}
+
+              <Separator />
+              <MetaSection title="Files">
+                <MetaRow label="Photo Upload" value={photo.photoUpload} />
+                <MetaRow label="Resized Photo" value={photo.resizedPhoto} />
+                <MetaRow label="Signature" value={photo.signatureCapture} />
+                <MetaRow label="Drawing" value={photo.drawingMarkup} />
+              </MetaSection>
+
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -517,9 +753,26 @@ export default function DrivePhotos() {
   const [selectedTower, setSelectedTower] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; fileId: string } | null>(null);
+  const [reviewOverrides, setReviewOverrides] = useState<Map<string, string>>(new Map());
+
+  // Load existing reviewer decisions from DB on mount
+  useEffect(() => {
+    fetch(`${BASE_URL}api/photos/reviews`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: { photoId: string; approval: string | null }[]) => {
+        if (rows.length > 0) {
+          setReviewOverrides(new Map(rows.filter(r => r.approval).map(r => [r.photoId, r.approval!])));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Reset tower selection when approval filter changes
   useEffect(() => { setSelectedTower(null); }, [approvalFilter]);
+
+  const handleReview = useCallback((photoId: string, approval: string) => {
+    setReviewOverrides(prev => new Map([...prev, [photoId, approval]]));
+  }, []);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<SheetResponse>({
     queryKey: ["photos-sheet"],
@@ -545,7 +798,12 @@ export default function DrivePhotos() {
 
   const allPhotos = data?.photos ?? [];
   let filtered = allPhotos;
-  if (approvalFilter) filtered = filtered.filter(p => (p.approval ?? "").toLowerCase() === approvalFilter.toLowerCase());
+  if (approvalFilter) {
+    filtered = filtered.filter(p => {
+      const effectiveApproval = reviewOverrides.get(p.photoId) ?? p.approval ?? "";
+      return effectiveApproval.toLowerCase() === approvalFilter.toLowerCase();
+    });
+  }
   if (selectedTower) filtered = filtered.filter(p => p.locationLink === selectedTower);
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
@@ -576,12 +834,13 @@ export default function DrivePhotos() {
   const sigCount   = filtered.filter(p => p.type === "signature").length;
 
   return (
-    <>
+    <ReviewOverridesContext.Provider value={reviewOverrides}>
       {fullscreen && (
         <FullscreenViewer
           photo={fullscreen.photo}
           fileId={fullscreen.fileId}
           onClose={() => setFullscreen(null)}
+          onReview={handleReview}
         />
       )}
 
@@ -688,6 +947,6 @@ export default function DrivePhotos() {
           </div>
         )}
       </div>
-    </>
+    </ReviewOverridesContext.Provider>
   );
 }

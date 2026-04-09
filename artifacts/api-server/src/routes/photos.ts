@@ -382,8 +382,6 @@ async function upsertPhotosToDb(photos: PhotoRecord[]): Promise<void> {
           terminationCompletedBy: sheetPhotosTable.terminationCompletedBy,
           continuingNotes:        sheetPhotosTable.continuingNotes,
           previousResponseImport: sheetPhotosTable.previousResponseImport,
-          approval:               sheetPhotosTable.approval,
-          status:                 sheetPhotosTable.status,
           reviewDetails:          sheetPhotosTable.reviewDetails,
           label:                  sheetPhotosTable.label,
           parentControl:          sheetPhotosTable.parentControl,
@@ -444,6 +442,19 @@ router.get("/photos/sheet", async (req, res): Promise<void> => {
   }
 });
 
+// GET /api/photos/reviews — return all photos with a reviewer decision (Approved/Rejected)
+router.get("/photos/reviews", async (req, res): Promise<void> => {
+  try {
+    const reviews = await db
+      .select({ photoId: sheetPhotosTable.photoId, approval: sheetPhotosTable.approval })
+      .from(sheetPhotosTable)
+      .where(sql`lower(approval) IN ('approved', 'rejected')`);
+    res.json(reviews);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // GET /api/photos/db/:photoId — read a single record from DB
 router.get("/photos/db/:photoId", async (req, res): Promise<void> => {
   try {
@@ -462,18 +473,25 @@ router.get("/photos/db/:photoId", async (req, res): Promise<void> => {
 // PATCH /api/photos/db/:photoId — update review fields
 router.patch("/photos/db/:photoId", async (req, res): Promise<void> => {
   try {
-    const allowed = ["approval", "status", "reviewDetails", "comments"] as const;
-    const update: Record<string, string> = {};
-    for (const k of allowed) {
+    const stringFields = ["approval", "status", "reviewDetails", "comments", "reviewComment"] as const;
+    const numberFields = ["cropX", "cropY", "cropWidth", "cropHeight"] as const;
+    const update: Record<string, string | number | null> = {};
+    for (const k of stringFields) {
       if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
+    for (const k of numberFields) {
+      if (req.body[k] !== undefined) {
+        update[k] = req.body[k] !== null ? Number(req.body[k]) : null;
+      }
     }
     if (Object.keys(update).length === 0) {
       res.status(400).json({ error: "No valid fields to update" });
       return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await db
       .update(sheetPhotosTable)
-      .set({ ...update, updatedAt: new Date() })
+      .set({ ...update, updatedAt: new Date() } as any)
       .where(eq(sheetPhotosTable.photoId, req.params.photoId));
     res.json({ ok: true });
   } catch (err: unknown) {

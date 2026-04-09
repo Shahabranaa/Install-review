@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -71,6 +71,13 @@ export const sheetPhotosTable = pgTable("sheet_photos", {
   temp3:             text("temp3"),
   temp4:             text("temp4"),
   resizedChecked:    text("resized_checked"),
+
+  // ── App-managed review fields (not overwritten on sheet sync) ────────────
+  reviewComment: text("review_comment"),
+  cropX:         real("crop_x"),
+  cropY:         real("crop_y"),
+  cropWidth:     real("crop_width"),
+  cropHeight:    real("crop_height"),
 
   // ── Sync metadata ────────────────────────────────────────────────────────
   syncedAt:  timestamp("synced_at",  { withTimezone: true }).notNull().defaultNow(),
