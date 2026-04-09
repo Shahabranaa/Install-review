@@ -619,4 +619,44 @@ router.post("/photos/cache-clear", (_req, res): void => {
   res.json({ ok: true });
 });
 
+// GET /api/photos/counts — photo count per tower (location_link) from DB
+router.get("/photos/counts", async (_req, res): Promise<void> => {
+  try {
+    const result = await db.execute(sql`
+      SELECT location_link AS tower, COUNT(*)::int AS count
+      FROM sheet_photos
+      WHERE location_link IS NOT NULL AND location_link <> ''
+      GROUP BY location_link
+      ORDER BY location_link
+    `);
+    const rows = Array.isArray(result) ? result : (result as unknown as { rows: unknown[] }).rows;
+    res.json(rows);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/photos/by-tower?tower=<name> — DB records for a tower, includes driveFileId
+router.get("/photos/by-tower", async (req, res): Promise<void> => {
+  const tower = req.query.tower as string | undefined;
+  try {
+    const rows = await db
+      .select({
+        photoId:     sheetPhotosTable.photoId,
+        driveFileId: sheetPhotosTable.driveFileId,
+        label:       sheetPhotosTable.label,
+        reqImgType:  sheetPhotosTable.reqImgType,
+        approval:    sheetPhotosTable.approval,
+        phaseLink:   sheetPhotosTable.phaseLink,
+        cableLink:   sheetPhotosTable.cableLink,
+      })
+      .from(sheetPhotosTable)
+      .where(tower ? eq(sheetPhotosTable.locationLink, tower) : undefined)
+      .limit(8);
+    res.json(rows);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

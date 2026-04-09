@@ -830,7 +830,7 @@ export default function DrivePhotos() {
   const params = new URLSearchParams(search);
   const approvalFilter = params.get("approval") ?? "";   // "Approved" | "Rejected" | "Pending" | ""
 
-  const [selectedTower, setSelectedTower] = useState<string | null>(null);
+  const [selectedTower, setSelectedTower] = useState<string | null>(params.get("tower") ?? null);
   const [searchQuery, setSearchQuery] = useState("");
   const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; fileId: string } | null>(null);
   const [reviewOverrides, setReviewOverrides] = useState<Map<string, string>>(new Map());

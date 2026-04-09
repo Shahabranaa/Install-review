@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearch } from "wouter";
 import { useListStrings, useListTowers, useListLocations } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,8 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Wind, MapPin, Activity, Link as LinkIcon, Search } from "lucide-react";
+import { Wind, MapPin, Activity, Link as LinkIcon, Search, Camera, ExternalLink, X } from "lucide-react";
 import { Link } from "wouter";
+
+const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
 const STATUS_COLORS: Record<string, string> = {
   "In Progress": "bg-blue-100 text-blue-800",
@@ -22,6 +24,21 @@ const STATUS_COLORS: Record<string, string> = {
 
 function getStatusClass(status: string) {
   return STATUS_COLORS[status] ?? "bg-slate-100 text-slate-700";
+}
+
+interface TowerPhotoCount {
+  tower: string;
+  count: number;
+}
+
+interface TowerPhoto {
+  photoId: string | null;
+  driveFileId: string | null;
+  label: string | null;
+  reqImgType: string | null;
+  approval: string | null;
+  phaseLink: string | null;
+  cableLink: string | null;
 }
 
 export default function Towers() {
@@ -54,12 +71,51 @@ export default function Towers() {
 
   const selectedString = strings?.find((s) => s.id === selectedStringId);
 
-  // Summary counts
   const statusCounts = filteredTowers.reduce<Record<string, number>>((acc, t) => {
     const key = t.progressStatus || "No Status";
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
+
+  // Photo counts per tower (fetched once on mount from DB)
+  const [photoCounts, setPhotoCounts] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    fetch(`${BASE_URL}api/photos/counts`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: TowerPhotoCount[]) => {
+        setPhotoCounts(new Map(rows.map(r => [r.tower, r.count])));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Expanded tower state
+  const [expandedTowerId, setExpandedTowerId] = useState<number | null>(null);
+  const [towerPhotos, setTowerPhotos] = useState<Map<string, TowerPhoto[]>>(new Map());
+  const [loadingPhotos, setLoadingPhotos] = useState<Set<string>>(new Set());
+
+  const handleCardClick = (towerId: number, towerName: string) => {
+    if (expandedTowerId === towerId) {
+      setExpandedTowerId(null);
+      return;
+    }
+    setExpandedTowerId(towerId);
+    if (!towerPhotos.has(towerName)) {
+      setLoadingPhotos(prev => new Set([...prev, towerName]));
+      fetch(`${BASE_URL}api/photos/by-tower?tower=${encodeURIComponent(towerName)}`)
+        .then(r => (r.ok ? r.json() : []))
+        .then((photos: TowerPhoto[]) => {
+          setTowerPhotos(prev => new Map([...prev, [towerName, photos]]));
+          setLoadingPhotos(prev => { const s = new Set(prev); s.delete(towerName); return s; });
+        })
+        .catch(() => {
+          setLoadingPhotos(prev => { const s = new Set(prev); s.delete(towerName); return s; });
+        });
+    }
+  };
+
+  const expandedTower = expandedTowerId !== null
+    ? filteredTowers.find(t => t.id === expandedTowerId) ?? null
+    : null;
 
   return (
     <div className="p-8 space-y-6">
@@ -176,52 +232,151 @@ export default function Towers() {
           )}
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredTowers.map((tower) => {
-            const str = strings?.find((s) => s.id === tower.stringId);
+        <>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredTowers.map((tower) => {
+              const str = strings?.find((s) => s.id === tower.stringId);
+              const photoCount = photoCounts.get(tower.name) ?? 0;
+              const isExpanded = expandedTowerId === tower.id;
+              return (
+                <Card
+                  key={tower.id}
+                  className={`hover:shadow-sm transition-all cursor-pointer select-none ${isExpanded ? "ring-2 ring-primary/50 shadow-sm" : ""}`}
+                  onClick={() => handleCardClick(tower.id, tower.name)}
+                >
+                  <CardContent className="pt-4 pb-3 space-y-2">
+                    <div className="flex items-center justify-between gap-1">
+                      <h3 className="font-semibold text-sm">{tower.name}</h3>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {photoCount > 0 && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-xs font-medium">
+                            <Camera className="w-3 h-3" />
+                            {photoCount}
+                          </span>
+                        )}
+                        <Badge className={`text-xs ${getStatusClass(tower.progressStatus)}`}>
+                          {tower.progressStatus || "—"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {str && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Activity className="w-3 h-3 flex-shrink-0" />
+                        <span>String {str.name}</span>
+                      </div>
+                    )}
+
+                    {tower.lat !== null && tower.lat !== undefined && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        <span className="font-mono">
+                          {tower.lat?.toFixed(5)}, {tower.lng?.toFixed(5)}
+                        </span>
+                      </div>
+                    )}
+
+                    {tower.connectedTo && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <LinkIcon className="w-3 h-3 flex-shrink-0" />
+                        <span>→ {tower.connectedTo}</span>
+                      </div>
+                    )}
+
+                    {tower.countOnString !== null && tower.countOnString !== undefined && (
+                      <div className="text-xs text-muted-foreground">
+                        Position {tower.countOnString} on string
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Expanded photo strip — shown below the grid when a tower is selected */}
+          {expandedTower && (() => {
+            const photos = towerPhotos.get(expandedTower.name) ?? [];
+            const isLoadingPh = loadingPhotos.has(expandedTower.name);
+            const photoCount = photoCounts.get(expandedTower.name) ?? 0;
             return (
-              <Card key={tower.id} className="hover:shadow-sm transition-shadow">
-                <CardContent className="pt-4 pb-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm">{tower.name}</h3>
-                    <Badge className={`text-xs shrink-0 ml-1 ${getStatusClass(tower.progressStatus)}`}>
-                      {tower.progressStatus || "—"}
-                    </Badge>
+              <div className="rounded-xl border bg-muted/30 p-4 space-y-3 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-medium text-sm">
+                      {expandedTower.name}
+                      {photoCount > 0 && (
+                        <span className="ml-2 text-muted-foreground font-normal">
+                          {photoCount} photo{photoCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                        <ExternalLink className="w-3 h-3" />
+                        Open in Images
+                      </Button>
+                    </Link>
+                    <button
+                      onClick={() => setExpandedTowerId(null)}
+                      className="rounded-full p-1 hover:bg-muted transition-colors"
+                      aria-label="Close"
+                    >
+                      <X className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
 
-                  {str && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Activity className="w-3 h-3 flex-shrink-0" />
-                      <span>String {str.name}</span>
-                    </div>
-                  )}
-
-                  {tower.lat !== null && tower.lat !== undefined && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <MapPin className="w-3 h-3 flex-shrink-0" />
-                      <span className="font-mono">
-                        {tower.lat?.toFixed(5)}, {tower.lng?.toFixed(5)}
-                      </span>
-                    </div>
-                  )}
-
-                  {tower.connectedTo && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <LinkIcon className="w-3 h-3 flex-shrink-0" />
-                      <span>→ {tower.connectedTo}</span>
-                    </div>
-                  )}
-
-                  {tower.countOnString !== null && tower.countOnString !== undefined && (
-                    <div className="text-xs text-muted-foreground">
-                      Position {tower.countOnString} on string
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                {isLoadingPh ? (
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                      <Skeleton key={i} className="w-20 h-20 rounded-lg flex-shrink-0" />
+                    ))}
+                  </div>
+                ) : photos.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2">
+                    <Camera className="w-8 h-8" />
+                    <span className="text-sm">No photos in the database yet for this tower.</span>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 flex-wrap">
+                    {photos.slice(0, 8).map((photo, idx) => (
+                      <div
+                        key={photo.photoId ?? idx}
+                        className="w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border/50 flex-shrink-0"
+                      >
+                        {photo.driveFileId ? (
+                          <img
+                            src={`${BASE_URL}api/drive/image/${photo.driveFileId}`}
+                            alt={photo.label ?? photo.photoId ?? ""}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-muted-foreground/40">
+                            <Camera className="w-5 h-5" />
+                            <span className="text-[9px] text-center px-1 leading-tight">
+                              {photo.reqImgType ?? "Photo"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {photoCount > 8 && (
+                      <div className="w-20 h-20 rounded-lg bg-muted border border-border/50 flex-shrink-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                        <span className="text-sm font-semibold">+{photoCount - 8}</span>
+                        <span className="text-[10px]">more</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             );
-          })}
-        </div>
+          })()}
+        </>
       )}
     </div>
   );
