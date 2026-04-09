@@ -847,8 +847,12 @@ export default function DrivePhotos() {
       .catch(() => {});
   }, []);
 
-  // Reset tower selection when approval filter changes
-  useEffect(() => { setSelectedTower(null); }, [approvalFilter]);
+  // Reset tower selection when approval filter changes (skip initial mount to preserve URL-derived tower)
+  const approvalFilterMounted = useRef(false);
+  useEffect(() => {
+    if (!approvalFilterMounted.current) { approvalFilterMounted.current = true; return; }
+    setSelectedTower(null);
+  }, [approvalFilter]);
 
   const handleReview = useCallback((photoId: string, approval: string) => {
     setReviewOverrides(prev => new Map([...prev, [photoId, approval]]));
