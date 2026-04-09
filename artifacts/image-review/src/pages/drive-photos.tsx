@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useContext, createContext } from "react";
+import { useState, useCallback, useEffect, useContext, createContext, useRef } from "react";
 import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -264,6 +264,9 @@ function FullscreenViewer({
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dbReview, setDbReview] = useState<DbReview | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  const [showCrop, setShowCrop] = useState(true);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Fetch existing DB review on open
   useEffect(() => {
@@ -349,6 +352,19 @@ function FullscreenViewer({
           <span className="text-white text-sm font-medium truncate">{photo.label || photo.photoId}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+          {/* Crop/Full toggle — only visible when a crop is saved and not in review mode */}
+          {!reviewMode && dbReview?.cropWidth != null && dbReview.cropWidth > 0 && (
+            <button
+              onClick={() => setShowCrop(v => !v)}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                showCrop
+                  ? "bg-amber-500/80 hover:bg-amber-500 text-white"
+                  : "bg-white/10 hover:bg-white/20 text-white"
+              }`}
+            >
+              {showCrop ? "Show Full" : "Show Crop"}
+            </button>
+          )}
           {!reviewMode ? (
             <button
               onClick={enterReviewMode}
@@ -385,18 +401,52 @@ function FullscreenViewer({
               className="max-w-full max-h-full"
             >
               <img
+                ref={imgRef}
                 src={imageUrl}
                 alt={photo.label || photo.photoId}
+                onLoad={e => { const t = e.currentTarget; setNaturalSize({ w: t.naturalWidth, h: t.naturalHeight }); }}
                 style={{ maxHeight: "calc(100vh - 8rem)", objectFit: "contain" }}
               />
             </ReactCrop>
-          ) : (
-            <img
-              src={imageUrl}
-              alt={photo.label || photo.photoId}
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-            />
-          )}
+          ) : (() => {
+            const cx = dbReview?.cropX ?? 0;
+            const cy = dbReview?.cropY ?? 0;
+            const cw = dbReview?.cropWidth ?? 0;
+            const ch = dbReview?.cropHeight ?? 0;
+            const hasSavedCrop = cw > 0 && ch > 0;
+            if (hasSavedCrop && showCrop) {
+              // Compute aspect ratio of the crop region in actual pixels
+              const ar = naturalSize
+                ? (cw * naturalSize.w) / (ch * naturalSize.h)
+                : cw / ch;
+              return (
+                <div style={{ position: "relative", overflow: "hidden", aspectRatio: String(ar), maxWidth: "100%", maxHeight: "calc(100vh - 8rem)" }}>
+                  <img
+                    ref={imgRef}
+                    src={imageUrl}
+                    alt={photo.label || photo.photoId}
+                    onLoad={e => { const t = e.currentTarget; setNaturalSize({ w: t.naturalWidth, h: t.naturalHeight }); }}
+                    style={{
+                      position: "absolute",
+                      width: `${10000 / cw}%`,
+                      height: `${10000 / ch}%`,
+                      left: `${-100 * cx / cw}%`,
+                      top: `${-100 * cy / ch}%`,
+                    }}
+                  />
+                </div>
+              );
+            }
+            return (
+              <img
+                ref={imgRef}
+                src={imageUrl}
+                alt={photo.label || photo.photoId}
+                onLoad={e => { const t = e.currentTarget; setNaturalSize({ w: t.naturalWidth, h: t.naturalHeight }); }}
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              />
+            );
+          })()}
         </div>
 
         {/* Right panel */}
