@@ -274,16 +274,32 @@ function FullscreenViewer({
       .catch(() => {});
   }, [photo.photoId]);
 
+  const applyDbReview = (rec: DbReview) => {
+    const a = (rec.approval ?? "").toLowerCase();
+    setDecision(a === "approved" ? "Approved" : a === "rejected" ? "Rejected" : null);
+    setReviewComment(rec.reviewComment ?? "");
+    if (rec.cropWidth != null && rec.cropWidth > 0) {
+      setCrop({ unit: "%", x: rec.cropX ?? 0, y: rec.cropY ?? 0, width: rec.cropWidth, height: rec.cropHeight ?? 0 });
+    } else {
+      setCrop({ unit: "%", x: 0, y: 0, width: 0, height: 0 });
+    }
+  };
+
+  // When dbReview arrives (async fetch) while review mode is already open, sync the fields
+  const [dbReviewApplied, setDbReviewApplied] = useState(false);
+  useEffect(() => {
+    if (reviewMode && dbReview && !dbReviewApplied) {
+      applyDbReview(dbReview);
+      setDbReviewApplied(true);
+    }
+  }, [reviewMode, dbReview, dbReviewApplied]);
+
   const enterReviewMode = () => {
     if (dbReview) {
-      const a = (dbReview.approval ?? "").toLowerCase();
-      setDecision(a === "approved" ? "Approved" : a === "rejected" ? "Rejected" : null);
-      setReviewComment(dbReview.reviewComment ?? "");
-      if (dbReview.cropWidth != null && dbReview.cropWidth > 0) {
-        setCrop({ unit: "%", x: dbReview.cropX ?? 0, y: dbReview.cropY ?? 0, width: dbReview.cropWidth, height: dbReview.cropHeight ?? 0 });
-      } else {
-        setCrop({ unit: "%", x: 0, y: 0, width: 0, height: 0 });
-      }
+      applyDbReview(dbReview);
+      setDbReviewApplied(true);
+    } else {
+      setDbReviewApplied(false);
     }
     setSaved(false);
     setReviewMode(true);
