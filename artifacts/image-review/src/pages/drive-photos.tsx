@@ -306,11 +306,13 @@ function FullscreenViewer({
       setDbReviewApplied(false);
     }
     setSaved(false);
+    setSaveError(null);
     setReviewMode(true);
   };
 
   const handleSubmit = async () => {
     if (!decision) return;
+    setSaveError(null);
     setSubmitting(true);
     try {
       const body: Record<string, string | number | null> = {
