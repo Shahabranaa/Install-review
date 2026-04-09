@@ -313,21 +313,13 @@ export default function Towers() {
                       )}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                        <ExternalLink className="w-3 h-3" />
-                        Open in Images
-                      </Button>
-                    </Link>
-                    <button
-                      onClick={() => setExpandedTowerId(null)}
-                      className="rounded-full p-1 hover:bg-muted transition-colors"
-                      aria-label="Close"
-                    >
-                      <X className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setExpandedTowerId(null)}
+                    className="rounded-full p-1 hover:bg-muted transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </button>
                 </div>
 
                 {isLoadingPh ? (
@@ -373,6 +365,15 @@ export default function Towers() {
                     )}
                   </div>
                 )}
+
+                <div className="flex justify-end pt-1">
+                  <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                      <ExternalLink className="w-3 h-3" />
+                      Open in Images
+                    </Button>
+                  </Link>
+                </div>
               </div>
             );
           })()}
