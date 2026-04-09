@@ -101,7 +101,7 @@ export default function Towers() {
     setExpandedTowerId(towerId);
     if (!towerPhotos.has(towerName)) {
       setLoadingPhotos(prev => new Set([...prev, towerName]));
-      fetch(`${BASE_URL}api/photos/by-tower?tower=${encodeURIComponent(towerName)}`)
+      fetch(`${BASE_URL}api/photos/db?tower=${encodeURIComponent(towerName)}`)
         .then(r => (r.ok ? r.json() : []))
         .then((photos: TowerPhoto[]) => {
           setTowerPhotos(prev => new Map([...prev, [towerName, photos]]));
@@ -251,7 +251,7 @@ export default function Towers() {
                         {photoCount > 0 && (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-xs font-medium">
                             <Camera className="w-3 h-3" />
-                            {photoCount}
+                            {photoCount} photos
                           </span>
                         )}
                         <Badge className={`text-xs ${getStatusClass(tower.progressStatus)}`}>

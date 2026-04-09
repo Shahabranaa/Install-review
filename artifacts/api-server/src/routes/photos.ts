@@ -636,8 +636,8 @@ router.get("/photos/counts", async (_req, res): Promise<void> => {
   }
 });
 
-// GET /api/photos/by-tower?tower=<name> — DB records for a tower, includes driveFileId
-router.get("/photos/by-tower", async (req, res): Promise<void> => {
+// GET /api/photos/db?tower=<name> — DB listing with optional tower filter, includes driveFileId
+router.get("/photos/db", async (req, res): Promise<void> => {
   const tower = req.query.tower as string | undefined;
   try {
     const rows = await db
@@ -651,8 +651,7 @@ router.get("/photos/by-tower", async (req, res): Promise<void> => {
         cableLink:   sheetPhotosTable.cableLink,
       })
       .from(sheetPhotosTable)
-      .where(tower ? eq(sheetPhotosTable.locationLink, tower) : undefined)
-      .limit(8);
+      .where(tower ? eq(sheetPhotosTable.locationLink, tower) : undefined);
     res.json(rows);
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
