@@ -65,7 +65,10 @@ function OspTreeItem({ osp, location }: { osp: Location; location: string }) {
     { query: { enabled: open } },
   );
 
-  const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+  const currentStringId =
+    location === "/towers" && typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("stringId")
+      : null;
 
   return (
     <div>
@@ -87,8 +90,7 @@ function OspTreeItem({ osp, location }: { osp: Location; location: string }) {
           {strings && strings.length > 0
             ? strings.map((str) => {
                 const href = `/towers?stringId=${str.id}`;
-                const isActive =
-                  location === "/towers" && currentSearch === `?stringId=${str.id}`;
+                const isActive = currentStringId === String(str.id);
                 return (
                   <Link key={str.id} href={href}>
                     <div
@@ -118,7 +120,7 @@ function OspTreeItem({ osp, location }: { osp: Location; location: string }) {
 function StructureSection({ location }: { location: string }) {
   const structureActive = location.startsWith("/strings") || location.startsWith("/towers");
   const [open, setOpen] = useState(structureActive);
-  const { data: locations } = useListLocations();
+  const { data: locations, isLoading: locLoading, isError: locError } = useListLocations();
   const ospLocations = locations?.filter((l) => l.type === "OSP") ?? [];
 
   return (
@@ -149,10 +151,18 @@ function StructureSection({ location }: { location: string }) {
 
       {open && (
         <div className="mt-1 ml-4 border-l border-sidebar-border pl-2 space-y-0.5">
-          {ospLocations.length === 0 ? (
+          {locLoading ? (
             <div className="flex items-center gap-1.5 px-2 py-2 text-xs text-sidebar-foreground/40">
               <Loader2 className="h-3 w-3 animate-spin" />
               Loading…
+            </div>
+          ) : locError ? (
+            <div className="px-2 py-1.5 text-xs text-red-400/70 italic">
+              Failed to load
+            </div>
+          ) : ospLocations.length === 0 ? (
+            <div className="px-2 py-1.5 text-xs text-sidebar-foreground/30 italic">
+              No OSPs found
             </div>
           ) : (
             ospLocations.map((osp) => (
