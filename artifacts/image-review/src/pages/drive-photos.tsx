@@ -263,6 +263,7 @@ function FullscreenViewer({
   const [crop, setCrop] = useState<Crop>({ unit: "%", x: 0, y: 0, width: 0, height: 0 });
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [dbReview, setDbReview] = useState<DbReview | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [showCrop, setShowCrop] = useState(true);
@@ -326,12 +327,18 @@ function FullscreenViewer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      setSaveError(null);
       if (r.ok) {
         setSaved(true);
         setDbReview({ approval: decision, reviewComment: reviewComment.trim() || null, cropX: body.cropX as number | null, cropY: body.cropY as number | null, cropWidth: body.cropWidth as number | null, cropHeight: body.cropHeight as number | null });
         onReview(photo.photoId, decision);
         setTimeout(() => { setReviewMode(false); setSaved(false); }, 1500);
+      } else {
+        const errBody = await r.json().catch(() => ({})) as { error?: string };
+        setSaveError(errBody.error ?? `Save failed (${r.status}) — please try again`);
       }
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Network error — please try again");
     } finally {
       setSubmitting(false);
     }
@@ -415,23 +422,23 @@ function FullscreenViewer({
             const ch = dbReview?.cropHeight ?? 0;
             const hasSavedCrop = cw > 0 && ch > 0;
             if (hasSavedCrop && showCrop) {
-              // Compute aspect ratio of the crop region in actual pixels
-              const ar = naturalSize
-                ? (cw * naturalSize.w) / (ch * naturalSize.h)
-                : cw / ch;
+              // CSS transform approach: image stays in normal flow (no container collapse).
+              // transformOrigin targets the centre of the crop region in image-% space.
+              // scale() zooms so the smaller crop axis fills the container.
+              const scale = Math.min(100 / cw, 100 / ch);
               return (
-                <div style={{ position: "relative", overflow: "hidden", aspectRatio: String(ar), maxWidth: "100%", maxHeight: "calc(100vh - 8rem)" }}>
+                <div style={{ overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", maxWidth: "100%", maxHeight: "calc(100vh - 8rem)" }}>
                   <img
                     ref={imgRef}
                     src={imageUrl}
                     alt={photo.label || photo.photoId}
                     onLoad={e => { const t = e.currentTarget; setNaturalSize({ w: t.naturalWidth, h: t.naturalHeight }); }}
                     style={{
-                      position: "absolute",
-                      width: `${10000 / cw}%`,
-                      height: `${10000 / ch}%`,
-                      left: `${-100 * cx / cw}%`,
-                      top: `${-100 * cy / ch}%`,
+                      maxWidth: "100%",
+                      maxHeight: "calc(100vh - 8rem)",
+                      display: "block",
+                      transformOrigin: `${cx + cw / 2}% ${cy + ch / 2}%`,
+                      transform: `scale(${scale})`,
                     }}
                   />
                 </div>
@@ -535,19 +542,24 @@ function FullscreenViewer({
                   Saved successfully
                 </div>
               ) : (
-                <button
-                  onClick={handleSubmit}
-                  disabled={!decision || submitting}
-                  className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all ${
-                    decision === "Approved"
-                      ? "bg-green-600 hover:bg-green-500 text-white disabled:opacity-40"
-                      : decision === "Rejected"
-                      ? "bg-red-600 hover:bg-red-500 text-white disabled:opacity-40"
-                      : "bg-white/10 text-white/30 cursor-not-allowed"
-                  }`}
-                >
-                  {submitting ? "Saving…" : decision ? `Save — ${decision}` : "Choose Approve or Reject first"}
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!decision || submitting}
+                    className={`w-full rounded-lg py-2.5 text-sm font-semibold transition-all ${
+                      decision === "Approved"
+                        ? "bg-green-600 hover:bg-green-500 text-white disabled:opacity-40"
+                        : decision === "Rejected"
+                        ? "bg-red-600 hover:bg-red-500 text-white disabled:opacity-40"
+                        : "bg-white/10 text-white/30 cursor-not-allowed"
+                    }`}
+                  >
+                    {submitting ? "Saving…" : decision ? `Save — ${decision}` : "Choose Approve or Reject first"}
+                  </button>
+                  {saveError && (
+                    <p className="text-xs text-red-400 text-center">{saveError}</p>
+                  )}
+                </div>
               )}
             </div>
           ) : (
