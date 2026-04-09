@@ -47,6 +47,12 @@ export default function Towers() {
   const initialStringId = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
 
   const [selectedStringId, setSelectedStringId] = useState<number | undefined>(initialStringId);
+
+  useEffect(() => {
+    const id = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
+    setSelectedStringId(id);
+  }, [search]);
+
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: locations } = useListLocations();
