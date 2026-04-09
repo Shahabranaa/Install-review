@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
@@ -65,9 +65,10 @@ function OspTreeItem({ osp, location }: { osp: Location; location: string }) {
     { query: { enabled: open } },
   );
 
+  const search = useSearch();
   const currentStringId =
-    location === "/towers" && typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("stringId")
+    location === "/towers"
+      ? new URLSearchParams(search).get("stringId")
       : null;
 
   return (
@@ -178,7 +179,7 @@ function StructureSection({ location }: { location: string }) {
 function ImagesSection({ location }: { location: string }) {
   const imagesActive = location.startsWith("/drive-photos");
   const [open, setOpen] = useState(imagesActive);
-  const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+  const currentSearch = useSearch();
 
   return (
     <div>
