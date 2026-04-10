@@ -61,7 +61,7 @@ export default function MapPage() {
 
   const stringsForOsp = selectedOspId
     ? (strings?.filter((s) => s.locationId === selectedOspId) ?? [])
-    : [];
+    : (strings ?? []);
 
   const towersWithCoords = (towers ?? []).filter(
     (t) => t.lat != null && t.lng != null,
