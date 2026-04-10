@@ -1,6 +1,7 @@
 import "leaflet/dist/leaflet.css";
 import { useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
+import { Link } from "wouter";
 import type { LatLngBoundsExpression } from "leaflet";
 import { useListTowers, useListStrings, useListLocations } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -211,6 +212,13 @@ export default function MapPage() {
                         {tower.lat.toFixed(5)}, {tower.lng!.toFixed(5)}
                       </p>
                     )}
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <Link href={`/drive-photos?tower=${encodeURIComponent(tower.name)}`}>
+                        <button className="w-full text-xs text-blue-600 hover:text-blue-800 font-medium text-left">
+                          View images →
+                        </button>
+                      </Link>
+                    </div>
                   </div>
                 </Popup>
               </CircleMarker>
