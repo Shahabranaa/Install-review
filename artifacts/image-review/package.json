@@ -75,6 +75,9 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "react-image-crop": "^11.0.10"
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
+    "react-image-crop": "^11.0.10",
+    "react-leaflet": "^5.0.0"
   }
 }

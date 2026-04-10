@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map,
 } from "lucide-react";
 import { useState, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -291,6 +291,14 @@ export function AppSidebar() {
             label="Dashboard"
             icon={LayoutDashboard}
             isActive={location === "/"}
+          />
+
+          {/* Map */}
+          <NavItem
+            href="/map"
+            label="Map"
+            icon={Map}
+            isActive={location === "/map"}
           />
 
           {/* Structure — collapsible OSP → String tree */}
