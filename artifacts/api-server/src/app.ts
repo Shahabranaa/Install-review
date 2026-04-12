@@ -41,7 +41,7 @@ const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
 const sessionStore = dbUrl
   ? new PgSession({
       pool: new Pool({ connectionString: dbUrl }),
-      createTableIfMissing: true,
+      createTableIfMissing: false,
     })
   : undefined;
 
