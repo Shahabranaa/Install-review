@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   Building2, Info, Users, Plus, Pencil, UserX, UserCheck, ShieldCheck,
-  Eye, ClipboardCheck, Lock, Loader2,
+  Eye, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -446,6 +447,157 @@ function UserManagement() {
   );
 }
 
+interface WasabiStatus {
+  configured: boolean;
+  connection: { ok: boolean; error?: string };
+  migrated: number;
+  total: number;
+  remaining: number;
+}
+
+function StoragePanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [migrating, setMigrating] = useState(false);
+
+  const { data: status, isLoading } = useQuery<WasabiStatus>({
+    queryKey: ["wasabi-status"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/wasabi/status`);
+      if (!r.ok) throw new Error("Failed to fetch Wasabi status");
+      return r.json();
+    },
+    refetchInterval: migrating ? 4000 : false,
+  });
+
+  const runBatch = async () => {
+    setMigrating(true);
+    try {
+      let remaining = status?.remaining ?? 1;
+      let totalMigrated = 0;
+      let totalFailed = 0;
+
+      while (remaining > 0) {
+        const r = await fetch(`${API_BASE}/api/wasabi/migrate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchSize: 20 }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ error: "Unknown error" }));
+          throw new Error(err.error ?? "Migration request failed");
+        }
+        const result = await r.json() as { migrated: number; failed: number; remaining: number };
+        totalMigrated += result.migrated;
+        totalFailed   += result.failed;
+        remaining      = result.remaining;
+        await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+
+        if (result.migrated === 0 && result.failed === 0) break;
+      }
+
+      toast({
+        title: "Migration complete",
+        description: `${totalMigrated} photo(s) migrated, ${totalFailed} failed.`,
+        variant: totalFailed > 0 ? "destructive" : "default",
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Migration error",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setMigrating(false);
+      await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+    }
+  };
+
+  const pct = status && status.total > 0 ? Math.round((status.migrated / status.total) * 100) : 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <HardDrive className="w-5 h-5" />
+          Object Storage (Wasabi)
+        </CardTitle>
+        <CardDescription>
+          Migrate photos from Google Drive to Wasabi S3-compatible storage for faster, cheaper serving.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading status…
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground mb-1">Credentials</p>
+                {status?.configured ? (
+                  <span className="flex items-center gap-1 text-green-600 font-medium">
+                    <CheckCircle2 className="w-4 h-4" /> Configured
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-amber-600 font-medium">
+                    <AlertCircle className="w-4 h-4" /> Not configured
+                  </span>
+                )}
+              </div>
+              <div>
+                <p className="text-muted-foreground mb-1">Bucket connection</p>
+                {status?.connection.ok ? (
+                  <span className="flex items-center gap-1 text-green-600 font-medium">
+                    <CheckCircle2 className="w-4 h-4" /> Connected
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-red-600 font-medium">
+                    <AlertCircle className="w-4 h-4" /> {status?.connection.error ?? "Not connected"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Migration progress</span>
+                <span className="font-medium">{status?.migrated ?? 0} / {status?.total ?? 0} photos ({pct}%)</span>
+              </div>
+              <Progress value={pct} className="h-2" />
+              {(status?.remaining ?? 0) > 0 && (
+                <p className="text-xs text-muted-foreground">{status?.remaining} remaining</p>
+              )}
+            </div>
+
+            <Button
+              onClick={runBatch}
+              disabled={migrating || !status?.configured || !status?.connection.ok || (status?.remaining ?? 0) === 0}
+              className="w-full"
+            >
+              {migrating ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Migrating…</>
+              ) : (status?.remaining ?? 0) === 0 ? (
+                <><CheckCircle2 className="w-4 h-4 mr-2" /> All photos migrated</>
+              ) : (
+                <><HardDrive className="w-4 h-4 mr-2" /> Migrate photos to Wasabi</>
+              )}
+            </Button>
+
+            {!status?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Set <code>WASABI_ACCESS_KEY_ID</code>, <code>WASABI_SECRET_ACCESS_KEY</code>,{" "}
+                <code>WASABI_BUCKET_NAME</code>, and <code>WASABI_REGION</code> environment variables to enable migration.
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { isAdmin } = useAuth();
 
@@ -457,6 +609,7 @@ export default function Settings() {
       </div>
 
       {isAdmin && <UserManagement />}
+      {isAdmin && <StoragePanel />}
 
       <Card>
         <CardHeader>

@@ -7,8 +7,10 @@ import {
   locationsTable,
   phasesTable,
   imagesTable,
+  sheetPhotosTable,
 } from "@workspace/db";
 import { driveRequest, isDriveConfigured } from "../lib/google-drive";
+import { isWasabiConfigured, wasabiPublicUrl } from "../lib/wasabi.js";
 
 const router: IRouter = Router();
 
@@ -243,7 +245,7 @@ router.get("/drive/folder-info/:folderId", async (req, res): Promise<void> => {
   }
 });
 
-// GET /api/drive/image/:fileId - proxy/stream image from Drive
+// GET /api/drive/image/:fileId - proxy/stream image from Drive (redirects to Wasabi when available)
 router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
   if (!isDriveConfigured()) {
     res.status(503).json({ error: "Drive not configured" });
@@ -252,6 +254,19 @@ router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
 
   try {
     const { fileId } = req.params;
+
+    // If Wasabi is configured, check if this image has been migrated
+    if (isWasabiConfigured()) {
+      const row = await db
+        .select({ wasabiKey: sheetPhotosTable.wasabiKey })
+        .from(sheetPhotosTable)
+        .where(eq(sheetPhotosTable.driveFileId, fileId))
+        .limit(1);
+      if (row[0]?.wasabiKey) {
+        res.redirect(302, wasabiPublicUrl(row[0].wasabiKey));
+        return;
+      }
+    }
 
     const params = new URLSearchParams({
       alt: "media",

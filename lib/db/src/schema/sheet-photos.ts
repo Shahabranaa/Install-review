@@ -17,6 +17,9 @@ export const sheetPhotosTable = pgTable("sheet_photos", {
   // ── Resolved Drive file ID (populated on first resolve) ──────────────────
   driveFileId: text("drive_file_id"),
 
+  // ── Wasabi object key (set once image is copied to Wasabi storage) ────────
+  wasabiKey: text("wasabi_key"),
+
   // ── Location / phase linking ──────────────────────────────────────────────
   cableLink:    text("cable_link"),       // Photo_Cable_Link
   cableSide:    text("cable_side"),       // Photo_Cable_Side

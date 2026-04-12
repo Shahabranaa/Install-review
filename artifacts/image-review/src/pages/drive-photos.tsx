@@ -167,14 +167,18 @@ function PhotoCard({
       if (!photo.photoId) return null;
       const r = await fetch(`${BASE_URL}api/photos/resolve/${photo.photoId}`);
       if (!r.ok) return null;
-      return r.json() as Promise<{ photoId: string; fileId: string }>;
+      return r.json() as Promise<{ photoId: string; fileId: string; wasabiUrl?: string }>;
     },
     staleTime: Infinity,
     retry: false,
     enabled: !!photo.photoId && !!photo.filePath,
   });
 
-  const imageUrl = resolved?.fileId ? `${BASE_URL}api/drive/image/${resolved.fileId}` : null;
+  const imageUrl = resolved?.wasabiUrl
+    ? resolved.wasabiUrl
+    : resolved?.fileId
+      ? `${BASE_URL}api/drive/image/${resolved.fileId}`
+      : null;
 
   return (
     <Card

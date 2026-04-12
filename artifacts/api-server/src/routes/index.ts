@@ -15,6 +15,7 @@ import driveRouter from "./drive";
 import photosRouter from "./photos";
 import stringsRouter from "./strings";
 import towersRouter from "./towers";
+import wasabiRouter from "./wasabi";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(documentsRouter);
 router.use(dashboardRouter);
 router.use(driveRouter);
 router.use(photosRouter);
+router.use(wasabiRouter);
 
 export default router;

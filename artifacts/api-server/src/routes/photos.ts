@@ -530,13 +530,19 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
 
     // Check DB cache first
     const dbRow = await db
-      .select({ driveFileId: sheetPhotosTable.driveFileId })
+      .select({ driveFileId: sheetPhotosTable.driveFileId, wasabiKey: sheetPhotosTable.wasabiKey })
       .from(sheetPhotosTable)
       .where(eq(sheetPhotosTable.photoId, photoId))
       .limit(1);
     if (dbRow[0]?.driveFileId) {
       fileIdCache.set(photoId, dbRow[0].driveFileId);
-      res.json({ photoId, fileId: dbRow[0].driveFileId });
+      const wasabiKey = dbRow[0].wasabiKey;
+      const bucket    = process.env["WASABI_BUCKET_NAME"];
+      const region    = process.env["WASABI_REGION"] ?? "eu-west-1";
+      const wasabiUrl = wasabiKey && bucket
+        ? `https://${bucket}.s3.${region}.wasabisys.com/${wasabiKey}`
+        : undefined;
+      res.json({ photoId, fileId: dbRow[0].driveFileId, wasabiUrl });
       return;
     }
 
