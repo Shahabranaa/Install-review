@@ -256,14 +256,14 @@ router.get("/drive/image/:fileId", async (req, res): Promise<void> => {
     const { fileId } = req.params;
 
     // If Wasabi is configured, check if this image has been migrated
-    if (isWasabiConfigured()) {
+    if (await isWasabiConfigured()) {
       const row = await db
         .select({ wasabiKey: sheetPhotosTable.wasabiKey })
         .from(sheetPhotosTable)
         .where(eq(sheetPhotosTable.driveFileId, fileId))
         .limit(1);
       if (row[0]?.wasabiKey) {
-        res.redirect(302, wasabiPublicUrl(row[0].wasabiKey));
+        res.redirect(302, await wasabiPublicUrl(row[0].wasabiKey));
         return;
       }
     }
