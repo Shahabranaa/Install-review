@@ -1,17 +1,16 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, isNull, isNotNull, count, sql } from "drizzle-orm";
 import { db, sheetPhotosTable } from "@workspace/db";
 import {
   isWasabiConfigured,
   uploadToWasabi,
-  wasabiPublicUrl,
   checkWasabiConnection,
 } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
-function requireAdmin(req: Parameters<Parameters<typeof router.use>[0]>[0], res: Parameters<Parameters<typeof router.use>[0]>[1], next: Parameters<Parameters<typeof router.use>[0]>[2]): void {
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
@@ -22,7 +21,7 @@ function requireAdmin(req: Parameters<Parameters<typeof router.use>[0]>[0], res:
 // GET /api/wasabi/status
 router.get("/wasabi/status", async (_req, res): Promise<void> => {
   try {
-    const configured = isWasabiConfigured();
+    const configured = await isWasabiConfigured();
 
     const [totalRow, migratedRow] = await Promise.all([
       db.select({ count: count() }).from(sheetPhotosTable),
@@ -51,7 +50,7 @@ router.get("/wasabi/status", async (_req, res): Promise<void> => {
 
 // POST /api/wasabi/migrate — admin only
 router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => {
-  if (!isWasabiConfigured()) {
+  if (!(await isWasabiConfigured())) {
     res.status(503).json({ error: "Wasabi credentials not configured" });
     return;
   }
@@ -59,7 +58,6 @@ router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => 
   const batchSize = Math.min(Number(req.body?.batchSize ?? 20), 50);
 
   try {
-    // Select next batch: has drive_file_id, not yet migrated
     const batch = await db
       .select({
         id:          sheetPhotosTable.id,
@@ -74,7 +72,6 @@ router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => 
       .limit(batchSize);
 
     if (batch.length === 0) {
-      // Check if anything remains without a drive_file_id
       const [remainingRow] = await db
         .select({ count: count() })
         .from(sheetPhotosTable)
@@ -86,7 +83,6 @@ router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => 
     let migrated = 0;
     let failed   = 0;
 
-    // Process with concurrency 3 via manual batching
     const CONCURRENCY = 3;
     for (let i = 0; i < batch.length; i += CONCURRENCY) {
       const chunk = batch.slice(i, i + CONCURRENCY);

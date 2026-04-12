@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   Building2, Info, Users, Plus, Pencil, UserX, UserCheck, ShieldCheck,
-  Eye, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
+  Eye, EyeOff, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
+  KeyRound, Save, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
@@ -455,11 +456,82 @@ interface WasabiStatus {
   remaining: number;
 }
 
+interface WasabiCreds {
+  accessKeyId:  string;
+  secretMasked: string;
+  bucket:       string;
+  region:       string;
+  source:       "db" | "env";
+}
+
 function StoragePanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [migrating, setMigrating] = useState(false);
 
+  // ── Credentials form state ──────────────────────────────────────────────
+  const [credExpanded, setCredExpanded] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [credForm, setCredForm] = useState({
+    accessKeyId:     "",
+    secretAccessKey: "",
+    bucket:          "",
+    region:          "eu-west-1",
+  });
+
+  const { data: savedCreds } = useQuery<WasabiCreds>({
+    queryKey: ["wasabi-creds"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/settings/wasabi`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch Wasabi credentials");
+      return r.json();
+    },
+  });
+
+  // Pre-fill non-secret fields once when creds load
+  useEffect(() => {
+    if (!savedCreds) return;
+    setCredForm((f) => ({
+      ...f,
+      accessKeyId: savedCreds.accessKeyId || f.accessKeyId,
+      bucket:      savedCreds.bucket      || f.bucket,
+      region:      savedCreds.region      || f.region,
+    }));
+    if (!savedCreds.accessKeyId) setCredExpanded(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedCreds?.accessKeyId]);
+
+  const saveCreds = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, string> = {};
+      if (credForm.accessKeyId.trim())     body.accessKeyId     = credForm.accessKeyId.trim();
+      if (credForm.secretAccessKey.trim()) body.secretAccessKey = credForm.secretAccessKey.trim();
+      if (credForm.bucket.trim())          body.bucket          = credForm.bucket.trim();
+      if (credForm.region.trim())          body.region          = credForm.region.trim();
+
+      const r = await fetch(`${API_BASE}/api/settings/wasabi`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Failed" }));
+        throw new Error((err as { error?: string }).error ?? "Failed to save");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+      queryClient.invalidateQueries({ queryKey: ["wasabi-creds"] });
+      setCredForm((f) => ({ ...f, secretAccessKey: "" }));
+      toast({ title: "Credentials saved", description: "Wasabi credentials updated successfully." });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  // ── Migration status ────────────────────────────────────────────────────
   const { data: status, isLoading } = useQuery<WasabiStatus>({
     queryKey: ["wasabi-status"],
     queryFn: async () => {
@@ -480,12 +552,13 @@ function StoragePanel() {
       while (remaining > 0) {
         const r = await fetch(`${API_BASE}/api/wasabi/migrate`, {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ batchSize: 20 }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({ error: "Unknown error" }));
-          throw new Error(err.error ?? "Migration request failed");
+          throw new Error((err as { error?: string }).error ?? "Migration request failed");
         }
         const result = await r.json() as { migrated: number; failed: number; remaining: number };
         totalMigrated += result.migrated;
@@ -527,6 +600,122 @@ function StoragePanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+
+        {/* ── Credentials sub-section ──────────────────────────────────── */}
+        <div className="rounded-lg border bg-muted/30 overflow-hidden">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-muted/50 transition-colors"
+            onClick={() => setCredExpanded((v) => !v)}
+          >
+            <span className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4" />
+              Credentials
+              {savedCreds?.accessKeyId && (
+                <span className="text-xs font-normal text-muted-foreground ml-1">
+                  ({savedCreds.source === "db" ? "stored in database" : "from environment"})
+                </span>
+              )}
+            </span>
+            {credExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {credExpanded && (
+            <div className="px-4 pb-4 space-y-3 border-t pt-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Access Key ID</Label>
+                  <Input
+                    value={credForm.accessKeyId}
+                    onChange={(e) => setCredForm((f) => ({ ...f, accessKeyId: e.target.value }))}
+                    placeholder="Access key ID"
+                    className="font-mono text-xs h-8"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Secret Access Key</Label>
+                    {savedCreds?.secretMasked && !credForm.secretAccessKey && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                        onClick={async () => {
+                          try {
+                            const r = await fetch(`${API_BASE}/api/settings/wasabi/reveal`, { credentials: "include" });
+                            if (!r.ok) throw new Error("Failed");
+                            const data = await r.json() as { secretAccessKey: string | null };
+                            if (data.secretAccessKey) {
+                              setCredForm((f) => ({ ...f, secretAccessKey: data.secretAccessKey! }));
+                              setShowSecret(true);
+                            }
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        <Eye className="w-3 h-3" /> Reveal
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type={showSecret ? "text" : "password"}
+                      value={credForm.secretAccessKey}
+                      onChange={(e) => setCredForm((f) => ({ ...f, secretAccessKey: e.target.value }))}
+                      placeholder={savedCreds?.secretMasked || "Secret access key"}
+                      className="font-mono text-xs h-8 pr-8"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowSecret((s) => !s)}
+                    >
+                      {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {savedCreds?.secretMasked && !credForm.secretAccessKey && (
+                    <p className="text-xs text-muted-foreground">Leave blank to keep existing secret.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Bucket Name</Label>
+                  <Input
+                    value={credForm.bucket}
+                    onChange={(e) => setCredForm((f) => ({ ...f, bucket: e.target.value }))}
+                    placeholder="my-wasabi-bucket"
+                    className="font-mono text-xs h-8"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Region</Label>
+                  <Input
+                    value={credForm.region}
+                    onChange={(e) => setCredForm((f) => ({ ...f, region: e.target.value }))}
+                    placeholder="eu-west-1"
+                    className="font-mono text-xs h-8"
+                  />
+                </div>
+              </div>
+
+              <Button
+                size="sm"
+                onClick={() => saveCreds.mutate()}
+                disabled={saveCreds.isPending}
+                className="w-full"
+              >
+                {saveCreds.isPending ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Saving…</>
+                ) : (
+                  <><Save className="w-3.5 h-3.5 mr-1.5" /> Save credentials</>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Connection status + migration ─────────────────────────────── */}
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading status…
@@ -587,8 +776,7 @@ function StoragePanel() {
 
             {!status?.configured && (
               <p className="text-xs text-muted-foreground">
-                Set <code>WASABI_ACCESS_KEY_ID</code>, <code>WASABI_SECRET_ACCESS_KEY</code>,{" "}
-                <code>WASABI_BUCKET_NAME</code>, and <code>WASABI_REGION</code> environment variables to enable migration.
+                Enter your Wasabi credentials above and save them to enable migration.
               </p>
             )}
           </>
