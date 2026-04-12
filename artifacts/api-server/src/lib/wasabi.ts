@@ -116,12 +116,28 @@ function extFromContentType(ct: string): string {
   return ".jpg";
 }
 
+export interface PhotoHierarchy {
+  cableLink?:    string | null;
+  locationLink?: string | null;
+  phaseLink?:    string | null;
+}
+
+/** Strips characters unsafe for S3 keys and trims to 60 chars. */
+function sanitizeSegment(s: string | null | undefined): string {
+  if (!s || !s.trim()) return "";
+  return s.trim().replace(/[^a-zA-Z0-9\-_.()]/g, "_").replace(/_+/g, "_").slice(0, 60);
+}
+
 /**
  * Downloads an image from Google Drive and uploads it to Wasabi.
  * Returns the Wasabi object key.
  * Throws on any failure.
  */
-export async function uploadToWasabi(driveFileId: string, photoId: string): Promise<string> {
+export async function uploadToWasabi(
+  driveFileId: string,
+  photoId:     string,
+  hierarchy?:  PhotoHierarchy,
+): Promise<string> {
   const creds  = await loadCreds();
   if (!creds) throw new Error("Wasabi credentials not configured");
   const client = await getWasabiClient();
@@ -137,8 +153,16 @@ export async function uploadToWasabi(driveFileId: string, photoId: string): Prom
 
   const contentType = driveResp.headers.get("content-type") ?? "image/jpeg";
   const ext         = extFromContentType(contentType);
-  const key         = `photos/${photoId}${ext}`;
-  const body        = Buffer.from(await driveResp.arrayBuffer());
+
+  const segments = [
+    sanitizeSegment(hierarchy?.cableLink),
+    sanitizeSegment(hierarchy?.locationLink),
+    sanitizeSegment(hierarchy?.phaseLink),
+  ].filter(Boolean);
+  const prefix = segments.length > 0 ? `photos/${segments.join("/")}` : "photos";
+  const key    = `${prefix}/${photoId}${ext}`;
+
+  const body = Buffer.from(await driveResp.arrayBuffer());
 
   await client.send(
     new PutObjectCommand({

@@ -448,12 +448,21 @@ function UserManagement() {
   );
 }
 
+interface WasabiBreakdown {
+  migratedViaDrive: number;
+  linked:           number;
+  pendingDrive:     number;
+  pendingLink:      number;
+  unmigrateable:    number;
+}
+
 interface WasabiStatus {
   configured: boolean;
   connection: { ok: boolean; error?: string };
-  migrated: number;
-  total: number;
-  remaining: number;
+  migrated:   number;
+  total:      number;
+  remaining:  number;
+  breakdown?: WasabiBreakdown;
 }
 
 interface WasabiCreds {
@@ -545,9 +554,10 @@ function StoragePanel() {
   const runBatch = async () => {
     setMigrating(true);
     try {
-      let remaining = status?.remaining ?? 1;
+      let remaining     = status?.remaining ?? 1;
+      let totalLinked   = 0;
       let totalMigrated = 0;
-      let totalFailed = 0;
+      let totalFailed   = 0;
 
       while (remaining > 0) {
         const r = await fetch(`${API_BASE}/api/wasabi/migrate`, {
@@ -560,18 +570,24 @@ function StoragePanel() {
           const err = await r.json().catch(() => ({ error: "Unknown error" }));
           throw new Error((err as { error?: string }).error ?? "Migration request failed");
         }
-        const result = await r.json() as { migrated: number; failed: number; remaining: number };
-        totalMigrated += result.migrated;
-        totalFailed   += result.failed;
+        const result = await r.json() as { linked: number; migrated: number; failed: number; remaining: number };
+        totalLinked   += result.linked   ?? 0;
+        totalMigrated += result.migrated ?? 0;
+        totalFailed   += result.failed   ?? 0;
         remaining      = result.remaining;
         await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
 
-        if (result.migrated === 0 && result.failed === 0) break;
+        if ((result.linked ?? 0) === 0 && result.migrated === 0 && result.failed === 0) break;
       }
+
+      const parts: string[] = [];
+      if (totalLinked   > 0) parts.push(`${totalLinked} linked from existing storage`);
+      if (totalMigrated > 0) parts.push(`${totalMigrated} downloaded from Drive`);
+      if (totalFailed   > 0) parts.push(`${totalFailed} failed`);
 
       toast({
         title: "Migration complete",
-        description: `${totalMigrated} photo(s) migrated, ${totalFailed} failed.`,
+        description: parts.length > 0 ? parts.join(", ") + "." : "Nothing left to migrate.",
         variant: totalFailed > 0 ? "destructive" : "default",
       });
     } catch (err: unknown) {
@@ -757,6 +773,25 @@ function StoragePanel() {
               <Progress value={pct} className="h-2" />
               {(status?.remaining ?? 0) > 0 && (
                 <p className="text-xs text-muted-foreground">{status?.remaining} remaining</p>
+              )}
+              {status?.breakdown && (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pt-1 text-xs text-muted-foreground">
+                  {status.breakdown.migratedViaDrive > 0 && (
+                    <span>✓ {status.breakdown.migratedViaDrive} from Google Drive</span>
+                  )}
+                  {status.breakdown.linked > 0 && (
+                    <span>✓ {status.breakdown.linked} linked from storage</span>
+                  )}
+                  {status.breakdown.pendingDrive > 0 && (
+                    <span className="text-amber-600">{status.breakdown.pendingDrive} pending Drive download</span>
+                  )}
+                  {status.breakdown.pendingLink > 0 && (
+                    <span className="text-amber-600">{status.breakdown.pendingLink} pending link</span>
+                  )}
+                  {status.breakdown.unmigrateable > 0 && (
+                    <span className="text-muted-foreground/60">{status.breakdown.unmigrateable} no source available</span>
+                  )}
+                </div>
               )}
             </div>
 
