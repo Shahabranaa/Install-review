@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, count, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { db, pool, sheetPhotosTable } from "@workspace/db";
+import { db, sheetPhotosTable } from "@workspace/db";
 import {
   isWasabiConfigured,
   getWasabiClientAndCreds,
@@ -381,7 +381,7 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
 // Non-destructive: only updates rows where wasabi_key IS NULL.
 router.post("/wasabi/link-mirror", requireAdmin, async (_req, res): Promise<void> => {
   try {
-    const result = await pool.query(`
+    const result = await db.execute(sql`
       UPDATE sheet_photos
       SET wasabi_key = wmt.wasabi_key
       FROM wasabi_mirror_tasks wmt
@@ -390,7 +390,7 @@ router.post("/wasabi/link-mirror", requireAdmin, async (_req, res): Promise<void
         AND sheet_photos.wasabi_key IS NULL
     `);
 
-    const linked = result.rowCount ?? 0;
+    const linked = (result as unknown as { rowCount?: number }).rowCount ?? 0;
     logger.info({ linked }, "sheet_photos linked to Wasabi mirror keys");
     res.json({ linked });
   } catch (err: unknown) {
