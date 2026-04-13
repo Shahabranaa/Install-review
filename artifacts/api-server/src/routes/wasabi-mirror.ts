@@ -16,13 +16,17 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-const IMAGE_MIME_TYPES = new Set([
-  "image/jpeg", "image/jpg", "image/png", "image/gif",
-  "image/webp", "image/bmp", "image/heic", "image/tiff",
-]);
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 const MAX_DEPTH = 15;
 const PAGE_SIZE = 200;
+
+/** Normalises a user-supplied prefix: ensure it ends with "/" if non-empty. */
+function normalisePrefix(raw: string): string {
+  const p = raw.trim();
+  if (!p) return "";
+  return p.endsWith("/") ? p : `${p}/`;
+}
 
 /** Strips characters unsafe for S3 keys. */
 function sanitizeSegment(s: string): string {
@@ -67,7 +71,7 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
   }
 
   const folderId = (req.body?.folderId as string | undefined)?.trim();
-  const prefix   = (req.body?.prefix   as string | undefined)?.trim() ?? "";
+  const prefix   = normalisePrefix((req.body?.prefix as string | undefined) ?? "");
 
   if (!folderId) {
     res.status(400).json({ error: "folderId is required" });
@@ -90,7 +94,7 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
       let pageToken: string | undefined;
       do {
         const params = new URLSearchParams({
-          q:              `'${currentId}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+          q:              `'${currentId}' in parents and mimeType != '${FOLDER_MIME}' and trashed = false`,
           fields:         "nextPageToken, files(id, name, mimeType)",
           pageSize:       String(PAGE_SIZE),
           supportsAllDrives: "true",
@@ -106,9 +110,8 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
         const data = await resp.json() as { nextPageToken?: string; files?: Array<{ id: string; name: string; mimeType: string }> };
 
         for (const f of data.files ?? []) {
-          if (!IMAGE_MIME_TYPES.has(f.mimeType)) continue;
           const filePath = currentPath ? `${currentPath}/${sanitizeSegment(f.name)}` : sanitizeSegment(f.name);
-          files.push({ driveFileId: f.id, fileName: f.name, drivePath: prefix ? `${prefix}${filePath}` : filePath });
+          files.push({ driveFileId: f.id, fileName: f.name, drivePath: `${prefix}${filePath}` });
         }
         pageToken = data.nextPageToken;
       } while (pageToken);
