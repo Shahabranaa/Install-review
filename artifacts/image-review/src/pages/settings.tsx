@@ -14,7 +14,7 @@ import {
 import {
   Building2, Info, Users, Plus, Pencil, UserX, UserCheck, ShieldCheck,
   Eye, EyeOff, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
-  KeyRound, Save, ChevronDown, ChevronUp, RefreshCw,
+  KeyRound, Save, ChevronDown, ChevronUp, RefreshCw, FolderSync, Trash2,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
@@ -898,6 +898,261 @@ function StoragePanel() {
   );
 }
 
+const DEFAULT_MIRROR_FOLDER = "1Fe5rOXrcgw1lJnYUC4c9jlZe2j5Ukp52";
+
+interface MirrorStatus {
+  total:        number;
+  pending:      number;
+  done:         number;
+  failed:       number;
+  rootFolderId: string;
+}
+
+function MirrorPanel() {
+  const { toast }      = useToast();
+  const queryClient    = useQueryClient();
+  const [folderId, setFolderId]         = useState(DEFAULT_MIRROR_FOLDER);
+  const [prefix,   setPrefix]           = useState("");
+  const [scanning, setScanning]         = useState(false);
+  const [running,  setRunning]          = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const { data: mirrorStatus, isLoading } = useQuery<MirrorStatus>({
+    queryKey: ["mirror-status"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/wasabi/mirror/status`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load mirror status");
+      return r.json();
+    },
+    refetchInterval: running ? 3000 : 10000,
+  });
+
+  const total   = mirrorStatus?.total   ?? 0;
+  const done    = mirrorStatus?.done    ?? 0;
+  const pending = mirrorStatus?.pending ?? 0;
+  const failed  = mirrorStatus?.failed  ?? 0;
+  const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const handleScan = async () => {
+    if (!folderId.trim()) {
+      toast({ title: "Folder ID required", variant: "destructive" });
+      return;
+    }
+    setScanning(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/wasabi/mirror/scan`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: folderId.trim(), prefix: prefix.trim() }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error((err as { error?: string }).error ?? "Scan failed");
+      }
+      const result = await r.json() as { scanned: number; inserted: number; alreadyKnown: number };
+      await queryClient.invalidateQueries({ queryKey: ["mirror-status"] });
+      toast({
+        title: result.inserted > 0 ? `Found ${result.inserted} new file${result.inserted !== 1 ? "s" : ""}` : "Scan complete",
+        description: result.inserted > 0
+          ? `${result.inserted} files queued for upload${result.alreadyKnown > 0 ? `, ${result.alreadyKnown} already known` : ""}.`
+          : `All ${result.scanned} files already tracked.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Scan error",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleRun = async () => {
+    setRunning(true);
+    try {
+      let remaining = pending > 0 ? pending : 1;
+      let totalUploaded = 0;
+      let totalFailed   = 0;
+
+      while (remaining > 0) {
+        const r = await fetch(`${API_BASE}/api/wasabi/mirror/batch`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchSize: 10 }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ error: "Unknown error" }));
+          throw new Error((err as { error?: string }).error ?? "Batch failed");
+        }
+        const result = await r.json() as { uploaded: number; failed: number; remaining: number };
+        totalUploaded += result.uploaded ?? 0;
+        totalFailed   += result.failed   ?? 0;
+        remaining      = result.remaining;
+        await queryClient.invalidateQueries({ queryKey: ["mirror-status"] });
+        if (result.uploaded === 0 && result.failed === 0) break;
+      }
+
+      toast({
+        title: "Upload complete",
+        description: `${totalUploaded} file${totalUploaded !== 1 ? "s" : ""} uploaded to Wasabi${totalFailed > 0 ? `, ${totalFailed} failed` : ""}.`,
+        variant: totalFailed > 0 ? "destructive" : "default",
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Upload error",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setRunning(false);
+      await queryClient.invalidateQueries({ queryKey: ["mirror-status"] });
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/wasabi/mirror/reset`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Reset failed");
+      const result = await r.json() as { deleted: number };
+      await queryClient.invalidateQueries({ queryKey: ["mirror-status"] });
+      toast({ title: "Reset complete", description: `${result.deleted} tasks cleared.` });
+    } catch (err: unknown) {
+      toast({
+        title: "Reset error",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmReset(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FolderSync className="w-5 h-5" />
+          Mirror Drive Folder to Wasabi
+        </CardTitle>
+        <CardDescription>
+          Copy an entire Google Drive folder to Wasabi, preserving the original folder path as the object key.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+
+        {/* Folder ID + prefix inputs */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Drive Folder ID</Label>
+            <Input
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              placeholder="Google Drive folder ID"
+              className="font-mono text-xs h-8"
+              disabled={scanning || running}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Wasabi key prefix <span className="text-muted-foreground">(optional)</span></Label>
+            <Input
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              placeholder="e.g. raw/ or leave empty"
+              className="font-mono text-xs h-8"
+              disabled={scanning || running}
+            />
+          </div>
+        </div>
+
+        {/* Scan button */}
+        <Button
+          variant="outline"
+          onClick={handleScan}
+          disabled={scanning || running}
+          className="w-full"
+        >
+          {scanning ? (
+            <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Scanning Drive…</>
+          ) : (
+            <><RefreshCw className="w-4 h-4 mr-2" /> Scan folder for files</>
+          )}
+        </Button>
+
+        {/* Progress */}
+        {!isLoading && total > 0 && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Upload progress</span>
+                <span className="font-medium">{done} / {total} ({pct}%)</span>
+              </div>
+              <Progress value={pct} className="h-2" />
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs text-center">
+              <div className="rounded-md border bg-muted/30 py-2">
+                <p className="font-semibold text-sm">{pending}</p>
+                <p className="text-muted-foreground">Pending</p>
+              </div>
+              <div className="rounded-md border bg-green-50 py-2">
+                <p className="font-semibold text-sm text-green-700">{done}</p>
+                <p className="text-muted-foreground">Done</p>
+              </div>
+              <div className="rounded-md border bg-red-50 py-2">
+                <p className="font-semibold text-sm text-red-600">{failed}</p>
+                <p className="text-muted-foreground">Failed</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload button */}
+        <Button
+          onClick={handleRun}
+          disabled={running || scanning || pending === 0}
+          className="w-full"
+        >
+          {running ? (
+            <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Uploading to Wasabi…</>
+          ) : done > 0 && pending === 0 ? (
+            <><CheckCircle2 className="w-4 h-4 mr-2" /> All files uploaded</>
+          ) : (
+            <><HardDrive className="w-4 h-4 mr-2" /> Upload to Wasabi</>
+          )}
+        </Button>
+
+        {/* Reset */}
+        {total > 0 && (
+          <div className="pt-1 border-t">
+            {confirmReset ? (
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground flex-1">This will clear all {total} tasks. Are you sure?</p>
+                <Button size="sm" variant="destructive" onClick={handleReset}>Yes, reset</Button>
+                <Button size="sm" variant="outline" onClick={() => setConfirmReset(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground hover:text-destructive w-full"
+                onClick={() => setConfirmReset(true)}
+                disabled={running || scanning}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Reset mirror tasks
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { isAdmin } = useAuth();
 
@@ -910,6 +1165,7 @@ export default function Settings() {
 
       {isAdmin && <UserManagement />}
       {isAdmin && <StoragePanel />}
+      {isAdmin && <MirrorPanel />}
 
       <Card>
         <CardHeader>
