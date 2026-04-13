@@ -156,7 +156,6 @@ type ResolvedPhoto = {
   photoId:      string;
   fileId:       string | null;
   wasabiUrl:    string | null;
-  hasWasabi?:   boolean;
   notMigrated?: boolean;
 };
 
@@ -183,13 +182,15 @@ function PhotoCard({
     enabled: !!photo.photoId,
   });
 
-  // Prefer Wasabi proxy; fall back to Drive proxy only when explicitly not notMigrated
-  const imageUrl = resolved?.hasWasabi
-    ? `${BASE_URL}api/wasabi/image/${photo.photoId}`
-    : (resolved?.wasabiUrl
-      ?? (resolved && !resolved.notMigrated && resolved.fileId
-        ? `${BASE_URL}api/drive/image/${resolved.fileId}`
-        : null));
+  // wasabiUrl is a root-relative API path (/api/wasabi/image/:id) — prepend BASE_URL.
+  // Fall back to Drive proxy only when Wasabi is not configured (wasabiUrl null, fileId set).
+  const wasabiImageUrl = resolved?.wasabiUrl
+    ? `${BASE_URL.replace(/\/$/, "")}${resolved.wasabiUrl}`
+    : null;
+  const imageUrl = wasabiImageUrl
+    ?? (resolved && !resolved.notMigrated && resolved.fileId
+      ? `${BASE_URL}api/drive/image/${resolved.fileId}`
+      : null);
 
   const notMigrated = resolved?.notMigrated && !imageUrl;
   const [imgError, setImgError] = useState(false);

@@ -540,9 +540,9 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
     if (row) {
       if (row.driveFileId) fileIdCache.set(photoId, row.driveFileId);
 
-      // Photo is in Wasabi — tell the client to use the server proxy (bucket is private)
+      // Photo is in Wasabi — return proxy URL (server fetches from private bucket with creds)
       if (row.wasabiKey) {
-        res.json({ photoId, fileId: row.driveFileId ?? null, wasabiUrl: null, hasWasabi: true });
+        res.json({ photoId, fileId: row.driveFileId ?? null, wasabiUrl: `/api/wasabi/image/${photoId}` });
         return;
       }
 
