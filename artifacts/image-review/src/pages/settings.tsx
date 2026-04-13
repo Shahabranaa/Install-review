@@ -477,6 +477,7 @@ interface ScanResult {
   total: number;
   newlyDiscovered: number;
   alreadyKnown: number;
+  partial?: boolean;
 }
 
 function StoragePanel() {
@@ -625,11 +626,13 @@ function StoragePanel() {
       const result = await r.json() as ScanResult;
       setScanResult(result);
       await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+      const partialNote = result.partial ? " (partial — some Drive pages could not be fetched)" : "";
       toast({
         title: result.newlyDiscovered > 0 ? "New photos found" : "Drive is up to date",
         description: result.newlyDiscovered > 0
-          ? `${result.newlyDiscovered} new photo${result.newlyDiscovered !== 1 ? "s" : ""} discovered and queued for migration.`
-          : `All ${result.total} Drive photos are already tracked.`,
+          ? `${result.newlyDiscovered} new photo${result.newlyDiscovered !== 1 ? "s" : ""} discovered and queued for migration.${partialNote}`
+          : `All ${result.total} Drive photos are already tracked.${partialNote}`,
+        variant: result.partial ? "destructive" : "default",
       });
     } catch (err: unknown) {
       toast({

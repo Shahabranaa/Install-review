@@ -10,12 +10,8 @@ import {
   checkWasabiConnection,
 } from "../lib/wasabi.js";
 import { driveRequest, isDriveConfigured } from "../lib/google-drive.js";
+import { PHOTO_SCAN_FOLDER_IDS } from "../lib/drive-constants.js";
 import { logger } from "../lib/logger.js";
-
-const PHOTO_IMAGES_FOLDER_ID          = "1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0";
-const PHOTO_IMAGES_2_STAMPED_FOLDER_ID = "18dMOuEuKFu_prnx9FW_FW1y2nFUebW6C";
-
-const SCAN_FOLDER_IDS = [PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID];
 
 const IMAGE_MIME_TYPES = [
   "image/jpeg", "image/png", "image/gif",
@@ -239,8 +235,9 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
 
     // Collect all Drive file IDs from both source folders (recursive via 'in ancestors')
     const allDriveFiles: Array<{ id: string; name: string }> = [];
+    let partial = false;
 
-    for (const folderId of SCAN_FOLDER_IDS) {
+    for (const folderId of PHOTO_SCAN_FOLDER_IDS) {
       let pageToken: string | undefined;
       do {
         const params = new URLSearchParams({
@@ -256,12 +253,18 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
         if (!resp.ok) {
           const txt = await resp.text().catch(() => resp.statusText);
           logger.warn({ folderId, status: resp.status }, `Drive scan page error: ${txt}`);
+          partial = true;
           break;
         }
         const data = await resp.json() as { files: Array<{ id: string; name: string }>; nextPageToken?: string };
         allDriveFiles.push(...(data.files ?? []));
         pageToken = data.nextPageToken;
       } while (pageToken);
+    }
+
+    if (partial && allDriveFiles.length === 0) {
+      res.status(502).json({ error: "Drive API request failed — no files were retrieved" });
+      return;
     }
 
     const total = allDriveFiles.length;
@@ -317,7 +320,7 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
       logger.info({ actuallyInserted }, "Drive scan: inserted new photo rows");
     }
 
-    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown: total - actuallyInserted });
+    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown: total - actuallyInserted, partial });
   } catch (err: unknown) {
     logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

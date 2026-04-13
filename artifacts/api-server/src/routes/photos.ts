@@ -4,6 +4,7 @@ import { db, sheetPhotosTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
 import { isWasabiConfigured } from "../lib/wasabi.js";
+import { PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID } from "../lib/drive-constants.js";
 
 const router: IRouter = Router();
 
@@ -67,11 +68,6 @@ export interface PhotoRecord {
   temp4: string;
   resizedChecked: string;
 }
-
-// ─── Known folder IDs ────────────────────────────────────────────────────────
-
-const PHOTO_IMAGES_FOLDER_ID         = "1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0";
-const PHOTO_IMAGES_2_STAMPED_FOLDER_ID = "18dMOuEuKFu_prnx9FW_FW1y2nFUebW6C";
 
 // ─── In-memory caches ────────────────────────────────────────────────────────
 
