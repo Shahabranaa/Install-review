@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, count, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -283,35 +284,40 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
     const newFiles = allDriveFiles.filter((f) => !existingIds.has(f.id));
     const newlyDiscovered = newFiles.length;
 
+    let actuallyInserted = 0;
+
     if (newlyDiscovered > 0) {
-      // Insert new rows — derive photo_id from file name (8-char hex) if pattern matches,
-      // otherwise fall back to first 8 chars of the Drive file ID.
-      const PHOTO_ID_RE = /([a-f0-9]{8})/i;
+      // Derive photo_id: find the last 8 consecutive hex chars in the filename stem.
+      // This handles names like "IMG_abc12345.jpg", "abc12345.jpg", "photo_abc12345_v2.jpg".
+      // If no 8-char hex suffix is present, fall back to a cryptographically random 8-char hex.
       const insertRows = newFiles.map((f) => {
-        const match = PHOTO_ID_RE.exec(f.name);
-        const photoId = match ? match[1].toLowerCase() : f.id.replace(/[^a-f0-9]/gi, "").slice(0, 8).toLowerCase();
-        return { driveFileId: f.id, photoId: photoId || undefined };
+        const stem = f.name.replace(/\.[^.]+$/, "");
+        const matches = stem.match(/[a-f0-9]{8}/gi);
+        const hexSuffix = matches ? matches[matches.length - 1].toLowerCase() : null;
+        const photoId = hexSuffix ?? randomBytes(4).toString("hex");
+        return { driveFileId: f.id, photoId };
       });
 
-      // Batch insert in chunks of 100 to avoid query size limits
+      // Batch insert in chunks of 100; use .returning() to count actual rows inserted
+      // (onConflictDoNothing silently skips photo_id collisions so we cannot trust chunk.length)
       const CHUNK = 100;
-      let inserted = 0;
       for (let i = 0; i < insertRows.length; i += CHUNK) {
         const chunk = insertRows.slice(i, i + CHUNK);
         try {
-          await db
+          const returned = await db
             .insert(sheetPhotosTable)
             .values(chunk)
-            .onConflictDoNothing();
-          inserted += chunk.length;
+            .onConflictDoNothing()
+            .returning({ id: sheetPhotosTable.id });
+          actuallyInserted += returned.length;
         } catch (err) {
           logger.warn({ err, chunkIndex: i }, "Drive scan: insert chunk failed");
         }
       }
-      logger.info({ inserted }, "Drive scan: inserted new photo rows");
+      logger.info({ actuallyInserted }, "Drive scan: inserted new photo rows");
     }
 
-    res.json({ total, newlyDiscovered, alreadyKnown: total - newlyDiscovered });
+    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown: total - actuallyInserted });
   } catch (err: unknown) {
     logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
