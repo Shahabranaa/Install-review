@@ -487,6 +487,7 @@ function StoragePanel() {
   const [migrating, setMigrating] = useState(false);
   const [scanning, setScanning]   = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [confirmResetMigration, setConfirmResetMigration] = useState(false);
 
   // ── Credentials form state ──────────────────────────────────────────────
   const [credExpanded, setCredExpanded] = useState(false);
@@ -890,6 +891,58 @@ function StoragePanel() {
               <p className="text-xs text-muted-foreground">
                 Enter your Wasabi credentials above and save them to enable migration.
               </p>
+            )}
+
+            {/* ── Reset migration state ─────────────────────────────── */}
+            {(status?.migrated ?? 0) > 0 && (
+              <div className="pt-1 border-t">
+                {confirmResetMigration ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground flex-1">
+                      This will clear the Wasabi key from {status?.migrated} photo records. Are you sure?
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        try {
+                          const r = await fetch(`${API_BASE}/api/wasabi/reset-migration`, {
+                            method: "DELETE",
+                            credentials: "include",
+                          });
+                          if (!r.ok) throw new Error("Reset failed");
+                          const data = await r.json() as { reset: number };
+                          await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+                          toast({ title: "Migration status reset", description: `${data.reset} photo records cleared.` });
+                        } catch (err: unknown) {
+                          toast({
+                            title: "Reset failed",
+                            description: err instanceof Error ? err.message : String(err),
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setConfirmResetMigration(false);
+                        }
+                      }}
+                    >
+                      Yes, reset
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setConfirmResetMigration(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-destructive w-full"
+                    disabled={migrating || scanning}
+                    onClick={() => setConfirmResetMigration(true)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Reset migration status
+                  </Button>
+                )}
+              </div>
             )}
           </>
         )}

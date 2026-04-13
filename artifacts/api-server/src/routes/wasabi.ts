@@ -376,4 +376,23 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
   }
 });
 
+// DELETE /api/wasabi/reset-migration — admin only
+// Clears wasabi_key for all sheet_photos rows so migration status resets to 0.
+// Use when files have been manually deleted from Wasabi and the DB state is stale.
+router.delete("/wasabi/reset-migration", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const result = await db
+      .update(sheetPhotosTable)
+      .set({ wasabiKey: null })
+      .where(sql`wasabi_key IS NOT NULL`)
+      .returning({ id: sheetPhotosTable.id });
+
+    logger.info({ reset: result.length }, "Wasabi migration state reset");
+    res.json({ reset: result.length });
+  } catch (err: unknown) {
+    logger.error({ err }, "reset-migration failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Reset failed" });
+  }
+});
+
 export default router;
