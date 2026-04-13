@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, sheetPhotosTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
+import { isWasabiConfigured, wasabiPublicUrl } from "../lib/wasabi.js";
 
 const router: IRouter = Router();
 
@@ -528,24 +529,46 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Invalid photoId" }); return;
     }
 
-    // Check DB cache first
-    const dbRow = await db
+    // Always check DB first — covers Drive-migrated AND path-linked photos
+    const dbRows = await db
       .select({ driveFileId: sheetPhotosTable.driveFileId, wasabiKey: sheetPhotosTable.wasabiKey })
       .from(sheetPhotosTable)
       .where(eq(sheetPhotosTable.photoId, photoId))
       .limit(1);
-    if (dbRow[0]?.driveFileId) {
-      fileIdCache.set(photoId, dbRow[0].driveFileId);
-      const wasabiKey = dbRow[0].wasabiKey;
-      const bucket    = process.env["WASABI_BUCKET_NAME"];
-      const region    = process.env["WASABI_REGION"] ?? "eu-west-1";
-      const wasabiUrl = wasabiKey && bucket
-        ? `https://${bucket}.s3.${region}.wasabisys.com/${wasabiKey}`
-        : undefined;
-      res.json({ photoId, fileId: dbRow[0].driveFileId, wasabiUrl });
+
+    const row = dbRows[0];
+    if (row) {
+      if (row.driveFileId) fileIdCache.set(photoId, row.driveFileId);
+
+      // Photo is in Wasabi — return URL directly, no Drive needed
+      if (row.wasabiKey) {
+        const wasabiUrl = await wasabiPublicUrl(row.wasabiKey);
+        res.json({ photoId, fileId: row.driveFileId ?? null, wasabiUrl });
+        return;
+      }
+
+      // Not in Wasabi yet — fall back to Drive proxy only when Wasabi is not configured
+      if (row.driveFileId) {
+        if (await isWasabiConfigured()) {
+          res.json({ photoId, fileId: row.driveFileId, wasabiUrl: null, notMigrated: true });
+        } else {
+          res.json({ photoId, fileId: row.driveFileId, wasabiUrl: null });
+        }
+        return;
+      }
+
+      // DB row exists but no source at all
+      res.json({ photoId, fileId: null, wasabiUrl: null, notMigrated: true });
       return;
     }
 
+    // No DB row — skip expensive Drive search when Wasabi is configured
+    if (await isWasabiConfigured()) {
+      res.json({ photoId, fileId: null, wasabiUrl: null, notMigrated: true });
+      return;
+    }
+
+    // Wasabi not configured — fall through to Drive search (backward compat)
     const allPhotos = await fetchSheetPhotos();
     const record = allPhotos.find(p => p.photoId === photoId) ?? {
       photoId, photoUpload: "", resizedPhoto: "", signatureCapture: "",
@@ -566,13 +589,12 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
     const fileId = await resolveFileId(record);
     if (!fileId) { res.status(404).json({ error: "File not found in Drive" }); return; }
 
-    // Persist resolved fileId to DB
     await db
       .update(sheetPhotosTable)
       .set({ driveFileId: fileId })
       .where(eq(sheetPhotosTable.photoId, photoId));
 
-    res.json({ photoId, fileId });
+    res.json({ photoId, fileId, wasabiUrl: null });
   } catch (err: unknown) {
     console.error("Photo resolve error:", err);
     res.status(500).json({ error: "Failed to resolve photo" });

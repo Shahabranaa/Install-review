@@ -34,6 +34,7 @@ import {
   FileText,
   MessageSquare,
   ClipboardCheck,
+  ImageOff,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -151,39 +152,48 @@ function MetaSection({ title, children }: { title: string; children: React.React
 
 // ─── Photo card ───────────────────────────────────────────────────────────────
 
+type ResolvedPhoto = {
+  photoId:     string;
+  fileId:      string | null;
+  wasabiUrl:   string | null;
+  notMigrated?: boolean;
+};
+
 function PhotoCard({
   photo,
   onOpen,
 }: {
   photo: PhotoRecord;
-  onOpen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, imageUrl: string) => void;
 }) {
   const reviewOverrides = useContext(ReviewOverridesContext);
   const effectiveApproval = reviewOverrides.get(photo.photoId) ?? photo.approval;
 
-  const { data: resolved } = useQuery<{ photoId: string; fileId: string } | null>({
+  const { data: resolved, isPending } = useQuery<ResolvedPhoto | null>({
     queryKey: ["photo-resolve", photo.photoId],
     queryFn: async () => {
       if (!photo.photoId) return null;
       const r = await fetch(`${BASE_URL}api/photos/resolve/${photo.photoId}`);
       if (!r.ok) return null;
-      return r.json() as Promise<{ photoId: string; fileId: string; wasabiUrl?: string }>;
+      return r.json() as Promise<ResolvedPhoto>;
     },
     staleTime: Infinity,
     retry: false,
-    enabled: !!photo.photoId && !!photo.filePath,
+    enabled: !!photo.photoId,
   });
 
+  // Prefer Wasabi URL; fall back to Drive proxy only when explicitly not notMigrated
   const imageUrl = resolved?.wasabiUrl
-    ? resolved.wasabiUrl
-    : resolved?.fileId
+    ?? (resolved && !resolved.notMigrated && resolved.fileId
       ? `${BASE_URL}api/drive/image/${resolved.fileId}`
-      : null;
+      : null);
+
+  const notMigrated = resolved?.notMigrated && !imageUrl;
 
   return (
     <Card
       className={`overflow-hidden group transition-all duration-200 ${imageUrl ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""}`}
-      onClick={() => imageUrl && resolved?.fileId && onOpen(photo, resolved.fileId)}
+      onClick={() => imageUrl && onOpen(photo, imageUrl)}
     >
       <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
         {imageUrl ? (
@@ -198,7 +208,12 @@ function PhotoCard({
               <ZoomIn className="w-8 h-8 text-white drop-shadow-lg" />
             </div>
           </>
-        ) : photo.filePath ? (
+        ) : notMigrated ? (
+          <div className="flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50 p-3 text-center">
+            <ImageOff className="w-6 h-6" />
+            <span className="text-xs">Not yet migrated</span>
+          </div>
+        ) : isPending ? (
           <div className="flex flex-col items-center gap-2 text-muted-foreground/50 animate-pulse">
             <ImageIcon className="w-8 h-8" />
             <span className="text-xs">Loading…</span>
@@ -249,16 +264,15 @@ interface DbReview {
 
 function FullscreenViewer({
   photo,
-  fileId,
+  imageUrl,
   onClose,
   onReview,
 }: {
-  photo: PhotoRecord;
-  fileId: string;
-  onClose: () => void;
+  photo:    PhotoRecord;
+  imageUrl: string;
+  onClose:  () => void;
   onReview: (photoId: string, approval: string) => void;
 }) {
-  const imageUrl = `${BASE_URL}api/drive/image/${fileId}`;
 
   // Review panel state
   const [reviewMode, setReviewMode] = useState(false);
@@ -712,7 +726,7 @@ function PhaseSection({
 }: {
   phase: string;
   photos: PhotoRecord[];
-  onOpen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, imageUrl: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   // Sort photos by required image order (numeric)
@@ -746,7 +760,7 @@ function StringSection({
 }: {
   stringName: string;
   photos: PhotoRecord[];
-  onOpen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, imageUrl: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const byPhase = new Map<string, PhotoRecord[]>();
@@ -794,7 +808,7 @@ function OspSection({
 }: {
   ospName: string;
   stringMap: Map<string, PhotoRecord[]>;
-  onOpen: (photo: PhotoRecord, fileId: string) => void;
+  onOpen: (photo: PhotoRecord, imageUrl: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const sortedStrings = [...stringMap.entries()].sort(([a], [b]) => natSort(a, b));
@@ -836,7 +850,7 @@ export default function DrivePhotos() {
 
   const [selectedTower, setSelectedTower] = useState<string | null>(params.get("tower") ?? null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; fileId: string } | null>(null);
+  const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; imageUrl: string } | null>(null);
   const [reviewOverrides, setReviewOverrides] = useState<Map<string, string>>(new Map());
 
   // Load existing reviewer decisions from DB on mount
@@ -875,8 +889,8 @@ export default function DrivePhotos() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const handleOpen = useCallback((photo: PhotoRecord, fileId: string) => {
-    setFullscreen({ photo, fileId });
+  const handleOpen = useCallback((photo: PhotoRecord, imageUrl: string) => {
+    setFullscreen({ photo, imageUrl });
   }, []);
 
   const handleClearCache = async () => {
@@ -926,7 +940,7 @@ export default function DrivePhotos() {
       {fullscreen && (
         <FullscreenViewer
           photo={fullscreen.photo}
-          fileId={fullscreen.fileId}
+          imageUrl={fullscreen.imageUrl}
           onClose={() => setFullscreen(null)}
           onReview={handleReview}
         />
