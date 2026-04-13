@@ -233,39 +233,78 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
   try {
     const imageMimeFilter = IMAGE_MIME_TYPES.map((m) => `mimeType = '${m}'`).join(" or ");
 
-    // Collect all Drive file IDs from both source folders (recursive via 'in ancestors')
+    // BFS traversal — uses 'in parents' (supported) not 'in ancestors' (unsupported).
+    // Queue entries: [folderId, depth]. visitedFolders prevents infinite loops.
     const allDriveFiles: Array<{ id: string; name: string }> = [];
     let partial = false;
+    const MAX_DEPTH = 10;
+    const visitedFolders = new Set<string>();
+    const queue: Array<[string, number]> = PHOTO_SCAN_FOLDER_IDS.map((id) => [id, 0]);
 
-    for (const folderId of PHOTO_SCAN_FOLDER_IDS) {
-      let pageToken: string | undefined;
+    while (queue.length > 0) {
+      const [folderId, depth] = queue.shift()!;
+      if (visitedFolders.has(folderId) || depth > MAX_DEPTH) continue;
+      visitedFolders.add(folderId);
+
+      // ── List image files in this folder (paginated) ──────────────────────
+      let filePageToken: string | undefined;
       do {
         const params = new URLSearchParams({
-          q: `'${folderId}' in ancestors and (${imageMimeFilter}) and trashed = false`,
+          q: `'${folderId}' in parents and (${imageMimeFilter}) and trashed = false`,
           fields: "files(id,name),nextPageToken",
           pageSize: "1000",
           includeItemsFromAllDrives: "true",
           supportsAllDrives: "true",
         });
-        if (pageToken) params.set("pageToken", pageToken);
+        if (filePageToken) params.set("pageToken", filePageToken);
 
         const resp = await driveRequest("/files", params);
         if (!resp.ok) {
           const txt = await resp.text().catch(() => resp.statusText);
-          logger.warn({ folderId, status: resp.status }, `Drive scan page error: ${txt}`);
+          logger.warn({ folderId, depth, status: resp.status }, `Drive scan files error: ${txt}`);
           partial = true;
           break;
         }
         const data = await resp.json() as { files: Array<{ id: string; name: string }>; nextPageToken?: string };
         allDriveFiles.push(...(data.files ?? []));
-        pageToken = data.nextPageToken;
-      } while (pageToken);
+        filePageToken = data.nextPageToken;
+      } while (filePageToken);
+
+      // ── List subfolders in this folder and enqueue them ──────────────────
+      if (depth < MAX_DEPTH) {
+        let folderPageToken: string | undefined;
+        do {
+          const params = new URLSearchParams({
+            q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: "files(id,name),nextPageToken",
+            pageSize: "1000",
+            includeItemsFromAllDrives: "true",
+            supportsAllDrives: "true",
+          });
+          if (folderPageToken) params.set("pageToken", folderPageToken);
+
+          const resp = await driveRequest("/files", params);
+          if (!resp.ok) {
+            const txt = await resp.text().catch(() => resp.statusText);
+            logger.warn({ folderId, depth, status: resp.status }, `Drive scan subfolders error: ${txt}`);
+            partial = true;
+            break;
+          }
+          const data = await resp.json() as { files: Array<{ id: string; name: string }>; nextPageToken?: string };
+          for (const sub of (data.files ?? [])) {
+            if (!visitedFolders.has(sub.id)) queue.push([sub.id, depth + 1]);
+          }
+          folderPageToken = data.nextPageToken;
+        } while (folderPageToken);
+      }
     }
 
     if (partial && allDriveFiles.length === 0) {
       res.status(502).json({ error: "Drive API request failed — no files were retrieved" });
       return;
     }
+
+    logger.info({ visited: visitedFolders.size, found: allDriveFiles.length }, "Drive BFS scan complete");
 
     // Deduplicate by Drive file ID (possible if folder scopes overlap)
     const seenIds = new Set<string>();
