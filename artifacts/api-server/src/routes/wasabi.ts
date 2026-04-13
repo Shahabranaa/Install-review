@@ -267,8 +267,16 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
       return;
     }
 
-    const total = allDriveFiles.length;
-    logger.info({ total }, "Drive scan: total files found");
+    // Deduplicate by Drive file ID (possible if folder scopes overlap)
+    const seenIds = new Set<string>();
+    const uniqueDriveFiles = allDriveFiles.filter((f) => {
+      if (seenIds.has(f.id)) return false;
+      seenIds.add(f.id);
+      return true;
+    });
+
+    const total = uniqueDriveFiles.length;
+    logger.info({ total }, "Drive scan: total unique files found");
 
     if (total === 0) {
       res.json({ total: 0, newlyDiscovered: 0, alreadyKnown: 0 });
@@ -283,13 +291,13 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
 
     const existingIds = new Set(existingRows.map((r) => r.driveFileId as string));
 
-    // Find files not yet in DB
-    const newFiles = allDriveFiles.filter((f) => !existingIds.has(f.id));
-    const newlyDiscovered = newFiles.length;
+    // Files not yet tracked in DB by drive_file_id
+    const newFiles = uniqueDriveFiles.filter((f) => !existingIds.has(f.id));
+    const alreadyKnown = total - newFiles.length;
 
     let actuallyInserted = 0;
 
-    if (newlyDiscovered > 0) {
+    if (newFiles.length > 0) {
       // Derive photo_id: find the last 8 consecutive hex chars in the filename stem.
       // This handles names like "IMG_abc12345.jpg", "abc12345.jpg", "photo_abc12345_v2.jpg".
       // If no 8-char hex suffix is present, fall back to a cryptographically random 8-char hex.
@@ -320,7 +328,7 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
       logger.info({ actuallyInserted }, "Drive scan: inserted new photo rows");
     }
 
-    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown: total - actuallyInserted, partial });
+    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown, partial });
   } catch (err: unknown) {
     logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
