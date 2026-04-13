@@ -950,13 +950,15 @@ function MirrorPanel() {
         const err = await r.json().catch(() => ({ error: "Unknown error" }));
         throw new Error((err as { error?: string }).error ?? "Scan failed");
       }
-      const result = await r.json() as { scanned: number; inserted: number; alreadyKnown: number };
+      const result = await r.json() as { scanned: number; inserted: number; alreadyKnown: number; depthLimitHit?: boolean };
       await queryClient.invalidateQueries({ queryKey: ["mirror-status"] });
+      const depthNote = result.depthLimitHit ? " Note: some deeply nested folders were skipped (depth > 15)." : "";
       toast({
         title: result.inserted > 0 ? `Found ${result.inserted} new file${result.inserted !== 1 ? "s" : ""}` : "Scan complete",
         description: result.inserted > 0
-          ? `${result.inserted} files queued for upload${result.alreadyKnown > 0 ? `, ${result.alreadyKnown} already known` : ""}.`
-          : `All ${result.scanned} files already tracked.`,
+          ? `${result.inserted} files queued for upload${result.alreadyKnown > 0 ? `, ${result.alreadyKnown} already known` : ""}.${depthNote}`
+          : `All ${result.scanned} files already tracked.${depthNote}`,
+        variant: result.depthLimitHit ? "destructive" : "default",
       });
     } catch (err: unknown) {
       toast({
@@ -1094,7 +1096,11 @@ function MirrorPanel() {
               </div>
               <Progress value={pct} className="h-2" />
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs text-center">
+            <div className="grid grid-cols-4 gap-2 text-xs text-center">
+              <div className="rounded-md border bg-slate-50 py-2">
+                <p className="font-semibold text-sm">{total}</p>
+                <p className="text-muted-foreground">Total</p>
+              </div>
               <div className="rounded-md border bg-muted/30 py-2">
                 <p className="font-semibold text-sm">{pending}</p>
                 <p className="text-muted-foreground">Pending</p>

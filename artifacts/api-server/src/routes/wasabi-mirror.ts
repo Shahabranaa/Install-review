@@ -18,7 +18,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
-const MAX_DEPTH = 15;
+const MAX_DEPTH = 15; // files beyond this depth are not mirrored; depthLimitHit flag surfaced in response
 const PAGE_SIZE = 200;
 
 /** Normalises a user-supplied prefix: ensure it ends with "/" if non-empty. */
@@ -83,12 +83,17 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
     const queue: Array<[string, string, number]> = [[folderId, "", 0]];
     const visitedFolders = new Set<string>([folderId]);
     const files: Array<{ driveFileId: string; fileName: string; drivePath: string }> = [];
+    let depthLimitHit = false;
 
     while (queue.length > 0) {
       const entry = queue.shift()!;
       const [currentId, currentPath, depth] = entry;
 
-      if (depth > MAX_DEPTH) continue;
+      if (depth > MAX_DEPTH) {
+        depthLimitHit = true;
+        logger.warn({ currentPath, depth }, "mirror/scan: MAX_DEPTH exceeded, skipping subtree");
+        continue;
+      }
 
       // List image files in this folder
       let pageToken: string | undefined;
@@ -168,7 +173,7 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
       }
     }
 
-    res.json({ scanned: files.length, inserted, alreadyKnown });
+    res.json({ scanned: files.length, inserted, alreadyKnown, depthLimitHit });
   } catch (err) {
     logger.error({ err }, "mirror/scan failed");
     res.status(500).json({ error: err instanceof Error ? err.message : "Scan failed" });
