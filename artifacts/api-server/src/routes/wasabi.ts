@@ -1,8 +1,10 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, count, sql } from "drizzle-orm";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { db, sheetPhotosTable } from "@workspace/db";
 import {
   isWasabiConfigured,
+  getWasabiClientAndCreds,
   uploadToWasabi,
   checkWasabiConnection,
 } from "../lib/wasabi.js";
@@ -17,6 +19,55 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   }
   next();
 }
+
+// GET /api/wasabi/image/:photoId — proxy a Wasabi object through the server
+// (bucket is private; this endpoint authenticates with stored credentials)
+router.get("/wasabi/image/:photoId", async (req, res): Promise<void> => {
+  const { photoId } = req.params;
+  if (!photoId || !/^[a-f0-9]{6,12}$/i.test(photoId)) {
+    res.status(400).json({ error: "Invalid photoId" }); return;
+  }
+
+  try {
+    const rows = await db
+      .select({ wasabiKey: sheetPhotosTable.wasabiKey })
+      .from(sheetPhotosTable)
+      .where(eq(sheetPhotosTable.photoId, photoId))
+      .limit(1);
+
+    const wasabiKey = rows[0]?.wasabiKey;
+    if (!wasabiKey) {
+      res.status(404).json({ error: "Photo not found or not yet migrated to Wasabi" }); return;
+    }
+
+    const ctx = await getWasabiClientAndCreds();
+    if (!ctx) {
+      res.status(503).json({ error: "Wasabi not configured" }); return;
+    }
+
+    const obj = await ctx.client.send(
+      new GetObjectCommand({ Bucket: ctx.creds.bucket, Key: wasabiKey }),
+    );
+
+    const contentType = obj.ContentType ?? "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    if (obj.ContentLength) res.setHeader("Content-Length", obj.ContentLength);
+
+    const body = obj.Body;
+    if (!body || typeof (body as { pipe?: unknown }).pipe !== "function") {
+      res.status(502).json({ error: "Empty response from Wasabi" }); return;
+    }
+    (body as NodeJS.ReadableStream).pipe(res);
+  } catch (err: unknown) {
+    const code = (err as { name?: string }).name;
+    if (code === "NoSuchKey" || code === "NotFound") {
+      res.status(404).json({ error: "Object not found in Wasabi" }); return;
+    }
+    logger.error({ err, photoId }, "Wasabi image proxy error");
+    res.status(500).json({ error: "Failed to fetch image from Wasabi" });
+  }
+});
 
 // GET /api/wasabi/status
 router.get("/wasabi/status", async (_req, res): Promise<void> => {

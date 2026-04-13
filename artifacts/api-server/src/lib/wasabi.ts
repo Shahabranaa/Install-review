@@ -97,6 +97,14 @@ export async function isWasabiConfigured(): Promise<boolean> {
   return creds !== null;
 }
 
+/** Returns the S3 client and credentials together (for proxy streaming). */
+export async function getWasabiClientAndCreds(): Promise<{ client: S3Client; creds: WasabiCreds } | null> {
+  const creds = await loadCreds();
+  if (!creds) return null;
+  const client = await getWasabiClient();
+  return { client, creds };
+}
+
 /** Returns the public URL for a given Wasabi object key. */
 export async function wasabiPublicUrl(key: string): Promise<string> {
   const creds = await loadCreds();

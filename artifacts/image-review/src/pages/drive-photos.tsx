@@ -153,9 +153,10 @@ function MetaSection({ title, children }: { title: string; children: React.React
 // ─── Photo card ───────────────────────────────────────────────────────────────
 
 type ResolvedPhoto = {
-  photoId:     string;
-  fileId:      string | null;
-  wasabiUrl:   string | null;
+  photoId:      string;
+  fileId:       string | null;
+  wasabiUrl:    string | null;
+  hasWasabi?:   boolean;
   notMigrated?: boolean;
 };
 
@@ -182,33 +183,37 @@ function PhotoCard({
     enabled: !!photo.photoId,
   });
 
-  // Prefer Wasabi URL; fall back to Drive proxy only when explicitly not notMigrated
-  const imageUrl = resolved?.wasabiUrl
-    ?? (resolved && !resolved.notMigrated && resolved.fileId
-      ? `${BASE_URL}api/drive/image/${resolved.fileId}`
-      : null);
+  // Prefer Wasabi proxy; fall back to Drive proxy only when explicitly not notMigrated
+  const imageUrl = resolved?.hasWasabi
+    ? `${BASE_URL}api/wasabi/image/${photo.photoId}`
+    : (resolved?.wasabiUrl
+      ?? (resolved && !resolved.notMigrated && resolved.fileId
+        ? `${BASE_URL}api/drive/image/${resolved.fileId}`
+        : null));
 
   const notMigrated = resolved?.notMigrated && !imageUrl;
+  const [imgError, setImgError] = useState(false);
 
   return (
     <Card
-      className={`overflow-hidden group transition-all duration-200 ${imageUrl ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""}`}
-      onClick={() => imageUrl && onOpen(photo, imageUrl)}
+      className={`overflow-hidden group transition-all duration-200 ${imageUrl && !imgError ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""}`}
+      onClick={() => imageUrl && !imgError && onOpen(photo, imageUrl)}
     >
       <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
-        {imageUrl ? (
+        {imageUrl && !imgError ? (
           <>
             <img
               src={imageUrl}
               alt={photo.label || photo.photoId}
               className="object-cover w-full h-full transition-transform duration-200 group-hover:scale-105"
               loading="lazy"
+              onError={() => setImgError(true)}
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
               <ZoomIn className="w-8 h-8 text-white drop-shadow-lg" />
             </div>
           </>
-        ) : notMigrated ? (
+        ) : notMigrated || imgError ? (
           <div className="flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50 p-3 text-center">
             <ImageOff className="w-6 h-6" />
             <span className="text-xs">Not yet migrated</span>
