@@ -37,9 +37,7 @@ app.listen(port, (err) => {
           AND sheet_photos.wasabi_key IS NULL
       `);
       const linked = (result as unknown as { rowCount?: number }).rowCount ?? 0;
-      if (linked > 0) {
-        logger.info({ linked }, "Startup: linked sheet_photos to Wasabi mirror keys");
-      }
+      logger.info({ linked }, "Startup: linked sheet_photos to Wasabi mirror keys");
     } catch (err: unknown) {
       logger.warn({ err }, "Startup: wasabi auto-link skipped (table may not exist yet)");
     }

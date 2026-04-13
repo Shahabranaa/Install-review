@@ -3,7 +3,6 @@ import { eq, sql } from "drizzle-orm";
 import { db, sheetPhotosTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
-import { isWasabiConfigured } from "../lib/wasabi.js";
 import { PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID } from "../lib/drive-constants.js";
 
 const router: IRouter = Router();
