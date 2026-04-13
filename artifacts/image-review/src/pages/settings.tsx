@@ -477,6 +477,7 @@ interface ScanResult {
   total: number;
   newlyDiscovered: number;
   alreadyKnown: number;
+  skippedConflicts?: number;
   partial?: boolean;
 }
 
@@ -627,11 +628,17 @@ function StoragePanel() {
       setScanResult(result);
       await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
       const partialNote = result.partial ? " (partial — some Drive pages could not be fetched)" : "";
+      const conflictNote = (result.skippedConflicts ?? 0) > 0
+        ? ` ${result.skippedConflicts} skipped (ID conflict).`
+        : "";
+      const isUpToDate = result.newlyDiscovered === 0 && (result.skippedConflicts ?? 0) === 0;
       toast({
-        title: result.newlyDiscovered > 0 ? "New photos found" : "Drive is up to date",
+        title: result.newlyDiscovered > 0 ? "New photos found" : isUpToDate ? "Drive is up to date" : "Scan complete",
         description: result.newlyDiscovered > 0
-          ? `${result.newlyDiscovered} new photo${result.newlyDiscovered !== 1 ? "s" : ""} discovered and queued for migration.${partialNote}`
-          : `All ${result.total} Drive photos are already tracked.${partialNote}`,
+          ? `${result.newlyDiscovered} new photo${result.newlyDiscovered !== 1 ? "s" : ""} discovered and queued for migration.${conflictNote}${partialNote}`
+          : isUpToDate
+            ? `All ${result.total} Drive photos are already tracked.${partialNote}`
+            : `No new photos inserted.${conflictNote}${partialNote}`,
         variant: result.partial ? "destructive" : "default",
       });
     } catch (err: unknown) {
