@@ -1036,7 +1036,7 @@ function MirrorPanel() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 10 }),
+          body: JSON.stringify({ batchSize: 50 }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({ error: "Unknown error" }));

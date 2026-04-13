@@ -16,10 +16,11 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-const FOLDER_MIME = "application/vnd.google-apps.folder";
-
-const MAX_DEPTH = 15; // files beyond this depth are not mirrored; depthLimitHit flag surfaced in response
-const PAGE_SIZE = 200;
+const FOLDER_MIME   = "application/vnd.google-apps.folder";
+const MAX_DEPTH     = 15;
+const PAGE_SIZE     = 200;
+const MAX_BATCH     = 50;   // raised from 20 for parallel execution
+const INSERT_CHUNK  = 100;  // bulk insert chunk size for scan
 
 /** Normalises a user-supplied prefix: ensure it ends with "/" if non-empty. */
 function normalisePrefix(raw: string): string {
@@ -38,8 +39,8 @@ router.get("/wasabi/mirror/status", requireAdmin, async (_req, res): Promise<voi
   try {
     const rows = await db
       .select({
-        status:    wasabiMirrorTasksTable.status,
-        cnt:       sql<number>`cast(count(*) as int)`,
+        status:     wasabiMirrorTasksTable.status,
+        cnt:        sql<number>`cast(count(*) as int)`,
         rootFolder: sql<string>`min(${wasabiMirrorTasksTable.rootFolderId})`,
       })
       .from(wasabiMirrorTasksTable)
@@ -95,14 +96,14 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
         continue;
       }
 
-      // List image files in this folder
+      // List non-folder files in this folder (all types)
       let pageToken: string | undefined;
       do {
         const params = new URLSearchParams({
-          q:              `'${currentId}' in parents and mimeType != '${FOLDER_MIME}' and trashed = false`,
-          fields:         "nextPageToken, files(id, name, mimeType)",
-          pageSize:       String(PAGE_SIZE),
-          supportsAllDrives: "true",
+          q:                         `'${currentId}' in parents and mimeType != '${FOLDER_MIME}' and trashed = false`,
+          fields:                    "nextPageToken, files(id, name, mimeType)",
+          pageSize:                  String(PAGE_SIZE),
+          supportsAllDrives:         "true",
           includeItemsFromAllDrives: "true",
         });
         if (pageToken) params.set("pageToken", pageToken);
@@ -112,10 +113,15 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
           logger.warn({ status: resp.status }, "Drive files list failed, skipping folder");
           break;
         }
-        const data = await resp.json() as { nextPageToken?: string; files?: Array<{ id: string; name: string; mimeType: string }> };
+        const data = await resp.json() as {
+          nextPageToken?: string;
+          files?: Array<{ id: string; name: string; mimeType: string }>;
+        };
 
         for (const f of data.files ?? []) {
-          const filePath = currentPath ? `${currentPath}/${sanitizeSegment(f.name)}` : sanitizeSegment(f.name);
+          const filePath = currentPath
+            ? `${currentPath}/${sanitizeSegment(f.name)}`
+            : sanitizeSegment(f.name);
           files.push({ driveFileId: f.id, fileName: f.name, drivePath: `${prefix}${filePath}` });
         }
         pageToken = data.nextPageToken;
@@ -125,22 +131,27 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
       let folderPageToken: string | undefined;
       do {
         const params = new URLSearchParams({
-          q:              `'${currentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields:         "nextPageToken, files(id, name)",
-          pageSize:       String(PAGE_SIZE),
-          supportsAllDrives: "true",
+          q:                         `'${currentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+          fields:                    "nextPageToken, files(id, name)",
+          pageSize:                  String(PAGE_SIZE),
+          supportsAllDrives:         "true",
           includeItemsFromAllDrives: "true",
         });
         if (folderPageToken) params.set("pageToken", folderPageToken);
 
         const resp = await driveRequest("/files", params);
         if (!resp.ok) break;
-        const data = await resp.json() as { nextPageToken?: string; files?: Array<{ id: string; name: string }> };
+        const data = await resp.json() as {
+          nextPageToken?: string;
+          files?: Array<{ id: string; name: string }>;
+        };
 
         for (const f of data.files ?? []) {
           if (visitedFolders.has(f.id)) continue;
           visitedFolders.add(f.id);
-          const folderPath = currentPath ? `${currentPath}/${sanitizeSegment(f.name)}` : sanitizeSegment(f.name);
+          const folderPath = currentPath
+            ? `${currentPath}/${sanitizeSegment(f.name)}`
+            : sanitizeSegment(f.name);
           queue.push([f.id, folderPath, depth + 1]);
         }
         folderPageToken = data.nextPageToken;
@@ -149,28 +160,28 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
 
     logger.info({ visited: visitedFolders.size, found: files.length }, "mirror/scan complete");
 
-    // Insert discovered files; skip duplicates
-    let inserted = 0;
+    // Bulk insert in chunks — much faster than one INSERT per file
+    let inserted    = 0;
     let alreadyKnown = 0;
 
-    for (const f of files) {
+    for (let i = 0; i < files.length; i += INSERT_CHUNK) {
+      const chunk = files.slice(i, i + INSERT_CHUNK);
       const result = await db
         .insert(wasabiMirrorTasksTable)
-        .values({
-          rootFolderId: folderId,
-          driveFileId:  f.driveFileId,
-          fileName:     f.fileName,
-          drivePath:    f.drivePath,
-          status:       "pending",
-        })
+        .values(
+          chunk.map((f) => ({
+            rootFolderId: folderId,
+            driveFileId:  f.driveFileId,
+            fileName:     f.fileName,
+            drivePath:    f.drivePath,
+            status:       "pending",
+          })),
+        )
         .onConflictDoNothing()
         .returning({ id: wasabiMirrorTasksTable.id });
 
-      if (result.length > 0) {
-        inserted++;
-      } else {
-        alreadyKnown++;
-      }
+      inserted     += result.length;
+      alreadyKnown += chunk.length - result.length;
     }
 
     res.json({ scanned: files.length, inserted, alreadyKnown, depthLimitHit });
@@ -182,17 +193,15 @@ router.post("/wasabi/mirror/scan", requireAdmin, async (req, res): Promise<void>
 
 // POST /api/wasabi/mirror/batch
 // Body: { batchSize?: number }
+// Processes files in parallel for maximum throughput.
 router.post("/wasabi/mirror/batch", requireAdmin, async (req, res): Promise<void> => {
-  const batchSize = Math.min(Number(req.body?.batchSize) || 10, 20);
+  const batchSize = Math.min(Number(req.body?.batchSize) || 20, MAX_BATCH);
 
   const ctx = await getWasabiClientAndCreds();
   if (!ctx) {
     res.status(503).json({ error: "Wasabi is not configured" });
     return;
   }
-
-  let uploaded = 0;
-  let failed   = 0;
 
   try {
     const rows = await db
@@ -201,8 +210,18 @@ router.post("/wasabi/mirror/batch", requireAdmin, async (req, res): Promise<void
       .where(eq(wasabiMirrorTasksTable.status, "pending"))
       .limit(batchSize);
 
-    for (const row of rows) {
-      try {
+    if (rows.length === 0) {
+      const remaining = await db
+        .select({ cnt: sql<number>`cast(count(*) as int)` })
+        .from(wasabiMirrorTasksTable)
+        .where(eq(wasabiMirrorTasksTable.status, "pending"));
+      res.json({ uploaded: 0, failed: 0, remaining: remaining[0]?.cnt ?? 0 });
+      return;
+    }
+
+    // Process all files concurrently — this is the main speedup
+    const results = await Promise.allSettled(
+      rows.map(async (row) => {
         const driveResp = await driveRequest(
           `/files/${row.driveFileId}`,
           new URLSearchParams({ alt: "media", supportsAllDrives: "true" }),
@@ -214,8 +233,7 @@ router.post("/wasabi/mirror/batch", requireAdmin, async (req, res): Promise<void
 
         const contentType = driveResp.headers.get("content-type") ?? "image/jpeg";
         const body        = Buffer.from(await driveResp.arrayBuffer());
-
-        const wasabiKey = row.drivePath;
+        const wasabiKey   = row.drivePath;
 
         await ctx.client.send(
           new PutObjectCommand({
@@ -226,29 +244,38 @@ router.post("/wasabi/mirror/batch", requireAdmin, async (req, res): Promise<void
           }),
         );
 
-        await db
-          .update(wasabiMirrorTasksTable)
-          .set({ status: "done", wasabiKey })
-          .where(eq(wasabiMirrorTasksTable.id, row.id));
+        return { rowId: row.id, wasabiKey };
+      }),
+    );
 
-        uploaded++;
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        logger.error({ err, driveFileId: row.driveFileId }, "mirror/batch file failed");
-        await db
-          .update(wasabiMirrorTasksTable)
-          .set({ status: "failed", error: errMsg })
-          .where(eq(wasabiMirrorTasksTable.id, row.id));
-        failed++;
-      }
-    }
+    // Update DB status for all files concurrently
+    await Promise.all(
+      results.map((r, i) => {
+        if (r.status === "fulfilled") {
+          return db
+            .update(wasabiMirrorTasksTable)
+            .set({ status: "done", wasabiKey: r.value.wasabiKey })
+            .where(eq(wasabiMirrorTasksTable.id, rows[i]!.id));
+        } else {
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          logger.error({ err: r.reason, driveFileId: rows[i]!.driveFileId }, "mirror/batch file failed");
+          return db
+            .update(wasabiMirrorTasksTable)
+            .set({ status: "failed", error: errMsg })
+            .where(eq(wasabiMirrorTasksTable.id, rows[i]!.id));
+        }
+      }),
+    );
 
-    const remaining = await db
+    const uploaded = results.filter((r) => r.status === "fulfilled").length;
+    const failed   = results.filter((r) => r.status === "rejected").length;
+
+    const remainingRows = await db
       .select({ cnt: sql<number>`cast(count(*) as int)` })
       .from(wasabiMirrorTasksTable)
       .where(eq(wasabiMirrorTasksTable.status, "pending"));
 
-    res.json({ uploaded, failed, remaining: remaining[0]?.cnt ?? 0 });
+    res.json({ uploaded, failed, remaining: remainingRows[0]?.cnt ?? 0 });
   } catch (err) {
     logger.error({ err }, "mirror/batch failed");
     res.status(500).json({ error: err instanceof Error ? err.message : "Batch failed" });
