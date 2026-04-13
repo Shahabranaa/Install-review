@@ -298,14 +298,15 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
     let actuallyInserted = 0;
 
     if (newFiles.length > 0) {
-      // Derive photo_id: find the last 8 consecutive hex chars in the filename stem.
-      // This handles names like "IMG_abc12345.jpg", "abc12345.jpg", "photo_abc12345_v2.jpg".
-      // If no 8-char hex suffix is present, fall back to a cryptographically random 8-char hex.
+      // Derive photo_id: match exactly 8 hex chars at the END of the filename stem,
+      // preceded by a non-hex char (separator) or the start of string.
+      // Examples: "IMG_abc12345.jpg" → "abc12345", "abc12345.jpg" → "abc12345"
+      //           "photo_abc12345_v2.jpg" → no match → random fallback
+      const HEX_SUFFIX_RE = /(?:^|[^a-f0-9])([a-f0-9]{8})$/i;
       const insertRows = newFiles.map((f) => {
         const stem = f.name.replace(/\.[^.]+$/, "");
-        const matches = stem.match(/[a-f0-9]{8}/gi);
-        const hexSuffix = matches ? matches[matches.length - 1].toLowerCase() : null;
-        const photoId = hexSuffix ?? randomBytes(4).toString("hex");
+        const match = HEX_SUFFIX_RE.exec(stem);
+        const photoId = match ? match[1].toLowerCase() : randomBytes(4).toString("hex");
         return { driveFileId: f.id, photoId };
       });
 
@@ -328,7 +329,8 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
       logger.info({ actuallyInserted }, "Drive scan: inserted new photo rows");
     }
 
-    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown, partial });
+    const skippedConflicts = newFiles.length - actuallyInserted;
+    res.json({ total, newlyDiscovered: actuallyInserted, alreadyKnown, skippedConflicts, partial });
   } catch (err: unknown) {
     logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
