@@ -486,6 +486,7 @@ function StoragePanel() {
   const queryClient = useQueryClient();
   const [migrating, setMigrating] = useState(false);
   const [scanning, setScanning]   = useState(false);
+  const [linking, setLinking]     = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [confirmResetMigration, setConfirmResetMigration] = useState(false);
 
@@ -886,6 +887,49 @@ function StoragePanel() {
                 <><HardDrive className="w-4 h-4 mr-2" /> Migrate photos to Wasabi</>
               )}
             </Button>
+
+            {status?.configured && status?.connection.ok && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  setLinking(true);
+                  try {
+                    const r = await fetch(`${API_BASE}/api/wasabi/link-mirror`, {
+                      method: "POST",
+                      credentials: "include",
+                    });
+                    if (!r.ok) {
+                      const err = await r.json().catch(() => ({ error: "Unknown error" }));
+                      throw new Error((err as { error?: string }).error ?? "Link failed");
+                    }
+                    const data = await r.json() as { linked: number };
+                    await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+                    toast({
+                      title: data.linked > 0 ? `Linked ${data.linked} photos` : "Already up to date",
+                      description: data.linked > 0
+                        ? `${data.linked} photo${data.linked !== 1 ? "s" : ""} are now served from Wasabi.`
+                        : "All matching photos are already linked to Wasabi.",
+                    });
+                  } catch (err: unknown) {
+                    toast({
+                      title: "Link failed",
+                      description: err instanceof Error ? err.message : String(err),
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setLinking(false);
+                  }
+                }}
+                disabled={linking || migrating || scanning}
+                className="w-full"
+              >
+                {linking ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Linking…</>
+                ) : (
+                  <><HardDrive className="w-4 h-4 mr-2" /> Link photos from Wasabi mirror</>
+                )}
+              </Button>
+            )}
 
             {!status?.configured && (
               <p className="text-xs text-muted-foreground">

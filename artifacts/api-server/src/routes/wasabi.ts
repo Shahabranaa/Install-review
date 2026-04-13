@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, count, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { db, sheetPhotosTable } from "@workspace/db";
+import { db, pool, sheetPhotosTable } from "@workspace/db";
 import {
   isWasabiConfigured,
   getWasabiClientAndCreds,
@@ -373,6 +373,29 @@ router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void>
   } catch (err: unknown) {
     logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/wasabi/link-mirror — admin only
+// Populates sheet_photos.wasabi_key by joining with wasabi_mirror_tasks on drive_file_id.
+// Non-destructive: only updates rows where wasabi_key IS NULL.
+router.post("/wasabi/link-mirror", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const result = await pool.query(`
+      UPDATE sheet_photos
+      SET wasabi_key = wmt.wasabi_key
+      FROM wasabi_mirror_tasks wmt
+      WHERE sheet_photos.drive_file_id = wmt.drive_file_id
+        AND wmt.status = 'done'
+        AND sheet_photos.wasabi_key IS NULL
+    `);
+
+    const linked = result.rowCount ?? 0;
+    logger.info({ linked }, "sheet_photos linked to Wasabi mirror keys");
+    res.json({ linked });
+  } catch (err: unknown) {
+    logger.error({ err }, "link-mirror failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Link failed" });
   }
 });
 
