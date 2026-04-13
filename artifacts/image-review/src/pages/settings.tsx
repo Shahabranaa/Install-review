@@ -14,7 +14,7 @@ import {
 import {
   Building2, Info, Users, Plus, Pencil, UserX, UserCheck, ShieldCheck,
   Eye, EyeOff, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
-  KeyRound, Save, ChevronDown, ChevronUp,
+  KeyRound, Save, ChevronDown, ChevronUp, RefreshCw,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
@@ -473,10 +473,18 @@ interface WasabiCreds {
   source:       "db" | "env";
 }
 
+interface ScanResult {
+  total: number;
+  newlyDiscovered: number;
+  alreadyKnown: number;
+}
+
 function StoragePanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [migrating, setMigrating] = useState(false);
+  const [scanning, setScanning]   = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   // ── Credentials form state ──────────────────────────────────────────────
   const [credExpanded, setCredExpanded] = useState(false);
@@ -599,6 +607,38 @@ function StoragePanel() {
     } finally {
       setMigrating(false);
       await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+    }
+  };
+
+  const runScan = async () => {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const r = await fetch(`${API_BASE}/api/wasabi/scan-drive`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error((err as { error?: string }).error ?? "Scan request failed");
+      }
+      const result = await r.json() as ScanResult;
+      setScanResult(result);
+      await queryClient.invalidateQueries({ queryKey: ["wasabi-status"] });
+      toast({
+        title: result.newlyDiscovered > 0 ? "New photos found" : "Drive is up to date",
+        description: result.newlyDiscovered > 0
+          ? `${result.newlyDiscovered} new photo${result.newlyDiscovered !== 1 ? "s" : ""} discovered and queued for migration.`
+          : `All ${result.total} Drive photos are already tracked.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Scan error",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -792,6 +832,33 @@ function StoragePanel() {
                     <span className="text-muted-foreground/60">{status.breakdown.unmigrateable} no source available</span>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* ── Check Drive for new photos ─────────────────────────── */}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={runScan}
+                disabled={scanning || migrating}
+                className="flex-1"
+              >
+                {scanning ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Scanning Drive…</>
+                ) : (
+                  <><RefreshCw className="w-4 h-4 mr-2" /> Check Drive for new photos</>
+                )}
+              </Button>
+              {scanResult !== null && (
+                <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                  scanResult.newlyDiscovered > 0
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-green-100 text-green-700"
+                }`}>
+                  {scanResult.newlyDiscovered > 0
+                    ? `+${scanResult.newlyDiscovered} new`
+                    : "Up to date"}
+                </span>
               )}
             </div>
 

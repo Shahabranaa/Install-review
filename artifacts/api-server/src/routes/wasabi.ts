@@ -8,7 +8,18 @@ import {
   uploadToWasabi,
   checkWasabiConnection,
 } from "../lib/wasabi.js";
+import { driveRequest, isDriveConfigured } from "../lib/google-drive.js";
 import { logger } from "../lib/logger.js";
+
+const PHOTO_IMAGES_FOLDER_ID          = "1xWO8A2fXJ7ztpzpt-iqUNg8Xjq6vX7a0";
+const PHOTO_IMAGES_2_STAMPED_FOLDER_ID = "18dMOuEuKFu_prnx9FW_FW1y2nFUebW6C";
+
+const SCAN_FOLDER_IDS = [PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID];
+
+const IMAGE_MIME_TYPES = [
+  "image/jpeg", "image/png", "image/gif",
+  "image/webp", "image/bmp", "image/heic", "image/tiff",
+];
 
 const router: IRouter = Router();
 
@@ -209,6 +220,100 @@ router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => 
     res.json({ linked, migrated, failed, remaining: remainingRow?.count ?? 0 });
   } catch (err: unknown) {
     logger.error({ err }, "Wasabi migrate error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/wasabi/scan-drive — admin only
+// Scans Google Drive source folders for image files not yet tracked in sheet_photos.
+// Uses 'FOLDER_ID' in ancestors for recursive listing, then cross-references with DB.
+router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void> => {
+  if (!isDriveConfigured()) {
+    res.status(503).json({ error: "Google Drive is not configured" });
+    return;
+  }
+
+  try {
+    const imageMimeFilter = IMAGE_MIME_TYPES.map((m) => `mimeType = '${m}'`).join(" or ");
+
+    // Collect all Drive file IDs from both source folders (recursive via 'in ancestors')
+    const allDriveFiles: Array<{ id: string; name: string }> = [];
+
+    for (const folderId of SCAN_FOLDER_IDS) {
+      let pageToken: string | undefined;
+      do {
+        const params = new URLSearchParams({
+          q: `'${folderId}' in ancestors and (${imageMimeFilter}) and trashed = false`,
+          fields: "files(id,name),nextPageToken",
+          pageSize: "1000",
+          includeItemsFromAllDrives: "true",
+          supportsAllDrives: "true",
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+
+        const resp = await driveRequest("/files", params);
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => resp.statusText);
+          logger.warn({ folderId, status: resp.status }, `Drive scan page error: ${txt}`);
+          break;
+        }
+        const data = await resp.json() as { files: Array<{ id: string; name: string }>; nextPageToken?: string };
+        allDriveFiles.push(...(data.files ?? []));
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+    }
+
+    const total = allDriveFiles.length;
+    logger.info({ total }, "Drive scan: total files found");
+
+    if (total === 0) {
+      res.json({ total: 0, newlyDiscovered: 0, alreadyKnown: 0 });
+      return;
+    }
+
+    // Get all existing drive_file_id values from DB
+    const existingRows = await db
+      .select({ driveFileId: sheetPhotosTable.driveFileId })
+      .from(sheetPhotosTable)
+      .where(sql`${sheetPhotosTable.driveFileId} IS NOT NULL`);
+
+    const existingIds = new Set(existingRows.map((r) => r.driveFileId as string));
+
+    // Find files not yet in DB
+    const newFiles = allDriveFiles.filter((f) => !existingIds.has(f.id));
+    const newlyDiscovered = newFiles.length;
+
+    if (newlyDiscovered > 0) {
+      // Insert new rows — derive photo_id from file name (8-char hex) if pattern matches,
+      // otherwise fall back to first 8 chars of the Drive file ID.
+      const PHOTO_ID_RE = /([a-f0-9]{8})/i;
+      const insertRows = newFiles.map((f) => {
+        const match = PHOTO_ID_RE.exec(f.name);
+        const photoId = match ? match[1].toLowerCase() : f.id.replace(/[^a-f0-9]/gi, "").slice(0, 8).toLowerCase();
+        return { driveFileId: f.id, photoId: photoId || undefined };
+      });
+
+      // Batch insert in chunks of 100 to avoid query size limits
+      const CHUNK = 100;
+      let inserted = 0;
+      for (let i = 0; i < insertRows.length; i += CHUNK) {
+        const chunk = insertRows.slice(i, i + CHUNK);
+        try {
+          await db
+            .insert(sheetPhotosTable)
+            .values(chunk)
+            .onConflictDoNothing();
+          inserted += chunk.length;
+        } catch (err) {
+          logger.warn({ err, chunkIndex: i }, "Drive scan: insert chunk failed");
+        }
+      }
+      logger.info({ inserted }, "Drive scan: inserted new photo rows");
+    }
+
+    res.json({ total, newlyDiscovered, alreadyKnown: total - newlyDiscovered });
+  } catch (err: unknown) {
+    logger.error({ err }, "Drive scan error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
