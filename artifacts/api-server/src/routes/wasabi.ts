@@ -223,7 +223,7 @@ router.post("/wasabi/migrate", requireAdmin, async (req, res): Promise<void> => 
 
 // POST /api/wasabi/scan-drive — admin only
 // Scans Google Drive source folders for image files not yet tracked in sheet_photos.
-// Uses 'FOLDER_ID' in ancestors for recursive listing, then cross-references with DB.
+// Uses BFS with 'folderId' in parents at each level for recursive listing, then cross-references with DB.
 router.post("/wasabi/scan-drive", requireAdmin, async (_req, res): Promise<void> => {
   if (!isDriveConfigured()) {
     res.status(503).json({ error: "Google Drive is not configured" });
