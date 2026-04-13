@@ -542,28 +542,18 @@ router.get("/photos/resolve/:photoId", async (req, res): Promise<void> => {
         return;
       }
 
-      // Not in Wasabi yet — fall back to Drive proxy only when Wasabi is not configured
+      // Not in Wasabi yet — always fall back to Drive proxy (photo may not be mirrored yet)
       if (row.driveFileId) {
-        if (await isWasabiConfigured()) {
-          res.json({ photoId, fileId: row.driveFileId, wasabiUrl: null, notMigrated: true });
-        } else {
-          res.json({ photoId, fileId: row.driveFileId, wasabiUrl: null });
-        }
+        res.json({ photoId, fileId: row.driveFileId, wasabiUrl: null });
         return;
       }
 
-      // DB row exists but no source at all
+      // DB row exists but no source at all — genuinely unavailable
       res.json({ photoId, fileId: null, wasabiUrl: null, notMigrated: true });
       return;
     }
 
-    // No DB row — skip expensive Drive search when Wasabi is configured
-    if (await isWasabiConfigured()) {
-      res.json({ photoId, fileId: null, wasabiUrl: null, notMigrated: true });
-      return;
-    }
-
-    // Wasabi not configured — fall through to Drive search (backward compat)
+    // No DB row — fall through to Drive search (photo may exist in Drive but not yet indexed)
     const allPhotos = await fetchSheetPhotos();
     const record = allPhotos.find(p => p.photoId === photoId) ?? {
       photoId, photoUpload: "", resizedPhoto: "", signatureCapture: "",
