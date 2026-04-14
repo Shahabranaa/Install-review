@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Wind, MapPin, Activity, Link as LinkIcon, Search, Camera, ExternalLink, X } from "lucide-react";
+import {
+  Wind, MapPin, Activity, Link as LinkIcon, Search, Camera,
+  ExternalLink, X, FileText,
+} from "lucide-react";
 import { Link } from "wouter";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -39,6 +42,84 @@ interface TowerPhoto {
   approval: string | null;
   phaseLink: string | null;
   cableLink: string | null;
+}
+
+interface ResolvedPhoto {
+  photoId: string;
+  fileId: string | null;
+  wasabiUrl: string | null;
+  notMigrated?: boolean;
+}
+
+interface Report {
+  id: number;
+  driveFileId: string;
+  fileName: string;
+  drivePath: string;
+  wasabiKey: string;
+  site: string;
+  string: string;
+  cable: string | null;
+  name: string;
+  reportType: string;
+}
+
+function reportTypeColor(type: string): string {
+  switch (type) {
+    case "As-Found":               return "bg-blue-100 text-blue-700 border-blue-200";
+    case "As-Left":                return "bg-green-100 text-green-700 border-green-200";
+    case "Completion Check":       return "bg-purple-100 text-purple-700 border-purple-200";
+    case "FO Termination":         return "bg-orange-100 text-orange-700 border-orange-200";
+    case "ICCP":                   return "bg-yellow-100 text-yellow-700 border-yellow-200";
+    case "Pull-in Preparation":    return "bg-cyan-100 text-cyan-700 border-cyan-200";
+    case "Temporary Hang Off":     return "bg-rose-100 text-rose-700 border-rose-200";
+    case "Permanent Hang Off":     return "bg-red-100 text-red-700 border-red-200";
+    case "Cable Pull-in":          return "bg-teal-100 text-teal-700 border-teal-200";
+    case "Termination Completion": return "bg-indigo-100 text-indigo-700 border-indigo-200";
+    default:                       return "bg-muted text-muted-foreground border-border";
+  }
+}
+
+// ─── Photo thumbnail (resolves Wasabi URL) ────────────────────────────────────
+
+function PhotoThumb({ photo }: { photo: TowerPhoto }) {
+  const [resolved, setResolved] = useState<ResolvedPhoto | null>(null);
+
+  useEffect(() => {
+    if (!photo.photoId) return;
+    fetch(`${BASE_URL}api/photos/resolve/${photo.photoId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: ResolvedPhoto | null) => setResolved(data))
+      .catch(() => {});
+  }, [photo.photoId]);
+
+  const imageUrl = resolved?.wasabiUrl
+    ? `${BASE_URL.replace(/\/$/, "")}${resolved.wasabiUrl}`
+    : resolved?.fileId && !resolved.notMigrated
+    ? `${BASE_URL}api/drive/image/${resolved.fileId}`
+    : photo.driveFileId
+    ? `${BASE_URL}api/drive/image/${photo.driveFileId}`
+    : null;
+
+  return (
+    <div className="w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border/50 flex-shrink-0">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={photo.label ?? photo.photoId ?? ""}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-muted-foreground/40">
+          <Camera className="w-5 h-5" />
+          <span className="text-[9px] text-center px-1 leading-tight">
+            {photo.reqImgType ?? "Photo"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Towers() {
@@ -83,7 +164,7 @@ export default function Towers() {
     return acc;
   }, {});
 
-  // Photo counts per tower (fetched once on mount from DB)
+  // Photo counts per tower
   const [photoCounts, setPhotoCounts] = useState<Map<string, number>>(new Map());
   useEffect(() => {
     fetch(`${BASE_URL}api/photos/counts`)
@@ -99,12 +180,27 @@ export default function Towers() {
   const [towerPhotos, setTowerPhotos] = useState<Map<string, TowerPhoto[]>>(new Map());
   const [loadingPhotos, setLoadingPhotos] = useState<Set<string>>(new Set());
 
+  // Reports state — fetched once lazily
+  const [allReports, setAllReports] = useState<Report[] | null>(null);
+  const [loadingReports, setLoadingReports] = useState(false);
+
+  const fetchReports = () => {
+    if (allReports !== null || loadingReports) return;
+    setLoadingReports(true);
+    fetch(`${BASE_URL}api/reports`)
+      .then(r => (r.ok ? r.json() : { reports: [] }))
+      .then((data: { reports: Report[] }) => setAllReports(data.reports))
+      .catch(() => setAllReports([]))
+      .finally(() => setLoadingReports(false));
+  };
+
   const handleCardClick = (towerId: number, towerName: string) => {
     if (expandedTowerId === towerId) {
       setExpandedTowerId(null);
       return;
     }
     setExpandedTowerId(towerId);
+    fetchReports();
     if (!towerPhotos.has(towerName)) {
       setLoadingPhotos(prev => new Set([...prev, towerName]));
       fetch(`${BASE_URL}api/photos/db?tower=${encodeURIComponent(towerName)}`)
@@ -257,7 +353,7 @@ export default function Towers() {
                         {photoCount > 0 && (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-xs font-medium">
                             <Camera className="w-3 h-3" />
-                            {photoCount} photos
+                            {photoCount}
                           </span>
                         )}
                         <Badge className={`text-xs ${getStatusClass(tower.progressStatus)}`}>
@@ -300,25 +396,24 @@ export default function Towers() {
             })}
           </div>
 
-          {/* Expanded photo strip — shown below the grid when a tower is selected */}
+          {/* Expanded detail panel — Images + Reports side by side */}
           {expandedTower && (() => {
             const photos = towerPhotos.get(expandedTower.name) ?? [];
             const isLoadingPh = loadingPhotos.has(expandedTower.name);
             const photoCount = photoCounts.get(expandedTower.name) ?? 0;
+
+            // Filter reports to this tower's string and/or tower name
+            const towerReports = (allReports ?? []).filter(r =>
+              (selectedString && r.string === selectedString.name) ||
+              r.cable === expandedTower.name ||
+              r.string === expandedTower.name
+            );
+
             return (
               <div className="rounded-xl border bg-muted/30 p-4 space-y-3 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+                {/* Header row */}
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Camera className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-medium text-sm">
-                      {expandedTower.name}
-                      {photoCount > 0 && (
-                        <span className="ml-2 text-muted-foreground font-normal">
-                          {photoCount} photo{photoCount !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </span>
-                  </div>
+                  <span className="font-medium text-sm">{expandedTower.name}</span>
                   <button
                     onClick={() => setExpandedTowerId(null)}
                     className="rounded-full p-1 hover:bg-muted transition-colors"
@@ -328,57 +423,106 @@ export default function Towers() {
                   </button>
                 </div>
 
-                {isLoadingPh ? (
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5, 6].map(i => (
-                      <Skeleton key={i} className="w-20 h-20 rounded-lg flex-shrink-0" />
-                    ))}
-                  </div>
-                ) : photos.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2">
-                    <Camera className="w-8 h-8" />
-                    <span className="text-sm">No photos in the database yet for this tower.</span>
-                  </div>
-                ) : (
-                  <div className="flex gap-2 flex-wrap">
-                    {photos.slice(0, 8).map((photo, idx) => (
-                      <div
-                        key={photo.photoId ?? idx}
-                        className="w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border/50 flex-shrink-0"
-                      >
-                        {photo.driveFileId ? (
-                          <img
-                            src={`${BASE_URL}api/drive/image/${photo.driveFileId}`}
-                            alt={photo.label ?? photo.photoId ?? ""}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-muted-foreground/40">
-                            <Camera className="w-5 h-5" />
-                            <span className="text-[9px] text-center px-1 leading-tight">
-                              {photo.reqImgType ?? "Photo"}
-                            </span>
+                {/* Two-column grid */}
+                <div className="grid grid-cols-2 gap-4">
+
+                  {/* ── Images column ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Camera className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Images</span>
+                      {photoCount > 0 && (
+                        <Badge variant="secondary" className="text-xs ml-auto">{photoCount}</Badge>
+                      )}
+                    </div>
+
+                    {isLoadingPh ? (
+                      <div className="flex gap-2 flex-wrap">
+                        {[1, 2, 3, 4].map(i => (
+                          <Skeleton key={i} className="w-20 h-20 rounded-lg flex-shrink-0" />
+                        ))}
+                      </div>
+                    ) : photos.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2 rounded-lg border border-dashed">
+                        <Camera className="w-6 h-6" />
+                        <span className="text-xs">No photos yet for this tower.</span>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 flex-wrap">
+                        {photos.slice(0, 8).map((photo, idx) => (
+                          <PhotoThumb key={photo.photoId ?? idx} photo={photo} />
+                        ))}
+                        {photoCount > 8 && (
+                          <div className="w-20 h-20 rounded-lg bg-muted border border-border/50 flex-shrink-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                            <span className="text-sm font-semibold">+{photoCount - 8}</span>
+                            <span className="text-[10px]">more</span>
                           </div>
                         )}
                       </div>
-                    ))}
-                    {photoCount > 8 && (
-                      <div className="w-20 h-20 rounded-lg bg-muted border border-border/50 flex-shrink-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-                        <span className="text-sm font-semibold">+{photoCount - 8}</span>
-                        <span className="text-[10px]">more</span>
+                    )}
+
+                    {photoCount > 0 && (
+                      <div className="pt-1">
+                        <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                            <ExternalLink className="w-3 h-3" />
+                            View all in Images
+                          </Button>
+                        </Link>
                       </div>
                     )}
                   </div>
-                )}
 
-                <div className="flex justify-end pt-1">
-                  <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                      <ExternalLink className="w-3 h-3" />
-                      Open in Images
-                    </Button>
-                  </Link>
+                  {/* ── Reports column ── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reports</span>
+                      {towerReports.length > 0 && (
+                        <Badge variant="secondary" className="text-xs ml-auto">{towerReports.length}</Badge>
+                      )}
+                    </div>
+
+                    {loadingReports ? (
+                      <div className="space-y-1.5">
+                        {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 w-full rounded" />)}
+                      </div>
+                    ) : towerReports.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2 rounded-lg border border-dashed">
+                        <FileText className="w-6 h-6" />
+                        <span className="text-xs italic">
+                          {allReports === null ? "Loading reports…" : "No reports found for this string."}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                        {towerReports.map(r => (
+                          <div key={r.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/60 transition-colors group">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] flex-shrink-0 border whitespace-nowrap ${reportTypeColor(r.reportType)}`}
+                            >
+                              {r.reportType}
+                            </Badge>
+                            <span className="text-xs text-foreground truncate flex-1 min-w-0" title={r.name}>
+                              {r.name}
+                            </span>
+                            <a
+                              href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(r.wasabiKey)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] text-primary hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              PDF
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </div>
             );
