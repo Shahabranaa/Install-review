@@ -1,38 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearch } from "wouter";
 import { useListStrings, useListTowers, useListLocations } from "@workspace/api-client-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Wind, MapPin, Activity, Link as LinkIcon, Search, Camera,
-  ExternalLink, X, FileText,
+  Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
+  ArrowLeft, ZoomIn, ExternalLink, ImageOff,
 } from "lucide-react";
-import { Link } from "wouter";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
-const STATUS_COLORS: Record<string, string> = {
-  "In Progress": "bg-blue-100 text-blue-800",
-  Complete: "bg-green-100 text-green-800",
-  Completed: "bg-green-100 text-green-800",
-  Pending: "bg-yellow-100 text-yellow-800",
-  pending: "bg-yellow-100 text-yellow-800",
-  "Not Started": "bg-slate-100 text-slate-700",
-  Excluded: "bg-slate-100 text-slate-500",
-  "": "bg-slate-100 text-slate-500",
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, { dot: string; badge: string }> = {
+  "In Progress": { dot: "bg-blue-500",   badge: "bg-blue-100 text-blue-800" },
+  Complete:      { dot: "bg-green-500",  badge: "bg-green-100 text-green-800" },
+  Completed:     { dot: "bg-green-500",  badge: "bg-green-100 text-green-800" },
+  Pending:       { dot: "bg-amber-400",  badge: "bg-amber-100 text-amber-800" },
+  pending:       { dot: "bg-amber-400",  badge: "bg-amber-100 text-amber-800" },
+  "Not Started": { dot: "bg-slate-400",  badge: "bg-slate-100 text-slate-700" },
+  Excluded:      { dot: "bg-slate-300",  badge: "bg-slate-100 text-slate-400" },
+  "":            { dot: "bg-slate-300",  badge: "bg-slate-100 text-slate-400" },
 };
 
-function getStatusClass(status: string) {
-  return STATUS_COLORS[status] ?? "bg-slate-100 text-slate-700";
+function statusStyle(s: string) {
+  return STATUS_COLORS[s] ?? { dot: "bg-slate-300", badge: "bg-slate-100 text-slate-700" };
 }
 
-interface TowerPhotoCount {
-  tower: string;
-  count: number;
-}
+interface TowerPhotoCount { tower: string; count: number; }
 
 interface TowerPhoto {
   photoId: string | null;
@@ -64,6 +61,8 @@ interface Report {
   reportType: string;
 }
 
+// ─── Report badge colours ─────────────────────────────────────────────────────
+
 function reportTypeColor(type: string): string {
   switch (type) {
     case "As-Found":               return "bg-blue-100 text-blue-700 border-blue-200";
@@ -80,47 +79,422 @@ function reportTypeColor(type: string): string {
   }
 }
 
-// ─── Photo thumbnail (resolves Wasabi URL) ────────────────────────────────────
+// ─── Approval badge ───────────────────────────────────────────────────────────
 
-function PhotoThumb({ photo }: { photo: TowerPhoto }) {
-  const [resolved, setResolved] = useState<ResolvedPhoto | null>(null);
+function ApprovalBadge({ approval }: { approval?: string | null }) {
+  const a = (approval ?? "").toLowerCase();
+  if (a === "approved" || a === "checked" || a === "verified")
+    return <span className="rounded-full bg-green-600 text-white px-2.5 py-0.5 text-xs font-medium">Approved</span>;
+  if (a === "rejected")
+    return <span className="rounded-full bg-red-600 text-white px-2.5 py-0.5 text-xs font-medium">Rejected</span>;
+  return <span className="rounded-full bg-amber-500 text-white px-2.5 py-0.5 text-xs font-medium">Pending</span>;
+}
+
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+
+function Lightbox({
+  photos,
+  resolvedUrls,
+  startIndex,
+  onClose,
+}: {
+  photos: TowerPhoto[];
+  resolvedUrls: Map<string, string | null>;
+  startIndex: number;
+  onClose: () => void;
+}) {
+  const [index, setIndex] = useState(startIndex);
+  const photo = photos[index];
+
+  const prev = useCallback(() => setIndex(i => (i - 1 + photos.length) % photos.length), [photos.length]);
+  const next = useCallback(() => setIndex(i => (i + 1) % photos.length), [photos.length]);
 
   useEffect(() => {
-    if (!photo.photoId) return;
-    fetch(`${BASE_URL}api/photos/resolve/${photo.photoId}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then((data: ResolvedPhoto | null) => setResolved(data))
-      .catch(() => {});
-  }, [photo.photoId]);
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft")  prev();
+      if (e.key === "ArrowRight") next();
+      if (e.key === "Escape")     onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [prev, next, onClose]);
 
-  const imageUrl = resolved?.wasabiUrl
-    ? `${BASE_URL.replace(/\/$/, "")}${resolved.wasabiUrl}`
-    : resolved?.fileId && !resolved.notMigrated
-    ? `${BASE_URL}api/drive/image/${resolved.fileId}`
-    : photo.driveFileId
-    ? `${BASE_URL}api/drive/image/${photo.driveFileId}`
-    : null;
+  // Prevent body scroll while open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  const imageUrl = photo?.photoId ? resolvedUrls.get(photo.photoId) ?? null : null;
+
+  // Preload neighbours
+  const preload = (idx: number) => {
+    const p = photos[idx];
+    if (!p?.photoId) return;
+    const url = resolvedUrls.get(p.photoId);
+    if (url) { const img = new Image(); img.src = url; }
+  };
+  useEffect(() => {
+    preload((index - 1 + photos.length) % photos.length);
+    preload((index + 1) % photos.length);
+  }, [index, resolvedUrls]);
 
   return (
-    <div className="w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border/50 flex-shrink-0">
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt={photo.label ?? photo.photoId ?? ""}
-          className="w-full h-full object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-muted-foreground/40">
-          <Camera className="w-5 h-5" />
-          <span className="text-[9px] text-center px-1 leading-tight">
-            {photo.reqImgType ?? "Photo"}
-          </span>
+    <div
+      className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+      onClick={onClose}
+    >
+      {/* Top bar */}
+      <div
+        className="flex items-center justify-between px-5 py-3.5 flex-shrink-0 border-b border-white/10"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-white/50 text-sm tabular-nums">{index + 1} / {photos.length}</span>
+          {photo?.label && (
+            <span className="text-white text-sm font-medium truncate max-w-xs">{photo.label}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <ApprovalBadge approval={photo?.approval} />
+          <button
+            onClick={onClose}
+            className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors"
+          >
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </div>
+
+      {/* Image area */}
+      <div
+        className="flex-1 flex items-center justify-center relative overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Left arrow */}
+        {photos.length > 1 && (
+          <button
+            onClick={prev}
+            className="absolute left-4 z-10 rounded-full bg-white/10 hover:bg-white/25 p-3 transition-colors"
+          >
+            <ChevronLeft className="w-7 h-7 text-white" />
+          </button>
+        )}
+
+        {/* Image */}
+        <div className="flex items-center justify-center w-full h-full px-20">
+          {imageUrl ? (
+            <img
+              key={imageUrl}
+              src={imageUrl}
+              alt={photo?.label ?? photo?.photoId ?? ""}
+              className="max-w-full max-h-full object-contain rounded-sm shadow-2xl"
+              loading="eager"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-3 text-white/30">
+              <ImageOff className="w-16 h-16" />
+              <span className="text-sm">Image not available</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right arrow */}
+        {photos.length > 1 && (
+          <button
+            onClick={next}
+            className="absolute right-4 z-10 rounded-full bg-white/10 hover:bg-white/25 p-3 transition-colors"
+          >
+            <ChevronRight className="w-7 h-7 text-white" />
+          </button>
+        )}
+      </div>
+
+      {/* Bottom bar */}
+      {(photo?.reqImgType || photo?.phaseLink) && (
+        <div
+          className="flex items-center gap-3 px-5 py-3 border-t border-white/10 flex-shrink-0"
+          onClick={e => e.stopPropagation()}
+        >
+          {photo?.reqImgType && (
+            <span className="text-xs text-white/50 font-mono">{photo.reqImgType}</span>
+          )}
+          {photo?.phaseLink && (
+            <span className="text-xs text-white/40 truncate">{photo.phaseLink}</span>
+          )}
         </div>
       )}
     </div>
   );
 }
+
+// ─── Photo tile ───────────────────────────────────────────────────────────────
+
+function PhotoTile({
+  photo,
+  onResolved,
+  onClick,
+}: {
+  photo: TowerPhoto;
+  onResolved: (photoId: string, url: string | null) => void;
+  onClick: () => void;
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!photo.photoId) { setLoading(false); return; }
+    fetch(`${BASE_URL}api/photos/resolve/${photo.photoId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: ResolvedPhoto | null) => {
+        const url = data?.wasabiUrl
+          ? `${BASE_URL.replace(/\/$/, "")}${data.wasabiUrl}`
+          : data?.fileId && !data.notMigrated
+          ? `${BASE_URL}api/drive/image/${data.fileId}`
+          : null;
+        setImageUrl(url);
+        if (photo.photoId) onResolved(photo.photoId, url);
+      })
+      .catch(() => { setImageUrl(null); if (photo.photoId) onResolved(photo.photoId, null); })
+      .finally(() => setLoading(false));
+  }, [photo.photoId]);
+
+  if (loading) {
+    return <Skeleton className="aspect-square w-full rounded-none" />;
+  }
+
+  if (!imageUrl || error) {
+    return (
+      <div className="aspect-square w-full bg-zinc-900 flex items-center justify-center">
+        <ImageOff className="w-6 h-6 text-white/20" />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="aspect-square w-full overflow-hidden bg-black relative cursor-pointer group"
+      onClick={onClick}
+    >
+      <img
+        src={imageUrl}
+        alt={photo.label ?? photo.photoId ?? ""}
+        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+        loading="lazy"
+        onError={() => setError(true)}
+      />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+        <ZoomIn className="w-7 h-7 text-white opacity-0 group-hover:opacity-100 drop-shadow-lg transition-opacity" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Tower folder (detail view) ───────────────────────────────────────────────
+
+interface TowerRecord {
+  id: number;
+  name: string;
+  progressStatus: string;
+  stringId: number;
+  lat?: number | null;
+  lng?: number | null;
+  connectedTo?: string | null;
+  countOnString?: number | null;
+}
+
+function TowerFolderView({
+  tower,
+  strings,
+  allReports,
+  loadingReports,
+  photoCounts,
+  onBack,
+}: {
+  tower: TowerRecord;
+  strings: { id: number; name: string }[] | undefined;
+  allReports: Report[] | null;
+  loadingReports: boolean;
+  photoCounts: Map<string, number>;
+  onBack: () => void;
+}) {
+  const [photos, setPhotos] = useState<TowerPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const [resolvedUrls, setResolvedUrls] = useState<Map<string, string | null>>(new Map());
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [showAllReports, setShowAllReports] = useState(false);
+
+  const photoCount = photoCounts.get(tower.name) ?? 0;
+  const selectedString = strings?.find(s => s.id === tower.stringId);
+
+  useEffect(() => {
+    setLoadingPhotos(true);
+    fetch(`${BASE_URL}api/photos/db?tower=${encodeURIComponent(tower.name)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: TowerPhoto[]) => setPhotos(data))
+      .catch(() => setPhotos([]))
+      .finally(() => setLoadingPhotos(false));
+  }, [tower.name]);
+
+  const handleResolved = useCallback((photoId: string, url: string | null) => {
+    setResolvedUrls(prev => new Map([...prev, [photoId, url]]));
+  }, []);
+
+  // Filter reports: string-level + cable/tower-level
+  const towerReports = (allReports ?? []).filter(r =>
+    (selectedString && r.string === selectedString.name) ||
+    r.cable === tower.name ||
+    r.string === tower.name
+  );
+  const visibleReports = showAllReports ? towerReports : towerReports.slice(0, 8);
+
+  const st = statusStyle(tower.progressStatus);
+  const displayPhotos = photos.filter(p => p.photoId);
+
+  return (
+    <div className="flex flex-col min-h-0">
+      {/* Header */}
+      <div className="flex items-start gap-4 px-8 pt-6 pb-5 border-b border-border/60">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 mt-0.5"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold tracking-tight">{tower.name}</h1>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${st.badge}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+              {tower.progressStatus || "No Status"}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {photoCount > 0 ? `${photoCount} photo${photoCount !== 1 ? "s" : ""}` : "No photos"}
+            {towerReports.length > 0 && ` · ${towerReports.length} report${towerReports.length !== 1 ? "s" : ""}`}
+            {selectedString && (
+              <span className="ml-2 text-muted-foreground/60">· String {selectedString.name}</span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8">
+
+        {/* ── Photos section ── */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <Camera className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Photos</h2>
+            {photoCount > 0 && (
+              <Badge variant="secondary" className="text-xs">{photoCount}</Badge>
+            )}
+          </div>
+
+          {loadingPhotos ? (
+            <div className="grid grid-cols-3 gap-0.5">
+              {Array.from({ length: Math.min(photoCount || 9, 9) }).map((_, i) => (
+                <Skeleton key={i} className="aspect-square w-full rounded-none" />
+              ))}
+            </div>
+          ) : displayPhotos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground/40 border border-dashed rounded-xl">
+              <Camera className="w-10 h-10 mb-2" />
+              <span className="text-sm">No photos for this tower yet</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-0.5 rounded-sm overflow-hidden">
+              {displayPhotos.map((photo, idx) => (
+                <PhotoTile
+                  key={photo.photoId ?? idx}
+                  photo={photo}
+                  onResolved={handleResolved}
+                  onClick={() => setLightboxIndex(idx)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Reports section ── */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Reports</h2>
+            {towerReports.length > 0 && (
+              <Badge variant="secondary" className="text-xs">{towerReports.length}</Badge>
+            )}
+          </div>
+
+          {loadingReports ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+            </div>
+          ) : towerReports.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground/40 border border-dashed rounded-xl">
+              <FileText className="w-8 h-8 mb-2" />
+              <span className="text-sm italic">
+                {allReports === null ? "Loading reports…" : "No reports found for this string."}
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {visibleReports.map(r => (
+                <div
+                  key={r.id}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors group"
+                >
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] flex-shrink-0 border whitespace-nowrap ${reportTypeColor(r.reportType)}`}
+                  >
+                    {r.reportType}
+                  </Badge>
+                  <span className="text-sm text-foreground truncate flex-1 min-w-0" title={r.name}>
+                    {r.name}
+                  </span>
+                  <a
+                    href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(r.wasabiKey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-primary hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open PDF
+                  </a>
+                </div>
+              ))}
+              {towerReports.length > 8 && !showAllReports && (
+                <button
+                  onClick={() => setShowAllReports(true)}
+                  className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors"
+                >
+                  Show all {towerReports.length} reports
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <Lightbox
+          photos={displayPhotos}
+          resolvedUrls={resolvedUrls}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Towers() {
   const search = useSearch();
@@ -128,17 +502,17 @@ export default function Towers() {
   const initialStringId = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
 
   const [selectedStringId, setSelectedStringId] = useState<number | undefined>(initialStringId);
-
   useEffect(() => {
     const id = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
     setSelectedStringId(id);
   }, [search]);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedOspId, setSelectedOspId] = useState<number | undefined>(undefined);
+  const [selectedTower, setSelectedTower] = useState<TowerRecord | null>(null);
 
   const { data: locations } = useListLocations();
   const ospLocations = locations?.filter((l) => l.type === "OSP") ?? [];
-  const [selectedOspId, setSelectedOspId] = useState<number | undefined>(undefined);
 
   const { data: strings, isLoading: strLoading } = useListStrings(
     selectedOspId ? { locationId: selectedOspId } : undefined,
@@ -150,19 +524,11 @@ export default function Towers() {
 
   const isLoading = strLoading || towerLoading;
 
-  const filteredTowers = towers?.filter((t) =>
+  const filteredTowers = (towers ?? []).filter(t =>
     !searchQuery ||
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.progressStatus.toLowerCase().includes(searchQuery.toLowerCase())
-  ) ?? [];
-
-  const selectedString = strings?.find((s) => s.id === selectedStringId);
-
-  const statusCounts = filteredTowers.reduce<Record<string, number>>((acc, t) => {
-    const key = t.progressStatus || "No Status";
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
+  );
 
   // Photo counts per tower
   const [photoCounts, setPhotoCounts] = useState<Map<string, number>>(new Map());
@@ -175,16 +541,11 @@ export default function Towers() {
       .catch(() => {});
   }, []);
 
-  // Expanded tower state
-  const [expandedTowerId, setExpandedTowerId] = useState<number | null>(null);
-  const [towerPhotos, setTowerPhotos] = useState<Map<string, TowerPhoto[]>>(new Map());
-  const [loadingPhotos, setLoadingPhotos] = useState<Set<string>>(new Set());
-
-  // Reports state — fetched once lazily
+  // Reports — lazy, fetched once when any tower is first opened
   const [allReports, setAllReports] = useState<Report[] | null>(null);
   const [loadingReports, setLoadingReports] = useState(false);
 
-  const fetchReports = () => {
+  const ensureReports = useCallback(() => {
     if (allReports !== null || loadingReports) return;
     setLoadingReports(true);
     fetch(`${BASE_URL}api/reports`)
@@ -192,342 +553,156 @@ export default function Towers() {
       .then((data: { reports: Report[] }) => setAllReports(data.reports))
       .catch(() => setAllReports([]))
       .finally(() => setLoadingReports(false));
+  }, [allReports, loadingReports]);
+
+  const handleTowerClick = (tower: TowerRecord) => {
+    setSelectedTower(tower);
+    ensureReports();
   };
 
-  const handleCardClick = (towerId: number, towerName: string) => {
-    if (expandedTowerId === towerId) {
-      setExpandedTowerId(null);
-      return;
-    }
-    setExpandedTowerId(towerId);
-    fetchReports();
-    if (!towerPhotos.has(towerName)) {
-      setLoadingPhotos(prev => new Set([...prev, towerName]));
-      fetch(`${BASE_URL}api/photos/db?tower=${encodeURIComponent(towerName)}`)
-        .then(r => (r.ok ? r.json() : []))
-        .then((photos: TowerPhoto[]) => {
-          setTowerPhotos(prev => new Map([...prev, [towerName, photos]]));
-          setLoadingPhotos(prev => { const s = new Set(prev); s.delete(towerName); return s; });
-        })
-        .catch(() => {
-          setLoadingPhotos(prev => { const s = new Set(prev); s.delete(towerName); return s; });
-        });
-    }
-  };
+  // If a tower folder is open, render it
+  if (selectedTower) {
+    return (
+      <TowerFolderView
+        tower={selectedTower}
+        strings={strings ?? []}
+        allReports={allReports}
+        loadingReports={loadingReports}
+        photoCounts={photoCounts}
+        onBack={() => setSelectedTower(null)}
+      />
+    );
+  }
 
-  const expandedTower = expandedTowerId !== null
-    ? filteredTowers.find(t => t.id === expandedTowerId) ?? null
-    : null;
+  // Status summary
+  const statusCounts = filteredTowers.reduce<Record<string, number>>((acc, t) => {
+    const key = t.progressStatus || "No Status";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-start">
+    <div className="p-8 space-y-5">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Towers</h1>
-          <p className="text-muted-foreground mt-2">
-            {selectedString
-              ? `Towers on string ${selectedString.name}`
-              : "Offshore wind turbine tower locations."}
+          <p className="text-muted-foreground mt-1 text-sm">
+            {strings?.find(s => s.id === selectedStringId)
+              ? `String ${strings?.find(s => s.id === selectedStringId)?.name}`
+              : "Offshore wind turbine locations"}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <Wind className="w-4 h-4" />
-          {filteredTowers.length} towers
+          <span>{filteredTowers.length} towers</span>
         </div>
       </div>
 
-      {/* OSP Filter */}
+      {/* OSP filter */}
       {ospLocations.length > 0 && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-muted-foreground font-medium">OSP:</span>
-          <Button
-            size="sm"
-            variant={selectedOspId === undefined ? "default" : "outline"}
-            onClick={() => { setSelectedOspId(undefined); setSelectedStringId(undefined); }}
-          >
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-muted-foreground font-medium mr-1">OSP:</span>
+          <Button size="sm" variant={selectedOspId === undefined ? "default" : "outline"}
+            onClick={() => { setSelectedOspId(undefined); setSelectedStringId(undefined); }}>
             All
           </Button>
-          {ospLocations.map((osp) => (
-            <Button
-              key={osp.id}
-              size="sm"
+          {ospLocations.map(osp => (
+            <Button key={osp.id} size="sm"
               variant={selectedOspId === osp.id ? "default" : "outline"}
-              onClick={() => { setSelectedOspId(osp.id); setSelectedStringId(undefined); }}
-            >
+              onClick={() => { setSelectedOspId(osp.id); setSelectedStringId(undefined); }}>
               {osp.name}
             </Button>
           ))}
         </div>
       )}
 
-      {/* String Filter */}
+      {/* String filter */}
       {strings && strings.length > 0 && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-muted-foreground font-medium">String:</span>
-          <Button
-            size="sm"
-            variant={selectedStringId === undefined ? "default" : "outline"}
-            onClick={() => setSelectedStringId(undefined)}
-          >
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-muted-foreground font-medium mr-1">String:</span>
+          <Button size="sm" variant={selectedStringId === undefined ? "default" : "outline"}
+            onClick={() => setSelectedStringId(undefined)}>
             All
           </Button>
-          {strings.map((s) => (
-            <Button
-              key={s.id}
-              size="sm"
+          {strings.map(s => (
+            <Button key={s.id} size="sm"
               variant={selectedStringId === s.id ? "default" : "outline"}
-              onClick={() => setSelectedStringId(s.id)}
-            >
+              onClick={() => setSelectedStringId(s.id)}>
               {s.name}
             </Button>
           ))}
         </div>
       )}
 
-      {/* Status Summary */}
+      {/* Status summary chips */}
       {!isLoading && filteredTowers.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(statusCounts).map(([status, count]) => (
-            <Badge key={status} className={`text-xs ${getStatusClass(status)}`}>
-              {status}: {count}
-            </Badge>
-          ))}
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(statusCounts).map(([status, count]) => {
+            const { dot, badge } = statusStyle(status);
+            return (
+              <span key={status} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                {status}: {count}
+              </span>
+            );
+          })}
         </div>
       )}
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative max-w-xs">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Search towers..."
+          placeholder="Search towers…"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
+          onChange={e => setSearchQuery(e.target.value)}
+          className="pl-9 h-9"
         />
       </div>
 
+      {/* Tower grid */}
       {isLoading ? (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <Skeleton key={i} className="h-28 w-full" />
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
       ) : filteredTowers.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center p-12 text-center bg-muted/50 border-dashed">
-          <Wind className="h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold">No towers found</h3>
-          <p className="text-muted-foreground mt-1">
-            {searchQuery
-              ? "No towers match your search."
-              : selectedStringId
-              ? "No towers on this string."
-              : "Select a string to view towers, or view all."}
+        <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed rounded-xl bg-muted/20">
+          <Wind className="h-10 w-10 text-muted-foreground/40 mb-3" />
+          <p className="font-semibold text-sm">No towers found</p>
+          <p className="text-muted-foreground text-xs mt-1">
+            {searchQuery ? "No towers match your search." : selectedStringId ? "No towers on this string." : "Select a string to view towers."}
           </p>
-          {!selectedStringId && (
-            <div className="mt-4">
-              <Link href="/strings">
-                <Button variant="outline" size="sm">
-                  Browse Strings
-                </Button>
-              </Link>
-            </div>
-          )}
-        </Card>
+        </div>
       ) : (
-        <>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredTowers.map((tower) => {
-              const str = strings?.find((s) => s.id === tower.stringId);
-              const photoCount = photoCounts.get(tower.name) ?? 0;
-              const isExpanded = expandedTowerId === tower.id;
-              return (
-                <Card
-                  key={tower.id}
-                  className={`hover:shadow-sm transition-all cursor-pointer select-none ${isExpanded ? "ring-2 ring-primary/50 shadow-sm" : ""}`}
-                  onClick={() => handleCardClick(tower.id, tower.name)}
-                >
-                  <CardContent className="pt-4 pb-3 space-y-2">
-                    <div className="flex items-center justify-between gap-1">
-                      <h3 className="font-semibold text-sm">{tower.name}</h3>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {photoCount > 0 && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-xs font-medium">
-                            <Camera className="w-3 h-3" />
-                            {photoCount}
-                          </span>
-                        )}
-                        <Badge className={`text-xs ${getStatusClass(tower.progressStatus)}`}>
-                          {tower.progressStatus || "—"}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {str && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Activity className="w-3 h-3 flex-shrink-0" />
-                        <span>String {str.name}</span>
-                      </div>
-                    )}
-
-                    {tower.lat !== null && tower.lat !== undefined && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <MapPin className="w-3 h-3 flex-shrink-0" />
-                        <span className="font-mono">
-                          {tower.lat?.toFixed(5)}, {tower.lng?.toFixed(5)}
-                        </span>
-                      </div>
-                    )}
-
-                    {tower.connectedTo && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <LinkIcon className="w-3 h-3 flex-shrink-0" />
-                        <span>→ {tower.connectedTo}</span>
-                      </div>
-                    )}
-
-                    {tower.countOnString !== null && tower.countOnString !== undefined && (
-                      <div className="text-xs text-muted-foreground">
-                        Position {tower.countOnString} on string
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Expanded detail panel — Images + Reports side by side */}
-          {expandedTower && (() => {
-            const photos = towerPhotos.get(expandedTower.name) ?? [];
-            const isLoadingPh = loadingPhotos.has(expandedTower.name);
-            const photoCount = photoCounts.get(expandedTower.name) ?? 0;
-
-            // Filter reports to this tower's string and/or tower name
-            const towerReports = (allReports ?? []).filter(r =>
-              (selectedString && r.string === selectedString.name) ||
-              r.cable === expandedTower.name ||
-              r.string === expandedTower.name
-            );
-
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {filteredTowers.map(tower => {
+            const photoCount = photoCounts.get(tower.name) ?? 0;
+            const st = statusStyle(tower.progressStatus);
             return (
-              <div className="rounded-xl border bg-muted/30 p-4 space-y-3 animate-in fade-in-0 slide-in-from-top-2 duration-200">
-                {/* Header row */}
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-sm">{expandedTower.name}</span>
-                  <button
-                    onClick={() => setExpandedTowerId(null)}
-                    className="rounded-full p-1 hover:bg-muted transition-colors"
-                    aria-label="Close"
-                  >
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </button>
+              <button
+                key={tower.id}
+                onClick={() => handleTowerClick(tower as TowerRecord)}
+                className="group flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2.5 text-left hover:shadow-md hover:ring-2 hover:ring-primary/20 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <div className="flex items-center justify-between gap-1 w-full">
+                  <span className="font-semibold text-sm truncate">{tower.name}</span>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${st.dot}`} title={tower.progressStatus} />
                 </div>
-
-                {/* Two-column grid */}
-                <div className="grid grid-cols-2 gap-4">
-
-                  {/* ── Images column ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Camera className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Images</span>
-                      {photoCount > 0 && (
-                        <Badge variant="secondary" className="text-xs ml-auto">{photoCount}</Badge>
-                      )}
-                    </div>
-
-                    {isLoadingPh ? (
-                      <div className="flex gap-2 flex-wrap">
-                        {[1, 2, 3, 4].map(i => (
-                          <Skeleton key={i} className="w-20 h-20 rounded-lg flex-shrink-0" />
-                        ))}
-                      </div>
-                    ) : photos.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2 rounded-lg border border-dashed">
-                        <Camera className="w-6 h-6" />
-                        <span className="text-xs">No photos yet for this tower.</span>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2 flex-wrap">
-                        {photos.slice(0, 8).map((photo, idx) => (
-                          <PhotoThumb key={photo.photoId ?? idx} photo={photo} />
-                        ))}
-                        {photoCount > 8 && (
-                          <div className="w-20 h-20 rounded-lg bg-muted border border-border/50 flex-shrink-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-                            <span className="text-sm font-semibold">+{photoCount - 8}</span>
-                            <span className="text-[10px]">more</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {photoCount > 0 && (
-                      <div className="pt-1">
-                        <Link href={`/drive-photos?tower=${encodeURIComponent(expandedTower.name)}`}>
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                            <ExternalLink className="w-3 h-3" />
-                            View all in Images
-                          </Button>
-                        </Link>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ── Reports column ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reports</span>
-                      {towerReports.length > 0 && (
-                        <Badge variant="secondary" className="text-xs ml-auto">{towerReports.length}</Badge>
-                      )}
-                    </div>
-
-                    {loadingReports ? (
-                      <div className="space-y-1.5">
-                        {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 w-full rounded" />)}
-                      </div>
-                    ) : towerReports.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground/50 gap-2 rounded-lg border border-dashed">
-                        <FileText className="w-6 h-6" />
-                        <span className="text-xs italic">
-                          {allReports === null ? "Loading reports…" : "No reports found for this string."}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
-                        {towerReports.map(r => (
-                          <div key={r.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/60 transition-colors group">
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] flex-shrink-0 border whitespace-nowrap ${reportTypeColor(r.reportType)}`}
-                            >
-                              {r.reportType}
-                            </Badge>
-                            <span className="text-xs text-foreground truncate flex-1 min-w-0" title={r.name}>
-                              {r.name}
-                            </span>
-                            <a
-                              href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(r.wasabiKey)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-[10px] text-primary hover:underline flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={e => e.stopPropagation()}
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              PDF
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              </div>
+                {photoCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-blue-600 font-medium">
+                    <Camera className="w-3 h-3" />
+                    {photoCount} photos
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground/50">No photos</span>
+                )}
+              </button>
             );
-          })()}
-        </>
+          })}
+        </div>
       )}
     </div>
   );
