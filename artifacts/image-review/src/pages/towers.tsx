@@ -43,7 +43,8 @@ interface TowerPhoto {
 }
 
 function classifyPhoto(photoUpload: string | null): "stamped" | "original" {
-  if (photoUpload && photoUpload.includes("Photo_Images_2_Stamped")) return "stamped";
+  if (!photoUpload) return "original";
+  if (photoUpload.includes("Photo_Images_2_Stamped")) return "stamped";
   return "original";
 }
 
