@@ -307,12 +307,12 @@ export function AppSidebar() {
           {/* Images — collapsible with filter submenu */}
           <ImagesSection location={location} />
 
-          {/* Documents */}
+          {/* Reports */}
           <NavItem
-            href="/documents"
-            label="Documents"
+            href="/reports"
+            label="Reports"
             icon={FileText}
-            isActive={location === "/documents" || location.startsWith("/documents")}
+            isActive={location === "/reports" || location.startsWith("/reports")}
           />
         </nav>
       </div>

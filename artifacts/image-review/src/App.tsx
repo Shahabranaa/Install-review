@@ -9,6 +9,7 @@ import Projects from "@/pages/projects";
 import Phases from "@/pages/phases";
 import Images from "@/pages/images";
 import Documents from "@/pages/documents";
+import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import Drive from "@/pages/drive";
 import Strings from "@/pages/strings";
@@ -48,6 +49,7 @@ function ProtectedRouter() {
         <Route path="/phases" component={Phases} />
         <Route path="/images" component={Images} />
         <Route path="/documents" component={Documents} />
+        <Route path="/reports" component={Reports} />
         <Route path="/drive" component={Drive} />
         <Route path="/strings" component={Strings} />
         <Route path="/towers" component={Towers} />
