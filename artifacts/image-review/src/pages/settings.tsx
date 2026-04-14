@@ -584,7 +584,7 @@ function StoragePanel() {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchSize: 20 }),
+          body: JSON.stringify({ batchSize: 50 }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({ error: "Unknown error" }));
@@ -845,14 +845,14 @@ function StoragePanel() {
                   </span>
                   <span className="font-semibold tabular-nums">{status?.migrated ?? 0}</span>
                 </div>
-                {(status?.remaining ?? 0) > 0 && (
+                {(status?.breakdown?.pendingDrive ?? 0) > 0 && (
                   <div className="px-3 py-2 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                         <HardDrive className="w-4 h-4" />
                         Pending Wasabi upload
                       </span>
-                      <span className="font-semibold tabular-nums text-amber-600">{status?.remaining}</span>
+                      <span className="font-semibold tabular-nums text-amber-600">{status.breakdown.pendingDrive}</span>
                     </div>
                     <p className="text-xs text-muted-foreground pl-6">
                       These photos are in Google Drive but not yet uploaded to Wasabi.
@@ -914,19 +914,26 @@ function StoragePanel() {
               )}
             </div>
 
-            <Button
-              onClick={runBatch}
-              disabled={migrating || !status?.configured || !status?.connection.ok || (status?.remaining ?? 0) === 0}
-              className="w-full"
-            >
-              {migrating ? (
-                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Migrating…</>
-              ) : (status?.remaining ?? 0) === 0 ? (
-                <><CheckCircle2 className="w-4 h-4 mr-2" /> All photos migrated</>
-              ) : (
-                <><HardDrive className="w-4 h-4 mr-2" /> Migrate photos to Wasabi</>
+            <div className="space-y-1.5">
+              <Button
+                onClick={runBatch}
+                disabled={migrating || !status?.configured || !status?.connection.ok || (status?.breakdown?.pendingDrive ?? 0) === 0}
+                className="w-full"
+              >
+                {migrating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Migrating…</>
+                ) : (status?.breakdown?.pendingDrive ?? 0) === 0 ? (
+                  <><CheckCircle2 className="w-4 h-4 mr-2" /> All Drive photos uploaded to Wasabi</>
+                ) : (
+                  <><HardDrive className="w-4 h-4 mr-2" /> Migrate photos to Wasabi</>
+                )}
+              </Button>
+              {(status?.breakdown?.pendingDrive ?? 0) > 0 && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Will upload {status!.breakdown.pendingDrive.toLocaleString()} remaining photos from Google Drive to Wasabi (50 per click).
+                </p>
               )}
-            </Button>
+            </div>
 
             {status?.configured && status?.connection.ok && (
               <Button
