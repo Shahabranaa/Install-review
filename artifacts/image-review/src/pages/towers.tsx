@@ -155,8 +155,7 @@ function Lightbox({
             <span className="text-white text-sm font-medium truncate max-w-xs">{photo.label}</span>
           )}
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <ApprovalBadge approval={photo?.approval} />
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={onClose}
             className="rounded-full bg-white/10 hover:bg-white/20 p-2 transition-colors"
@@ -210,20 +209,19 @@ function Lightbox({
         )}
       </div>
 
-      {/* Bottom bar */}
-      {(photo?.reqImgType || photo?.phaseLink) && (
-        <div
-          className="flex items-center gap-3 px-5 py-3 border-t border-white/10 flex-shrink-0"
-          onClick={e => e.stopPropagation()}
-        >
-          {photo?.reqImgType && (
-            <span className="text-xs text-white/50 font-mono">{photo.reqImgType}</span>
-          )}
-          {photo?.phaseLink && (
-            <span className="text-xs text-white/40 truncate">{photo.phaseLink}</span>
-          )}
-        </div>
-      )}
+      {/* Bottom bar — approval badge + metadata */}
+      <div
+        className="flex items-center gap-3 px-5 py-3 border-t border-white/10 flex-shrink-0"
+        onClick={e => e.stopPropagation()}
+      >
+        <ApprovalBadge approval={photo?.approval} />
+        {photo?.reqImgType && (
+          <span className="text-xs text-white/50 font-mono">{photo.reqImgType}</span>
+        )}
+        {photo?.phaseLink && (
+          <span className="text-xs text-white/40 truncate">{photo.phaseLink}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -468,12 +466,12 @@ function TowerFolderView({
                   </a>
                 </div>
               ))}
-              {towerReports.length > 8 && !showAllReports && (
+              {towerReports.length > 8 && (
                 <button
-                  onClick={() => setShowAllReports(true)}
+                  onClick={() => setShowAllReports(v => !v)}
                   className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors"
                 >
-                  Show all {towerReports.length} reports
+                  {showAllReports ? "Show less" : `Show all ${towerReports.length} reports`}
                 </button>
               )}
             </div>
@@ -684,7 +682,7 @@ export default function Towers() {
             return (
               <button
                 key={tower.id}
-                onClick={() => handleTowerClick(tower as TowerRecord)}
+                onClick={() => handleTowerClick(tower)}
                 className="group flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2.5 text-left hover:shadow-md hover:ring-2 hover:ring-primary/20 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <div className="flex items-center justify-between gap-1 w-full">
