@@ -28,7 +28,8 @@ app.listen(port, (err) => {
   // Auto-link sheet_photos to Wasabi keys from mirror table on startup (idempotent)
   void (async () => {
     try {
-      const result = await db.execute(sql`
+      // Pass 1: match by drive_file_id (exact, fastest)
+      const r1 = await db.execute(sql`
         UPDATE sheet_photos
         SET wasabi_key = wmt.wasabi_key
         FROM wasabi_mirror_tasks wmt
@@ -36,8 +37,37 @@ app.listen(port, (err) => {
           AND wmt.status = 'done'
           AND sheet_photos.wasabi_key IS NULL
       `);
-      const linked = (result as unknown as { rowCount?: number }).rowCount ?? 0;
-      logger.info({ linked }, "Startup: linked sheet_photos to Wasabi mirror keys");
+      const linked = (r1 as unknown as { rowCount?: number }).rowCount ?? 0;
+      logger.info({ linked }, "Startup: linked sheet_photos to Wasabi mirror keys (drive_file_id)");
+
+      // Pass 2: match remaining photos by photo_id prefix in mirror filename
+      // Files are named "{photo_id}.{type}.{timestamp}.{ext}" — extract the 8-char hex prefix
+      const r2 = await db.execute(sql`
+        UPDATE sheet_photos
+        SET wasabi_key = best.wasabi_key
+        FROM (
+          SELECT DISTINCT ON (photo_id_prefix)
+            substring(file_name FROM '^([0-9a-f]{8})\.') AS photo_id_prefix,
+            wasabi_key
+          FROM wasabi_mirror_tasks
+          WHERE status = 'done'
+            AND lower(file_name) ~ '\.(jpg|jpeg|png|webp|heic)$'
+            AND file_name ~ '^[0-9a-f]{8}\.'
+          ORDER BY photo_id_prefix,
+            CASE
+              WHEN lower(file_name) LIKE '%.jpg'  THEN 1
+              WHEN lower(file_name) LIKE '%.jpeg' THEN 2
+              WHEN lower(file_name) LIKE '%.png'  THEN 3
+              WHEN lower(file_name) LIKE '%.webp' THEN 4
+              ELSE 5
+            END,
+            file_name
+        ) best
+        WHERE sheet_photos.photo_id = best.photo_id_prefix
+          AND sheet_photos.wasabi_key IS NULL
+      `);
+      const linkedByPrefix = (r2 as unknown as { rowCount?: number }).rowCount ?? 0;
+      logger.info({ linkedByPrefix }, "Startup: linked sheet_photos to Wasabi mirror keys (photo_id prefix)");
     } catch (err: unknown) {
       logger.warn({ err }, "Startup: wasabi auto-link skipped (table may not exist yet)");
     }
