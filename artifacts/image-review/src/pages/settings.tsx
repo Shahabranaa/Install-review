@@ -14,7 +14,7 @@ import {
 import {
   Building2, Info, Users, Plus, Pencil, UserX, UserCheck, ShieldCheck,
   Eye, EyeOff, ClipboardCheck, Lock, Loader2, HardDrive, CheckCircle2, AlertCircle,
-  KeyRound, Save, ChevronDown, ChevronUp, RefreshCw, FolderSync, Trash2,
+  KeyRound, Save, ChevronDown, ChevronUp, RefreshCw, FolderSync, Trash2, ImageOff,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
@@ -456,13 +456,21 @@ interface WasabiBreakdown {
   unmigrateable:    number;
 }
 
+interface MirrorStats {
+  total:  number;
+  done:   number;
+  linked: number;
+}
+
 interface WasabiStatus {
   configured: boolean;
   connection: { ok: boolean; error?: string };
   migrated:   number;
   total:      number;
   remaining:  number;
+  noSource?:  number;
   breakdown?: WasabiBreakdown;
+  mirrorStats?: MirrorStats;
 }
 
 interface WasabiCreds {
@@ -654,7 +662,8 @@ function StoragePanel() {
     }
   };
 
-  const pct = status && status.total > 0 ? Math.round((status.migrated / status.total) * 100) : 0;
+  const totalWithNoSource = (status?.total ?? 0) + (status?.noSource ?? 0);
+  const pct = status && totalWithNoSource > 0 ? Math.round((status.migrated / totalWithNoSource) * 100) : 0;
 
   return (
     <Card>
@@ -817,32 +826,63 @@ function StoragePanel() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Migration progress</span>
-                <span className="font-medium">{status?.migrated ?? 0} / {status?.total ?? 0} photos ({pct}%)</span>
+            <div className="space-y-3">
+              {/* ── Photo coverage summary ─────────────────────────────── */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Photos in Wasabi</span>
+                  <span className="font-medium">{status?.migrated ?? 0} / {(status?.total ?? 0) + (status?.noSource ?? 0)} ({pct}%)</span>
+                </div>
+                <Progress value={pct} className="h-2" />
               </div>
-              <Progress value={pct} className="h-2" />
-              {(status?.remaining ?? 0) > 0 && (
-                <p className="text-xs text-muted-foreground">{status?.remaining} remaining</p>
-              )}
-              {status?.breakdown && (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pt-1 text-xs text-muted-foreground">
-                  {status.breakdown.migratedViaDrive > 0 && (
-                    <span>✓ {status.breakdown.migratedViaDrive} from Google Drive</span>
-                  )}
-                  {status.breakdown.linked > 0 && (
-                    <span>✓ {status.breakdown.linked} linked from storage</span>
-                  )}
-                  {status.breakdown.pendingDrive > 0 && (
-                    <span className="text-amber-600">{status.breakdown.pendingDrive} pending Drive download</span>
-                  )}
-                  {status.breakdown.pendingLink > 0 && (
-                    <span className="text-amber-600">{status.breakdown.pendingLink} pending link</span>
-                  )}
-                  {status.breakdown.unmigrateable > 0 && (
-                    <span className="text-muted-foreground/60">{status.breakdown.unmigrateable} no source available</span>
-                  )}
+
+              {/* ── Three-row breakdown ────────────────────────────────── */}
+              <div className="rounded-md border divide-y text-sm">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <span className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                    In Wasabi (mapped)
+                  </span>
+                  <span className="font-semibold tabular-nums">{status?.migrated ?? 0}</span>
+                </div>
+                {(status?.remaining ?? 0) > 0 && (
+                  <div className="px-3 py-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                        <HardDrive className="w-4 h-4" />
+                        Pending Wasabi upload
+                      </span>
+                      <span className="font-semibold tabular-nums text-amber-600">{status?.remaining}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pl-6">
+                      These photos are in Google Drive but not yet uploaded to Wasabi.
+                      Use "Migrate photos to Wasabi" below to upload them.
+                    </p>
+                  </div>
+                )}
+                {(status?.noSource ?? 0) > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="flex items-center gap-2 text-muted-foreground/60">
+                      <ImageOff className="w-4 h-4" />
+                      No source available
+                    </span>
+                    <span className="font-semibold tabular-nums text-muted-foreground/60">{status?.noSource}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Mirror stats ───────────────────────────────────────── */}
+              {status?.mirrorStats && status.mirrorStats.total > 0 && (
+                <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                  <p className="font-medium text-foreground/70">Drive → Wasabi mirror</p>
+                  <div className="flex justify-between">
+                    <span>Files mirrored</span>
+                    <span className="tabular-nums">{status.mirrorStats.done.toLocaleString()} / {status.mirrorStats.total.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Linked to photos</span>
+                    <span className="tabular-nums">{status.mirrorStats.linked.toLocaleString()}</span>
+                  </div>
                 </div>
               )}
             </div>

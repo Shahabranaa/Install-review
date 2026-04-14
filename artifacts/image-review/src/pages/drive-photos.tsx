@@ -214,10 +214,15 @@ function PhotoCard({
               <ZoomIn className="w-8 h-8 text-white drop-shadow-lg" />
             </div>
           </>
-        ) : notMigrated || imgError ? (
+        ) : notMigrated ? (
           <div className="flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50 p-3 text-center">
             <ImageOff className="w-6 h-6" />
             <span className="text-xs">Not yet migrated</span>
+          </div>
+        ) : imgError ? (
+          <div className="flex flex-col items-center justify-center gap-1.5 text-muted-foreground/50 p-3 text-center">
+            <ImageOff className="w-6 h-6" />
+            <span className="text-xs">Image unavailable</span>
           </div>
         ) : isPending ? (
           <div className="flex flex-col items-center gap-2 text-muted-foreground/50 animate-pulse">

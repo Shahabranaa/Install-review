@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, count, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { db, sheetPhotosTable } from "@workspace/db";
+import { db, pool, sheetPhotosTable } from "@workspace/db";
 import {
   isWasabiConfigured,
   getWasabiClientAndCreds,
@@ -88,6 +88,9 @@ router.get("/wasabi/status", async (_req, res): Promise<void> => {
       pendingDriveRow,
       pendingLinkRow,
       unmigrateableRow,
+      mirrorTotalRow,
+      mirrorDoneRow,
+      mirrorLinkedRow,
     ] = await Promise.all([
       db.select({ count: count() }).from(sheetPhotosTable)
         .where(sql`${sheetPhotosTable.driveFileId} IS NOT NULL AND ${sheetPhotosTable.wasabiKey} IS NOT NULL`),
@@ -98,7 +101,15 @@ router.get("/wasabi/status", async (_req, res): Promise<void> => {
       db.select({ count: count() }).from(sheetPhotosTable)
         .where(sql`${sheetPhotosTable.driveFileId} IS NULL AND ${sheetPhotosTable.wasabiKey} IS NULL AND ${sheetPhotosTable.photoUpload} IS NOT NULL AND ${sheetPhotosTable.photoUpload} != ''`),
       db.select({ count: count() }).from(sheetPhotosTable)
-        .where(sql`${sheetPhotosTable.driveFileId} IS NULL AND (${sheetPhotosTable.photoUpload} IS NULL OR ${sheetPhotosTable.photoUpload} = '')`),
+        .where(sql`${sheetPhotosTable.driveFileId} IS NULL AND (${sheetPhotosTable.photoUpload} IS NULL OR ${sheetPhotosTable.photoUpload} = '') AND ${sheetPhotosTable.wasabiKey} IS NULL`),
+      pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM wasabi_mirror_tasks"),
+      pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM wasabi_mirror_tasks WHERE status = 'done'"),
+      pool.query<{ count: string }>(`
+        SELECT COUNT(DISTINCT sp.photo_id)::text AS count
+        FROM sheet_photos sp
+        JOIN wasabi_mirror_tasks wmt ON sp.drive_file_id = wmt.drive_file_id
+        WHERE sp.wasabi_key IS NOT NULL
+      `),
     ]);
 
     const migratedViaDrive = migratedViaDriveRow[0]?.count ?? 0;
@@ -110,6 +121,11 @@ router.get("/wasabi/status", async (_req, res): Promise<void> => {
     const migrated  = migratedViaDrive + linked;
     const remaining = pendingDrive + pendingLink;
     const total     = migrated + remaining;
+    const noSource  = unmigrateable;
+
+    const mirrorTotal  = parseInt(mirrorTotalRow.rows[0]?.count  ?? "0", 10);
+    const mirrorDone   = parseInt(mirrorDoneRow.rows[0]?.count   ?? "0", 10);
+    const mirrorLinked = parseInt(mirrorLinkedRow.rows[0]?.count ?? "0", 10);
 
     let connection: { ok: boolean; error?: string } = { ok: false, error: "Not configured" };
     if (configured) {
@@ -122,7 +138,9 @@ router.get("/wasabi/status", async (_req, res): Promise<void> => {
       migrated,
       total,
       remaining,
+      noSource,
       breakdown: { migratedViaDrive, linked, pendingDrive, pendingLink, unmigrateable },
+      mirrorStats: { total: mirrorTotal, done: mirrorDone, linked: mirrorLinked },
     });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
