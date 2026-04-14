@@ -66,8 +66,8 @@ app.listen(port, (err) => {
         WHERE sheet_photos.photo_id = best.photo_id_prefix
           AND sheet_photos.wasabi_key IS NULL
       `);
-      const linkedByPrefix = (r2 as unknown as { rowCount?: number }).rowCount ?? 0;
-      logger.info({ linkedByPrefix }, "Startup: linked sheet_photos to Wasabi mirror keys (photo_id prefix)");
+      const linked_by_prefix = (r2 as unknown as { rowCount?: number }).rowCount ?? 0;
+      logger.info({ linked_by_prefix }, "Startup: linked additional photos via photo_id filename match");
     } catch (err: unknown) {
       logger.warn({ err }, "Startup: wasabi auto-link skipped (table may not exist yet)");
     }
