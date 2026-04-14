@@ -47,12 +47,12 @@ app.listen(port, (err) => {
         SET wasabi_key = best.wasabi_key
         FROM (
           SELECT DISTINCT ON (photo_id_prefix)
-            substring(file_name FROM '^([0-9a-f]{8})\.') AS photo_id_prefix,
+            substring(file_name FROM '^([0-9a-f]{8})\\.') AS photo_id_prefix,
             wasabi_key
           FROM wasabi_mirror_tasks
           WHERE status = 'done'
-            AND lower(file_name) ~ '\.(jpg|jpeg|png|webp|heic)$'
-            AND file_name ~ '^[0-9a-f]{8}\.'
+            AND lower(file_name) ~ '\\.(jpg|jpeg|png|webp|heic)$'
+            AND file_name ~ '^[0-9a-f]{8}\\.'
           ORDER BY photo_id_prefix,
             CASE
               WHEN lower(file_name) LIKE '%.jpg'  THEN 1
