@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
-  ArrowLeft, ZoomIn, ExternalLink, ImageOff,
+  ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -332,6 +332,7 @@ function TowerFolderView({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAllReports, setShowAllReports] = useState(false);
   const [activeTab, setActiveTab] = useState<FolderTab>("original");
+  const [hideUnavailable, setHideUnavailable] = useState(false);
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
@@ -340,6 +341,7 @@ function TowerFolderView({
   useEffect(() => {
     setActiveTab("original");
     setShowAllReports(false);
+    setHideUnavailable(false);
   }, [tower.name]);
 
   useEffect(() => {
@@ -368,8 +370,19 @@ function TowerFolderView({
 
   // Split into original vs stamped; global index maps to displayPhotos for unified lightbox
   const globalIndexMap = new Map(displayPhotos.map((p, i) => [p.photoId, i]));
-  const originalPhotos = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "original");
-  const stampedPhotos  = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "stamped");
+
+  // Helper: photo is confirmed unavailable only when resolvedUrls has resolved it to null
+  const isConfirmedUnavailable = (photoId: string | null) =>
+    photoId !== null && resolvedUrls.has(photoId) && resolvedUrls.get(photoId) === null;
+
+  const originalPhotosAll = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "original");
+  const stampedPhotosAll  = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "stamped");
+  const originalPhotos = hideUnavailable
+    ? originalPhotosAll.filter(p => !isConfirmedUnavailable(p.photoId))
+    : originalPhotosAll;
+  const stampedPhotos = hideUnavailable
+    ? stampedPhotosAll.filter(p => !isConfirmedUnavailable(p.photoId))
+    : stampedPhotosAll;
 
   const tabs: { id: FolderTab; label: string; count: number | null; icon: React.ReactNode }[] = [
     {
@@ -451,6 +464,21 @@ function TowerFolderView({
             </button>
           );
         })}
+        {/* Hide unavailable toggle — only relevant on photo tabs */}
+        {activeTab !== "reports" && (
+          <button
+            onClick={() => setHideUnavailable(v => !v)}
+            className={[
+              "ml-auto mb-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border",
+              hideUnavailable
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
+            ].join(" ")}
+          >
+            {hideUnavailable ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {hideUnavailable ? "Hiding unavailable" : "Hide unavailable"}
+          </button>
+        )}
       </div>
 
       {/* ── Tab content ── */}

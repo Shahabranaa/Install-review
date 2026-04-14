@@ -35,6 +35,8 @@ import {
   MessageSquare,
   ClipboardCheck,
   ImageOff,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -162,9 +164,11 @@ type ResolvedPhoto = {
 function PhotoCard({
   photo,
   onOpen,
+  onResolvedStatus,
 }: {
   photo: PhotoRecord;
   onOpen: (photo: PhotoRecord, imageUrl: string) => void;
+  onResolvedStatus?: (photoId: string, available: boolean) => void;
 }) {
   const reviewOverrides = useContext(ReviewOverridesContext);
   const effectiveApproval = reviewOverrides.get(photo.photoId) ?? photo.approval;
@@ -194,6 +198,13 @@ function PhotoCard({
 
   const notMigrated = resolved?.notMigrated && !imageUrl;
   const [imgError, setImgError] = useState(false);
+
+  // Report availability to parent once resolution settles (and when img load fails)
+  useEffect(() => {
+    if (isPending || !onResolvedStatus || !photo.photoId) return;
+    const available = !!(imageUrl && !notMigrated && !imgError);
+    onResolvedStatus(photo.photoId, available);
+  }, [isPending, imageUrl, notMigrated, imgError, photo.photoId]);
 
   return (
     <Card
@@ -734,10 +745,12 @@ function PhaseSection({
   phase,
   photos,
   onOpen,
+  onResolvedStatus,
 }: {
   phase: string;
   photos: PhotoRecord[];
   onOpen: (photo: PhotoRecord, imageUrl: string) => void;
+  onResolvedStatus?: (photoId: string, available: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   // Sort photos by required image order (numeric)
@@ -754,7 +767,7 @@ function PhaseSection({
       {expanded && (
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 pl-6">
           {sorted.map(p => (
-            <PhotoCard key={p.photoId || `${p.locationLink}-${p.cableLink}-${p.label}`} photo={p} onOpen={onOpen} />
+            <PhotoCard key={p.photoId || `${p.locationLink}-${p.cableLink}-${p.label}`} photo={p} onOpen={onOpen} onResolvedStatus={onResolvedStatus} />
           ))}
         </div>
       )}
@@ -768,10 +781,12 @@ function StringSection({
   stringName,
   photos,
   onOpen,
+  onResolvedStatus,
 }: {
   stringName: string;
   photos: PhotoRecord[];
   onOpen: (photo: PhotoRecord, imageUrl: string) => void;
+  onResolvedStatus?: (photoId: string, available: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const byPhase = new Map<string, PhotoRecord[]>();
@@ -801,7 +816,7 @@ function StringSection({
         <div className="px-4 pb-4 pt-3 space-y-5 divide-y divide-border">
           {sortedPhases.map(([phase, phasePhotos]) => (
             <div key={phase} className="pt-4 first:pt-0">
-              <PhaseSection phase={phase} photos={phasePhotos} onOpen={onOpen} />
+              <PhaseSection phase={phase} photos={phasePhotos} onOpen={onOpen} onResolvedStatus={onResolvedStatus} />
             </div>
           ))}
         </div>
@@ -816,10 +831,12 @@ function OspSection({
   ospName,
   stringMap,
   onOpen,
+  onResolvedStatus,
 }: {
   ospName: string;
   stringMap: Map<string, PhotoRecord[]>;
   onOpen: (photo: PhotoRecord, imageUrl: string) => void;
+  onResolvedStatus?: (photoId: string, available: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const sortedStrings = [...stringMap.entries()].sort(([a], [b]) => natSort(a, b));
@@ -844,7 +861,7 @@ function OspSection({
       {expanded && (
         <div className="p-4 space-y-3 bg-background">
           {sortedStrings.map(([stringName, photos]) => (
-            <StringSection key={stringName} stringName={stringName} photos={photos} onOpen={onOpen} />
+            <StringSection key={stringName} stringName={stringName} photos={photos} onOpen={onOpen} onResolvedStatus={onResolvedStatus} />
           ))}
         </div>
       )}
@@ -863,6 +880,15 @@ export default function DrivePhotos() {
   const [searchQuery, setSearchQuery] = useState("");
   const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; imageUrl: string } | null>(null);
   const [reviewOverrides, setReviewOverrides] = useState<Map<string, string>>(new Map());
+  const [hideUnavailable, setHideUnavailable] = useState(false);
+  const [resolvedStatuses, setResolvedStatuses] = useState<Map<string, boolean>>(new Map());
+
+  const handleResolvedStatus = useCallback((photoId: string, available: boolean) => {
+    setResolvedStatuses(prev => {
+      if (prev.get(photoId) === available) return prev;
+      return new Map([...prev, [photoId, available]]);
+    });
+  }, []);
 
   // Load existing reviewer decisions from DB on mount
   useEffect(() => {
@@ -930,9 +956,14 @@ export default function DrivePhotos() {
     );
   }
 
+  // Apply "hide unavailable" filter — only exclude photos confirmed unavailable
+  const visiblePhotos = hideUnavailable
+    ? filtered.filter(p => resolvedStatuses.get(p.photoId) !== false)
+    : filtered;
+
   // Build 3-level hierarchy: OSP → String → photos
   const byOsp = new Map<string, Map<string, PhotoRecord[]>>();
-  for (const p of filtered) {
+  for (const p of visiblePhotos) {
     const osp = p.locationLink || "Unknown OSP";
     const str = p.cableLink   || "Unknown String";
     if (!byOsp.has(osp)) byOsp.set(osp, new Map());
@@ -943,8 +974,8 @@ export default function DrivePhotos() {
   const sortedOsps = [...byOsp.entries()].sort(([a], [b]) => natSort(a, b));
 
   const towers = data?.meta.towers ?? [];
-  const photoCount = filtered.filter(p => p.type === "photo").length;
-  const sigCount   = filtered.filter(p => p.type === "signature").length;
+  const photoCount = visiblePhotos.filter(p => p.type === "photo").length;
+  const sigCount   = visiblePhotos.filter(p => p.type === "signature").length;
 
   return (
     <ReviewOverridesContext.Provider value={reviewOverrides}>
@@ -978,7 +1009,7 @@ export default function DrivePhotos() {
 
         {!isLoading && data && (
           <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-            <span><strong className="text-foreground">{filtered.length}</strong> records</span>
+            <span><strong className="text-foreground">{visiblePhotos.length}</strong> records</span>
             <span><strong className="text-foreground">{photoCount}</strong> photos</span>
             <span><strong className="text-foreground">{sigCount}</strong> signatures</span>
             <span><strong className="text-foreground">{sortedOsps.length}</strong> OSPs</span>
@@ -999,19 +1030,33 @@ export default function DrivePhotos() {
           </div>
         )}
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            className="pl-9 h-9"
-            placeholder="Search label, type, phase, tower…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearchQuery("")}>
-              <X className="w-4 h-4" />
-            </button>
-          )}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-md flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              className="pl-9 h-9"
+              placeholder="Search label, type, phase, tower…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearchQuery("")}>
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setHideUnavailable(v => !v)}
+            className={[
+              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border whitespace-nowrap",
+              hideUnavailable
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
+            ].join(" ")}
+          >
+            {hideUnavailable ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {hideUnavailable ? "Hiding unavailable" : "Hide unavailable"}
+          </button>
         </div>
 
         {isLoading && (
@@ -1045,7 +1090,7 @@ export default function DrivePhotos() {
               <div>
                 <p className="font-semibold">No photos found</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {searchQuery || selectedTower ? "Try adjusting your filters." : "No photo records in the spreadsheet."}
+                  {hideUnavailable ? "All results filtered out — try turning off \"Hide unavailable\"." : searchQuery || selectedTower ? "Try adjusting your filters." : "No photo records in the spreadsheet."}
                 </p>
               </div>
             </CardContent>
@@ -1055,7 +1100,7 @@ export default function DrivePhotos() {
         {!isLoading && !error && sortedOsps.length > 0 && (
           <div className="space-y-4">
             {sortedOsps.map(([ospName, stringMap]) => (
-              <OspSection key={ospName} ospName={ospName} stringMap={stringMap} onOpen={handleOpen} />
+              <OspSection key={ospName} ospName={ospName} stringMap={stringMap} onOpen={handleOpen} onResolvedStatus={handleResolvedStatus} />
             ))}
           </div>
         )}
