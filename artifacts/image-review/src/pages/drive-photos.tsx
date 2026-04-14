@@ -204,7 +204,7 @@ function PhotoCard({
     if (isPending || !onResolvedStatus || !photo.photoId) return;
     const available = !!(imageUrl && !notMigrated && !imgError);
     onResolvedStatus(photo.photoId, available);
-  }, [isPending, imageUrl, notMigrated, imgError, photo.photoId]);
+  }, [isPending, imageUrl, notMigrated, imgError, photo.photoId, onResolvedStatus]);
 
   return (
     <Card
@@ -1054,8 +1054,8 @@ export default function DrivePhotos() {
                 : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
             ].join(" ")}
           >
-            {hideUnavailable ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            {hideUnavailable ? "Hiding unavailable" : "Hide unavailable"}
+            {hideUnavailable ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {hideUnavailable ? "Show all" : "Hide unavailable"}
           </button>
         </div>
 
