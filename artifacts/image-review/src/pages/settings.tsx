@@ -930,7 +930,7 @@ function StoragePanel() {
               </Button>
               {(status?.breakdown?.pendingDrive ?? 0) > 0 && (
                 <p className="text-xs text-muted-foreground text-center">
-                  Will upload {status!.breakdown.pendingDrive.toLocaleString()} remaining photos from Google Drive to Wasabi (50 per click).
+                  {status!.breakdown.pendingDrive.toLocaleString()} photos pending — processes in batches of 50 until complete.
                 </p>
               )}
             </div>
