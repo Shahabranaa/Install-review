@@ -115,9 +115,23 @@ router.get("/reports/view", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Missing key parameter" }); return;
   }
 
-  // Validate the key is a field report (security check)
-  if (!key.startsWith(FIELD_REPORTS_PREFIX) && !key.startsWith(FIELD_REPORTS_PREFIX.trimEnd())) {
-    res.status(403).json({ error: "Access denied" }); return;
+  // Validate the key exists in the mirror table as a done field report PDF
+  // (DB-level check rather than prefix-only, prevents any path traversal)
+  try {
+    const check = await pool.query<{ wasabi_key: string }>(
+      `SELECT wasabi_key FROM wasabi_mirror_tasks
+       WHERE wasabi_key = $1
+         AND status = 'done'
+         AND lower(file_name) LIKE '%.pdf'
+         AND drive_path LIKE $2
+       LIMIT 1`,
+      [key, FIELD_REPORTS_PREFIX + "%"],
+    );
+    if (check.rows.length === 0) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+  } catch {
+    res.status(500).json({ error: "Validation failed" }); return;
   }
 
   try {
