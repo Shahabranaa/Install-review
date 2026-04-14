@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearch } from "wouter";
 import { useListStrings, useListTowers, useListLocations } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -309,6 +309,8 @@ interface TowerRecord {
   countOnString?: number | null;
 }
 
+type FolderTab = "original" | "stamped" | "reports";
+
 function TowerFolderView({
   tower,
   strings,
@@ -329,9 +331,16 @@ function TowerFolderView({
   const [resolvedUrls, setResolvedUrls] = useState<Map<string, string | null>>(new Map());
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAllReports, setShowAllReports] = useState(false);
+  const [activeTab, setActiveTab] = useState<FolderTab>("original");
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
+
+  // Reset to first tab whenever the tower changes
+  useEffect(() => {
+    setActiveTab("original");
+    setShowAllReports(false);
+  }, [tower.name]);
 
   useEffect(() => {
     setLoadingPhotos(true);
@@ -357,15 +366,36 @@ function TowerFolderView({
   const st = statusStyle(tower.progressStatus);
   const displayPhotos = photos.filter(p => p.photoId);
 
-  // Split into original vs stamped; global index is position in displayPhotos for unified lightbox
+  // Split into original vs stamped; global index maps to displayPhotos for unified lightbox
   const globalIndexMap = new Map(displayPhotos.map((p, i) => [p.photoId, i]));
   const originalPhotos = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "original");
   const stampedPhotos  = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "stamped");
 
+  const tabs: { id: FolderTab; label: string; count: number | null; icon: React.ReactNode }[] = [
+    {
+      id: "original",
+      label: "Original Images",
+      count: loadingPhotos ? null : originalPhotos.length,
+      icon: <Camera className="w-3.5 h-3.5" />,
+    },
+    {
+      id: "stamped",
+      label: "Stamped Images",
+      count: loadingPhotos ? null : stampedPhotos.length,
+      icon: <Camera className="w-3.5 h-3.5" />,
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      count: loadingReports ? null : towerReports.length,
+      icon: <FileText className="w-3.5 h-3.5" />,
+    },
+  ];
+
   return (
-    <div className="flex flex-col min-h-0">
-      {/* Header */}
-      <div className="flex items-start gap-4 px-8 pt-6 pb-5 border-b border-border/60">
+    <div className="flex flex-col h-full min-h-0">
+      {/* ── Header ── */}
+      <div className="flex items-start gap-4 px-8 pt-6 pb-4 border-b border-border/60 flex-shrink-0">
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 mt-0.5"
@@ -391,107 +421,104 @@ function TowerFolderView({
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8">
+      {/* ── Tab bar ── */}
+      <div className="flex items-end gap-0 px-8 border-b border-border/60 flex-shrink-0 bg-background">
+        {tabs.map(tab => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={[
+                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
+              ].join(" ")}
+            >
+              {tab.icon}
+              {tab.label}
+              <span
+                className={[
+                  "inline-flex items-center justify-center rounded-full text-[10px] font-semibold min-w-[18px] h-[18px] px-1",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground",
+                ].join(" ")}
+              >
+                {tab.count === null ? "–" : tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-        {/* ── Photos section ── */}
-        <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Camera className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Photos</h2>
-            {photoCount > 0 && (
-              <Badge variant="secondary" className="text-xs">{photoCount}</Badge>
-            )}
-          </div>
+      {/* ── Tab content ── */}
+      <div className="flex-1 overflow-y-auto px-8 py-6">
 
-          {loadingPhotos ? (
-            <div className="space-y-6">
-              {["Original Images", "Stamped Images"].map(label => (
-                <div key={label}>
-                  <p className="text-xs font-medium text-muted-foreground/70 mb-2">{label}</p>
-                  <div className="grid grid-cols-3 gap-0.5">
-                    {Array.from({ length: Math.min(photoCount || 9, 9) }).map((_, i) => (
-                      <Skeleton key={i} className="aspect-square w-full rounded-none" />
-                    ))}
-                  </div>
-                </div>
+        {/* Original Images tab */}
+        {activeTab === "original" && (
+          loadingPhotos ? (
+            <div className="grid grid-cols-3 gap-0.5">
+              {Array.from({ length: Math.min(photoCount || 9, 9) }).map((_, i) => (
+                <Skeleton key={i} className="aspect-square w-full rounded-none" />
               ))}
             </div>
-          ) : displayPhotos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground/40 border border-dashed rounded-xl">
+          ) : originalPhotos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 border border-dashed rounded-xl">
               <Camera className="w-10 h-10 mb-2" />
-              <span className="text-sm">No photos for this tower yet</span>
+              <span className="text-sm">No original images for this tower</span>
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Original Images sub-folder */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <p className="text-xs font-semibold text-muted-foreground/80 uppercase tracking-wide">Original Images</p>
-                  <span className="text-xs text-muted-foreground/50">{originalPhotos.length}</span>
-                </div>
-                {originalPhotos.length === 0 ? (
-                  <div className="flex items-center justify-center py-8 text-muted-foreground/30 border border-dashed rounded-lg text-sm">
-                    No original images
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-0.5 rounded-sm overflow-hidden">
-                    {originalPhotos.map(photo => (
-                      <PhotoTile
-                        key={photo.photoId}
-                        photo={photo}
-                        onResolved={handleResolved}
-                        onClick={() => setLightboxIndex(globalIndexMap.get(photo.photoId!) ?? 0)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Stamped Images sub-folder */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <p className="text-xs font-semibold text-muted-foreground/80 uppercase tracking-wide">Stamped Images</p>
-                  <span className="text-xs text-muted-foreground/50">{stampedPhotos.length}</span>
-                </div>
-                {stampedPhotos.length === 0 ? (
-                  <div className="flex items-center justify-center py-8 text-muted-foreground/30 border border-dashed rounded-lg text-sm">
-                    No stamped images
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-0.5 rounded-sm overflow-hidden">
-                    {stampedPhotos.map(photo => (
-                      <PhotoTile
-                        key={photo.photoId}
-                        photo={photo}
-                        onResolved={handleResolved}
-                        onClick={() => setLightboxIndex(globalIndexMap.get(photo.photoId!) ?? 0)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className="grid grid-cols-3 gap-0.5 rounded-sm overflow-hidden">
+              {originalPhotos.map(photo => (
+                <PhotoTile
+                  key={photo.photoId}
+                  photo={photo}
+                  onResolved={handleResolved}
+                  onClick={() => setLightboxIndex(globalIndexMap.get(photo.photoId!) ?? 0)}
+                />
+              ))}
             </div>
-          )}
-        </section>
+          )
+        )}
 
-        {/* ── Reports section ── */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <FileText className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Reports</h2>
-            {towerReports.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{towerReports.length}</Badge>
-            )}
-          </div>
+        {/* Stamped Images tab */}
+        {activeTab === "stamped" && (
+          loadingPhotos ? (
+            <div className="grid grid-cols-3 gap-0.5">
+              {Array.from({ length: Math.min(photoCount || 9, 9) }).map((_, i) => (
+                <Skeleton key={i} className="aspect-square w-full rounded-none" />
+              ))}
+            </div>
+          ) : stampedPhotos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 border border-dashed rounded-xl">
+              <Camera className="w-10 h-10 mb-2" />
+              <span className="text-sm">No stamped images for this tower</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-0.5 rounded-sm overflow-hidden">
+              {stampedPhotos.map(photo => (
+                <PhotoTile
+                  key={photo.photoId}
+                  photo={photo}
+                  onResolved={handleResolved}
+                  onClick={() => setLightboxIndex(globalIndexMap.get(photo.photoId!) ?? 0)}
+                />
+              ))}
+            </div>
+          )
+        )}
 
-          {loadingReports ? (
+        {/* Reports tab */}
+        {activeTab === "reports" && (
+          loadingReports ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
             </div>
           ) : towerReports.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground/40 border border-dashed rounded-xl">
-              <FileText className="w-8 h-8 mb-2" />
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 border border-dashed rounded-xl">
+              <FileText className="w-10 h-10 mb-2" />
               <span className="text-sm italic">
                 {allReports === null ? "Loading reports…" : "No reports found for this string."}
               </span>
@@ -533,11 +560,11 @@ function TowerFolderView({
                 </button>
               )}
             </div>
-          )}
-        </section>
+          )
+        )}
       </div>
 
-      {/* Lightbox */}
+      {/* Lightbox — unified across all photos regardless of active tab */}
       {lightboxIndex !== null && (
         <Lightbox
           photos={displayPhotos}
