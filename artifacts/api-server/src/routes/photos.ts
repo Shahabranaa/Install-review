@@ -661,6 +661,7 @@ router.get("/photos/db", async (req, res): Promise<void> => {
         approval:    sheetPhotosTable.approval,
         phaseLink:   sheetPhotosTable.phaseLink,
         cableLink:   sheetPhotosTable.cableLink,
+        photoUpload: sheetPhotosTable.photoUpload,
       })
       .from(sheetPhotosTable)
       .where(tower ? eq(sheetPhotosTable.locationLink, tower) : undefined);
