@@ -630,7 +630,9 @@ export default function Towers() {
   );
 
   const { data: towers, isLoading: towerLoading } = useListTowers(
-    selectedStringId ? { stringId: selectedStringId } : undefined,
+    selectedStringId ? { stringId: selectedStringId }
+    : selectedOspId  ? { locationId: selectedOspId }
+    : undefined,
   );
 
   const isLoading = strLoading || towerLoading;
