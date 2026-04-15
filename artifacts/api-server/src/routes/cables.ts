@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { db, towersTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 
@@ -13,9 +13,10 @@ export interface CableRow {
   string: string;
 }
 
-// ─── In-memory cache (populated by sync) ─────────────────────────────────────
+// ─── In-memory enrichment cache (cableName → string) ─────────────────────────
+// Populated by sync; used only to enrich the `string` field in GET.
 
-let cableCache: CableRow[] | null = null;
+const stringByTower = new Map<string, string>();
 
 // ─── Sheet helpers ────────────────────────────────────────────────────────────
 
@@ -46,8 +47,8 @@ async function fetchCableSheet(): Promise<CableRow[]> {
     .filter(r =>
       r.cableName &&
       r.tower &&
-      // Skip OSP endpoints and onshore — only keep WTG tower rows
-      !/^(T[0-9]|_)/.test(r.tower)
+      // Skip OSP endpoints (T1/T2/T3) and onshore rows (_)
+      !/^T[123]|^_/.test(r.tower)
     );
 }
 
@@ -57,8 +58,10 @@ export async function syncCablesFromSheet(): Promise<number> {
   if (!isSheetsConfigured()) return 0;
   const cables = await fetchCableSheet();
 
-  // Cache the enriched sheet data for GET /api/cables
-  cableCache = cables;
+  // Build a lookup from tower → string for enrichment after confirmed DB match
+  const sheetStringByTower = new Map<string, string>(
+    cables.map(c => [c.tower, c.string])
+  );
 
   let updated = 0;
   for (const { cableName, tower } of cables) {
@@ -66,7 +69,12 @@ export async function syncCablesFromSheet(): Promise<number> {
       .update(towersTable)
       .set({ connectedTo: cableName })
       .where(eq(towersTable.name, tower));
-    updated += (result as unknown as { rowCount?: number }).rowCount ?? 0;
+    const count = (result as unknown as { rowCount?: number }).rowCount ?? 0;
+    if (count > 0) {
+      // Only cache enrichment for rows that actually matched a DB tower
+      stringByTower.set(tower, sheetStringByTower.get(tower) ?? "");
+    }
+    updated += count;
   }
   console.log(`[cables] Synced ${updated} tower cable IDs from sheet`);
   return updated;
@@ -74,24 +82,21 @@ export async function syncCablesFromSheet(): Promise<number> {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// GET /api/cables — list cable→tower mappings with string field
-// Uses in-memory cache (populated by sync) if available; falls back to DB.
+// GET /api/cables — list cable→tower mappings; DB is source of truth.
+// The `string` field is enriched from the in-memory sheet cache when available.
 router.get("/cables", async (req, res): Promise<void> => {
   try {
-    if (cableCache) {
-      res.json({ cables: cableCache });
-      return;
-    }
-
-    // Fallback: build from DB (string field unavailable without sheet data)
     const towers = await db
       .select({ name: towersTable.name, connectedTo: towersTable.connectedTo })
       .from(towersTable)
+      .where(isNotNull(towersTable.connectedTo))
       .orderBy(towersTable.name);
 
-    const cables: CableRow[] = towers
-      .filter(t => t.connectedTo)
-      .map(t => ({ cableName: t.connectedTo!, tower: t.name, string: "" }));
+    const cables: CableRow[] = towers.map(t => ({
+      cableName: t.connectedTo!,
+      tower:     t.name,
+      string:    stringByTower.get(t.name) ?? "",
+    }));
 
     res.json({ cables });
   } catch (err: unknown) {
