@@ -366,7 +366,13 @@ function TowerFolderView({
     r.cable === tower.name ||
     r.string === tower.name
   );
-  const visibleReports = showAllReports ? towerReports : towerReports.slice(0, 8);
+
+  // Apply cable filter to reports (same cable selector used by photos)
+  const cableFilteredReports = selectedCable === "all"
+    ? towerReports
+    : towerReports.filter(r => r.cable === selectedCable || r.cable === null);
+
+  const visibleReports = showAllReports ? cableFilteredReports : cableFilteredReports.slice(0, 8);
 
   const st = statusStyle(tower.progressStatus);
 
@@ -416,7 +422,7 @@ function TowerFolderView({
     {
       id: "reports",
       label: "Reports",
-      count: loadingReports ? null : towerReports.length,
+      count: loadingReports ? null : cableFilteredReports.length,
       icon: <FileText className="w-3.5 h-3.5" />,
     },
   ];
@@ -593,7 +599,7 @@ function TowerFolderView({
             <div className="space-y-2">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
             </div>
-          ) : towerReports.length === 0 ? (
+          ) : cableFilteredReports.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 border border-dashed rounded-xl">
               <FileText className="w-10 h-10 mb-2" />
               <span className="text-sm italic">
@@ -628,12 +634,12 @@ function TowerFolderView({
                   </a>
                 </div>
               ))}
-              {towerReports.length > 8 && (
+              {cableFilteredReports.length > 8 && (
                 <button
                   onClick={() => setShowAllReports(v => !v)}
                   className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors"
                 >
-                  {showAllReports ? "Show less" : `Show all ${towerReports.length} reports`}
+                  {showAllReports ? "Show less" : `Show all ${cableFilteredReports.length} reports`}
                 </button>
               )}
             </div>

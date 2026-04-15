@@ -29,6 +29,11 @@ interface ReportRecord {
   reportType: string;
 }
 
+function stripNameBlurb(name: string): string {
+  const idx = name.search(/ for /i);
+  return idx !== -1 ? name.slice(idx + 5) : name;
+}
+
 function parseReportType(name: string): string {
   const n = name.replace(/\.pdf$/i, "").toLowerCase();
   if (n.includes("as-found"))               return "As-Found";
@@ -96,7 +101,7 @@ router.get("/reports", async (_req, res): Promise<void> => {
         site:        parsed.site,
         string:      parsed.string,
         cable:       parsed.cable,
-        name:        parsed.name.replace(/\.pdf$/i, ""),
+        name:        stripNameBlurb(parsed.name.replace(/\.pdf$/i, "")),
         reportType:  parseReportType(parsed.name),
       });
     }
