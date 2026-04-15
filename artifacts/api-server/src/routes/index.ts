@@ -19,6 +19,7 @@ import wasabiRouter from "./wasabi";
 import wasabiMirrorRouter from "./wasabi-mirror";
 import settingsRouter from "./settings";
 import reportsRouter from "./reports";
+import cablesRouter from "./cables";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(wasabiRouter);
 router.use(wasabiMirrorRouter);
 router.use(settingsRouter);
 router.use(reportsRouter);
+router.use(cablesRouter);
 
 export default router;

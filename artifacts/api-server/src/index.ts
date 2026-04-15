@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { syncCablesFromSheet } from "./routes/cables";
 
 const rawPort = process.env["PORT"];
 
@@ -70,6 +71,16 @@ app.listen(port, (err) => {
       logger.info({ linked_by_prefix }, "Startup: linked additional photos via photo_id filename match");
     } catch (err: unknown) {
       logger.warn({ err }, "Startup: wasabi auto-link skipped (table may not exist yet)");
+    }
+  })();
+
+  // Pass 3: sync cable IDs from Cable sheet into towers.connected_to
+  void (async () => {
+    try {
+      const updated = await syncCablesFromSheet();
+      logger.info({ updated }, "Startup: synced cable IDs from Cable sheet");
+    } catch (err: unknown) {
+      logger.warn({ err }, "Startup: cable sync skipped");
     }
   })();
 });
