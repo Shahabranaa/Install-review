@@ -40,6 +40,7 @@ interface TowerPhoto {
   phaseLink: string | null;
   cableLink: string | null;
   photoUpload: string | null;
+  imageAvailable: boolean | null;
 }
 
 function classifyPhoto(photoUpload: string | null): "stamped" | "original" {
@@ -332,7 +333,7 @@ function TowerFolderView({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [showAllReports, setShowAllReports] = useState(false);
   const [activeTab, setActiveTab] = useState<FolderTab>("original");
-  const [hideUnavailable, setHideUnavailable] = useState(false);
+  const [hideUnavailable, setHideUnavailable] = useState(true);
   const [selectedCable, setSelectedCable] = useState<string>("all");
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
@@ -342,7 +343,7 @@ function TowerFolderView({
   useEffect(() => {
     setActiveTab("original");
     setShowAllReports(false);
-    setHideUnavailable(false);
+    setHideUnavailable(true);
     setSelectedCable("all");
   }, [tower.name]);
 
@@ -382,17 +383,21 @@ function TowerFolderView({
   // Split into original vs stamped; global index maps to displayPhotos for unified lightbox
   const globalIndexMap = new Map(displayPhotos.map((p, i) => [p.photoId, i]));
 
-  // Helper: photo is confirmed unavailable only when resolvedUrls has resolved it to null
-  const isConfirmedUnavailable = (photoId: string | null) =>
-    photoId !== null && resolvedUrls.has(photoId) && resolvedUrls.get(photoId) === null;
+  // A photo is confirmed unavailable if:
+  // 1. DB pre-computed flag says false (fast, available immediately), OR
+  // 2. Runtime resolve settled to null (covers photos not yet scanned)
+  const isConfirmedUnavailable = (p: TowerPhoto) => {
+    if (p.imageAvailable === false) return true;
+    return p.photoId !== null && resolvedUrls.has(p.photoId) && resolvedUrls.get(p.photoId) === null;
+  };
 
   const originalPhotosAll = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "original");
   const stampedPhotosAll  = displayPhotos.filter(p => classifyPhoto(p.photoUpload) === "stamped");
   const originalPhotos = hideUnavailable
-    ? originalPhotosAll.filter(p => !isConfirmedUnavailable(p.photoId))
+    ? originalPhotosAll.filter(p => !isConfirmedUnavailable(p))
     : originalPhotosAll;
   const stampedPhotos = hideUnavailable
-    ? stampedPhotosAll.filter(p => !isConfirmedUnavailable(p.photoId))
+    ? stampedPhotosAll.filter(p => !isConfirmedUnavailable(p))
     : stampedPhotosAll;
 
   const tabs: { id: FolderTab; label: string; count: number | null; icon: React.ReactNode }[] = [

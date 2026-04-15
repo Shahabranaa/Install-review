@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { syncCablesFromSheet } from "./routes/cables";
+import { scanImageAvailability } from "./routes/photos";
 
 const rawPort = process.env["PORT"];
 
@@ -81,6 +82,16 @@ app.listen(port, (err) => {
       logger.info({ updated }, "Startup: synced cable IDs from Cable sheet");
     } catch (err: unknown) {
       logger.warn({ err }, "Startup: cable sync skipped");
+    }
+  })();
+
+  // Pass 4: scan image availability (DB-only, no external calls)
+  void (async () => {
+    try {
+      const result = await scanImageAvailability();
+      logger.info(result, "Startup: scanned image availability");
+    } catch (err: unknown) {
+      logger.warn({ err }, "Startup: image availability scan skipped");
     }
   })();
 });

@@ -880,14 +880,23 @@ export default function DrivePhotos() {
   const [searchQuery, setSearchQuery] = useState("");
   const [fullscreen, setFullscreen] = useState<{ photo: PhotoRecord; imageUrl: string } | null>(null);
   const [reviewOverrides, setReviewOverrides] = useState<Map<string, string>>(new Map());
-  const [hideUnavailable, setHideUnavailable] = useState(false);
+  const [hideUnavailable, setHideUnavailable] = useState(true);
   const [resolvedStatuses, setResolvedStatuses] = useState<Map<string, boolean>>(new Map());
+  const [availabilityMap, setAvailabilityMap] = useState<Record<string, boolean>>({});
 
   const handleResolvedStatus = useCallback((photoId: string, available: boolean) => {
     setResolvedStatuses(prev => {
       if (prev.get(photoId) === available) return prev;
       return new Map([...prev, [photoId, available]]);
     });
+  }, []);
+
+  // Load pre-computed availability flags from DB on mount (fast, no per-photo resolve needed)
+  useEffect(() => {
+    fetch(`${BASE_URL}api/photos/availability-map`)
+      .then(r => r.ok ? r.json() : {})
+      .then((map: Record<string, boolean>) => setAvailabilityMap(map))
+      .catch(() => {});
   }, []);
 
   // Load existing reviewer decisions from DB on mount
@@ -956,9 +965,17 @@ export default function DrivePhotos() {
     );
   }
 
-  // Apply "hide unavailable" filter — only exclude photos confirmed unavailable
+  // Apply "hide unavailable" filter:
+  // - DB availability map is checked first (immediate, no resolve wait needed)
+  // - Runtime-resolved statuses fill in gaps for photos not yet scanned
+  // Photos with no DB record and unresolved runtime status are kept (unknown ≠ unavailable)
   const visiblePhotos = hideUnavailable
-    ? filtered.filter(p => resolvedStatuses.get(p.photoId) !== false)
+    ? filtered.filter(p => {
+        if (availabilityMap[p.photoId] === false) return false;
+        if (availabilityMap[p.photoId] === true) return true;
+        // Not in DB scan yet — fall back to runtime-resolved status
+        return resolvedStatuses.get(p.photoId) !== false;
+      })
     : filtered;
 
   // Build 3-level hierarchy: OSP → String → photos

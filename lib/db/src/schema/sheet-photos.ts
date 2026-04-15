@@ -75,6 +75,9 @@ export const sheetPhotosTable = pgTable("sheet_photos", {
   temp4:             text("temp4"),
   resizedChecked:    text("resized_checked"),
 
+  // ── Pre-computed availability flag (set by scan-availability job) ────────
+  imageAvailable: boolean("image_available"),
+
   // ── App-managed review fields (not overwritten on sheet sync) ────────────
   reviewComment: text("review_comment"),
   cropX:         real("crop_x"),

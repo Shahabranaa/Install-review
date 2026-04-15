@@ -651,20 +651,74 @@ router.get("/photos/counts", async (_req, res): Promise<void> => {
   }
 });
 
-// GET /api/photos/db?tower=<name> — DB listing with optional tower filter, includes driveFileId
+// POST /api/photos/scan-availability — bulk-mark image_available in DB
+// TRUE  if wasabi_key IS NOT NULL OR drive_file_id IS NOT NULL
+// FALSE if both are NULL (genuinely no source)
+// This is purely DB-computed: no external network calls needed.
+export async function scanImageAvailability(): Promise<{ scanned: number; available: number; unavailable: number }> {
+  const r1 = await db.execute(sql`
+    UPDATE sheet_photos
+    SET image_available = TRUE
+    WHERE (wasabi_key IS NOT NULL OR drive_file_id IS NOT NULL)
+      AND (image_available IS DISTINCT FROM TRUE)
+  `);
+  const available = (r1 as unknown as { rowCount?: number }).rowCount ?? 0;
+
+  const r2 = await db.execute(sql`
+    UPDATE sheet_photos
+    SET image_available = FALSE
+    WHERE wasabi_key IS NULL AND drive_file_id IS NULL
+      AND (image_available IS DISTINCT FROM FALSE)
+  `);
+  const unavailable = (r2 as unknown as { rowCount?: number }).rowCount ?? 0;
+
+  const scanned = available + unavailable;
+  return { scanned, available, unavailable };
+}
+
+// GET /api/photos/availability-map — returns { [photoId]: boolean } for all scanned photos
+// Used by the frontend to immediately filter unavailable images without per-photo resolve calls.
+router.get("/photos/availability-map", async (_req, res): Promise<void> => {
+  try {
+    const rows = await db
+      .select({ photoId: sheetPhotosTable.photoId, imageAvailable: sheetPhotosTable.imageAvailable })
+      .from(sheetPhotosTable)
+      .where(sql`image_available IS NOT NULL AND photo_id IS NOT NULL`);
+
+    const map: Record<string, boolean> = {};
+    for (const row of rows) {
+      if (row.photoId) map[row.photoId] = row.imageAvailable!;
+    }
+    res.json(map);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/photos/scan-availability", async (_req, res): Promise<void> => {
+  try {
+    const result = await scanImageAvailability();
+    res.json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/photos/db?tower=<name> — DB listing with optional tower filter, includes driveFileId + imageAvailable
 router.get("/photos/db", async (req, res): Promise<void> => {
   const tower = req.query.tower as string | undefined;
   try {
     const rows = await db
       .select({
-        photoId:     sheetPhotosTable.photoId,
-        driveFileId: sheetPhotosTable.driveFileId,
-        label:       sheetPhotosTable.label,
-        reqImgType:  sheetPhotosTable.reqImgType,
-        approval:    sheetPhotosTable.approval,
-        phaseLink:   sheetPhotosTable.phaseLink,
-        cableLink:   sheetPhotosTable.cableLink,
-        photoUpload: sheetPhotosTable.photoUpload,
+        photoId:        sheetPhotosTable.photoId,
+        driveFileId:    sheetPhotosTable.driveFileId,
+        label:          sheetPhotosTable.label,
+        reqImgType:     sheetPhotosTable.reqImgType,
+        approval:       sheetPhotosTable.approval,
+        phaseLink:      sheetPhotosTable.phaseLink,
+        cableLink:      sheetPhotosTable.cableLink,
+        photoUpload:    sheetPhotosTable.photoUpload,
+        imageAvailable: sheetPhotosTable.imageAvailable,
       })
       .from(sheetPhotosTable)
       .where(tower ? eq(sheetPhotosTable.locationLink, tower) : undefined);
