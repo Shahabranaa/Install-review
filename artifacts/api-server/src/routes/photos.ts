@@ -656,24 +656,34 @@ router.get("/photos/counts", async (_req, res): Promise<void> => {
 // FALSE if both are NULL (genuinely no source)
 // This is purely DB-computed: no external network calls needed.
 export async function scanImageAvailability(): Promise<{ scanned: number; available: number; unavailable: number }> {
-  const r1 = await db.execute(sql`
+  // Update available: has wasabi_key or drive_file_id
+  await db.execute(sql`
     UPDATE sheet_photos
     SET image_available = TRUE
     WHERE (wasabi_key IS NOT NULL OR drive_file_id IS NOT NULL)
       AND (image_available IS DISTINCT FROM TRUE)
   `);
-  const available = (r1 as unknown as { rowCount?: number }).rowCount ?? 0;
 
-  const r2 = await db.execute(sql`
+  // Update unavailable: no source at all
+  await db.execute(sql`
     UPDATE sheet_photos
     SET image_available = FALSE
     WHERE wasabi_key IS NULL AND drive_file_id IS NULL
       AND (image_available IS DISTINCT FROM FALSE)
   `);
-  const unavailable = (r2 as unknown as { rowCount?: number }).rowCount ?? 0;
 
-  const scanned = available + unavailable;
-  return { scanned, available, unavailable };
+  // Return totals of classified records (not "changed this run"), so re-runs return
+  // meaningful counts rather than zeros when records were already up-to-date.
+  const counts = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (WHERE image_available IS NOT NULL)::int AS scanned,
+      COUNT(*) FILTER (WHERE image_available = TRUE)::int      AS available,
+      COUNT(*) FILTER (WHERE image_available = FALSE)::int     AS unavailable
+    FROM sheet_photos
+  `);
+  const rows = Array.isArray(counts) ? counts : (counts as unknown as { rows: unknown[] }).rows;
+  const row = rows[0] as { scanned: number; available: number; unavailable: number };
+  return { scanned: row.scanned ?? 0, available: row.available ?? 0, unavailable: row.unavailable ?? 0 };
 }
 
 // GET /api/photos/availability-map — returns { [photoId]: boolean } for all scanned photos
