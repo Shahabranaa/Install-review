@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, isNotNull } from "drizzle-orm";
 import { db, towersTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -76,7 +77,7 @@ export async function syncCablesFromSheet(): Promise<number> {
     }
     updated += count;
   }
-  console.log(`[cables] Synced ${updated} tower cable IDs from sheet`);
+  logger.info({ updated }, "[cables] Synced tower cable IDs from sheet");
   return updated;
 }
 
@@ -114,7 +115,7 @@ router.post("/cables/sync", async (req, res): Promise<void> => {
     const updated = await syncCablesFromSheet();
     res.json({ updated });
   } catch (err: unknown) {
-    console.error("Cable sync error:", err);
+    logger.error({ err }, "Cable sync error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
