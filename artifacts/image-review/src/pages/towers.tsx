@@ -333,6 +333,7 @@ function TowerFolderView({
   const [showAllReports, setShowAllReports] = useState(false);
   const [activeTab, setActiveTab] = useState<FolderTab>("original");
   const [hideUnavailable, setHideUnavailable] = useState(false);
+  const [selectedCable, setSelectedCable] = useState<string>("all");
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
@@ -342,6 +343,7 @@ function TowerFolderView({
     setActiveTab("original");
     setShowAllReports(false);
     setHideUnavailable(false);
+    setSelectedCable("all");
   }, [tower.name]);
 
   useEffect(() => {
@@ -366,7 +368,16 @@ function TowerFolderView({
   const visibleReports = showAllReports ? towerReports : towerReports.slice(0, 8);
 
   const st = statusStyle(tower.progressStatus);
-  const displayPhotos = photos.filter(p => p.photoId);
+
+  // Derive sorted unique cable IDs from loaded photos
+  const cableIds = Array.from(
+    new Set(photos.map(p => p.cableLink).filter((c): c is string => !!c))
+  ).sort();
+
+  const allDisplayPhotos = photos.filter(p => p.photoId);
+  const displayPhotos = selectedCable === "all"
+    ? allDisplayPhotos
+    : allDisplayPhotos.filter(p => p.cableLink === selectedCable);
 
   // Split into original vs stamped; global index maps to displayPhotos for unified lightbox
   const globalIndexMap = new Map(displayPhotos.map((p, i) => [p.photoId, i]));
@@ -433,6 +444,39 @@ function TowerFolderView({
           </p>
         </div>
       </div>
+
+      {/* ── Cable filter ── only shown when photos span 2+ cables */}
+      {!loadingPhotos && cableIds.length >= 2 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-8 py-2.5 border-b border-border/40 bg-muted/30 flex-shrink-0">
+          <Cable className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="text-xs text-muted-foreground font-medium mr-0.5">Cable:</span>
+          <button
+            onClick={() => setSelectedCable("all")}
+            className={[
+              "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors border",
+              selectedCable === "all"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
+            ].join(" ")}
+          >
+            All
+          </button>
+          {cableIds.map(cable => (
+            <button
+              key={cable}
+              onClick={() => setSelectedCable(cable)}
+              className={[
+                "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors border",
+                selectedCable === cable
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
+              ].join(" ")}
+            >
+              {cable}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Tab bar ── */}
       <div className="flex items-end gap-0 px-8 border-b border-border/60 flex-shrink-0 bg-background">
