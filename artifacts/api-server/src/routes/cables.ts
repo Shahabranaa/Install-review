@@ -5,13 +5,19 @@ import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google
 
 const router: IRouter = Router();
 
-// ─── Cable sheet sync ─────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface CableRow {
+export interface CableRow {
   cableName: string;
   tower: string;
   string: string;
 }
+
+// ─── In-memory cache (populated by sync) ─────────────────────────────────────
+
+let cableCache: CableRow[] | null = null;
+
+// ─── Sheet helpers ────────────────────────────────────────────────────────────
 
 async function fetchCableSheet(): Promise<CableRow[]> {
   const response = await sheetsRequest(`/${SPREADSHEET_ID}/values/Cable!A:Z`);
@@ -40,14 +46,20 @@ async function fetchCableSheet(): Promise<CableRow[]> {
     .filter(r =>
       r.cableName &&
       r.tower &&
-      // Skip OSP endpoints and onshore — only keep tower rows
+      // Skip OSP endpoints and onshore — only keep WTG tower rows
       !/^(T[0-9]|_)/.test(r.tower)
     );
 }
 
+// ─── Sync function (exported for startup use) ─────────────────────────────────
+
 export async function syncCablesFromSheet(): Promise<number> {
   if (!isSheetsConfigured()) return 0;
   const cables = await fetchCableSheet();
+
+  // Cache the enriched sheet data for GET /api/cables
+  cableCache = cables;
+
   let updated = 0;
   for (const { cableName, tower } of cables) {
     const result = await db
@@ -62,20 +74,24 @@ export async function syncCablesFromSheet(): Promise<number> {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// GET /api/cables — list cable→tower mappings from DB
+// GET /api/cables — list cable→tower mappings with string field
+// Uses in-memory cache (populated by sync) if available; falls back to DB.
 router.get("/cables", async (req, res): Promise<void> => {
   try {
+    if (cableCache) {
+      res.json({ cables: cableCache });
+      return;
+    }
+
+    // Fallback: build from DB (string field unavailable without sheet data)
     const towers = await db
-      .select({
-        name:        towersTable.name,
-        connectedTo: towersTable.connectedTo,
-      })
+      .select({ name: towersTable.name, connectedTo: towersTable.connectedTo })
       .from(towersTable)
       .orderBy(towersTable.name);
 
-    const cables = towers
+    const cables: CableRow[] = towers
       .filter(t => t.connectedTo)
-      .map(t => ({ cableName: t.connectedTo!, tower: t.name }));
+      .map(t => ({ cableName: t.connectedTo!, tower: t.name, string: "" }));
 
     res.json({ cables });
   } catch (err: unknown) {
@@ -91,7 +107,7 @@ router.post("/cables/sync", async (req, res): Promise<void> => {
   }
   try {
     const updated = await syncCablesFromSheet();
-    res.json({ ok: true, updated });
+    res.json({ updated });
   } catch (err: unknown) {
     console.error("Cable sync error:", err);
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
