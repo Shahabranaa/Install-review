@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
-  ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye,
+  ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye, Cable,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -811,6 +811,12 @@ export default function Towers() {
                   </span>
                 ) : (
                   <span className="text-[11px] text-muted-foreground/50">No photos</span>
+                )}
+                {tower.connectedTo && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 font-medium">
+                    <Cable className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{tower.connectedTo}</span>
+                  </span>
                 )}
               </button>
             );
