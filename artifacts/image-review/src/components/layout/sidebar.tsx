@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal,
 } from "lucide-react";
 import { useState, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -317,8 +317,16 @@ export function AppSidebar() {
         </nav>
       </div>
 
-      {/* Settings — pinned above user footer */}
-      <div className="px-2 pb-2 pt-1 border-t border-sidebar-border flex-shrink-0">
+      {/* Settings + Site Setup — pinned above user footer */}
+      <div className="px-2 pb-2 pt-1 border-t border-sidebar-border flex-shrink-0 space-y-0.5">
+        {user?.accessLevel === "admin" && (
+          <NavItem
+            href="/setup"
+            label="Site Setup"
+            icon={SlidersHorizontal}
+            isActive={location === "/setup"}
+          />
+        )}
         <NavItem
           href="/settings"
           label="Settings"
