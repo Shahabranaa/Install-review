@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert, DatabaseZap, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert, DatabaseZap, Loader2, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -39,6 +39,21 @@ interface ComplianceItem {
 interface ComplianceResponse {
   summary: { total: number; submitted: number; missing: number };
   items: ComplianceItem[];
+}
+
+interface TowerItem {
+  reqImgType: string;
+  reqImgOrder: string | null;
+  phaseType: string;
+  status: "submitted" | "missing";
+  photo: CompliancePhoto | null;
+}
+
+interface TowerGroup {
+  tower: string;
+  items: TowerItem[];
+  submitted: number;
+  total: number;
 }
 
 function ApprovalBadge({ approval }: { approval: string | null }) {
@@ -115,9 +130,66 @@ function ComplianceCard({ item }: { item: ComplianceItem }) {
   );
 }
 
+function TowerComplianceCard({ item }: { item: TowerItem }) {
+  const submitted = item.status === "submitted";
+
+  const cardContent = (
+    <Card
+      className={`overflow-hidden border-2 transition-shadow ${
+        submitted
+          ? "border-green-400 dark:border-green-700 hover:shadow-md cursor-pointer"
+          : "border-red-300 dark:border-red-800"
+      }`}
+    >
+      <div className={`h-1.5 ${submitted ? "bg-green-400 dark:bg-green-600" : "bg-red-400 dark:bg-red-700"}`} />
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold leading-snug line-clamp-2">{item.reqImgType}</p>
+            {item.reqImgOrder && (
+              <p className="text-xs text-muted-foreground mt-0.5">#{item.reqImgOrder}</p>
+            )}
+            <p className="text-xs text-muted-foreground mt-0.5 italic">{item.phaseType}</p>
+          </div>
+          {submitted
+            ? <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+            : <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          }
+        </div>
+
+        {submitted && item.photo ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-1">
+              <ApprovalBadge approval={item.photo.approval} />
+            </div>
+            {item.photo.imageUrl && (
+              <span className="inline-flex items-center gap-1 text-xs text-primary">
+                Open Image <ExternalLink className="w-3 h-3" />
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">(Missing)</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (submitted && item.photo?.imageUrl) {
+    return (
+      <a href={item.photo.imageUrl} target="_blank" rel="noopener noreferrer" className="block">
+        {cardContent}
+      </a>
+    );
+  }
+
+  return cardContent;
+}
+
 export default function Compliance() {
   const [cableLink, setCableLink] = useState<string>("none");
   const [phaseType, setPhaseType] = useState<string>("all");
+  const [groupByTower, setGroupByTower] = useState(false);
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -165,6 +237,36 @@ export default function Compliance() {
         }, {})
       )
     : [];
+
+  const towerGroups = useMemo<TowerGroup[]>(() => {
+    if (!data?.items) return [];
+
+    const towerSet = new Set<string>();
+    data.items.forEach((item) => {
+      item.photos.forEach((photo) => {
+        if (photo.locationLink) towerSet.add(photo.locationLink);
+      });
+    });
+
+    const towers = [...towerSet].sort();
+
+    return towers.map((tower) => {
+      const towerItems: TowerItem[] = data.items.map((item) => {
+        const towerPhotos = item.photos.filter((p) => p.locationLink === tower);
+        const photo = towerPhotos[0] ?? null;
+        return {
+          reqImgType: item.reqImgType,
+          reqImgOrder: item.reqImgOrder,
+          phaseType: item.phaseType,
+          status: towerPhotos.length > 0 ? "submitted" : "missing",
+          photo,
+        };
+      });
+
+      const submitted = towerItems.filter((i) => i.status === "submitted").length;
+      return { tower, items: towerItems, submitted, total: towerItems.length };
+    });
+  }, [data]);
 
   return (
     <div className="p-8 space-y-6">
@@ -226,6 +328,40 @@ export default function Compliance() {
             </SelectContent>
           </Select>
         </div>
+
+        {cableSelected && data && towerGroups.length > 0 && (
+          <div className="space-y-1 ml-auto">
+            <Label className="text-xs">Group by</Label>
+            <div className="flex rounded-md border overflow-hidden">
+              <button
+                onClick={() => setGroupByTower(false)}
+                className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  !groupByTower
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Phase
+              </button>
+              <button
+                onClick={() => setGroupByTower(true)}
+                className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors border-l ${
+                  groupByTower
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+                Tower
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {data?.summary && (
@@ -250,6 +386,12 @@ export default function Compliance() {
             </p>
             <p className="text-xs text-muted-foreground">Complete</p>
           </div>
+          {groupByTower && towerGroups.length > 0 && (
+            <div className="text-center">
+              <p className="text-2xl font-bold">{towerGroups.length}</p>
+              <p className="text-xs text-muted-foreground">Towers</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -287,6 +429,44 @@ export default function Compliance() {
           <p className="text-sm">No required image definitions found for this selection.</p>
           <p className="text-xs opacity-60">Import phase definitions from the Phases page first.</p>
         </div>
+      ) : groupByTower ? (
+        towerGroups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground space-y-2">
+            <p className="text-sm">No towers found in photos for this cable.</p>
+            <p className="text-xs opacity-60">Photos must have a location link to appear in tower view.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {towerGroups.map(({ tower, items, submitted, total }) => (
+              <div key={tower}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                    <h2 className="text-base font-semibold">{tower}</h2>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${submitted === total ? "border-green-400 text-green-700 dark:text-green-400" : submitted === 0 ? "border-red-400 text-red-600 dark:text-red-400" : ""}`}
+                  >
+                    {submitted}/{total}
+                  </Badge>
+                  {submitted < total && (
+                    <span className="text-xs text-red-500">{total - submitted} missing</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {items.map((item, idx) => (
+                    <TowerComplianceCard key={`${tower}-${item.phaseType}-${item.reqImgType}-${idx}`} item={item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <div className="space-y-8">
           {grouped.map(([phase, items]) => (
