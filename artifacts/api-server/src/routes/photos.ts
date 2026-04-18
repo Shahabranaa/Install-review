@@ -1102,4 +1102,54 @@ router.get("/photos/db", async (req, res): Promise<void> => {
   }
 });
 
+// POST /api/photos/batch-review — atomically save multiple review decisions
+interface BatchDecision {
+  photoId: string;
+  approval: "Approved" | "Rejected";
+  reviewComment?: string | null;
+}
+
+router.post("/photos/batch-review", async (req, res): Promise<void> => {
+  const body = req.body as { decisions?: unknown };
+  if (!Array.isArray(body.decisions) || body.decisions.length === 0 || body.decisions.length > 500) {
+    res.status(400).json({ error: "decisions must be a non-empty array of up to 500 items" });
+    return;
+  }
+  const valid: BatchDecision[] = [];
+  for (const d of body.decisions) {
+    if (
+      typeof d !== "object" || d === null ||
+      typeof (d as Record<string, unknown>).photoId !== "string" ||
+      !(["Approved", "Rejected"].includes((d as Record<string, unknown>).approval as string))
+    ) {
+      res.status(400).json({ error: "Each decision must have photoId (string) and approval ('Approved'|'Rejected')" });
+      return;
+    }
+    const item = d as Record<string, unknown>;
+    valid.push({
+      photoId:       item.photoId as string,
+      approval:      item.approval as "Approved" | "Rejected",
+      reviewComment: typeof item.reviewComment === "string" ? item.reviewComment : null,
+    });
+  }
+  try {
+    await db.transaction(async (tx) => {
+      for (const d of valid) {
+        await tx
+          .update(sheetPhotosTable)
+          .set({
+            approval:      d.approval,
+            status:        d.approval,
+            reviewComment: d.reviewComment ?? null,
+            updatedAt:     new Date(),
+          })
+          .where(eq(sheetPhotosTable.photoId, d.photoId));
+      }
+    });
+    res.json({ updated: valid.length });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

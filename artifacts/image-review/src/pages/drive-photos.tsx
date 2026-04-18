@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import ReactCrop, { type Crop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
+import BulkReviewSession, { type BulkSessionPhoto } from "@/components/BulkReviewSession";
 import {
   Image as ImageIcon,
   Camera,
@@ -41,6 +42,9 @@ import {
   Flag,
   CheckCheck,
   Plus,
+  PlayCircle,
+  Square,
+  CheckSquare,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -48,6 +52,18 @@ const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 // ─── Review overrides context ─────────────────────────────────────────────────
 // Maps photoId → override approval string so cards update immediately after review
 const ReviewOverridesContext = createContext<Map<string, string>>(new Map());
+
+// ─── Select context ───────────────────────────────────────────────────────────
+interface SelectContextValue {
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  toggleSelect: (id: string) => void;
+}
+const SelectContext = createContext<SelectContextValue>({
+  selectMode: false,
+  selectedIds: new Set(),
+  toggleSelect: () => {},
+});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,7 +191,9 @@ function PhotoCard({
   onResolvedStatus?: (photoId: string, available: boolean) => void;
 }) {
   const reviewOverrides = useContext(ReviewOverridesContext);
+  const { selectMode, selectedIds, toggleSelect } = useContext(SelectContext);
   const effectiveApproval = reviewOverrides.get(photo.photoId) ?? photo.approval;
+  const isSelected = selectedIds.has(photo.photoId);
 
   const { data: resolved, isPending } = useQuery<ResolvedPhoto | null>({
     queryKey: ["photo-resolve", photo.photoId],
@@ -210,10 +228,22 @@ function PhotoCard({
     onResolvedStatus(photo.photoId, available);
   }, [isPending, imageUrl, notMigrated, imgError, photo.photoId, onResolvedStatus]);
 
+  const handleCardClick = () => {
+    if (selectMode && photo.photoId) {
+      toggleSelect(photo.photoId);
+    } else if (imageUrl && !imgError) {
+      onOpen(photo, imageUrl);
+    }
+  };
+
   return (
     <Card
-      className={`overflow-hidden group transition-all duration-200 ${imageUrl && !imgError ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""}`}
-      onClick={() => imageUrl && !imgError && onOpen(photo, imageUrl)}
+      className={`overflow-hidden group transition-all duration-200 ${
+        selectMode
+          ? `cursor-pointer ${isSelected ? "ring-2 ring-primary shadow-lg" : "hover:ring-2 hover:ring-primary/30"}`
+          : imageUrl && !imgError ? "cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/30 hover:-translate-y-0.5" : ""
+      }`}
+      onClick={handleCardClick}
     >
       <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
         {imageUrl && !imgError ? (
@@ -248,6 +278,15 @@ function PhotoCard({
           <div className="flex flex-col items-center gap-1 text-muted-foreground/30">
             <ImageIcon className="w-8 h-8" />
             <span className="text-xs">No image</span>
+          </div>
+        )}
+        {/* Checkbox overlay for select mode */}
+        {selectMode && (
+          <div className="absolute top-1.5 right-1.5 z-10">
+            {isSelected
+              ? <CheckSquare className="w-5 h-5 text-primary drop-shadow-lg" />
+              : <Square className="w-5 h-5 text-white/70 drop-shadow-lg" />
+            }
           </div>
         )}
         <div className="absolute top-1.5 left-1.5">
@@ -1175,6 +1214,82 @@ export default function DrivePhotos() {
   const [resolvedStatuses, setResolvedStatuses] = useState<Map<string, boolean>>(new Map());
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, boolean>>({});
 
+  // ── Multi-select + bulk review ────────────────────────────────────────────
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSession, setBulkSession] = useState<{ photos: BulkSessionPhoto[]; label: string } | null>(null);
+  const [batchDecision, setBatchDecision] = useState<"Approved" | "Rejected" | null>(null);
+  const [batchComment, setBatchComment] = useState("");
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchSuccess, setBatchSuccess] = useState(false);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBatchDecision(null);
+    setBatchComment("");
+    setBatchError(null);
+    setBatchSuccess(false);
+  }, []);
+
+  const handleBatchSave = useCallback(async () => {
+    if (!batchDecision || selectedIds.size === 0) return;
+    setBatchSaving(true);
+    setBatchError(null);
+    try {
+      const decisions = [...selectedIds].map(photoId => ({
+        photoId,
+        approval: batchDecision,
+        reviewComment: batchComment.trim() || null,
+      }));
+      const r = await fetch(`${BASE_URL}api/photos/batch-review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions }),
+      });
+      if (r.ok) {
+        for (const id of selectedIds) {
+          setReviewOverrides(prev => new Map([...prev, [id, batchDecision]]));
+        }
+        setBatchSuccess(true);
+        setTimeout(() => { exitSelectMode(); setBatchSuccess(false); }, 1200);
+      } else {
+        const body = await r.json().catch(() => ({})) as { error?: string };
+        setBatchError(body.error ?? `Batch save failed (${r.status})`);
+      }
+    } catch (e: unknown) {
+      setBatchError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setBatchSaving(false);
+    }
+  }, [batchDecision, selectedIds, batchComment, exitSelectMode]);
+
+  const startBulkSession = useCallback((photos: PhotoRecord[], label: string) => {
+    const unreviewedPhotos: BulkSessionPhoto[] = photos
+      .filter(p => {
+        const eff = reviewOverrides.get(p.photoId) ?? p.approval ?? "";
+        return !["approved", "rejected"].includes(eff.toLowerCase());
+      })
+      .map(p => ({
+        photoId: p.photoId,
+        label: p.label || null,
+        reqImgType: p.reqImgType || null,
+        locationLink: p.locationLink || null,
+        cableLink: p.cableLink || null,
+      }));
+    if (unreviewedPhotos.length === 0) return;
+    setBulkSession({ photos: unreviewedPhotos, label });
+  }, [reviewOverrides]);
+
   const handleResolvedStatus = useCallback((photoId: string, available: boolean) => {
     setResolvedStatuses(prev => {
       if (prev.get(photoId) === available) return prev;
@@ -1285,8 +1400,27 @@ export default function DrivePhotos() {
   const photoCount = visiblePhotos.filter(p => p.type === "photo").length;
   const sigCount   = visiblePhotos.filter(p => p.type === "signature").length;
 
+  const selectContextValue: SelectContextValue = { selectMode, selectedIds, toggleSelect };
+
+  const unreviewedCount = visiblePhotos.filter(p => {
+    const eff = reviewOverrides.get(p.photoId) ?? p.approval ?? "";
+    return !["approved", "rejected"].includes(eff.toLowerCase());
+  }).length;
+
   return (
     <ReviewOverridesContext.Provider value={reviewOverrides}>
+      <SelectContext.Provider value={selectContextValue}>
+
+      {/* Bulk review session overlay */}
+      {bulkSession && (
+        <BulkReviewSession
+          photos={bulkSession.photos}
+          contextLabel={bulkSession.label}
+          onClose={() => setBulkSession(null)}
+          onDecision={handleReview}
+        />
+      )}
+
       {fullscreen && (
         <FullscreenViewer
           photo={fullscreen.photo}
@@ -1296,7 +1430,85 @@ export default function DrivePhotos() {
         />
       )}
 
-      <div className="p-6 space-y-5">
+      {/* Multi-select bottom toolbar */}
+      {selectMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t border-border shadow-xl px-6 py-3">
+          <div className="flex items-center gap-3 flex-wrap max-w-screen-xl mx-auto">
+            <span className="text-sm font-medium">
+              {selectedIds.size === 0 ? "Click photos to select" : `${selectedIds.size} selected`}
+            </span>
+            {selectedIds.size > 0 && (
+              <>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setBatchDecision("Approved")}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 transition-all ${
+                      batchDecision === "Approved"
+                        ? "border-green-500 bg-green-500 text-white"
+                        : "border-green-500/40 bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Approve Selected
+                  </button>
+                  <button
+                    onClick={() => setBatchDecision("Rejected")}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 transition-all ${
+                      batchDecision === "Rejected"
+                        ? "border-red-500 bg-red-500 text-white"
+                        : "border-red-500/40 bg-red-500/10 text-red-600 hover:bg-red-500/20"
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Reject Selected
+                  </button>
+                </div>
+                {batchDecision && (
+                  <input
+                    type="text"
+                    placeholder="Optional comment…"
+                    value={batchComment}
+                    onChange={e => setBatchComment(e.target.value)}
+                    className="flex-1 min-w-[160px] max-w-xs rounded-full border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                )}
+                {batchSuccess ? (
+                  <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                    <CheckCircle2 className="w-4 h-4" />Saved
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleBatchSave}
+                    disabled={!batchDecision || batchSaving}
+                    className="flex items-center gap-1.5 rounded-full bg-primary hover:bg-primary/90 text-white px-4 py-1.5 text-xs font-semibold disabled:opacity-40 transition-all"
+                  >
+                    {batchSaving ? "Saving…" : `Save ${selectedIds.size}`}
+                  </button>
+                )}
+                {batchError && <p className="text-xs text-red-500">{batchError}</p>}
+              </>
+            )}
+            <button
+              onClick={() => {
+                if (selectedIds.size > 0) {
+                  setSelectedIds(new Set(visiblePhotos.map(p => p.photoId).filter(Boolean)));
+                } else {
+                  setSelectedIds(new Set(visiblePhotos.map(p => p.photoId).filter(Boolean)));
+                }
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Select all ({visiblePhotos.length})
+            </button>
+            <button onClick={exitSelectMode} className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              <X className="w-3.5 h-3.5" />
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className={`p-6 space-y-5 ${selectMode ? "pb-20" : ""}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
@@ -1309,10 +1521,31 @@ export default function DrivePhotos() {
               Photos from CVOW SmartBuild — click any image to view full metadata.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleClearCache} disabled={isFetching}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-            {isFetching ? "Refreshing…" : "Refresh"}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {!isLoading && unreviewedCount > 0 && (
+              <Button
+                size="sm"
+                onClick={() => startBulkSession(visiblePhotos, selectedTower ? `${selectedTower}` : "All photos")}
+                className="gap-1.5"
+              >
+                <PlayCircle className="w-4 h-4" />
+                Start Review Session
+                <span className="ml-1 text-xs opacity-70">({unreviewedCount})</span>
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={selectMode ? "default" : "outline"}
+              onClick={() => { if (selectMode) exitSelectMode(); else setSelectMode(true); }}
+            >
+              {selectMode ? <CheckSquare className="w-4 h-4 mr-1.5" /> : <Square className="w-4 h-4 mr-1.5" />}
+              {selectMode ? "Selecting…" : "Select"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleClearCache} disabled={isFetching}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              {isFetching ? "Refreshing…" : "Refresh"}
+            </Button>
+          </div>
         </div>
 
         {!isLoading && data && (
@@ -1413,6 +1646,7 @@ export default function DrivePhotos() {
           </div>
         )}
       </div>
+      </SelectContext.Provider>
     </ReviewOverridesContext.Provider>
   );
 }

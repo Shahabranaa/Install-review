@@ -7,10 +7,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import BulkReviewSession, { type BulkSessionPhoto } from "@/components/BulkReviewSession";
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
   ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye, Cable,
-  Package, Loader2, Flag, CheckCheck,
+  Package, Loader2, Flag, CheckCheck, PlayCircle,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -344,6 +345,7 @@ function TowerFolderView({
   const [towerIssues, setTowerIssues] = useState<TowerIssue[]>([]);
   const [loadingIssues, setLoadingIssues] = useState(false);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [bulkSession, setBulkSession] = useState<{ photos: BulkSessionPhoto[]; label: string } | null>(null);
 
   useEffect(() => {
     fetch(`${BASE_URL}api/photos/compliance?tower=${encodeURIComponent(tower.name)}`)
@@ -483,8 +485,35 @@ function TowerFolderView({
     },
   ];
 
+  const activePhotos = activeTab === "stamped" ? stampedPhotos : originalPhotos;
+  const unreviewedInTab = activePhotos.filter(p => {
+    const a = (p.approval ?? "").toLowerCase();
+    return !["approved", "rejected", "verified", "checked"].includes(a);
+  });
+
+  const startBulkSession = () => {
+    const sessionPhotos: BulkSessionPhoto[] = unreviewedInTab.map(p => ({
+      photoId: p.photoId!,
+      label: p.label,
+      reqImgType: p.reqImgType,
+      locationLink: tower.name,
+      cableLink: p.cableLink,
+    }));
+    if (sessionPhotos.length === 0) return;
+    const tabLabel = activeTab === "stamped" ? "Stamped" : "Original";
+    setBulkSession({ photos: sessionPhotos, label: `${tower.name} · ${tabLabel}` });
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0">
+      {bulkSession && (
+        <BulkReviewSession
+          photos={bulkSession.photos}
+          contextLabel={bulkSession.label}
+          onClose={() => setBulkSession(null)}
+          onDecision={() => {}}
+        />
+      )}
       {/* ── Header ── */}
       <div className="flex items-start gap-4 px-8 pt-6 pb-4 border-b border-border/60 flex-shrink-0">
         <button
@@ -592,20 +621,32 @@ function TowerFolderView({
             </button>
           );
         })}
-        {/* Hide unavailable toggle — only relevant on photo tabs */}
+        {/* Controls — only relevant on photo tabs */}
         {activeTab !== "reports" && activeTab !== "issues" && (
-          <button
-            onClick={() => setHideUnavailable(v => !v)}
-            className={[
-              "ml-auto mb-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border",
-              hideUnavailable
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
-            ].join(" ")}
-          >
-            {hideUnavailable ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            {hideUnavailable ? "Show all" : "Hide unavailable"}
-          </button>
+          <div className="ml-auto mb-1 flex items-center gap-2">
+            {!loadingPhotos && unreviewedInTab.length > 0 && (
+              <button
+                onClick={startBulkSession}
+                className="flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium transition-colors hover:bg-primary/90"
+              >
+                <PlayCircle className="w-3.5 h-3.5" />
+                Review Session
+                <span className="opacity-70">({unreviewedInTab.length})</span>
+              </button>
+            )}
+            <button
+              onClick={() => setHideUnavailable(v => !v)}
+              className={[
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border",
+                hideUnavailable
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground",
+              ].join(" ")}
+            >
+              {hideUnavailable ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              {hideUnavailable ? "Show all" : "Hide unavailable"}
+            </button>
+          </div>
         )}
       </div>
 
