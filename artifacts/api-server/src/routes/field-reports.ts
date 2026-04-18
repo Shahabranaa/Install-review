@@ -1,9 +1,10 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, desc } from "drizzle-orm";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import { db, fieldReportsTable, wasabiMirrorTasksTable, locationsTable, stringsTable } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
-import { generateFieldReportPdf, type FieldReportFormData } from "../lib/pdf-field-report.js";
+import { generateFieldReportPdf, type FieldReportFormData, type FieldReportPdfImage } from "../lib/pdf-field-report.js";
+import type { FieldReportImages } from "./field-report-images.js";
 import { REPORT_TEMPLATES, getTemplate } from "../lib/report-templates.js";
 import { logger } from "../lib/logger.js";
 
@@ -13,6 +14,31 @@ const FIELD_REPORTS_PREFIX = "[Output] Field Reports/";
 
 function sanitizeSegment(s: string | null | undefined): string {
   return (s ?? "").replace(/[\\/\r\n\t]+/g, "_").replace(/\.\.+/g, "_").trim();
+}
+
+async function loadReportImages(
+  client: S3Client,
+  bucket: string,
+  template: { imagePlaceholders?: string[] | null },
+  raw:    FieldReportImages | null,
+): Promise<FieldReportPdfImage[]> {
+  const placeholders = template.imagePlaceholders ?? [];
+  if (!raw || placeholders.length === 0) return [];
+  const out: FieldReportPdfImage[] = [];
+  for (let i = 0; i < placeholders.length; i++) {
+    const meta = raw[String(i)];
+    if (!meta) continue;
+    try {
+      const obj = await client.send(new GetObjectCommand({ Bucket: bucket, Key: meta.wasabiKey }));
+      const body = obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> } | undefined;
+      if (!body) continue;
+      const buffer = Buffer.from(await body.transformToByteArray());
+      out.push({ index: i, caption: placeholders[i], buffer });
+    } catch (err) {
+      logger.warn({ err, key: meta.wasabiKey, index: i }, "Skipping unreadable field-report image");
+    }
+  }
+  return out;
 }
 
 async function resolveOspForString(stringName: string): Promise<string> {
@@ -99,16 +125,23 @@ router.post("/field-reports", async (req, res): Promise<void> => {
   const ospName = await resolveOspForString(body.stringName);
   const createdBy = req.session.username ?? `user:${req.session.userId}`;
 
-  const [row] = await db.insert(fieldReportsTable).values({
-    templateId:  body.templateId,
-    ospName,
-    stringName:  body.stringName,
-    cableName:   body.cableName ?? null,
-    formData:    body.formData,
-    status:      "draft",
-    createdBy,
-  }).returning();
-  res.status(201).json(row);
+  try {
+    const [row] = await db.insert(fieldReportsTable).values({
+      templateId:  body.templateId,
+      ospName,
+      stringName:  body.stringName,
+      cableName:   body.cableName ?? null,
+      formData:    body.formData,
+      status:      "draft",
+      createdBy,
+    }).returning();
+    res.status(201).json(row);
+  } catch (err: unknown) {
+    const cause = err && typeof err === "object" && "cause" in err ? (err as { cause: unknown }).cause : null;
+    logger.error({ err, cause }, "Failed to create field report");
+    const detail = cause && typeof cause === "object" && "message" in cause ? String((cause as { message: unknown }).message) : String(err);
+    res.status(500).json({ error: detail });
+  }
 });
 
 // ── PATCH /api/field-reports/:id — update draft ──
@@ -169,11 +202,15 @@ router.post("/field-reports/:id/finalize", async (req, res): Promise<void> => {
   try {
     const generatedBy = req.session.username ?? `user:${req.session.userId}`;
     const generatedAt = new Date();
+    const images = await loadReportImages(
+      wasabi.client, wasabi.creds.bucket, template, row.images as FieldReportImages | null,
+    );
     const pdf = await generateFieldReportPdf({
       template,
       data: row.formData as FieldReportFormData,
       generatedBy,
       generatedAt,
+      images,
     });
 
     const safeString = sanitizeSegment(row.stringName);
@@ -239,11 +276,16 @@ router.get("/field-reports/:id/pdf", async (req, res): Promise<void> => {
   if (!template) { res.status(400).json({ error: "Unknown template" }); return; }
 
   try {
+    const wasabi = await getWasabiClientAndCreds();
+    const images = wasabi
+      ? await loadReportImages(wasabi.client, wasabi.creds.bucket, template, row.images as FieldReportImages | null)
+      : [];
     const pdf = await generateFieldReportPdf({
       template,
       data: row.formData as FieldReportFormData,
       generatedBy: row.createdBy,
       generatedAt: row.finalizedAt ?? row.updatedAt,
+      images,
     });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="preview-${row.id}.pdf"`);

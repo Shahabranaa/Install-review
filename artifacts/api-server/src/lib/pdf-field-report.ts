@@ -26,11 +26,19 @@ export interface FieldReportFormData {
   remarks?: string;
 }
 
+export interface FieldReportPdfImage {
+  index:   number;
+  caption: string;
+  buffer:  Buffer;
+}
+
 export interface FieldReportPdfInput {
   template: ReportTemplate;
   data: FieldReportFormData;
   generatedBy: string;
   generatedAt: Date;
+  /** One entry per uploaded image. Captions/order match template.imagePlaceholders. */
+  images?: FieldReportPdfImage[];
 }
 
 export function generateFieldReportPdf(input: FieldReportPdfInput): Promise<Buffer> {
@@ -99,18 +107,15 @@ function render(doc: PDFKit.PDFDocument, input: FieldReportPdfInput): void {
     drawTwoColTable(doc, rows);
   }
 
-  // Image placeholders
+  // Image placeholders — embed any uploaded images, list missing ones as captions.
   if (template.imagePlaceholders && template.imagePlaceholders.length > 0) {
     doc.moveDown(0.6);
     sectionTitle(doc, "Required Images");
-    doc.fontSize(9).fillColor(GRAY_500)
-       .text("(captions captured for the field report; photos attached separately in the image review system)", { width: 495 });
-    doc.moveDown(0.3);
-    doc.fontSize(10).fillColor(GRAY_700);
-    for (const cap of template.imagePlaceholders) {
-      ensureSpace(doc, 18);
-      doc.text(`• ${cap}`, 60, doc.y, { width: 485 });
-    }
+
+    const imagesByIndex = new Map<number, FieldReportPdfImage>();
+    for (const img of input.images ?? []) imagesByIndex.set(img.index, img);
+
+    drawImageGrid(doc, template.imagePlaceholders, imagesByIndex);
   }
 
   // Remarks
@@ -134,6 +139,62 @@ function render(doc: PDFKit.PDFDocument, input: FieldReportPdfInput): void {
 
 function ensureSpace(doc: PDFKit.PDFDocument, h: number): void {
   if (doc.y + h > doc.page.height - 60) doc.addPage();
+}
+
+function drawImageGrid(
+  doc: PDFKit.PDFDocument,
+  captions: string[],
+  imagesByIndex: Map<number, FieldReportPdfImage>,
+): void {
+  const totalW = 495;
+  const gap    = 10;
+  const colW   = (totalW - gap) / 2;
+  const imgH   = 170;
+  const capH   = 32;
+  const cellH  = imgH + capH;
+
+  for (let i = 0; i < captions.length; i++) {
+    const col = i % 2;
+    if (col === 0) {
+      ensureSpace(doc, cellH + 10);
+      // Remember row top so the right cell aligns with the left.
+      (doc as unknown as { __rowTop?: number }).__rowTop = doc.y;
+    }
+    const rowTop = (doc as unknown as { __rowTop?: number }).__rowTop ?? doc.y;
+    const x = 50 + col * (colW + gap);
+    const y = rowTop;
+
+    const img = imagesByIndex.get(i);
+    if (img) {
+      try {
+        doc.image(img.buffer, x, y, { fit: [colW, imgH], align: "center", valign: "center" });
+      } catch {
+        drawMissing(doc, x, y, colW, imgH, "Could not render image");
+      }
+    } else {
+      drawMissing(doc, x, y, colW, imgH, "No image uploaded");
+    }
+
+    // Caption block
+    const capY = y + imgH + 2;
+    doc.rect(x, capY, colW, capH - 4).fillAndStroke(BRAND_LIGHT, GRAY_300);
+    doc.fillColor(BRAND_BLUE).fontSize(7).font("Helvetica-Bold")
+       .text(`Image ${i + 1}`, x + 4, capY + 3, { width: colW - 8 });
+    doc.fillColor(GRAY_700).fontSize(8).font("Helvetica")
+       .text(captions[i], x + 4, capY + 12, { width: colW - 8, height: capH - 16, ellipsis: true });
+
+    // After the right cell (or the last cell if odd count), drop the cursor below the row.
+    if (col === 1 || i === captions.length - 1) {
+      doc.y = y + cellH + 6;
+    }
+  }
+  doc.fillColor(GRAY_700).font("Helvetica");
+}
+
+function drawMissing(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, label: string): void {
+  doc.rect(x, y, w, h).fillAndStroke(BRAND_LIGHT, GRAY_300);
+  doc.fillColor(GRAY_500).fontSize(9).font("Helvetica")
+     .text(label, x, y + h / 2 - 5, { width: w, align: "center" });
 }
 
 function sectionTitle(doc: PDFKit.PDFDocument, text: string): void {

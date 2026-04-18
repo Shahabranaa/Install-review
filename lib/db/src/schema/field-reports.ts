@@ -7,6 +7,7 @@ export const fieldReportsTable = pgTable("field_reports", {
   stringName:   text("string_name").notNull(),
   cableName:    text("cable_name"),
   formData:     jsonb("form_data").notNull(),
+  images:       jsonb("images").notNull().default({}),
   status:       text("status").notNull().default("draft"),
   createdBy:    text("created_by").notNull(),
   finalizedAt:  timestamp("finalized_at", { withTimezone: true }),

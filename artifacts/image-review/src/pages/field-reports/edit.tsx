@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListStrings, useListLocations, useListCables } from "@workspace/api-client-react";
-import { Save, FileCheck2, Eye, ChevronLeft } from "lucide-react";
+import { Save, FileCheck2, Eye, ChevronLeft, Upload, Trash2, ImageIcon } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
@@ -39,10 +39,14 @@ interface FormData {
   remarks?: string;
 }
 
+interface ReportImageMeta {
+  wasabiKey: string; contentType: string; originalName: string; uploadedAt: string; size: number;
+}
 interface FieldReport {
   id: number; templateId: string; stringName: string; cableName: string|null;
   formData: FormData; status: "draft"|"final"; createdBy: string;
   wasabiKey: string|null;
+  images?: Record<string, ReportImageMeta> | null;
 }
 
 function emptyFormForTemplate(t: Template): FormData {
@@ -450,14 +454,20 @@ export default function EditFieldReportPage(): JSX.Element {
 
           {template.imagePlaceholders && template.imagePlaceholders.length > 0 && (
             <Card>
-              <CardHeader><CardTitle className="text-base">Required Images (captions)</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Required Images</CardTitle></CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground mb-2">
-                  These captions describe the photos required for this report. Photos themselves live in the image review system.
+                <p className="text-xs text-muted-foreground mb-3">
+                  Upload one photo per caption — these will be embedded in the finalized PDF.
                 </p>
-                <ul className="text-sm space-y-1">
-                  {template.imagePlaceholders.map((cap, i) => <li key={i}>• {cap}</li>)}
-                </ul>
+                <ImageSlots
+                  reportId={loadedReport?.id ?? null}
+                  isFinal={isFinal}
+                  captions={template.imagePlaceholders}
+                  images={loadedReport?.images ?? null}
+                  onChange={(nextImages) => {
+                    if (loadedReport) setLoadedReport({ ...loadedReport, images: nextImages });
+                  }}
+                />
               </CardContent>
             </Card>
           )}
@@ -477,6 +487,149 @@ export default function EditFieldReportPage(): JSX.Element {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── Image upload slots ──────────────────────────────────────────────────────
+
+interface ImageSlotsProps {
+  reportId: number | null;
+  isFinal:  boolean;
+  captions: string[];
+  images:   Record<string, ReportImageMeta> | null;
+  onChange: (next: Record<string, ReportImageMeta>) => void;
+}
+
+function ImageSlots({ reportId, isFinal, captions, images, onChange }: ImageSlotsProps): JSX.Element {
+  const { toast } = useToast();
+  const [busyIndex, setBusyIndex] = useState<number | null>(null);
+  // Cache-buster so newly-uploaded images render without a stale cache hit.
+  const [bumps, setBumps] = useState<Record<number, number>>({});
+
+  const upload = async (index: number, file: File): Promise<void> => {
+    if (!reportId) {
+      toast({ title: "Save the report first", description: "You can upload photos after the draft is saved.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Max 12 MB per image.", variant: "destructive" });
+      return;
+    }
+    setBusyIndex(index);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${BASE_URL}api/field-reports/${reportId}/images/${index}`, {
+        method: "POST", credentials: "include", body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      const json = await res.json() as { report: FieldReport };
+      onChange((json.report.images ?? {}) as Record<string, ReportImageMeta>);
+      setBumps(b => ({ ...b, [index]: (b[index] ?? 0) + 1 }));
+      toast({ title: "Image uploaded" });
+    } catch (err: unknown) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  const remove = async (index: number): Promise<void> => {
+    if (!reportId) return;
+    setBusyIndex(index);
+    try {
+      const res = await fetch(`${BASE_URL}api/field-reports/${reportId}/images/${index}`, {
+        method: "DELETE", credentials: "include",
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      // Optimistic local update; server returns the report on 200, no-op on 204.
+      const next = { ...(images ?? {}) };
+      delete next[String(index)];
+      onChange(next);
+    } catch (err: unknown) {
+      toast({ title: "Delete failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setBusyIndex(null);
+    }
+  };
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {captions.map((caption, index) => {
+        const meta = images?.[String(index)];
+        const bump = bumps[index] ?? 0;
+        const previewUrl = meta && reportId
+          ? `${BASE_URL}api/field-reports/${reportId}/images/${index}?v=${bump}-${meta.uploadedAt}`
+          : null;
+        const inputId = `field-report-image-${index}`;
+        return (
+          <div key={index} className="border rounded-md overflow-hidden flex flex-col bg-card">
+            <div className="aspect-[4/3] bg-muted flex items-center justify-center relative">
+              {previewUrl ? (
+                <img src={previewUrl} alt={caption} className="w-full h-full object-contain bg-black/5" />
+              ) : (
+                <div className="flex flex-col items-center text-muted-foreground text-xs gap-1">
+                  <ImageIcon className="h-6 w-6" />
+                  <span>No image</span>
+                </div>
+              )}
+            </div>
+            <div className="p-2 space-y-2">
+              <div className="text-xs">
+                <span className="font-semibold text-muted-foreground mr-1">#{index + 1}</span>
+                <span>{caption}</span>
+              </div>
+              {!isFinal && (
+                <div className="flex gap-2">
+                  <input
+                    id={inputId}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void upload(index, f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    disabled={busyIndex === index || !reportId}
+                    onClick={() => document.getElementById(inputId)?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1" />
+                    {meta ? "Replace" : "Upload"}
+                  </Button>
+                  {meta && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busyIndex === index}
+                      onClick={() => void remove(index)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )}
+              {!reportId && !isFinal && (
+                <p className="text-[11px] text-muted-foreground">Save the draft to enable uploads.</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
