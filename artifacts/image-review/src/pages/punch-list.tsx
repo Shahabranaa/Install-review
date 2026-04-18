@@ -25,6 +25,7 @@ interface Issue {
   createdAt: string;
   updatedAt: string;
   tower: string | null;
+  string: string | null;
 }
 
 function severityBadge(severity: string) {
@@ -45,6 +46,7 @@ export default function PunchList() {
   const [filterResolved, setFilterResolved] = useState<"all" | "open" | "resolved">("open");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
   const [filterTower, setFilterTower] = useState<string>("all");
+  const [filterString, setFilterString] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -81,6 +83,15 @@ export default function PunchList() {
   }, []);
 
   const towers = Array.from(new Set(issues.map(i => i.tower).filter(Boolean) as string[])).sort();
+  // Strings that exist for the current tower filter (or all strings if no tower filter)
+  const stringsForFilter = Array.from(
+    new Set(
+      issues
+        .filter(i => filterTower === "all" || i.tower === filterTower)
+        .map(i => i.string)
+        .filter(Boolean) as string[]
+    )
+  ).sort();
 
   const filtered = issues
     .filter(i => {
@@ -90,6 +101,7 @@ export default function PunchList() {
     })
     .filter(i => filterSeverity === "all" || i.severity === filterSeverity)
     .filter(i => filterTower === "all" || i.tower === filterTower)
+    .filter(i => filterString === "all" || i.string === filterString)
     .filter(i => {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
@@ -98,7 +110,8 @@ export default function PunchList() {
         i.type.toLowerCase().includes(q) ||
         (i.photoId ?? "").toLowerCase().includes(q) ||
         (i.raisedBy ?? "").toLowerCase().includes(q) ||
-        (i.tower ?? "").toLowerCase().includes(q)
+        (i.tower ?? "").toLowerCase().includes(q) ||
+        (i.string ?? "").toLowerCase().includes(q)
       );
     })
     .sort((a, b) => {
@@ -198,12 +211,26 @@ export default function PunchList() {
         {towers.length > 0 && (
           <select
             value={filterTower}
-            onChange={e => setFilterTower(e.target.value)}
+            onChange={e => { setFilterTower(e.target.value); setFilterString("all"); }}
             className="h-9 rounded-lg border border-border bg-background text-xs text-foreground px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="all">All Towers</option>
             {towers.map(t => (
               <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )}
+
+        {/* String filter */}
+        {stringsForFilter.length > 0 && (
+          <select
+            value={filterString}
+            onChange={e => setFilterString(e.target.value)}
+            className="h-9 rounded-lg border border-border bg-background text-xs text-foreground px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="all">All Strings</option>
+            {stringsForFilter.map(s => (
+              <option key={s} value={s}>{s}</option>
             ))}
           </select>
         )}
@@ -258,6 +285,11 @@ export default function PunchList() {
                     {issue.tower && (
                       <span className="text-[11px] font-semibold text-primary/70 bg-primary/10 px-2 py-0.5 rounded-full">
                         {issue.tower}
+                      </span>
+                    )}
+                    {issue.string && (
+                      <span className="text-[11px] text-muted-foreground/80 bg-muted/60 border border-border/40 px-2 py-0.5 rounded-full">
+                        {issue.string}
                       </span>
                     )}
                     {issue.photoId && (

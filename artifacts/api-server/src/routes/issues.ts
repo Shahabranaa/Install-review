@@ -16,69 +16,103 @@ import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function enrichIssuesWithTower(issues: any[]): Promise<Array<Record<string, unknown>>> {
-  const photoIds = issues.map(i => i.photoId as string | null).filter(Boolean) as string[];
+type IssueRow = typeof issuesTable.$inferSelect;
+
+async function enrichIssues(issues: IssueRow[]): Promise<ReturnType<typeof serialize>[]> {
+  const photoIds = issues.map(i => i.photoId).filter((id): id is string => id !== null);
   const towerMap = new Map<string, string>();
+  const stringMap = new Map<string, string>();
+
   if (photoIds.length > 0) {
     const photos = await db
-      .select({ photoId: sheetPhotosTable.photoId, cableLink: sheetPhotosTable.cableLink })
+      .select({
+        photoId: sheetPhotosTable.photoId,
+        cableLink: sheetPhotosTable.cableLink,
+        photoString: sheetPhotosTable.photoString,
+      })
       .from(sheetPhotosTable)
       .where(inArray(sheetPhotosTable.photoId, photoIds));
+
     for (const p of photos) {
-      if (p.photoId && p.cableLink) towerMap.set(p.photoId, p.cableLink);
+      if (p.photoId) {
+        if (p.cableLink) towerMap.set(p.photoId, p.cableLink);
+        if (p.photoString) stringMap.set(p.photoId, p.photoString);
+      }
     }
   }
-  return (serialize(issues) as Array<Record<string, unknown>>).map(i => ({
-    ...i,
-    tower: i.photoId ? (towerMap.get(i.photoId as string) ?? null) : null,
-  }));
+
+  return (serialize(issues) as ReturnType<typeof serialize>[]).map(row => {
+    const serialized = row as Record<string, unknown>;
+    const pid = serialized.photoId as string | null | undefined;
+    return {
+      ...serialized,
+      tower: pid ? (towerMap.get(pid) ?? null) : null,
+      string: pid ? (stringMap.get(pid) ?? null) : null,
+    };
+  });
 }
 
 router.get("/issues", async (req, res): Promise<void> => {
   const queryParams = ListIssuesQueryParams.safeParse(req.query);
   if (!queryParams.success) {
     const issues = await db.select().from(issuesTable);
-    const enriched = await enrichIssuesWithTower(issues);
-    res.json(ListIssuesResponse.parse(enriched));
+    res.json(ListIssuesResponse.parse(await enrichIssues(issues)));
     return;
   }
 
   const { imageId, phaseId, photoId, tower, string: stringName, severity, resolved } = queryParams.data;
   const conditions: SQL[] = [];
 
+  // imageId and phaseId filter on the issues table directly
   if (imageId) {
     conditions.push(eq(issuesTable.imageId, imageId));
   } else if (phaseId) {
     const images = await db.select({ id: imagesTable.id }).from(imagesTable).where(eq(imagesTable.phaseId, phaseId));
-    const imageIds = images.map(i => i.id);
-    if (imageIds.length === 0) {
+    const ids = images.map(i => i.id);
+    if (ids.length === 0) {
       res.json(ListIssuesResponse.parse([]));
       return;
     }
-    conditions.push(inArray(issuesTable.imageId, imageIds));
+    conditions.push(inArray(issuesTable.imageId, ids));
   } else if (photoId) {
+    // Single photo lookup — direct equality
     conditions.push(eq(issuesTable.photoId, photoId));
-  } else if (tower) {
-    const photos = await db.select({ photoId: sheetPhotosTable.photoId })
-      .from(sheetPhotosTable)
-      .where(eq(sheetPhotosTable.cableLink, tower));
-    const photoIds = photos.map(p => p.photoId).filter(Boolean) as string[];
-    if (photoIds.length === 0) {
-      res.json(ListIssuesResponse.parse([]));
-      return;
+  } else {
+    // Tower and/or string: resolve to a set of photoIds, then combine via intersection
+    let toweredPhotoIds: string[] | null = null;
+    let stringedPhotoIds: string[] | null = null;
+
+    if (tower) {
+      const rows = await db
+        .select({ photoId: sheetPhotosTable.photoId })
+        .from(sheetPhotosTable)
+        .where(eq(sheetPhotosTable.cableLink, tower));
+      toweredPhotoIds = rows.map(r => r.photoId).filter((id): id is string => id !== null);
     }
-    conditions.push(inArray(issuesTable.photoId, photoIds));
-  } else if (stringName) {
-    const photos = await db.select({ photoId: sheetPhotosTable.photoId })
-      .from(sheetPhotosTable)
-      .where(eq(sheetPhotosTable.photoString, stringName));
-    const photoIds = photos.map(p => p.photoId).filter(Boolean) as string[];
-    if (photoIds.length === 0) {
-      res.json(ListIssuesResponse.parse([]));
-      return;
+
+    if (stringName) {
+      const rows = await db
+        .select({ photoId: sheetPhotosTable.photoId })
+        .from(sheetPhotosTable)
+        .where(eq(sheetPhotosTable.photoString, stringName));
+      stringedPhotoIds = rows.map(r => r.photoId).filter((id): id is string => id !== null);
     }
-    conditions.push(inArray(issuesTable.photoId, photoIds));
+
+    if (toweredPhotoIds !== null || stringedPhotoIds !== null) {
+      // Intersect the two sets if both are provided
+      let combined: string[];
+      if (toweredPhotoIds !== null && stringedPhotoIds !== null) {
+        const tSet = new Set(toweredPhotoIds);
+        combined = stringedPhotoIds.filter(id => tSet.has(id));
+      } else {
+        combined = (toweredPhotoIds ?? stringedPhotoIds) as string[];
+      }
+      if (combined.length === 0) {
+        res.json(ListIssuesResponse.parse([]));
+        return;
+      }
+      conditions.push(inArray(issuesTable.photoId, combined));
+    }
   }
 
   if (severity) conditions.push(eq(issuesTable.severity, severity));
@@ -88,8 +122,7 @@ router.get("/issues", async (req, res): Promise<void> => {
     ? await db.select().from(issuesTable).where(and(...conditions))
     : await db.select().from(issuesTable);
 
-  const enriched = await enrichIssuesWithTower(issues);
-  res.json(ListIssuesResponse.parse(enriched));
+  res.json(ListIssuesResponse.parse(await enrichIssues(issues)));
 });
 
 router.post("/issues", async (req, res): Promise<void> => {

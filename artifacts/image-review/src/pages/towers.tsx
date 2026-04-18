@@ -315,7 +315,7 @@ interface TowerRecord {
 
 type FolderTab = "original" | "stamped" | "reports" | "issues";
 
-interface TowerIssue { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; createdAt: string; photoId?: string | null; }
+interface TowerIssue { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; resolvedBy?: string | null; resolvedAt?: string | null; createdAt: string; photoId?: string | null; }
 
 function TowerFolderView({
   tower,
@@ -768,6 +768,12 @@ function TowerFolderView({
                 <p className="text-[10px] text-muted-foreground/50">
                   {new Date(issue.createdAt).toLocaleDateString()}
                   {issue.raisedBy && ` · Raised by ${issue.raisedBy}`}
+                  {issue.resolved && issue.resolvedBy && (
+                    <span className="ml-2 text-green-600/70">
+                      · Resolved by {issue.resolvedBy}
+                      {issue.resolvedAt && ` on ${new Date(issue.resolvedAt).toLocaleDateString()}`}
+                    </span>
+                  )}
                 </p>
               </div>
             );
