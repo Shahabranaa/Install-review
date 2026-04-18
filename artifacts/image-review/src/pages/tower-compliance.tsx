@@ -4,11 +4,18 @@ import { useLocation } from "wouter";
 import { useListLocations, useListStrings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Wind, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Wind, AlertTriangle, Layers } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
 const API = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface PhaseCompliance {
+  phase: string;
+  expected: string[];
+  present: string[];
+  missing: string[];
+}
 
 interface TowerCompliance {
   tower: string;
@@ -21,10 +28,13 @@ interface TowerCompliance {
   missing: string[];
   present: string[];
   pct: number;
+  byPhase: PhaseCompliance[];
+  hasPhaseData: boolean;
 }
 
 interface ComplianceResponse {
   expectedTypes: string[];
+  hasPhaseData: boolean;
   towers: TowerCompliance[];
 }
 
@@ -32,26 +42,76 @@ type SortKey = "pct" | "name" | "missing";
 type SortDir = "asc" | "desc";
 
 function statusColor(pct: number) {
-  if (pct === 100) return { bar: "bg-green-500",  badge: "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300",  label: "Complete" };
-  if (pct >= 50)   return { bar: "bg-amber-400",  badge: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300",   label: "Partial"  };
-  if (pct > 0)     return { bar: "bg-red-500",    badge: "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300",             label: "Critical" };
-  return             { bar: "bg-slate-300",  badge: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300",  label: "None"     };
+  if (pct === 100) return { bar: "bg-green-500",  badge: "bg-green-100 text-green-800 border-green-200",  label: "Complete" };
+  if (pct >= 50)   return { bar: "bg-amber-400",  badge: "bg-amber-100 text-amber-800 border-amber-200",   label: "Partial"  };
+  if (pct > 0)     return { bar: "bg-red-500",    badge: "bg-red-100 text-red-800 border-red-200",         label: "Critical" };
+  return             { bar: "bg-slate-300",  badge: "bg-slate-100 text-slate-600 border-slate-200",  label: "None"     };
+}
+
+function TypePill({ label, variant }: { label: string; variant: "missing" | "present" }) {
+  const cls = variant === "missing"
+    ? "bg-red-50 text-red-700 border-red-200"
+    : "bg-green-50 text-green-700 border-green-200";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+function PhaseSection({ phase }: { phase: PhaseCompliance }) {
+  if (phase.expected.length === 0) return null;
+  const phasePct = Math.round(phase.present.length / phase.expected.length * 100);
+  const { bar } = statusColor(phasePct);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Layers className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+        <span className="text-xs font-semibold text-foreground">{phase.phase}</span>
+        <div className="flex-1 bg-primary/10 rounded-full h-1.5 overflow-hidden">
+          <div className={`h-full rounded-full ${bar}`} style={{ width: `${phasePct}%` }} />
+        </div>
+        <span className="text-[11px] font-mono text-muted-foreground flex-shrink-0">
+          {phase.present.length}/{phase.expected.length}
+        </span>
+      </div>
+      {(phase.missing.length > 0 || phase.present.length > 0) && (
+        <div className="ml-5 space-y-1">
+          {phase.missing.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {phase.missing.map(m => <TypePill key={m} label={m} variant="missing" />)}
+            </div>
+          )}
+          {phase.present.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {phase.present.map(p => <TypePill key={p} label={p} variant="present" />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: TowerCompliance) => void }) {
   const [expanded, setExpanded] = useState(false);
   const { bar, badge, label } = statusColor(t.pct);
 
+  const hasPhases = t.hasPhaseData && t.byPhase.length > 0;
+
   return (
     <div className="border border-border/60 rounded-lg overflow-hidden bg-card">
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors group"
+      {/* Row header — using div + keyboard handler (no nested <button>) */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
         onClick={() => setExpanded(e => !e)}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(ex => !ex); } }}
       >
-        <span className="text-muted-foreground flex-shrink-0">
-          {expanded
-            ? <ChevronDown className="w-4 h-4" />
-            : <ChevronRight className="w-4 h-4" />}
+        <span className="text-muted-foreground flex-shrink-0" aria-hidden="true">
+          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
 
         <span className="font-semibold text-sm w-24 flex-shrink-0 truncate">{t.tower}</span>
@@ -68,16 +128,22 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
           {label}
         </span>
 
-        <button
+        {/* Stop propagation so clicking View → doesn't toggle expand */}
+        <span
+          role="button"
+          tabIndex={0}
           className="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hover:underline"
           onClick={e => { e.stopPropagation(); onNavigate(t); }}
+          onKeyDown={e => { if (e.key === "Enter") { e.stopPropagation(); onNavigate(t); } }}
         >
           View →
-        </button>
-      </button>
+        </span>
+      </div>
 
+      {/* Expanded detail panel */}
       {expanded && (
         <div className="border-t border-border/40 px-4 py-3 bg-muted/20 space-y-3">
+          {/* Location breadcrumb */}
           {t.ospName && (
             <p className="text-xs text-muted-foreground">
               <span className="font-medium">OSP:</span> {t.ospName}
@@ -85,40 +151,42 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
             </p>
           )}
 
-          {t.missing.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1.5 flex items-center gap-1">
-                <XCircle className="w-3.5 h-3.5" />
-                Missing ({t.missing.length})
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {t.missing.map(m => (
-                  <span key={m} className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 text-[11px]">
-                    {m}
-                  </span>
-                ))}
-              </div>
+          {/* Phase-aware breakdown */}
+          {hasPhases ? (
+            <div className="space-y-3">
+              {t.byPhase.map(phase => <PhaseSection key={phase.phase} phase={phase} />)}
             </div>
-          )}
+          ) : (
+            /* Flat fallback (no phase definitions) */
+            <>
+              {t.missing.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">
+                    <XCircle className="w-3.5 h-3.5" />
+                    Missing ({t.missing.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {t.missing.map(m => <TypePill key={m} label={m} variant="missing" />)}
+                  </div>
+                </div>
+              )}
 
-          {t.present.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-green-600 dark:text-green-400 mb-1.5 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Present ({t.present.length})
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {t.present.map(p => (
-                  <span key={p} className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-950/60 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 text-[11px]">
-                    {p}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+              {t.present.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-green-600 mb-1.5 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Present ({t.present.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {t.present.map(p => <TypePill key={p} label={p} variant="present" />)}
+                  </div>
+                </div>
+              )}
 
-          {t.present.length === 0 && t.missing.length === 0 && (
-            <p className="text-xs text-muted-foreground italic">No required image data available for this tower.</p>
+              {t.present.length === 0 && t.missing.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No required image data available for this tower.</p>
+              )}
+            </>
           )}
         </div>
       )}
@@ -169,10 +237,7 @@ export default function TowerCompliance() {
     const complete  = data.towers.filter(t => t.pct === 100).length;
     const partial   = data.towers.filter(t => t.pct > 0 && t.pct < 100).length;
     const none      = data.towers.filter(t => t.pct === 0).length;
-    const avgPct    = data.towers.length > 0
-      ? Math.round(data.towers.reduce((s, t) => s + t.pct, 0) / data.towers.length)
-      : 0;
-    return { complete, partial, none, total: data.towers.length, avgPct };
+    return { complete, partial, none, total: data.towers.length };
   }, [data]);
 
   function handleSort(key: SortKey) {
@@ -197,7 +262,8 @@ export default function TowerCompliance() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Tower Compliance</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Per-tower view of required image coverage, sorted by most critical first.
+          Per-tower required image coverage
+          {data?.hasPhaseData ? ", broken down by phase and image type." : "."}
         </p>
       </div>
 
@@ -233,7 +299,7 @@ export default function TowerCompliance() {
 
         <div className="flex items-end gap-1.5 ml-auto flex-wrap">
           <span className="text-xs text-muted-foreground font-medium self-center">Sort:</span>
-          {([["pct", "% Complete"], ["name", "Name"], ["missing", "Missing"]] as [SortKey, string][]).map(([key, label]) => (
+          {([["pct", "% Complete"], ["name", "Name"], ["missing", "Missing"]] as [SortKey, string][]).map(([key, lbl]) => (
             <Button
               key={key}
               size="sm"
@@ -241,7 +307,7 @@ export default function TowerCompliance() {
               onClick={() => handleSort(key)}
               className="h-8 text-xs"
             >
-              {label} {sort === key ? (sortDir === "asc" ? "↑" : "↓") : ""}
+              {lbl} {sort === key ? (sortDir === "asc" ? "↑" : "↓") : ""}
             </Button>
           ))}
         </div>
@@ -252,9 +318,9 @@ export default function TowerCompliance() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total Towers",     value: summary.total,    color: "text-foreground" },
-            { label: "Complete (100%)",  value: summary.complete, color: "text-green-600 dark:text-green-400" },
-            { label: "Partial (1–99%)",  value: summary.partial,  color: "text-amber-600 dark:text-amber-400" },
-            { label: "None (0%)",        value: summary.none,     color: "text-red-600 dark:text-red-400" },
+            { label: "Complete (100%)",  value: summary.complete, color: "text-green-600" },
+            { label: "Partial (1–99%)",  value: summary.partial,  color: "text-amber-600" },
+            { label: "None (0%)",        value: summary.none,     color: "text-red-600"   },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-card border border-border/60 rounded-lg p-3 text-center">
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
@@ -264,15 +330,16 @@ export default function TowerCompliance() {
         </div>
       )}
 
-      {/* Required types count */}
+      {/* Required types info */}
       {data && data.expectedTypes.length > 0 && (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-          Checking against <span className="font-semibold text-foreground">{data.expectedTypes.length}</span> required image types from definitions.
+          Checking against <span className="font-semibold text-foreground">{data.expectedTypes.length}</span> required image types
+          {data.hasPhaseData && " across phases"} from definitions.
         </p>
       )}
       {data && data.expectedTypes.length === 0 && (
-        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-800 dark:text-amber-200">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           No required image definitions found. Import phase definitions from the Phases page to enable compliance checking.
         </div>
       )}

@@ -722,24 +722,46 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
     const stringIdParam = req.query.stringId ? parseInt(req.query.stringId as string) : undefined;
     const towerParam    = req.query.tower    as string | undefined;
 
-    // ── 1. Determine expected req_img_types ─────────────────────────────────
+    // ── 1. Determine expected req_img_types (with phase context) ────────────
     const defRows = await db
-      .selectDistinct({ reqImgType: requiredImageDefinitionsTable.reqImgType })
+      .select({
+        phaseType:  requiredImageDefinitionsTable.phaseType,
+        reqImgType: requiredImageDefinitionsTable.reqImgType,
+        reqImgOrder: requiredImageDefinitionsTable.reqImgOrder,
+      })
       .from(requiredImageDefinitionsTable)
-      .orderBy(requiredImageDefinitionsTable.reqImgType);
+      .orderBy(requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgType);
 
+    // hasPhaseData: true = use phase-aware mode from required_image_definitions
+    const hasPhaseData = defRows.length > 0;
+
+    // Phase-aware: { phaseType, reqImgType }[]
+    // Flat: string[]
+    type ExpectedItem = { phaseType: string; reqImgType: string };
+    let expectedItems: ExpectedItem[];
     let expectedTypes: string[];
-    if (defRows.length > 0) {
-      expectedTypes = defRows.map(r => r.reqImgType);
+
+    if (hasPhaseData) {
+      expectedItems = defRows.map(r => ({ phaseType: r.phaseType, reqImgType: r.reqImgType }));
+      expectedTypes = [...new Set(expectedItems.map(e => e.reqImgType))];
     } else {
-      // Fallback: use all distinct req_img_types from sheet_photos as the "expected" set
+      // Fallback: global distinct req_img_types from sheet_photos (no phase info)
       const globalRows = await db.execute(sql`
         SELECT DISTINCT req_img_type FROM sheet_photos
         WHERE req_img_type IS NOT NULL ORDER BY req_img_type
       `);
       const globalArr = Array.isArray(globalRows) ? globalRows : (globalRows as unknown as { rows: unknown[] }).rows;
       expectedTypes = (globalArr as { req_img_type: string }[]).map(r => r.req_img_type);
+      expectedItems = expectedTypes.map(t => ({ phaseType: "General", reqImgType: t }));
     }
+
+    // Group expected items by phase for phase-aware display
+    const expectedByPhase = new Map<string, string[]>();
+    for (const item of expectedItems) {
+      if (!expectedByPhase.has(item.phaseType)) expectedByPhase.set(item.phaseType, []);
+      expectedByPhase.get(item.phaseType)!.push(item.reqImgType);
+    }
+
     // ── 2. Get tower metadata (name → string → OSP) with optional filters ──
     const towerMeta = await db
       .select({
@@ -787,14 +809,30 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
       ...(filteredNames.size === 0 ? actualByTower.keys() : []),
     ]);
 
+    type PhaseCompliance = {
+      phase: string;
+      expected: string[];
+      present: string[];
+      missing: string[];
+    };
+
     const towers = Array.from(towerNames).map(name => {
-      const actual  = actualByTower.get(name) ?? new Set<string>();
-      const present = expectedTypes.filter(t => actual.has(t));
-      const missing = expectedTypes.filter(t => !actual.has(t));
-      const pct     = expectedTypes.length > 0
-        ? Math.round(present.length / expectedTypes.length * 100)
+      const actual     = actualByTower.get(name) ?? new Set<string>();
+      const presentAll = expectedTypes.filter(t => actual.has(t));
+      const missingAll = expectedTypes.filter(t => !actual.has(t));
+      const pct        = expectedTypes.length > 0
+        ? Math.round(presentAll.length / expectedTypes.length * 100)
         : (actual.size > 0 ? 100 : 0);
-      const meta    = metaByName.get(name);
+      const meta = metaByName.get(name);
+
+      // Build per-phase breakdown
+      const byPhase: PhaseCompliance[] = Array.from(expectedByPhase.entries()).map(([phase, types]) => ({
+        phase,
+        expected: types,
+        present:  types.filter(t => actual.has(t)),
+        missing:  types.filter(t => !actual.has(t)),
+      }));
+
       return {
         tower:      name,
         stringId:   meta?.stringId   ?? null,
@@ -802,14 +840,16 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
         ospId:      meta?.ospId      ?? null,
         ospName:    meta?.ospName    ?? null,
         expected:   expectedTypes.length,
-        actual:     present.length,
-        missing,
-        present,
+        actual:     presentAll.length,
+        missing:    missingAll,
+        present:    presentAll,
         pct,
+        byPhase,
+        hasPhaseData,
       };
     }).sort((a, b) => a.pct - b.pct || (a.tower < b.tower ? -1 : 1));
 
-    res.json({ expectedTypes, towers });
+    res.json({ expectedTypes, hasPhaseData, towers });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
