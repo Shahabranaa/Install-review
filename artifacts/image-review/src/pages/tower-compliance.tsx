@@ -36,6 +36,7 @@ interface ComplianceResponse {
   expectedTypes: string[];
   hasPhaseData: boolean;
   towers: TowerCompliance[];
+  phaseContext: string | null;
 }
 
 type SortKey = "pct" | "name" | "missing";
@@ -275,6 +276,7 @@ export default function TowerCompliance() {
         <p className="text-muted-foreground mt-1 text-sm">
           Per-tower required image coverage
           {data?.hasPhaseData ? ", broken down by phase and image type." : "."}
+          {data?.phaseContext ? ` Showing all towers in scope — navigate from matrix cell for phase: ${data.phaseContext}.` : ""}
         </p>
       </div>
 

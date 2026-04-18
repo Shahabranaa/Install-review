@@ -806,28 +806,16 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
     // ── 4. Build compliance response ────────────────────────────────────────
     // Only fall back to sheet_photos-only towers when no filter is active.
     // If a filter is specified, respect it strictly (even if it yields 0 towers).
-    const hasActiveFilter = !!(ospIdParam || stringIdParam || towerParam || phaseParam);
+    const hasActiveFilter = !!(ospIdParam || stringIdParam || towerParam);
     const towerNames = new Set<string>([
       ...filteredNames,
       ...(!hasActiveFilter ? actualByTower.keys() : []),
     ]);
 
-    // Optional phase filter: restrict to towers that have at least 1 photo with this phase_link
-    if (phaseParam) {
-      const phaseResult = await db.execute(sql`
-        SELECT DISTINCT location_link FROM sheet_photos
-        WHERE phase_link = ${phaseParam} AND location_link IS NOT NULL
-      `);
-      const phaseArr = Array.isArray(phaseResult)
-        ? phaseResult
-        : (phaseResult as unknown as { rows: unknown[] }).rows;
-      const phaseTowers = new Set(
-        (phaseArr as { location_link: string }[]).map(r => r.location_link)
-      );
-      for (const name of [...towerNames]) {
-        if (!phaseTowers.has(name)) towerNames.delete(name);
-      }
-    }
+    // Phase context: when phaseParam is set it is informational — do NOT restrict towerNames.
+    // Removing towers that lack photos for the phase would hide the very non-compliance
+    // that project managers need to see after clicking a low-coverage matrix cell.
+    // The phase value is echoed back in the response so the UI can display it as context.
 
     type PhaseCompliance = {
       phase: string;
@@ -869,7 +857,7 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
       };
     }).sort((a, b) => a.pct - b.pct || (a.tower < b.tower ? -1 : 1));
 
-    res.json({ expectedTypes, hasPhaseData, towers });
+    res.json({ expectedTypes, hasPhaseData, towers, phaseContext: phaseParam ?? null });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -913,7 +901,10 @@ router.get("/photos/phase-matrix", async (_req, res): Promise<void> => {
     const cells = Array.isArray(cellResult) ? cellResult : (cellResult as unknown as { rows: unknown[] }).rows;
     type CellRow = { photo_string: string; phase_link: string; towers_with_photos: number };
 
-    // 4. Phases — order by numeric suffix if available, else alphabetically
+    // 4. Phases — derived from observed sheet_photos.phase_link values.
+    // NOTE: the `phases` DB table (0 rows) and `required_image_definitions` (0 rows) provide no
+    // canonical phase list, so phases with zero global submissions are absent as columns.
+    // When a canonical phase master list is populated in the DB, union it here to expose 0% columns.
     const allPhases = [...new Set((cells as CellRow[]).map(r => r.phase_link))];
     const phaseOrder = (ph: string): [string, number] => {
       const m = ph.match(/^([A-Z]+)_(\d+)_/);
