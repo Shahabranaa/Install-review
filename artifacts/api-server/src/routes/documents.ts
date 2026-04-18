@@ -338,9 +338,9 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       });
     }
 
-    // 5. Generate PDF
+    // 5. Generate PDF (async — waits for PDFKit stream to fully flush)
     const generatedAt = new Date();
-    const pdfBuffer = generateHandoverPdf({ stringName: name, ospName, generatedBy, generatedAt, photos, reports });
+    const pdfBuffer = await generateHandoverPdf({ stringName: name, ospName, generatedBy, generatedAt, photos, reports });
 
     // 6. Upload to Wasabi (if configured)
     const dateStr   = generatedAt.toISOString().slice(0, 10);
@@ -357,7 +357,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       }));
     }
 
-    // 7. Record in DB
+    // 7. Record in DB (single insertion; non-Wasabi path stores PDF as base64 in content)
     const title = `Handover Pack — String ${name} (${dateStr})`;
     const [doc] = await db.insert(documentsTable).values({
       generatedBy,
@@ -367,11 +367,13 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       stringName:  name,
       ospName,
       wasabiKey:   wasabi ? wasabiKey : null,
+      // If Wasabi is unavailable, store the PDF as base64 so /download can serve it later
+      content:     wasabi ? null : pdfBuffer.toString("base64"),
       photoCount:  photos.length,
       reportCount: reports.length,
     }).returning();
 
-    // 8. If Wasabi not configured, send PDF as a direct download
+    // 8. If Wasabi not configured: stream PDF directly (row is already persisted above)
     if (!wasabi) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${safeStr}-handover-${dateStr}.pdf"`);
@@ -441,8 +443,21 @@ router.get("/documents/:id/download", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Document not found" });
     return;
   }
-  if (doc.packType === "handover" && doc.wasabiKey) {
-    res.redirect(`/api/reports/view?key=${encodeURIComponent(doc.wasabiKey)}`);
+  if (doc.packType === "handover") {
+    if (doc.wasabiKey) {
+      // Stored in Wasabi — proxy through the reports viewer
+      res.redirect(`/api/reports/view?key=${encodeURIComponent(doc.wasabiKey)}`);
+      return;
+    }
+    if (doc.content) {
+      // Stored as base64 in DB (no Wasabi configured)
+      const safeTitle = doc.title.replace(/[^a-zA-Z0-9-_.() ]/g, "_");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.pdf"`);
+      res.send(Buffer.from(doc.content, "base64"));
+      return;
+    }
+    res.status(404).json({ error: "Handover pack file not available" });
     return;
   }
   res.setHeader("Content-Type", "text/html");

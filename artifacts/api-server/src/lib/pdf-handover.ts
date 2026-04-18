@@ -52,10 +52,13 @@ const REPORT_TYPE_COLORS: Record<string, string> = {
   "Termination Completion": "#2c5282",
 };
 
-export function generateHandoverPdf(input: HandoverPackInput): Buffer {
+export function generateHandoverPdf(input: HandoverPackInput): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
   const chunks: Buffer[] = [];
   const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true });
   doc.on("data", (c: Buffer) => chunks.push(c));
+  doc.on("error", reject);
+  doc.on("end", () => resolve(Buffer.concat(chunks)));
 
   const W = doc.page.width - 100;
 
@@ -255,5 +258,5 @@ export function generateHandoverPdf(input: HandoverPackInput): Buffer {
   }
 
   doc.end();
-  return Buffer.concat(chunks);
+  }); // end Promise
 }
