@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, sql } from "drizzle-orm";
 import { db, sheetPhotosTable, requiredImageDefinitionsTable, towersTable, stringsTable, locationsTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
@@ -6,6 +6,14 @@ import { driveRequest } from "../lib/google-drive";
 import { PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID } from "../lib/drive-constants.js";
 
 const router: IRouter = Router();
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.session?.accessLevel !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  next();
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -414,6 +422,37 @@ async function upsertPhotosToDb(photos: PhotoRecord[]): Promise<void> {
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+
+// POST /api/photos/sync — force a fresh fetch from Google Sheets and await the full DB upsert
+router.post("/photos/sync", requireAdmin, async (req, res): Promise<void> => {
+  if (!isSheetsConfigured()) {
+    res.status(503).json({ error: "Google Sheets not configured" });
+    return;
+  }
+  try {
+    // Bust the in-memory cache so we always get fresh data from the sheet
+    sheetCache = null;
+
+    const response = await sheetsRequest(`/${SPREADSHEET_ID}/values/Photo!A1:BF`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Sheets API ${response.status}: ${text}`);
+    }
+    const data = await response.json() as { values?: string[][] };
+    const photos = parseRows(data.values ?? []);
+
+    // Update the cache with fresh data
+    sheetCache = { data: photos, ts: Date.now() };
+
+    // Await the upsert (unlike the background path in GET /photos/sheet)
+    await upsertPhotosToDb(photos);
+
+    res.json({ ok: true, synced: photos.length });
+  } catch (err: unknown) {
+    console.error("Photos sync error:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 // GET /api/photos/sheet
 router.get("/photos/sheet", async (req, res): Promise<void> => {

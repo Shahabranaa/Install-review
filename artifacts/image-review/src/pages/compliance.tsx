@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert, DatabaseZap, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const API = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function apiFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`, { credentials: "include" });
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, { credentials: "include", ...options });
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<T>;
 }
@@ -116,6 +118,22 @@ function ComplianceCard({ item }: { item: ComplianceItem }) {
 export default function Compliance() {
   const [cableLink, setCableLink] = useState<string>("none");
   const [phaseType, setPhaseType] = useState<string>("all");
+  const { toast } = useToast();
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+
+  const syncMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: boolean; synced: number }>("/api/photos/sync", { method: "POST" }),
+    onSuccess: (result) => {
+      toast({ title: `Sync complete — ${result.synced} photos loaded from sheet` });
+      qc.invalidateQueries({ queryKey: ["compliance"] });
+      qc.invalidateQueries({ queryKey: ["compliance-cables"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: cables, isLoading: cablesLoading } = useQuery<string[]>({
     queryKey: ["compliance-cables"],
@@ -155,10 +173,27 @@ export default function Compliance() {
           <h1 className="text-3xl font-bold tracking-tight">Compliance</h1>
           <p className="text-muted-foreground mt-2">Check which required images have been submitted per cable and phase.</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              title="Pull latest photos from Google Sheet into the database"
+            >
+              {syncMutation.isPending
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <DatabaseZap className="w-4 h-4 mr-2" />
+              }
+              {syncMutation.isPending ? "Syncing…" : "Sync Photos"}
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-4 bg-muted/30 rounded-lg p-4 border">
@@ -222,7 +257,21 @@ export default function Compliance() {
         <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground space-y-3">
           <ShieldAlert className="w-12 h-12 opacity-30" />
           <p className="text-sm font-medium">Select a cable to view compliance status.</p>
-          <p className="text-xs opacity-60">Choose a cable from the filter above to load required-image compliance data.</p>
+          {cables && cables.length === 0 && isAdmin ? (
+            <p className="text-xs opacity-70">
+              No photos synced yet.{" "}
+              <button
+                className="underline hover:opacity-100"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                Sync from Google Sheet
+              </button>{" "}
+              to load photo data.
+            </p>
+          ) : (
+            <p className="text-xs opacity-60">Choose a cable from the filter above to load required-image compliance data.</p>
+          )}
         </div>
       ) : isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
