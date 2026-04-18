@@ -290,7 +290,7 @@ export default function EditFieldReportPage(): JSX.Element {
           {template?.scope === "cable" && (
             <div>
               <Label>Cable</Label>
-              {cableOptionsWithCurrent.length > 0 ? (
+              {cableOptions.length > 0 ? (
                 <Select value={cableName} onValueChange={setCableName} disabled={isFinal || !stringName}>
                   <SelectTrigger>
                     <SelectValue placeholder={stringName ? "Pick a cable" : "Pick a string first"} />
