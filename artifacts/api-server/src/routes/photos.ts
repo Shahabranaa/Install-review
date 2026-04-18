@@ -803,10 +803,12 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
     }
 
     // ── 4. Build compliance response ────────────────────────────────────────
-    // Merge: towers from DB metadata + any towers only in sheet_photos (if no filter)
+    // Only fall back to sheet_photos-only towers when no filter is active.
+    // If a filter is specified, respect it strictly (even if it yields 0 towers).
+    const hasActiveFilter = !!(ospIdParam || stringIdParam || towerParam);
     const towerNames = new Set<string>([
       ...filteredNames,
-      ...(filteredNames.size === 0 ? actualByTower.keys() : []),
+      ...(!hasActiveFilter ? actualByTower.keys() : []),
     ]);
 
     type PhaseCompliance = {
