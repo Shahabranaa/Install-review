@@ -460,4 +460,122 @@ router.post("/setup/create-phases-for-locations", requireAdmin, async (req, res)
   }
 });
 
+// ─── Required Image Definitions CRUD ──────────────────────────────────────────
+
+router.get("/setup/required-image-definitions", async (req, res): Promise<void> => {
+  try {
+    const rows = await db
+      .select()
+      .from(requiredImageDefinitionsTable)
+      .orderBy(requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgOrder, requiredImageDefinitionsTable.reqImgType);
+    res.json(rows);
+  } catch (err: unknown) {
+    logger.error({ err }, "List required image definitions error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/setup/required-image-definitions", requireAdmin, async (req, res): Promise<void> => {
+  const { phaseType, reqImgType, reqImgOrder, description } = req.body as {
+    phaseType?: string;
+    reqImgType?: string;
+    reqImgOrder?: string;
+    description?: string;
+  };
+  if (!phaseType?.trim() || !reqImgType?.trim()) {
+    res.status(400).json({ error: "phaseType and reqImgType are required" });
+    return;
+  }
+  try {
+    const [row] = await db
+      .insert(requiredImageDefinitionsTable)
+      .values({
+        phaseType: phaseType.trim(),
+        reqImgType: reqImgType.trim(),
+        reqImgOrder: reqImgOrder?.trim() || null,
+        description: description?.trim() || null,
+      })
+      .returning();
+    res.status(201).json(row);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("unique")) {
+      res.status(409).json({ error: "A definition with this phase type and image type already exists" });
+    } else {
+      logger.error({ err }, "Create required image definition error");
+      res.status(500).json({ error: msg });
+    }
+  }
+});
+
+router.patch("/setup/required-image-definitions/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  const { phaseType, reqImgType, reqImgOrder, description } = req.body as {
+    phaseType?: string;
+    reqImgType?: string;
+    reqImgOrder?: string | null;
+    description?: string | null;
+  };
+  if (phaseType !== undefined && !phaseType.trim()) {
+    res.status(400).json({ error: "phaseType cannot be empty" });
+    return;
+  }
+  if (reqImgType !== undefined && !reqImgType.trim()) {
+    res.status(400).json({ error: "reqImgType cannot be empty" });
+    return;
+  }
+  const set: Partial<{ phaseType: string; reqImgType: string; reqImgOrder: string | null; description: string | null; updatedAt: Date }> = { updatedAt: new Date() };
+  if (phaseType !== undefined) set.phaseType = phaseType.trim();
+  if (reqImgType !== undefined) set.reqImgType = reqImgType.trim();
+  if (reqImgOrder !== undefined) set.reqImgOrder = reqImgOrder?.trim() || null;
+  if (description !== undefined) set.description = description?.trim() || null;
+
+  try {
+    const [row] = await db
+      .update(requiredImageDefinitionsTable)
+      .set(set)
+      .where(eq(requiredImageDefinitionsTable.id, id))
+      .returning();
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.json(row);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("unique")) {
+      res.status(409).json({ error: "A definition with this phase type and image type already exists" });
+    } else {
+      logger.error({ err }, "Update required image definition error");
+      res.status(500).json({ error: msg });
+    }
+  }
+});
+
+router.delete("/setup/required-image-definitions/:id", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  try {
+    const [row] = await db
+      .delete(requiredImageDefinitionsTable)
+      .where(eq(requiredImageDefinitionsTable.id, id))
+      .returning();
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.status(204).end();
+  } catch (err: unknown) {
+    logger.error({ err }, "Delete required image definition error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

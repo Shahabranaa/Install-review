@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronRight, ChevronDown, Plus, Pencil, Trash2, Loader2,
   DatabaseZap, Building2, Layers, Radio, Navigation, Cable,
-  AlertTriangle, Check,
+  AlertTriangle, Check, ListChecks, X, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ interface Site    { id: number; projectId: number; name: string; address: string
 interface Osp     { id: number; siteId: number; name: string; type: string; notes: string | null }
 interface Str     { id: number; locationId: number; name: string; stringNumber: number | null; status: string }
 interface Tower   { id: number; stringId: number; name: string; lat: number | null; lng: number | null; progressStatus: string; locationType: string; connectedTo: string | null; countOnString: number | null }
+interface ReqImgDef { id: number; phaseType: string; reqImgType: string; reqImgOrder: string | null; description: string | null }
 
 const STRING_STATUSES = ["pending", "in-progress", "complete", "excluded"];
 
@@ -51,6 +52,7 @@ const qk = {
   osps: (siteId?: number) => ["locations", siteId],
   strings: (locationId: number) => ["strings", locationId],
   towers: (stringId: number) => ["towers", stringId],
+  reqImgDefs: () => ["req-img-defs"],
 };
 
 // ─── Small reusable field ─────────────────────────────────────────────────────
@@ -611,6 +613,270 @@ function OspSection({ osp, onDelete }: { osp: Osp; onDelete: () => void }) {
   );
 }
 
+// ─── Required Image Definitions ───────────────────────────────────────────────
+
+function RequiredImageDefinitionsSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ phaseType: "", reqImgType: "", reqImgOrder: "", description: "" });
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [addForm, setAddForm] = useState({ phaseType: "", reqImgType: "", reqImgOrder: "", description: "" });
+  const [showAdd, setShowAdd] = useState(false);
+
+  const { data: defs, isLoading } = useQuery<ReqImgDef[]>({
+    queryKey: qk.reqImgDefs(),
+    queryFn: () => apiFetch("/api/setup/required-image-definitions"),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/setup/required-image-definitions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          phaseType: editForm.phaseType,
+          reqImgType: editForm.reqImgType,
+          reqImgOrder: editForm.reqImgOrder || null,
+          description: editForm.description || null,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.reqImgDefs() });
+      toast({ title: "Definition updated" });
+      setEditingId(null);
+    },
+    onError: (e: Error) => toast({ title: "Failed to update definition", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/setup/required-image-definitions/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.reqImgDefs() });
+      toast({ title: "Definition deleted" });
+      setDeletingId(null);
+    },
+    onError: (e: Error) => toast({ title: "Failed to delete definition", description: e.message, variant: "destructive" }),
+  });
+
+  const addMut = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/setup/required-image-definitions", {
+        method: "POST",
+        body: JSON.stringify({
+          phaseType: addForm.phaseType,
+          reqImgType: addForm.reqImgType,
+          reqImgOrder: addForm.reqImgOrder || null,
+          description: addForm.description || null,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.reqImgDefs() });
+      toast({ title: "Definition added" });
+      setAddForm({ phaseType: "", reqImgType: "", reqImgOrder: "", description: "" });
+      setShowAdd(false);
+    },
+    onError: (e: Error) => toast({ title: "Failed to add definition", description: e.message, variant: "destructive" }),
+  });
+
+  const grouped = defs?.reduce<Record<string, ReqImgDef[]>>((acc, d) => {
+    (acc[d.phaseType] ??= []).push(d);
+    return acc;
+  }, {}) ?? {};
+  const phases = Object.keys(grouped).sort();
+
+  const deletingDef = defs?.find((d) => d.id === deletingId);
+
+  function startEdit(def: ReqImgDef) {
+    setEditingId(def.id);
+    setEditForm({
+      phaseType: def.phaseType,
+      reqImgType: def.reqImgType,
+      reqImgOrder: def.reqImgOrder ?? "",
+      description: def.description ?? "",
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <ListChecks className="h-4 w-4" /> Required Image Definitions
+        </h2>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowAdd(true)}>
+          <Plus className="h-3 w-3 mr-1" /> Add Definition
+        </Button>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      )}
+
+      {!isLoading && phases.length === 0 && (
+        <div className="text-center py-10 border border-dashed border-border/60 rounded-lg">
+          <ListChecks className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
+          <p className="text-sm text-muted-foreground">No required image definitions yet.</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">
+            Add definitions manually or import phase definitions from the sheet.
+          </p>
+        </div>
+      )}
+
+      {phases.map((phase) => (
+        <div key={phase} className="rounded-lg border border-border/60 bg-card overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b border-border/40">
+            <Layers className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" />
+            <span className="font-semibold text-sm">{phase}</span>
+            <Badge variant="secondary" className="text-[10px] ml-auto">{grouped[phase].length} types</Badge>
+          </div>
+
+          <div className="divide-y divide-border/30">
+            {grouped[phase].map((def) => (
+              <div key={def.id}>
+                {editingId === def.id ? (
+                  <div className="p-3 space-y-2 bg-muted/10">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Phase Type *">
+                        <Input
+                          value={editForm.phaseType}
+                          onChange={(e) => setEditForm((f) => ({ ...f, phaseType: e.target.value }))}
+                          className="h-7 text-xs"
+                        />
+                      </Field>
+                      <Field label="Image Type *">
+                        <Input
+                          value={editForm.reqImgType}
+                          onChange={(e) => setEditForm((f) => ({ ...f, reqImgType: e.target.value }))}
+                          className="h-7 text-xs"
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Order">
+                        <Input
+                          value={editForm.reqImgOrder}
+                          onChange={(e) => setEditForm((f) => ({ ...f, reqImgOrder: e.target.value }))}
+                          className="h-7 text-xs"
+                          placeholder="e.g. 1"
+                        />
+                      </Field>
+                      <Field label="Description">
+                        <Input
+                          value={editForm.description}
+                          onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                          className="h-7 text-xs"
+                          placeholder="Optional"
+                        />
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-1.5">
+                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setEditingId(null)}>
+                        <X className="h-3 w-3 mr-1" /> Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => updateMut.mutate(def.id)}
+                        disabled={updateMut.isPending || !editForm.phaseType.trim() || !editForm.reqImgType.trim()}
+                      >
+                        {updateMut.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 group text-sm">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-xs">{def.reqImgType}</span>
+                      {def.description && (
+                        <span className="text-[11px] text-muted-foreground ml-2">{def.description}</span>
+                      )}
+                    </div>
+                    {def.reqImgOrder && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-mono">#{def.reqImgOrder}</Badge>
+                    )}
+                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => startEdit(def)}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive" onClick={() => setDeletingId(def.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Add Definition Dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Add Required Image Definition</DialogTitle></DialogHeader>
+          <div className="grid gap-3 py-2">
+            <Field label="Phase Type *">
+              <Input
+                value={addForm.phaseType}
+                onChange={(e) => setAddForm((f) => ({ ...f, phaseType: e.target.value }))}
+                placeholder="e.g. Grouting"
+                autoFocus
+              />
+            </Field>
+            <Field label="Image Type *">
+              <Input
+                value={addForm.reqImgType}
+                onChange={(e) => setAddForm((f) => ({ ...f, reqImgType: e.target.value }))}
+                placeholder="e.g. Cleanliness Check"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Order">
+                <Input
+                  value={addForm.reqImgOrder}
+                  onChange={(e) => setAddForm((f) => ({ ...f, reqImgOrder: e.target.value }))}
+                  placeholder="e.g. 1"
+                />
+              </Field>
+              <Field label="Description">
+                <Input
+                  value={addForm.description}
+                  onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </Field>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button
+              onClick={() => addMut.mutate()}
+              disabled={addMut.isPending || !addForm.phaseType.trim() || !addForm.reqImgType.trim()}
+            >
+              {addMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Add Definition
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm */}
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => { if (!v) setDeletingId(null); }}
+        title="Delete Definition"
+        description={deletingDef
+          ? `Delete "${deletingDef.reqImgType}" from phase "${deletingDef.phaseType}"? This may affect compliance calculations.`
+          : "Delete this definition?"}
+        onConfirm={() => { if (deletingId !== null) deleteMut.mutate(deletingId); }}
+        loading={deleteMut.isPending}
+      />
+    </div>
+  );
+}
+
 // ─── Import Result Modal ──────────────────────────────────────────────────────
 
 interface ImportResult {
@@ -838,6 +1104,9 @@ export default function SetupPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Required Image Definitions */}
+      <RequiredImageDefinitionsSection />
 
       {/* Import Result */}
       <ImportResultDialog
