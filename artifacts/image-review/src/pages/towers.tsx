@@ -5,9 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
   ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye, Cable,
+  Package, Loader2,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -702,6 +704,8 @@ export default function Towers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOspId, setSelectedOspId] = useState<number | undefined>(undefined);
   const [selectedTower, setSelectedTower] = useState<TowerRecord | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const { toast } = useToast();
 
   const { data: locations } = useListLocations();
   const ospLocations = locations?.filter((l) => l.type === "OSP") ?? [];
@@ -764,6 +768,47 @@ export default function Towers() {
     ensureReports();
   };
 
+  // ── Generate handover pack for the currently selected string ──────────────
+  const selectedString = strings?.find(s => s.id === selectedStringId);
+
+  const generateHandoverPack = useCallback(async () => {
+    if (!selectedString) return;
+    setGenerating(true);
+    try {
+      const resp = await fetch(`${BASE_URL}api/documents/generate-handover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stringName: selectedString.name, generatedBy: "User" }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(err.error ?? `HTTP ${resp.status}`);
+      }
+      // If Wasabi is not configured the server sends the PDF directly
+      const ct = resp.headers.get("content-type") ?? "";
+      if (ct.includes("application/pdf")) {
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${selectedString.name}-handover.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({ title: "Handover pack downloaded", description: `String ${selectedString.name}` });
+      } else {
+        toast({ title: "Handover pack generated", description: `String ${selectedString.name} — saved to Wasabi.` });
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Generation failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }, [selectedString, toast]);
+
   // If a tower folder is open, render it
   if (selectedTower) {
     return (
@@ -788,18 +833,36 @@ export default function Towers() {
   return (
     <div className="p-8 space-y-5">
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Towers</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            {strings?.find(s => s.id === selectedStringId)
-              ? `String ${strings?.find(s => s.id === selectedStringId)?.name}`
+            {selectedString
+              ? `String ${selectedString.name}`
               : "Offshore wind turbine locations"}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Wind className="w-4 h-4" />
-          <span>{filteredTowers.length} towers</span>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {selectedString && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateHandoverPack}
+              disabled={generating}
+              className="gap-1.5"
+            >
+              {generating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Package className="w-3.5 h-3.5" />
+              )}
+              {generating ? "Generating…" : "Generate Handover Pack"}
+            </Button>
+          )}
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Wind className="w-4 h-4" />
+            <span>{filteredTowers.length} towers</span>
+          </div>
         </div>
       </div>
 

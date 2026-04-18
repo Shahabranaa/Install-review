@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray } from "drizzle-orm";
-import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable } from "@workspace/db";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, pool } from "@workspace/db";
 import {
   ListDocumentsQueryParams,
   ListDocumentsResponse,
@@ -9,9 +10,67 @@ import {
   GetDocumentResponse,
   DownloadDocumentParams,
 } from "@workspace/api-zod";
-import { serialize } from "../lib/serialize";
+import { serialize } from "../lib/serialize.js";
+import { getWasabiClientAndCreds } from "../lib/wasabi.js";
+import { generateHandoverPdf, type HandoverPhoto, type HandoverReport } from "../lib/pdf-handover.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
+
+const FIELD_REPORTS_PREFIX = "[Output] Field Reports/";
+
+// ── Helper: parse drivePath into {site, string, cable, name} ─────────────────
+
+interface ParsedReport {
+  site: string;
+  string: string;
+  cable: string | null;
+  name: string;
+  reportType: string;
+}
+
+function parseReportType(name: string): string {
+  const n = name.replace(/\.pdf$/i, "").toLowerCase();
+  if (n.includes("as-found"))               return "As-Found";
+  if (n.includes("as-left"))                return "As-Left";
+  if (n.includes("completion check"))       return "Completion Check";
+  if (n.includes("fo termination"))         return "FO Termination";
+  if (n.includes("iccp"))                   return "ICCP";
+  if (n.includes("pull-in preparation") || n.includes("pull in preparation")) return "Pull-in Preparation";
+  if (n.includes("temporary hang off"))     return "Temporary Hang Off";
+  if (n.includes("permanent hang off"))     return "Permanent Hang Off";
+  if (n.includes("cable pull-in") || n.includes("cable pull in")) return "Cable Pull-in";
+  if (n.includes("termination completion")) return "Termination Completion";
+  if (n.includes("termination activit"))    return "FO Termination";
+  return "Report";
+}
+
+function parseDrivePath(drivePath: string, fileName: string): ParsedReport | null {
+  const stripped = drivePath.slice(FIELD_REPORTS_PREFIX.length);
+  const parts = stripped.split("/").filter(Boolean);
+  const last = parts[parts.length - 1];
+  const pathParts = (last === fileName || last.toLowerCase() === fileName.toLowerCase())
+    ? parts.slice(0, -1)
+    : parts;
+  if (pathParts.length < 2) return null;
+  const [site, stringName, ...rest] = pathParts;
+  const cable = rest.length > 0 ? rest[0] : null;
+  const name = fileName;
+  return {
+    site: site ?? "Unknown",
+    string: stringName ?? "Unknown",
+    cable,
+    name,
+    reportType: parseReportType(name),
+  };
+}
+
+function stripNameBlurb(name: string): string {
+  const idx = name.search(/ for /i);
+  return idx !== -1 ? name.slice(idx + 5) : name;
+}
+
+// ── GET /documents ─────────────────────────────────────────────────────────────
 
 router.get("/documents", async (req, res): Promise<void> => {
   const queryParams = ListDocumentsQueryParams.safeParse(req.query);
@@ -23,6 +82,25 @@ router.get("/documents", async (req, res): Promise<void> => {
   }
   res.json(ListDocumentsResponse.parse(serialize(documents)));
 });
+
+// ── GET /documents/handover — list handover packs only ────────────────────────
+
+router.get("/documents/handover", async (_req, res): Promise<void> => {
+  try {
+    const packs = await db
+      .select()
+      .from(documentsTable)
+      .where(eq(documentsTable.packType, "handover"))
+      .orderBy(documentsTable.generatedAt);
+
+    res.json({ packs: serialize(packs), total: packs.length });
+  } catch (err: unknown) {
+    logger.error({ err }, "Failed to list handover packs");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── POST /documents/generate ─────────────────────────────────────────────────
 
 router.post("/documents/generate", async (req, res): Promise<void> => {
   const parsed = GenerateDocumentBody.safeParse(req.body);
@@ -147,6 +225,137 @@ router.post("/documents/generate", async (req, res): Promise<void> => {
   res.status(201).json(GetDocumentResponse.parse(serialize(doc)));
 });
 
+// ── POST /documents/generate-handover — PDF handover pack for a string ────────
+
+router.post("/documents/generate-handover", async (req, res): Promise<void> => {
+  const { stringName, generatedBy } = req.body as { stringName?: string; generatedBy?: string };
+
+  if (!stringName || typeof stringName !== "string" || stringName.trim() === "") {
+    res.status(400).json({ error: "stringName is required" });
+    return;
+  }
+  if (!generatedBy || typeof generatedBy !== "string") {
+    res.status(400).json({ error: "generatedBy is required" });
+    return;
+  }
+
+  const name = stringName.trim();
+
+  try {
+    // 1. Fetch approved photos for the string (ordered by cable → phase → req_img_order)
+    const photoRows = await pool.query<{
+      photo_id: string;
+      cable_link: string | null;
+      phase_link: string | null;
+      req_img_type: string | null;
+      req_img_order: string | null;
+      approval: string | null;
+      label: string | null;
+    }>(`
+      SELECT photo_id, cable_link, phase_link, req_img_type, req_img_order, approval, label
+      FROM sheet_photos
+      WHERE photo_string = $1
+        AND LOWER(COALESCE(approval,'')) IN ('approved','checked','verified')
+      ORDER BY cable_link NULLS LAST, phase_link NULLS LAST,
+               CAST(NULLIF(regexp_replace(req_img_order,'[^0-9]','','g'),'') AS integer) NULLS LAST
+    `, [name]);
+
+    const photos: HandoverPhoto[] = photoRows.rows.map(r => ({
+      photoId:    r.photo_id,
+      cableLink:  r.cable_link,
+      phaseLink:  r.phase_link,
+      reqImgType: r.req_img_type,
+      reqImgOrder: r.req_img_order,
+      approval:   r.approval,
+      label:      r.label,
+    }));
+
+    // 2. Fetch field reports for the string from the wasabi mirror table
+    const reportRows = await pool.query<{
+      drive_path: string;
+      file_name: string;
+      wasabi_key: string;
+    }>(`
+      SELECT drive_path, file_name, wasabi_key
+      FROM wasabi_mirror_tasks
+      WHERE drive_path LIKE $1
+        AND lower(file_name) LIKE '%.pdf'
+        AND status = 'done'
+      ORDER BY drive_path
+    `, [FIELD_REPORTS_PREFIX + "%"]);
+
+    const reports: HandoverReport[] = [];
+    for (const row of reportRows.rows) {
+      const parsed = parseDrivePath(row.drive_path, row.file_name);
+      if (!parsed) continue;
+      if (parsed.string !== name) continue;
+      reports.push({
+        name:       stripNameBlurb(parsed.name.replace(/\.pdf$/i, "")),
+        reportType: parsed.reportType,
+        cable:      parsed.cable,
+        string:     parsed.string,
+      });
+    }
+
+    // 3. Generate PDF
+    const generatedAt = new Date();
+    const pdfBuffer = generateHandoverPdf({ stringName: name, generatedBy, generatedAt, photos, reports });
+
+    // 4. Upload to Wasabi (if configured)
+    const dateStr = generatedAt.toISOString().slice(0, 10);
+    const timeStr = generatedAt.toISOString().slice(11, 16).replace(":", "");
+    const safeString = name.replace(/[^a-zA-Z0-9\-_.()]/g, "_");
+    const wasabiKey = `[Output] Handover Packs/${safeString}/${safeString}-${dateStr}_${timeStr}.pdf`;
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (wasabi) {
+      await wasabi.client.send(new PutObjectCommand({
+        Bucket:      wasabi.creds.bucket,
+        Key:         wasabiKey,
+        Body:        pdfBuffer,
+        ContentType: "application/pdf",
+      }));
+    }
+
+    // 5. Record in documents table
+    const title = `Handover Pack — String ${name} (${dateStr})`;
+    const [doc] = await db.insert(documentsTable).values({
+      generatedBy,
+      generatedAt,
+      title,
+      packType:    "handover",
+      stringName:  name,
+      wasabiKey:   wasabi ? wasabiKey : null,
+      photoCount:  photos.length,
+      reportCount: reports.length,
+    }).returning();
+
+    // 6. If Wasabi not configured, send the PDF directly as download
+    if (!wasabi) {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeString}-handover-${dateStr}.pdf"`);
+      res.send(pdfBuffer);
+      return;
+    }
+
+    res.status(201).json({
+      id:          doc.id,
+      title:       doc.title,
+      stringName:  doc.stringName,
+      wasabiKey:   doc.wasabiKey,
+      photoCount:  doc.photoCount,
+      reportCount: doc.reportCount,
+      generatedAt: doc.generatedAt,
+      generatedBy: doc.generatedBy,
+    });
+  } catch (err: unknown) {
+    logger.error({ err }, "Failed to generate handover pack");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── GET /documents/:id ────────────────────────────────────────────────────────
+
 router.get("/documents/:id", async (req, res): Promise<void> => {
   const params = GetDocumentParams.safeParse(req.params);
   if (!params.success) {
@@ -161,6 +370,8 @@ router.get("/documents/:id", async (req, res): Promise<void> => {
   res.json(GetDocumentResponse.parse(serialize(doc)));
 });
 
+// ── GET /documents/:id/download ───────────────────────────────────────────────
+
 router.get("/documents/:id/download", async (req, res): Promise<void> => {
   const params = DownloadDocumentParams.safeParse(req.params);
   if (!params.success) {
@@ -172,6 +383,13 @@ router.get("/documents/:id/download", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Document not found" });
     return;
   }
+
+  // Handover packs are stored as PDFs in Wasabi — redirect to the view endpoint
+  if (doc.packType === "handover" && doc.wasabiKey) {
+    res.redirect(`/api/reports/view?key=${encodeURIComponent(doc.wasabiKey)}`);
+    return;
+  }
+
   res.setHeader("Content-Type", "text/html");
   res.setHeader("Content-Disposition", `attachment; filename="${doc.title.replace(/[^a-zA-Z0-9-_]/g, "_")}.html"`);
   res.send(doc.content ?? "<html><body><p>No content</p></body></html>");

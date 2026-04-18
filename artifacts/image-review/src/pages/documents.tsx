@@ -1,65 +1,134 @@
-import { useListDocuments } from "@workspace/api-client-react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Download, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FileText, Download, Clock, Package, Camera, BarChart2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 
+const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
+
+interface HandoverPack {
+  id: number;
+  title: string;
+  stringName: string | null;
+  wasabiKey: string | null;
+  photoCount: number | null;
+  reportCount: number | null;
+  generatedAt: string;
+  generatedBy: string;
+}
+
 export default function Documents() {
-  const { data: documents, isLoading } = useListDocuments();
+  const [packs, setPacks] = useState<HandoverPack[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${BASE_URL}api/documents/handover`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: { packs: HandoverPack[] }) => setPacks(data.packs ?? []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Generated Documents</h1>
-          <p className="text-muted-foreground mt-2">Access phase completion certificates and audit reports.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Handover Packs</h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            PDF handover packages generated per string. Generate a new pack from the Towers page by selecting a string.
+          </p>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+      {loading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-44 w-full rounded-xl" />)}
         </div>
-      ) : documents?.length === 0 ? (
+      ) : error ? (
+        <Card className="flex flex-col items-center justify-center p-12 text-center border-destructive/30">
+          <FileText className="h-12 w-12 text-destructive/40 mb-4" />
+          <h3 className="text-lg font-semibold text-destructive">Failed to load</h3>
+          <p className="text-muted-foreground text-sm mt-1">{error}</p>
+        </Card>
+      ) : packs.length === 0 ? (
         <Card className="flex flex-col items-center justify-center p-12 text-center bg-muted/50 border-dashed">
-          <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold">No documents found</h3>
-          <p className="text-muted-foreground mt-1">Documents will appear here once they are generated from completed phases.</p>
+          <Package className="h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold">No handover packs yet</h3>
+          <p className="text-muted-foreground mt-1 text-sm max-w-sm">
+            Navigate to the Towers page, select a string, and click "Generate Handover Pack" to create your first pack.
+          </p>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {documents?.map(doc => (
-            <Card key={doc.id} className="hover-elevate transition-all flex flex-col">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-start gap-2">
-                  <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                  <span className="line-clamp-2">{doc.title}</span>
+          {packs.map(pack => (
+            <Card key={pack.id} className="flex flex-col hover:shadow-md transition-shadow">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-start gap-2">
+                  <Package className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                  <span className="line-clamp-2 leading-snug">{pack.title}</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col justify-between">
-                <div className="space-y-2 mb-6">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Phase ID</span>
-                    <span className="font-medium">#{doc.phaseId}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Generated By</span>
-                    <span className="font-medium">{doc.generatedBy}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Date</span>
-                    <span className="font-medium flex items-center">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {format(new Date(doc.generatedAt), 'MMM d, yyyy')}
+              <CardContent className="flex-1 flex flex-col justify-between gap-4">
+                <div className="space-y-2 text-sm">
+                  {pack.stringName && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">String</span>
+                      <span className="font-medium">{pack.stringName}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <Camera className="w-3.5 h-3.5" />
+                      Photos
                     </span>
+                    <span className="font-medium">{pack.photoCount ?? "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <BarChart2 className="w-3.5 h-3.5" />
+                      Reports
+                    </span>
+                    <span className="font-medium">{pack.reportCount ?? "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      Date
+                    </span>
+                    <span className="font-medium">{format(new Date(pack.generatedAt), "dd MMM yyyy")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Generated by</span>
+                    <span className="font-medium truncate ml-2">{pack.generatedBy}</span>
                   </div>
                 </div>
-                
-                <Button variant="outline" className="w-full" onClick={() => window.open(`/api/documents/${doc.id}/download`, '_blank')}>
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </Button>
+
+                {pack.wasabiKey ? (
+                  <a
+                    href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(pack.wasabiKey)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="outline" className="w-full gap-2">
+                      <ExternalLink className="w-4 h-4" />
+                      Open PDF
+                    </Button>
+                  </a>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={() => {
+                      window.open(`${BASE_URL}api/documents/${pack.id}/download`, "_blank");
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

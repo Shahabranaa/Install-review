@@ -49,6 +49,16 @@ Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Im
 - Auth: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - Drive: `/api/drive/*`
 - Photos from sheet: `GET /api/photos/sheet`, `GET /api/photos/resolve/:photoId`, `GET /api/photos/db/:photoId`, `PATCH /api/photos/db/:photoId`, `POST /api/photos/cache-clear`
+- Handover packs: `POST /api/documents/generate-handover`, `GET /api/documents/handover`
+
+### Handover Package Generator (Task #4)
+- `POST /api/documents/generate-handover` — generates a PDF pack for a string (all approved photos + field reports), uploads to Wasabi under `[Output] Handover Packs/{string}/{string}-{date}.pdf`, records in DB
+- `GET /api/documents/handover` — lists all handover packs (packType='handover' rows from documents table)
+- PDF rendered with pdfkit (externalized in esbuild build.mjs); includes cover page, photo manifest table, reports section
+- `documents` table extended: `phase_id` is now nullable; added `pack_type`, `string_name`, `wasabi_key`, `photo_count`, `report_count`
+- "Generate Handover Pack" button visible on Towers page when a string is selected
+- "Handover Packs" nav item added to sidebar → `/documents`
+- Key files: `artifacts/api-server/src/lib/pdf-handover.ts`, `artifacts/api-server/src/routes/documents.ts`
 
 ### Google Sheets / Drive Photo Integration
 - Spreadsheet: `1qcr0jZEH7pwBmUlr6XS7YK4sa-Kqk2zvXFpBTJ5velw` — `Photo` tab (48 columns)
