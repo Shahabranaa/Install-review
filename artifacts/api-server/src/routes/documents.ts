@@ -19,7 +19,6 @@ import pLimit from "p-limit";
 const router: IRouter = Router();
 
 const FIELD_REPORTS_PREFIX = "[Output] Field Reports/";
-const MAX_PHOTOS_IN_PDF    = 120;
 
 // ── Helper: parse drivePath into ParsedReport ─────────────────────────────────
 
@@ -275,8 +274,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
         AND LOWER(COALESCE(approval,'')) IN ('approved','checked','verified')
       ORDER BY cable_link NULLS LAST, phase_link NULLS LAST,
                CAST(NULLIF(regexp_replace(COALESCE(req_img_order,''),'[^0-9]','','g'),'') AS integer) NULLS LAST
-      LIMIT $2
-    `, [name, MAX_PHOTOS_IN_PDF]);
+    `, [name]);
 
     // 3. Fetch approved photo images from Wasabi (parallel, max 8 concurrent)
     const wasabi = await getWasabiClientAndCreds();
