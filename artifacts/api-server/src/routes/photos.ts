@@ -975,10 +975,13 @@ router.get("/photos/phase-matrix", async (_req, res): Promise<void> => {
     const totalPhaseCount    = phases.length;
 
     const zeroPhotos      = allTowerRows.filter(t => !towersWithAnyPhoto.has(t.name)).length;
-    const fullyDocumented = allTowerRows.filter(t => (towerPhaseCounts.get(t.name) ?? 0) >= totalPhaseCount).length;
+    // Guard: when no phase data exists, no tower can be "fully documented"
+    const fullyDocumented = totalPhaseCount > 0
+      ? allTowerRows.filter(t => (towerPhaseCounts.get(t.name) ?? 0) >= totalPhaseCount).length
+      : 0;
     const withGaps        = allTowerRows.filter(t => {
       const n = towerPhaseCounts.get(t.name) ?? 0;
-      return n > 0 && n < totalPhaseCount;
+      return n > 0 && (totalPhaseCount === 0 || n < totalPhaseCount);
     }).length;
 
     res.json({
@@ -1008,10 +1011,10 @@ router.get("/photos/velocity", async (_req, res): Promise<void> => {
     `);
     const rows = Array.isArray(result) ? result : (result as unknown as { rows: unknown[] }).rows;
 
-    // Parse "M/D/YYYY" → Date and filter last 60 days
+    // Parse "M/D/YYYY" → Date and filter last 60 days (inclusive today = 60 points)
     const now    = new Date();
     const cutoff = new Date(now);
-    cutoff.setDate(cutoff.getDate() - 60);
+    cutoff.setDate(cutoff.getDate() - 59);  // day -59 through day 0 = 60 entries
     cutoff.setHours(0, 0, 0, 0);
 
     type DateRow = { creation_date: string; count: number };

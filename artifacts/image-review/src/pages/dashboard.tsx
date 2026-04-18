@@ -55,14 +55,13 @@ function abbrevPhase(phase: string): string {
 }
 
 function cellColor(pct: number): string {
-  if (pct === 0) return "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500";
   if (pct >= 90) return "bg-green-100 text-green-800 dark:bg-green-950/70 dark:text-green-300";
   if (pct >= 50) return "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300";
   return "bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-300";
 }
 
 function cellBorderColor(pct: number): string {
-  if (pct === 0) return "border-slate-200 dark:border-slate-700";
+  if (pct === 0) return "border-red-200 dark:border-red-800";
   if (pct >= 90) return "border-green-200 dark:border-green-800";
   if (pct >= 50) return "border-amber-200 dark:border-amber-800";
   return "border-red-200 dark:border-red-800";
@@ -108,7 +107,6 @@ function MatrixLegend() {
         { label: "≥ 90%", cls: "bg-green-100 border-green-200 text-green-800" },
         { label: "50–89%", cls: "bg-amber-100 border-amber-200 text-amber-800" },
         { label: "< 50%", cls: "bg-red-100 border-red-200 text-red-800" },
-        { label: "0%", cls: "bg-slate-100 border-slate-200 text-slate-400" },
       ].map(({ label, cls }) => (
         <span key={label} className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${cls}`}>
           {label}
@@ -180,12 +178,12 @@ function CompletionMatrix({
                   className={[
                     "px-1 py-1.5 text-center border-r border-border/30",
                     cellColor(cell.pct),
-                    cell.pct > 0 && row.stringId
+                    row.stringId
                       ? "cursor-pointer hover:opacity-70 transition-opacity"
                       : "",
                   ].join(" ")}
                   title={`${row.string} × ${cell.phase}: ${cell.towersWithPhotos}/${row.totalTowers} towers (${cell.pct}%)`}
-                  onClick={() => cell.pct > 0 && onCellClick(row.stringId, row.string, cell.phase)}
+                  onClick={() => onCellClick(row.stringId, row.string, cell.phase)}
                 >
                   <span className={`inline-block px-1 py-0.5 rounded border text-[11px] font-mono font-medium ${cellBorderColor(cell.pct)}`}>
                     {cell.pct === 0 ? "—" : `${cell.pct}%`}
