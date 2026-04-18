@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import {
   db,
   projectsTable,
@@ -7,6 +7,9 @@ import {
   locationsTable,
   stringsTable,
   towersTable,
+  phasesTable,
+  sheetPhotosTable,
+  requiredImageDefinitionsTable,
 } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { logger } from "../lib/logger";
@@ -230,6 +233,171 @@ router.post("/setup/import-from-sheet", async (req, res): Promise<void> => {
     res.json(result);
   } catch (err: unknown) {
     logger.error({ err }, "Import from sheet error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+async function importPhaseDefinitions(): Promise<{ phaseTypes: number; definitions: number; created: number; updated: number }> {
+  const defsMap = new Map<string, { reqImgOrder: string | null; description: string | null }>();
+
+  // ─── Try gid=8644251 tab first ───────────────────────────────────────────
+  try {
+    const params = new URLSearchParams({ ranges: "A1:Z1" });
+    const metaResp = await sheetsRequest(`/${SPREADSHEET_ID}?fields=sheets(properties(sheetId,title))`, params);
+    if (metaResp.ok) {
+      const meta = await metaResp.json() as { sheets?: { properties: { sheetId: number; title: string } }[] };
+      const tab = meta.sheets?.find((s) => s.properties.sheetId === 8644251);
+      if (tab) {
+        const tabName = tab.properties.title;
+        const rows = await fetchSheet(`${tabName}!A:Z`);
+        const headers = rows[0] ?? [];
+        logger.info({ headers, tabName }, "[setup] Phase definitions tab headers");
+
+        const phaseTypeIdx = bestCol(headers, "phase_type", "phase type", "phasetype", "Phase_Type", "Installation_Phase");
+        const reqImgTypeIdx = bestCol(headers, "req_img_type", "required_image_type", "Required_Image_Type", "Req_Img_Type", "image_type");
+        const reqImgOrderIdx = bestCol(headers, "req_img_order", "Required_Image_Order", "image_order", "order");
+        const descIdx = bestCol(headers, "description", "Description", "desc");
+        const get = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
+
+        if (phaseTypeIdx >= 0 && reqImgTypeIdx >= 0) {
+          for (const row of rows.slice(1)) {
+            const pt = get(row, phaseTypeIdx);
+            const rit = get(row, reqImgTypeIdx);
+            if (!pt || !rit) continue;
+            const key = `${pt}|||${rit}`;
+            defsMap.set(key, {
+              reqImgOrder: reqImgOrderIdx >= 0 ? get(row, reqImgOrderIdx) || null : null,
+              description: descIdx >= 0 ? get(row, descIdx) || null : null,
+            });
+          }
+          logger.info({ count: defsMap.size }, "[setup] Phase definitions loaded from dedicated tab");
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "[setup] Could not read gid=8644251 tab, falling back to sheet_photos");
+  }
+
+  // ─── Fallback: derive from sheet_photos DISTINCT values ──────────────────
+  if (defsMap.size === 0) {
+    const distinctRows = await db
+      .selectDistinct({
+        phaseLink: sheetPhotosTable.phaseLink,
+        reqImgType: sheetPhotosTable.reqImgType,
+        reqImgOrder: sheetPhotosTable.reqImgOrder,
+      })
+      .from(sheetPhotosTable)
+      .where(and(
+        sql`${sheetPhotosTable.phaseLink} IS NOT NULL`,
+        sql`${sheetPhotosTable.reqImgType} IS NOT NULL`,
+      ));
+    for (const row of distinctRows) {
+      if (!row.phaseLink || !row.reqImgType) continue;
+      const key = `${row.phaseLink}|||${row.reqImgType}`;
+      if (!defsMap.has(key)) {
+        defsMap.set(key, { reqImgOrder: row.reqImgOrder ?? null, description: null });
+      }
+    }
+    logger.info({ count: defsMap.size }, "[setup] Phase definitions derived from sheet_photos");
+  }
+
+  const phaseTypes = new Set<string>();
+  let created = 0;
+  let updated = 0;
+
+  for (const [key, extra] of defsMap) {
+    const [phaseType, reqImgType] = key.split("|||");
+    if (!phaseType || !reqImgType) continue;
+    phaseTypes.add(phaseType);
+
+    const existing = await db
+      .select()
+      .from(requiredImageDefinitionsTable)
+      .where(and(
+        eq(requiredImageDefinitionsTable.phaseType, phaseType),
+        eq(requiredImageDefinitionsTable.reqImgType, reqImgType),
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(requiredImageDefinitionsTable)
+        .set({ reqImgOrder: extra.reqImgOrder, description: extra.description, updatedAt: new Date() })
+        .where(eq(requiredImageDefinitionsTable.id, existing[0]!.id));
+      updated++;
+    } else {
+      await db.insert(requiredImageDefinitionsTable).values({
+        phaseType,
+        reqImgType,
+        reqImgOrder: extra.reqImgOrder,
+        description: extra.description,
+      });
+      created++;
+    }
+  }
+
+  return { phaseTypes: phaseTypes.size, definitions: defsMap.size, created, updated };
+}
+
+async function createPhasesForAllLocations(): Promise<{ created: number; skipped: number }> {
+  const phaseTypes = await db
+    .selectDistinct({ phaseType: requiredImageDefinitionsTable.phaseType })
+    .from(requiredImageDefinitionsTable);
+  if (phaseTypes.length === 0) return { created: 0, skipped: 0 };
+
+  const osps = await db.select().from(locationsTable).where(eq(locationsTable.type, "OSP"));
+  let created = 0;
+  let skipped = 0;
+
+  for (const osp of osps) {
+    for (const { phaseType } of phaseTypes) {
+      if (!phaseType) continue;
+      const existing = await db
+        .select()
+        .from(phasesTable)
+        .where(and(eq(phasesTable.locationId, osp.id), eq(phasesTable.phaseType, phaseType)))
+        .limit(1);
+      if (existing.length > 0) {
+        skipped++;
+      } else {
+        const defCount = await db
+          .select()
+          .from(requiredImageDefinitionsTable)
+          .where(eq(requiredImageDefinitionsTable.phaseType, phaseType));
+        await db.insert(phasesTable).values({
+          locationId: osp.id,
+          phaseType,
+          status: "pending",
+          requiredImageCount: defCount.length,
+        });
+        created++;
+      }
+    }
+  }
+  return { created, skipped };
+}
+
+router.post("/setup/import-phase-definitions", async (req, res): Promise<void> => {
+  if (!isSheetsConfigured()) {
+    res.status(503).json({ error: "Google Sheets not configured" });
+    return;
+  }
+  try {
+    const defResult = await importPhaseDefinitions();
+    const phaseResult = await createPhasesForAllLocations();
+    res.json({ definitions: defResult, phases: phaseResult });
+  } catch (err: unknown) {
+    logger.error({ err }, "Import phase definitions error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/setup/create-phases-for-locations", async (req, res): Promise<void> => {
+  try {
+    const result = await createPhasesForAllLocations();
+    res.json(result);
+  } catch (err: unknown) {
+    logger.error({ err }, "Create phases for locations error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

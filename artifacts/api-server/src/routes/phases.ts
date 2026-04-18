@@ -182,4 +182,18 @@ router.post("/phases/:id/reject", async (req, res): Promise<void> => {
   res.json(RejectPhaseResponse.parse(serialize(phase)));
 });
 
+router.delete("/phases/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id ?? "");
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid phase id" });
+    return;
+  }
+  const [deleted] = await db.delete(phasesTable).where(eq(phasesTable.id, id)).returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Phase not found" });
+    return;
+  }
+  res.json({ success: true, id });
+});
+
 export default router;

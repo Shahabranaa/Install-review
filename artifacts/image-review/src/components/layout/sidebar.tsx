@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks,
 } from "lucide-react";
 import { useState, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -306,6 +306,14 @@ export function AppSidebar() {
 
           {/* Images — collapsible with filter submenu */}
           <ImagesSection location={location} />
+
+          {/* Compliance */}
+          <NavItem
+            href="/compliance"
+            label="Compliance"
+            icon={ListChecks}
+            isActive={location === "/compliance" || location.startsWith("/compliance")}
+          />
 
           {/* Reports */}
           <NavItem

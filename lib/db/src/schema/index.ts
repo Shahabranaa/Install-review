@@ -12,3 +12,4 @@ export * from "./users";
 export * from "./sheet-photos";
 export * from "./app-settings";
 export * from "./wasabi-mirror-tasks";
+export * from "./required-image-definitions";
