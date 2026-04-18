@@ -721,6 +721,7 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
     const ospIdParam    = req.query.ospId    ? parseInt(req.query.ospId as string)    : undefined;
     const stringIdParam = req.query.stringId ? parseInt(req.query.stringId as string) : undefined;
     const towerParam    = req.query.tower    as string | undefined;
+    const phaseParam    = req.query.phase    as string | undefined;
 
     // ── 1. Determine expected req_img_types (with phase context) ────────────
     const defRows = await db
@@ -805,11 +806,28 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
     // ── 4. Build compliance response ────────────────────────────────────────
     // Only fall back to sheet_photos-only towers when no filter is active.
     // If a filter is specified, respect it strictly (even if it yields 0 towers).
-    const hasActiveFilter = !!(ospIdParam || stringIdParam || towerParam);
+    const hasActiveFilter = !!(ospIdParam || stringIdParam || towerParam || phaseParam);
     const towerNames = new Set<string>([
       ...filteredNames,
       ...(!hasActiveFilter ? actualByTower.keys() : []),
     ]);
+
+    // Optional phase filter: restrict to towers that have at least 1 photo with this phase_link
+    if (phaseParam) {
+      const phaseResult = await db.execute(sql`
+        SELECT DISTINCT location_link FROM sheet_photos
+        WHERE phase_link = ${phaseParam} AND location_link IS NOT NULL
+      `);
+      const phaseArr = Array.isArray(phaseResult)
+        ? phaseResult
+        : (phaseResult as unknown as { rows: unknown[] }).rows;
+      const phaseTowers = new Set(
+        (phaseArr as { location_link: string }[]).map(r => r.location_link)
+      );
+      for (const name of [...towerNames]) {
+        if (!phaseTowers.has(name)) towerNames.delete(name);
+      }
+    }
 
     type PhaseCompliance = {
       phase: string;
@@ -908,8 +926,13 @@ router.get("/photos/phase-matrix", async (_req, res): Promise<void> => {
       return numA - numB;
     });
 
-    // 5. Strings — only those with photo data, sorted
-    const allStrings = [...new Set((cells as CellRow[]).map(r => r.photo_string))].sort();
+    // 5. Strings — use ALL strings from DB so zero-photo strings appear in the matrix
+    // Include any photo_string values not in the DB (e.g. "T2G07_EXP") as well
+    const dbStringNames = stringRows.map(s => s.stringName);
+    const photoOnlyStrings = (cells as CellRow[])
+      .map(r => r.photo_string)
+      .filter(s => !dbStringNames.includes(s));
+    const allStrings = [...new Set([...dbStringNames, ...photoOnlyStrings])].sort();
 
     // 6. Build cell lookup
     const cellMap = new Map<string, number>();

@@ -297,12 +297,11 @@ export default function Dashboard() {
     staleTime: 5 * 60 * 1000,
   });
 
-  function handleCellClick(stringId: number | null, _stringName: string, _phase: string) {
-    if (stringId) {
-      navigate(`/tower-compliance?stringId=${stringId}`);
-    } else {
-      navigate("/tower-compliance");
-    }
+  function handleCellClick(stringId: number | null, _stringName: string, phase: string) {
+    const p = new URLSearchParams();
+    if (stringId) p.set("stringId", String(stringId));
+    if (phase) p.set("phase", phase);
+    navigate(`/tower-compliance?${p.toString()}`);
   }
 
   return (

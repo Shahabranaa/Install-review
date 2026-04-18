@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useListLocations, useListStrings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Wind, AlertTriangle, Layers } from "lucide-react";
+import { ChevronDown, ChevronRight, CheckCircle2, XCircle, Wind, AlertTriangle, Layers, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
@@ -196,6 +196,13 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
 
 export default function TowerCompliance() {
   const [, navigate] = useLocation();
+  const search = useSearch();
+
+  // Read URL-level deep-link filters (from matrix cell click or external nav)
+  const urlParams = new URLSearchParams(search);
+  const urlStringId = urlParams.get("stringId") ?? null;
+  const urlPhase    = urlParams.get("phase")    ?? null;
+
   const [ospFilter, setOspFilter] = useState<string>("all");
   const [stringFilter, setStringFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("pct");
@@ -207,12 +214,16 @@ export default function TowerCompliance() {
   const ospId = ospFilter !== "all" ? parseInt(ospFilter) : undefined;
   const { data: strings } = useListStrings(ospId ? { locationId: ospId } : undefined, { query: { enabled: !!ospId } });
 
+  // Effective filters: URL deep-link takes priority over dropdown selections
+  const effectiveStringId = urlStringId ?? (stringFilter !== "all" ? stringFilter : null);
+
   const queryParams = new URLSearchParams();
   if (ospFilter !== "all") queryParams.set("ospId", ospFilter);
-  if (stringFilter !== "all") queryParams.set("stringId", stringFilter);
+  if (effectiveStringId) queryParams.set("stringId", effectiveStringId);
+  if (urlPhase) queryParams.set("phase", urlPhase);
 
   const { data, isLoading, error } = useQuery<ComplianceResponse>({
-    queryKey: ["tower-compliance", ospFilter, stringFilter],
+    queryKey: ["tower-compliance", ospFilter, stringFilter, urlStringId, urlPhase],
     queryFn: async () => {
       const res = await fetch(`${API}/api/photos/compliance?${queryParams}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
@@ -312,6 +323,45 @@ export default function TowerCompliance() {
           ))}
         </div>
       </div>
+
+      {/* Active deep-link filter chips */}
+      {(urlStringId || urlPhase) && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground text-xs">Active filters:</span>
+          {urlStringId && (
+            <span className="inline-flex items-center gap-1 bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-1 text-xs font-medium">
+              String: {urlStringId}
+              <button
+                aria-label="Clear string filter"
+                className="ml-0.5 hover:text-destructive transition-colors"
+                onClick={() => {
+                  const p = new URLSearchParams(search);
+                  p.delete("stringId");
+                  navigate(`/tower-compliance${p.toString() ? `?${p.toString()}` : ""}`);
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {urlPhase && (
+            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-medium">
+              Phase: {urlPhase}
+              <button
+                aria-label="Clear phase filter"
+                className="ml-0.5 hover:text-destructive transition-colors"
+                onClick={() => {
+                  const p = new URLSearchParams(search);
+                  p.delete("phase");
+                  navigate(`/tower-compliance${p.toString() ? `?${p.toString()}` : ""}`);
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Summary */}
       {summary && (
