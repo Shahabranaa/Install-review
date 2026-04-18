@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray, ne } from "drizzle-orm";
+import { desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, stringsTable, pool } from "@workspace/db";
 import {
@@ -78,7 +78,7 @@ router.get("/documents", async (req, res): Promise<void> => {
       .where(eq(documentsTable.phaseId, queryParams.data.phaseId));
   } else {
     documents = await db.select().from(documentsTable)
-      .where(ne(documentsTable.packType, "handover"));
+      .where(or(isNull(documentsTable.packType), ne(documentsTable.packType, "handover")));
   }
   res.json(ListDocumentsResponse.parse(serialize(documents)));
 });
