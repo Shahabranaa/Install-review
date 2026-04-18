@@ -812,10 +812,22 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
       ...(!hasActiveFilter ? actualByTower.keys() : []),
     ]);
 
-    // Phase context: when phaseParam is set it is informational — do NOT restrict towerNames.
-    // Removing towers that lack photos for the phase would hide the very non-compliance
-    // that project managers need to see after clicking a low-coverage matrix cell.
-    // The phase value is echoed back in the response so the UI can display it as context.
+    // When phaseParam is set, compute per-tower phase-specific coverage:
+    // "does this tower have at least one photo with this phase_link?"
+    // ALL towers in scope are retained; towers missing the phase appear with pct=0.
+    let towersWithPhase: Set<string> | undefined;
+    if (phaseParam) {
+      const phaseResult = await db.execute(sql`
+        SELECT DISTINCT location_link FROM sheet_photos
+        WHERE phase_link = ${phaseParam} AND location_link IS NOT NULL
+      `);
+      const phaseArr = Array.isArray(phaseResult)
+        ? phaseResult
+        : (phaseResult as unknown as { rows: unknown[] }).rows;
+      towersWithPhase = new Set(
+        (phaseArr as { location_link: string }[]).map(r => r.location_link)
+      );
+    }
 
     type PhaseCompliance = {
       phase: string;
@@ -824,14 +836,38 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
       missing: string[];
     };
 
+    // Label used in phase-specific mode
+    const phaseLabel = phaseParam ? `Photos in phase: ${phaseParam}` : undefined;
+
     const towers = Array.from(towerNames).map(name => {
+      const meta = metaByName.get(name);
+
+      if (towersWithPhase !== undefined && phaseLabel) {
+        // Phase-specific mode: coverage = "has this tower contributed photos for this phase?"
+        const hasPhotos = towersWithPhase.has(name);
+        return {
+          tower:      name,
+          stringId:   meta?.stringId   ?? null,
+          stringName: meta?.stringName ?? null,
+          ospId:      meta?.ospId      ?? null,
+          ospName:    meta?.ospName    ?? null,
+          expected:   1,
+          actual:     hasPhotos ? 1 : 0,
+          missing:    hasPhotos ? [] : [phaseLabel],
+          present:    hasPhotos ? [phaseLabel] : [],
+          pct:        hasPhotos ? 100 : 0,
+          byPhase:    [],
+          hasPhaseData: false,
+        };
+      }
+
+      // Standard req_img_type compliance mode
       const actual     = actualByTower.get(name) ?? new Set<string>();
       const presentAll = expectedTypes.filter(t => actual.has(t));
       const missingAll = expectedTypes.filter(t => !actual.has(t));
       const pct        = expectedTypes.length > 0
         ? Math.round(presentAll.length / expectedTypes.length * 100)
         : (actual.size > 0 ? 100 : 0);
-      const meta = metaByName.get(name);
 
       // Build per-phase breakdown
       const byPhase: PhaseCompliance[] = Array.from(expectedByPhase.entries()).map(([phase, types]) => ({
@@ -857,7 +893,14 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
       };
     }).sort((a, b) => a.pct - b.pct || (a.tower < b.tower ? -1 : 1));
 
-    res.json({ expectedTypes, hasPhaseData, towers, phaseContext: phaseParam ?? null });
+    // In phase-specific mode, expectedTypes reflects the phase metric (1 item)
+    const responseExpectedTypes = phaseLabel ? [phaseLabel] : expectedTypes;
+    res.json({
+      expectedTypes: responseExpectedTypes,
+      hasPhaseData: phaseLabel ? false : hasPhaseData,
+      towers,
+      phaseContext: phaseParam ?? null,
+    });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

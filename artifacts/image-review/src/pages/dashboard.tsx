@@ -186,7 +186,7 @@ function CompletionMatrix({
                   onClick={() => onCellClick(row.stringId, row.string, cell.phase)}
                 >
                   <span className={`inline-block px-1 py-0.5 rounded border text-[11px] font-mono font-medium ${cellBorderColor(cell.pct)}`}>
-                    {cell.pct === 0 ? "—" : `${cell.pct}%`}
+                    {`${cell.pct}%`}
                   </span>
                 </td>
               ))}
