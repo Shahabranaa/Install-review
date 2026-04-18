@@ -335,6 +335,16 @@ function TowerFolderView({
   const [activeTab, setActiveTab] = useState<FolderTab>("original");
   const [hideUnavailable, setHideUnavailable] = useState(true);
   const [selectedCable, setSelectedCable] = useState<string>("all");
+  const [compliance, setCompliance] = useState<{ actual: number; expected: number; pct: number } | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}api/photos/compliance?tower=${encodeURIComponent(tower.name)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: { towers?: { actual: number; expected: number; pct: number }[] } | null) => {
+        if (data?.towers?.[0]) setCompliance(data.towers[0]);
+      })
+      .catch(() => {});
+  }, [tower.name]);
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
@@ -445,6 +455,21 @@ function TowerFolderView({
               <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
               {tower.progressStatus || "No Status"}
             </span>
+            {compliance && (
+              <span
+                className={[
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border",
+                  compliance.pct === 100
+                    ? "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300"
+                    : compliance.pct >= 50
+                    ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300"
+                    : "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300",
+                ].join(" ")}
+                title={`${compliance.actual} of ${compliance.expected} required image types covered`}
+              >
+                {compliance.actual}/{compliance.expected} required
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             {photoCount > 0 ? `${photoCount} photo${photoCount !== 1 ? "s" : ""}` : "No photos"}
@@ -666,6 +691,7 @@ export default function Towers() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const initialStringId = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
+  const initialTowerName = params.get("tower") ?? undefined;
 
   const [selectedStringId, setSelectedStringId] = useState<number | undefined>(initialStringId);
   useEffect(() => {
@@ -722,6 +748,16 @@ export default function Towers() {
       .catch(() => setAllReports([]))
       .finally(() => setLoadingReports(false));
   }, [allReports, loadingReports]);
+
+  // Auto-select tower from ?tower=<name> URL param
+  useEffect(() => {
+    if (!initialTowerName || selectedTower || !towers) return;
+    const match = towers.find(t => t.name === initialTowerName);
+    if (match) {
+      setSelectedTower(match);
+      ensureReports();
+    }
+  }, [towers, initialTowerName]);
 
   const handleTowerClick = (tower: TowerRecord) => {
     setSelectedTower(tower);

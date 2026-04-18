@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2,
 } from "lucide-react";
 import { useState, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -312,7 +312,13 @@ export function AppSidebar() {
             href="/compliance"
             label="Compliance"
             icon={ListChecks}
-            isActive={location === "/compliance" || location.startsWith("/compliance")}
+            isActive={location === "/compliance"}
+          />
+          <NavItem
+            href="/tower-compliance"
+            label="Tower Compliance"
+            icon={BarChart2}
+            isActive={location === "/tower-compliance"}
           />
 
           {/* Reports */}

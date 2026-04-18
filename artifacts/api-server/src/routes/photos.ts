@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
-import { db, sheetPhotosTable } from "@workspace/db";
+import { db, sheetPhotosTable, requiredImageDefinitionsTable, towersTable, stringsTable, locationsTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { driveRequest } from "../lib/google-drive";
 import { PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID } from "../lib/drive-constants.js";
@@ -709,6 +709,107 @@ router.post("/photos/scan-availability", async (_req, res): Promise<void> => {
   try {
     const result = await scanImageAvailability();
     res.json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/photos/compliance — per-tower compliance against required_image_definitions
+// Query params: tower (optional, single tower name), ospId (optional int), stringId (optional int)
+router.get("/photos/compliance", async (req, res): Promise<void> => {
+  try {
+    const ospIdParam    = req.query.ospId    ? parseInt(req.query.ospId as string)    : undefined;
+    const stringIdParam = req.query.stringId ? parseInt(req.query.stringId as string) : undefined;
+    const towerParam    = req.query.tower    as string | undefined;
+
+    // ── 1. Determine expected req_img_types ─────────────────────────────────
+    const defRows = await db
+      .selectDistinct({ reqImgType: requiredImageDefinitionsTable.reqImgType })
+      .from(requiredImageDefinitionsTable)
+      .orderBy(requiredImageDefinitionsTable.reqImgType);
+
+    let expectedTypes: string[];
+    if (defRows.length > 0) {
+      expectedTypes = defRows.map(r => r.reqImgType);
+    } else {
+      // Fallback: use all distinct req_img_types from sheet_photos as the "expected" set
+      const globalRows = await db.execute(sql`
+        SELECT DISTINCT req_img_type FROM sheet_photos
+        WHERE req_img_type IS NOT NULL ORDER BY req_img_type
+      `);
+      const globalArr = Array.isArray(globalRows) ? globalRows : (globalRows as unknown as { rows: unknown[] }).rows;
+      expectedTypes = (globalArr as { req_img_type: string }[]).map(r => r.req_img_type);
+    }
+    // ── 2. Get tower metadata (name → string → OSP) with optional filters ──
+    const towerMeta = await db
+      .select({
+        name:       towersTable.name,
+        stringId:   stringsTable.id,
+        stringName: stringsTable.name,
+        ospId:      locationsTable.id,
+        ospName:    locationsTable.name,
+      })
+      .from(towersTable)
+      .innerJoin(stringsTable,   eq(towersTable.stringId,   stringsTable.id))
+      .innerJoin(locationsTable, eq(stringsTable.locationId, locationsTable.id));
+
+    const filtered = towerMeta.filter(t =>
+      (!ospIdParam    || t.ospId    === ospIdParam)    &&
+      (!stringIdParam || t.stringId === stringIdParam) &&
+      (!towerParam    || t.name     === towerParam)
+    );
+    const filteredNames = new Set(filtered.map(t => t.name));
+    const metaByName = new Map(filtered.map(t => [t.name, t]));
+
+    // ── 3. Get per-tower actual req_img_types from sheet_photos ────────────
+    const actualRows = await db.execute(sql`
+      SELECT location_link, req_img_type
+      FROM sheet_photos
+      WHERE location_link IS NOT NULL AND req_img_type IS NOT NULL
+      GROUP BY location_link, req_img_type
+      ORDER BY location_link, req_img_type
+    `);
+    const actualArr = Array.isArray(actualRows) ? actualRows : (actualRows as unknown as { rows: unknown[] }).rows;
+
+    // Group by tower
+    const actualByTower = new Map<string, Set<string>>();
+    for (const row of actualArr as { location_link: string; req_img_type: string }[]) {
+      const { location_link: towerName, req_img_type: reqType } = row;
+      if (filteredNames.size > 0 && !filteredNames.has(towerName)) continue;
+      if (!actualByTower.has(towerName)) actualByTower.set(towerName, new Set());
+      actualByTower.get(towerName)!.add(reqType);
+    }
+
+    // ── 4. Build compliance response ────────────────────────────────────────
+    // Merge: towers from DB metadata + any towers only in sheet_photos (if no filter)
+    const towerNames = new Set<string>([
+      ...filteredNames,
+      ...(filteredNames.size === 0 ? actualByTower.keys() : []),
+    ]);
+
+    const towers = Array.from(towerNames).map(name => {
+      const actual  = actualByTower.get(name) ?? new Set<string>();
+      const present = expectedTypes.filter(t => actual.has(t));
+      const missing = expectedTypes.filter(t => !actual.has(t));
+      const pct     = expectedTypes.length > 0
+        ? Math.round(present.length / expectedTypes.length * 100)
+        : (actual.size > 0 ? 100 : 0);
+      const meta    = metaByName.get(name);
+      return {
+        tower:      name,
+        stringId:   meta?.stringId   ?? null,
+        stringName: meta?.stringName ?? null,
+        ospId:      meta?.ospId      ?? null,
+        ospName:    meta?.ospName    ?? null,
+        expected:   expectedTypes.length,
+        actual:     present.length,
+        missing,
+        present,
+        pct,
+      };
+    }).sort((a, b) => a.pct - b.pct || (a.tower < b.tower ? -1 : 1));
+
+    res.json({ expectedTypes, towers });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
