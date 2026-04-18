@@ -16,6 +16,23 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Replit Setup
+
+### Workflows
+- **Start application** — React/Vite frontend on `PORT=5000` (`cd artifacts/image-review && PORT=5000 pnpm run dev`)
+- **API Server** — Express backend on `PORT=8080` (`cd artifacts/api-server && PORT=8080 pnpm run dev`)
+
+### Required Secrets
+- `DATABASE_URL` — PostgreSQL connection string (Replit-managed)
+- `SESSION_SECRET` — Express session secret
+
+### Optional Secrets (for full feature access)
+- `GOOGLE_DRIVE_CLIENT_EMAIL` + `GOOGLE_DRIVE_PRIVATE_KEY` — Google Drive/Sheets service account
+- `WASABI_ACCESS_KEY_ID`, `WASABI_SECRET_ACCESS_KEY`, `WASABI_BUCKET_NAME`, `WASABI_REGION` — Wasabi object storage
+
+### Database Setup
+Run `pnpm --filter @workspace/db run push` to apply schema to a fresh database.
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
