@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, type SQL } from "drizzle-orm";
+import { eq, and, or, inArray, type SQL } from "drizzle-orm";
 import { db, issuesTable, imagesTable, sheetPhotosTable } from "@workspace/db";
 import {
   ListIssuesQueryParams,
@@ -119,20 +119,22 @@ router.get("/issues", async (req, res): Promise<void> => {
       stringedPhotoIds = rows.map(r => r.photoId).filter((id): id is string => id !== null);
     }
 
-    if (toweredPhotoIds !== null || stringedPhotoIds !== null) {
-      let combined: string[];
-      if (toweredPhotoIds !== null && stringedPhotoIds !== null) {
-        const tSet = new Set(toweredPhotoIds);
-        combined = stringedPhotoIds.filter(id => tSet.has(id));
-      } else {
-        combined = (toweredPhotoIds ?? stringedPhotoIds) as string[];
-      }
-      if (combined.length === 0) {
-        res.json(ListIssuesResponse.parse([]));
-        return;
-      }
-      conditions.push(inArray(issuesTable.photoId, combined));
-    }
+    // Build OR predicates that include the explicit columns (first-class source
+    // of truth) alongside the photoId-derived sets, so manual tasks created
+    // with explicit tower/string but unrelated photoIds are still included.
+    const towerPredicate: SQL | undefined = tower
+      ? (toweredPhotoIds && toweredPhotoIds.length > 0
+          ? or(eq(issuesTable.tower, tower), inArray(issuesTable.photoId, toweredPhotoIds))
+          : eq(issuesTable.tower, tower))
+      : undefined;
+    const stringPredicate: SQL | undefined = stringName
+      ? (stringedPhotoIds && stringedPhotoIds.length > 0
+          ? or(eq(issuesTable.string, stringName), inArray(issuesTable.photoId, stringedPhotoIds))
+          : eq(issuesTable.string, stringName))
+      : undefined;
+
+    if (towerPredicate) conditions.push(towerPredicate);
+    if (stringPredicate) conditions.push(stringPredicate);
   }
 
   if (severity) conditions.push(eq(issuesTable.severity, severity));
@@ -205,8 +207,9 @@ router.get("/issues/rollup", async (_req, res): Promise<void> => {
   for (const i of issues) {
     const status = deriveStatus(i);
     const manual = parseManual(i.photoId);
-    const tower = (i.photoId ? photoTower.get(i.photoId) : null) ?? manual.tower;
-    const stringName = i.photoId ? photoString.get(i.photoId) ?? null : null;
+    // Precedence: explicit columns > sheet_photos lookup > synthetic photoId.
+    const tower = i.tower ?? (i.photoId ? photoTower.get(i.photoId) ?? null : null) ?? manual.tower;
+    const stringName = i.string ?? (i.photoId ? photoString.get(i.photoId) ?? null : null);
     const cable = i.cable ?? manual.cable;
     addTo(towers, tower, status, i.severity);
     addTo(strings, stringName, status, i.severity);
