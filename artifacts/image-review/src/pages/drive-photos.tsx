@@ -1473,15 +1473,15 @@ export default function DrivePhotos() {
             )}
             <button
               onClick={() => {
-                if (selectedIds.size > 0) {
-                  setSelectedIds(new Set(visiblePhotos.map(p => p.photoId).filter(Boolean)));
-                } else {
-                  setSelectedIds(new Set(visiblePhotos.map(p => p.photoId).filter(Boolean)));
-                }
+                const allIds = visiblePhotos.map(p => p.photoId).filter(Boolean) as string[];
+                const allSelected = allIds.every(id => selectedIds.has(id));
+                setSelectedIds(allSelected ? new Set() : new Set(allIds));
               }}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              Select all ({visiblePhotos.length})
+              {visiblePhotos.every(p => p.photoId && selectedIds.has(p.photoId))
+                ? `Deselect all`
+                : `Select all (${visiblePhotos.length})`}
             </button>
             <button onClick={exitSelectMode} className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
               <X className="w-3.5 h-3.5" />
