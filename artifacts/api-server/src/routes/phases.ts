@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, and, inArray } from "drizzle-orm";
 import { db, phasesTable, locationsTable, imagesTable, issuesTable, decisionsTable } from "@workspace/db";
 import {
@@ -20,6 +20,14 @@ import {
 import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.session?.accessLevel !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  next();
+}
 
 router.get("/phases", async (req, res): Promise<void> => {
   const queryParams = ListPhasesQueryParams.safeParse(req.query);
@@ -49,7 +57,7 @@ router.get("/phases", async (req, res): Promise<void> => {
   res.json(ListPhasesResponse.parse(serialize(phases)));
 });
 
-router.post("/phases", async (req, res): Promise<void> => {
+router.post("/phases", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreatePhaseBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -182,7 +190,7 @@ router.post("/phases/:id/reject", async (req, res): Promise<void> => {
   res.json(RejectPhaseResponse.parse(serialize(phase)));
 });
 
-router.delete("/phases/:id", async (req, res): Promise<void> => {
+router.delete("/phases/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid phase id" });

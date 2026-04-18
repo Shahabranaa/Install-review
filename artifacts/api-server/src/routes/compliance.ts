@@ -1,11 +1,10 @@
-import { Router, type IRouter } from "express";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { eq, and, isNotNull, inArray } from "drizzle-orm";
 import {
   db,
   requiredImageDefinitionsTable,
   sheetPhotosTable,
   stringsTable,
-  locationsTable,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 
@@ -15,53 +14,61 @@ router.get("/compliance", async (req, res): Promise<void> => {
   try {
     const { stringId, locationId, cableLink, locationLink, phaseType } = req.query as Record<string, string>;
 
-    let resolvedCableLink: string | null = null;
-    let resolvedLocationLink: string | null = null;
+    const cableLinkConditions: ReturnType<typeof eq>[] = [];
 
     if (cableLink) {
-      resolvedCableLink = cableLink;
+      cableLinkConditions.push(eq(sheetPhotosTable.cableLink, cableLink));
     } else if (stringId) {
       const id = parseInt(stringId);
       if (!isNaN(id)) {
         const [str] = await db.select().from(stringsTable).where(eq(stringsTable.id, id));
-        if (str) resolvedCableLink = str.name;
+        if (str) cableLinkConditions.push(eq(sheetPhotosTable.cableLink, str.name));
+      }
+    } else if (locationId) {
+      const locId = parseInt(locationId);
+      if (!isNaN(locId)) {
+        const strings = await db
+          .select({ name: stringsTable.name })
+          .from(stringsTable)
+          .where(eq(stringsTable.locationId, locId));
+        const names = strings.map((s) => s.name).filter(Boolean);
+        if (names.length > 0) {
+          cableLinkConditions.push(inArray(sheetPhotosTable.cableLink, names));
+        }
       }
     }
 
+    const locationLinkConditions: ReturnType<typeof eq>[] = [];
     if (locationLink) {
-      resolvedLocationLink = locationLink;
+      locationLinkConditions.push(eq(sheetPhotosTable.locationLink, locationLink));
     }
 
-    if (!resolvedCableLink && !resolvedLocationLink && !locationId) {
+    const hasFilter = cableLinkConditions.length > 0 || locationLinkConditions.length > 0;
+    if (!hasFilter) {
       res.status(400).json({ error: "Provide stringId, cableLink, locationId, or locationLink" });
       return;
     }
 
-    const defs = await db.select().from(requiredImageDefinitionsTable)
+    const defs = await db
+      .select()
+      .from(requiredImageDefinitionsTable)
       .where(phaseType ? eq(requiredImageDefinitionsTable.phaseType, phaseType) : undefined)
       .orderBy(requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgOrder);
 
-    let photoQuery = db.select().from(sheetPhotosTable)
-      .$dynamic()
-      .where(isNotNull(sheetPhotosTable.reqImgType));
+    const photoConditions = [isNotNull(sheetPhotosTable.reqImgType)];
+    if (cableLinkConditions.length > 0) photoConditions.push(...cableLinkConditions);
+    if (locationLinkConditions.length > 0) photoConditions.push(...locationLinkConditions);
+    if (phaseType) photoConditions.push(eq(sheetPhotosTable.phaseLink, phaseType));
 
-    const conditions = [];
-    if (resolvedCableLink) {
-      conditions.push(eq(sheetPhotosTable.cableLink, resolvedCableLink));
-    }
-    if (resolvedLocationLink) {
-      conditions.push(eq(sheetPhotosTable.locationLink, resolvedLocationLink));
-    }
-    if (phaseType) {
-      conditions.push(eq(sheetPhotosTable.phaseLink, phaseType));
-    }
-
-    const photos = conditions.length > 0
-      ? await db.select().from(sheetPhotosTable).where(and(isNotNull(sheetPhotosTable.reqImgType), ...conditions))
-      : await db.select().from(sheetPhotosTable).where(isNotNull(sheetPhotosTable.reqImgType));
+    const photos = await db
+      .select()
+      .from(sheetPhotosTable)
+      .where(and(...photoConditions));
 
     const result = defs.map((def) => {
-      const matching = photos.filter((p) => p.reqImgType === def.reqImgType && p.phaseLink === def.phaseType);
+      const matching = photos.filter(
+        (p) => p.reqImgType === def.reqImgType && p.phaseLink === def.phaseType,
+      );
       return {
         reqImgType: def.reqImgType,
         reqImgOrder: def.reqImgOrder,
@@ -70,7 +77,9 @@ router.get("/compliance", async (req, res): Promise<void> => {
         photos: matching.map((p) => ({
           photoId: p.photoId,
           wasabiKey: p.wasabiKey,
-          imageUrl: p.wasabiKey ? `https://cvow-photos.s3.us-east-1.wasabisys.com/${p.wasabiKey}` : null,
+          imageUrl: p.wasabiKey
+            ? `https://cvow-photos.s3.us-east-1.wasabisys.com/${p.wasabiKey}`
+            : null,
           imageAvailable: p.imageAvailable,
           locationLink: p.locationLink,
           approval: p.approval,
@@ -90,7 +99,7 @@ router.get("/compliance", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/compliance/cables", async (req, res): Promise<void> => {
+router.get("/compliance/cables", async (_req, res): Promise<void> => {
   try {
     const rows = await db
       .selectDistinct({ cableLink: sheetPhotosTable.cableLink })
@@ -103,7 +112,7 @@ router.get("/compliance/cables", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/compliance/phase-types", async (req, res): Promise<void> => {
+router.get("/compliance/phase-types", async (_req, res): Promise<void> => {
   try {
     const rows = await db
       .selectDistinct({ phaseType: requiredImageDefinitionsTable.phaseType })

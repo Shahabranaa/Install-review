@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, and, sql } from "drizzle-orm";
 import {
   db,
@@ -15,6 +15,14 @@ import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.session?.accessLevel !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+  next();
+}
 
 async function fetchSheet(range: string): Promise<string[][]> {
   const response = await sheetsRequest(`/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`);
@@ -278,28 +286,27 @@ async function importPhaseDefinitions(): Promise<{ phaseTypes: number; definitio
     logger.warn({ err }, "[setup] Could not read gid=8644251 tab, falling back to sheet_photos");
   }
 
-  // ─── Fallback: derive from sheet_photos DISTINCT values ──────────────────
-  if (defsMap.size === 0) {
-    const distinctRows = await db
-      .selectDistinct({
-        phaseLink: sheetPhotosTable.phaseLink,
-        reqImgType: sheetPhotosTable.reqImgType,
-        reqImgOrder: sheetPhotosTable.reqImgOrder,
-      })
-      .from(sheetPhotosTable)
-      .where(and(
-        sql`${sheetPhotosTable.phaseLink} IS NOT NULL`,
-        sql`${sheetPhotosTable.reqImgType} IS NOT NULL`,
-      ));
-    for (const row of distinctRows) {
-      if (!row.phaseLink || !row.reqImgType) continue;
-      const key = `${row.phaseLink}|||${row.reqImgType}`;
-      if (!defsMap.has(key)) {
-        defsMap.set(key, { reqImgOrder: row.reqImgOrder ?? null, description: null });
-      }
+  // ─── Always supplement from sheet_photos DISTINCT values ────────────────
+  // This covers phases present in photo data but absent from the definitions tab.
+  const distinctRows = await db
+    .selectDistinct({
+      phaseLink: sheetPhotosTable.phaseLink,
+      reqImgType: sheetPhotosTable.reqImgType,
+      reqImgOrder: sheetPhotosTable.reqImgOrder,
+    })
+    .from(sheetPhotosTable)
+    .where(and(
+      sql`${sheetPhotosTable.phaseLink} IS NOT NULL`,
+      sql`${sheetPhotosTable.reqImgType} IS NOT NULL`,
+    ));
+  for (const row of distinctRows) {
+    if (!row.phaseLink || !row.reqImgType) continue;
+    const key = `${row.phaseLink}|||${row.reqImgType}`;
+    if (!defsMap.has(key)) {
+      defsMap.set(key, { reqImgOrder: row.reqImgOrder ?? null, description: null });
     }
-    logger.info({ count: defsMap.size }, "[setup] Phase definitions derived from sheet_photos");
   }
+  logger.info({ count: defsMap.size }, "[setup] Phase definitions total after merging sheet_photos");
 
   const phaseTypes = new Set<string>();
   let created = 0;
@@ -377,7 +384,7 @@ async function createPhasesForAllLocations(): Promise<{ created: number; skipped
   return { created, skipped };
 }
 
-router.post("/setup/import-phase-definitions", async (req, res): Promise<void> => {
+router.post("/setup/import-phase-definitions", requireAdmin, async (req, res): Promise<void> => {
   if (!isSheetsConfigured()) {
     res.status(503).json({ error: "Google Sheets not configured" });
     return;
@@ -392,7 +399,7 @@ router.post("/setup/import-phase-definitions", async (req, res): Promise<void> =
   }
 });
 
-router.post("/setup/create-phases-for-locations", async (req, res): Promise<void> => {
+router.post("/setup/create-phases-for-locations", requireAdmin, async (req, res): Promise<void> => {
   try {
     const result = await createPhasesForAllLocations();
     res.json(result);

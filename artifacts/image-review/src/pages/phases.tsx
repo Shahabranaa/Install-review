@@ -8,41 +8,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { CheckSquare, AlertTriangle, Clock, Activity, Plus, Trash2, Download, RefreshCw } from "lucide-react";
+import { CheckSquare, AlertTriangle, Clock, Activity, Plus, Trash2, Download, RefreshCw, Pencil, Building2 } from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function apiPost(path: string) {
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST", credentials: "include" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-async function apiDelete(path: string) {
-  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", credentials: "include" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-async function apiCreatePhase(body: { locationId: number; phaseType: string; requiredImageCount: number }) {
-  const res = await fetch(`${API_BASE}/api/phases`, {
-    method: "POST",
+async function apiFetch(path: string, options?: RequestInit) {
+  const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    ...options,
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+const STATUSES = ["pending", "needs_review", "complete", "incomplete"] as const;
 
 function getStatusBadge(status: string) {
   switch (status) {
     case "complete": return <Badge className="bg-green-600 hover:bg-green-700">Complete</Badge>;
     case "needs_review": return <Badge variant="destructive">Needs Review</Badge>;
     case "pending": return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Pending</Badge>;
+    case "incomplete": return <Badge variant="secondary">Incomplete</Badge>;
     default: return <Badge variant="outline">{status.replace("_", " ")}</Badge>;
   }
 }
@@ -56,6 +46,13 @@ function getStatusIcon(status: string) {
   }
 }
 
+interface EditTarget {
+  id: number;
+  phaseType: string;
+  status: string;
+  requiredImageCount: number;
+}
+
 export default function Phases() {
   const { user } = useAuth();
   const isAdmin = user?.accessLevel === "admin";
@@ -66,6 +63,10 @@ export default function Phases() {
   const [newLocationId, setNewLocationId] = useState("");
   const [newPhaseType, setNewPhaseType] = useState("");
   const [newReqCount, setNewReqCount] = useState("0");
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [editPhaseType, setEditPhaseType] = useState("");
+  const [editStatus, setEditStatus] = useState("");
+  const [editReqCount, setEditReqCount] = useState("0");
   const [busy, setBusy] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
@@ -75,11 +76,18 @@ export default function Phases() {
   const { data: locations } = useListLocations();
   const osps = locations?.filter((l) => l.type === "OSP") ?? [];
 
+  function openEdit(phase: EditTarget) {
+    setEditTarget(phase);
+    setEditPhaseType(phase.phaseType);
+    setEditStatus(phase.status);
+    setEditReqCount(String(phase.requiredImageCount));
+  }
+
   async function handleImport() {
     setBusy(true);
     setImportMsg(null);
     try {
-      const res = await apiPost("/api/setup/import-phase-definitions");
+      const res = await apiFetch("/api/setup/import-phase-definitions", { method: "POST" });
       const d = res.definitions ?? {};
       const p = res.phases ?? {};
       setImportMsg(
@@ -94,14 +102,31 @@ export default function Phases() {
     }
   }
 
+  async function handleCreatePhasesForLocations() {
+    setBusy(true);
+    setImportMsg(null);
+    try {
+      const res = await apiFetch("/api/setup/create-phases-for-locations", { method: "POST" });
+      setImportMsg(`Phases created: ${res.created ?? 0} new, ${res.skipped ?? 0} already existed.`);
+      qc.invalidateQueries({ queryKey: ["phases"] });
+    } catch (err) {
+      setImportMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleCreate() {
     if (!newLocationId || !newPhaseType) return;
     setBusy(true);
     try {
-      await apiCreatePhase({
-        locationId: parseInt(newLocationId),
-        phaseType: newPhaseType,
-        requiredImageCount: parseInt(newReqCount) || 0,
+      await apiFetch("/api/phases", {
+        method: "POST",
+        body: JSON.stringify({
+          locationId: parseInt(newLocationId),
+          phaseType: newPhaseType,
+          requiredImageCount: parseInt(newReqCount) || 0,
+        }),
       });
       setShowNewDialog(false);
       setNewLocationId("");
@@ -115,10 +140,31 @@ export default function Phases() {
     }
   }
 
+  async function handleEdit() {
+    if (!editTarget) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/phases/${editTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          phaseType: editPhaseType,
+          status: editStatus,
+          requiredImageCount: parseInt(editReqCount) || 0,
+        }),
+      });
+      setEditTarget(null);
+      qc.invalidateQueries({ queryKey: ["phases"] });
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDelete(id: number) {
     if (!confirm("Delete this phase?")) return;
     try {
-      await apiDelete(`/api/phases/${id}`);
+      await apiFetch(`/api/phases/${id}`, { method: "DELETE" });
       qc.invalidateQueries({ queryKey: ["phases"] });
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -137,6 +183,10 @@ export default function Phases() {
             <Button variant="outline" size="sm" onClick={handleImport} disabled={busy}>
               <Download className="w-4 h-4 mr-2" />
               {busy ? "Importing…" : "Import Phase Definitions"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCreatePhasesForLocations} disabled={busy}>
+              <Building2 className="w-4 h-4 mr-2" />
+              Create Phases for All Locations
             </Button>
             <Button size="sm" onClick={() => setShowNewDialog(true)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -198,21 +248,36 @@ export default function Phases() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 flex-shrink-0">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right hidden sm:block">
                     <div className="text-xs text-muted-foreground">Required Images</div>
                     <div className="font-medium">{phase.requiredImageCount}</div>
                   </div>
                   {getStatusBadge(phase.status)}
                   {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(phase.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openEdit({
+                          id: phase.id,
+                          phaseType: phase.phaseType,
+                          status: phase.status,
+                          requiredImageCount: phase.requiredImageCount,
+                        })}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(phase.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -221,6 +286,7 @@ export default function Phases() {
         </div>
       )}
 
+      {/* New Phase Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
         <DialogContent>
           <DialogHeader>
@@ -264,6 +330,54 @@ export default function Phases() {
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !newLocationId || !newPhaseType}>
               {busy ? "Creating…" : "Create Phase"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Phase Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Phase</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Phase Type</Label>
+              <Input
+                className="mt-1"
+                value={editPhaseType}
+                onChange={(e) => setEditPhaseType(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Required Image Count</Label>
+              <Input
+                className="mt-1"
+                type="number"
+                min={0}
+                value={editReqCount}
+                onChange={(e) => setEditReqCount(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={busy || !editPhaseType}>
+              {busy ? "Saving…" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
