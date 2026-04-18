@@ -1146,12 +1146,18 @@ router.post("/photos/batch-review", async (req, res): Promise<void> => {
           })
           .where(eq(sheetPhotosTable.photoId, d.photoId))
           .returning({ id: sheetPhotosTable.id });
+        if (rows.length === 0) {
+          // Unknown photoId — abort entire transaction (all-or-fail)
+          throw new Error(`Photo not found: ${d.photoId}`);
+        }
         updatedCount += rows.length;
       }
     });
     res.json({ updated: updatedCount });
   } catch (err: unknown) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = msg.startsWith("Photo not found:") ? 422 : 500;
+    res.status(status).json({ error: msg });
   }
 });
 

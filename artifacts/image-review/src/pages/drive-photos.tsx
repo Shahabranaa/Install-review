@@ -1218,7 +1218,6 @@ export default function DrivePhotos() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSession, setBulkSession] = useState<{ photos: BulkSessionPhoto[]; label: string } | null>(null);
-  const [batchDecision, setBatchDecision] = useState<"Approved" | "Rejected" | null>(null);
   const [batchComment, setBatchComment] = useState("");
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
@@ -1235,20 +1234,19 @@ export default function DrivePhotos() {
   const exitSelectMode = useCallback(() => {
     setSelectMode(false);
     setSelectedIds(new Set());
-    setBatchDecision(null);
     setBatchComment("");
     setBatchError(null);
     setBatchSuccess(false);
   }, []);
 
-  const handleBatchSave = useCallback(async () => {
-    if (!batchDecision || selectedIds.size === 0) return;
+  const handleBatchSave = useCallback(async (decision: "Approved" | "Rejected") => {
+    if (selectedIds.size === 0) return;
     setBatchSaving(true);
     setBatchError(null);
     try {
       const decisions = [...selectedIds].map(photoId => ({
         photoId,
-        approval: batchDecision,
+        approval: decision,
         reviewComment: batchComment.trim() || null,
       }));
       const r = await fetch(`${BASE_URL}api/photos/batch-review`, {
@@ -1258,7 +1256,7 @@ export default function DrivePhotos() {
       });
       if (r.ok) {
         for (const id of selectedIds) {
-          setReviewOverrides(prev => new Map([...prev, [id, batchDecision]]));
+          setReviewOverrides(prev => new Map([...prev, [id, decision]]));
         }
         setBatchSuccess(true);
         setTimeout(() => { exitSelectMode(); setBatchSuccess(false); }, 1200);
@@ -1271,7 +1269,7 @@ export default function DrivePhotos() {
     } finally {
       setBatchSaving(false);
     }
-  }, [batchDecision, selectedIds, batchComment, exitSelectMode]);
+  }, [selectedIds, batchComment, exitSelectMode]);
 
   const startBulkSession = useCallback((photos: PhotoRecord[], label: string) => {
     const unreviewedPhotos: BulkSessionPhoto[] = photos
@@ -1439,51 +1437,36 @@ export default function DrivePhotos() {
             </span>
             {selectedIds.size > 0 && (
               <>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setBatchDecision("Approved")}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 transition-all ${
-                      batchDecision === "Approved"
-                        ? "border-green-500 bg-green-500 text-white"
-                        : "border-green-500/40 bg-green-500/10 text-green-600 hover:bg-green-500/20"
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Approve Selected
-                  </button>
-                  <button
-                    onClick={() => setBatchDecision("Rejected")}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 transition-all ${
-                      batchDecision === "Rejected"
-                        ? "border-red-500 bg-red-500 text-white"
-                        : "border-red-500/40 bg-red-500/10 text-red-600 hover:bg-red-500/20"
-                    }`}
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Reject Selected
-                  </button>
-                </div>
-                {batchDecision && (
-                  <input
-                    type="text"
-                    placeholder="Optional comment…"
-                    value={batchComment}
-                    onChange={e => setBatchComment(e.target.value)}
-                    className="flex-1 min-w-[160px] max-w-xs rounded-full border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                )}
+                <input
+                  type="text"
+                  placeholder="Optional comment…"
+                  value={batchComment}
+                  onChange={e => setBatchComment(e.target.value)}
+                  className="min-w-[160px] max-w-xs rounded-full border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                />
                 {batchSuccess ? (
                   <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
                     <CheckCircle2 className="w-4 h-4" />Saved
                   </span>
                 ) : (
-                  <button
-                    onClick={handleBatchSave}
-                    disabled={!batchDecision || batchSaving}
-                    className="flex items-center gap-1.5 rounded-full bg-primary hover:bg-primary/90 text-white px-4 py-1.5 text-xs font-semibold disabled:opacity-40 transition-all"
-                  >
-                    {batchSaving ? "Saving…" : `Save ${selectedIds.size}`}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleBatchSave("Approved")}
+                      disabled={batchSaving}
+                      className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 border-green-500/40 bg-green-500/10 text-green-600 hover:bg-green-500 hover:text-white hover:border-green-500 disabled:opacity-40 transition-all"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {batchSaving ? "Saving…" : `Approve ${selectedIds.size}`}
+                    </button>
+                    <button
+                      onClick={() => handleBatchSave("Rejected")}
+                      disabled={batchSaving}
+                      className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border-2 border-red-500/40 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white hover:border-red-500 disabled:opacity-40 transition-all"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {batchSaving ? "Saving…" : `Reject ${selectedIds.size}`}
+                    </button>
+                  </div>
                 )}
                 {batchError && <p className="text-xs text-red-500">{batchError}</p>}
               </>
