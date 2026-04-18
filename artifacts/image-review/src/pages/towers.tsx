@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
   ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye, Cable,
-  Package, Loader2,
+  Package, Loader2, Flag, CheckCheck,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -312,7 +312,9 @@ interface TowerRecord {
   countOnString?: number | null;
 }
 
-type FolderTab = "original" | "stamped" | "reports";
+type FolderTab = "original" | "stamped" | "reports" | "issues";
+
+interface TowerIssue { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; createdAt: string; photoId?: string | null; }
 
 function TowerFolderView({
   tower,
@@ -338,6 +340,9 @@ function TowerFolderView({
   const [hideUnavailable, setHideUnavailable] = useState(true);
   const [selectedCable, setSelectedCable] = useState<string>("all");
   const [compliance, setCompliance] = useState<{ actual: number; expected: number; pct: number } | null>(null);
+  const [towerIssues, setTowerIssues] = useState<TowerIssue[]>([]);
+  const [loadingIssues, setLoadingIssues] = useState(false);
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`${BASE_URL}api/photos/compliance?tower=${encodeURIComponent(tower.name)}`)
@@ -347,6 +352,27 @@ function TowerFolderView({
       })
       .catch(() => {});
   }, [tower.name]);
+
+  useEffect(() => {
+    setLoadingIssues(true);
+    fetch(`${BASE_URL}api/issues?tower=${encodeURIComponent(tower.name)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: TowerIssue[]) => setTowerIssues(rows))
+      .catch(() => setTowerIssues([]))
+      .finally(() => setLoadingIssues(false));
+  }, [tower.name]);
+
+  const handleResolveIssue = useCallback(async (id: number) => {
+    setResolvingId(id);
+    try {
+      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      if (r.ok) {
+        setTowerIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+      }
+    } catch { /* ignore */ } finally {
+      setResolvingId(null);
+    }
+  }, []);
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
@@ -418,7 +444,9 @@ function TowerFolderView({
     ? stampedPhotosAll.filter(p => !isConfirmedUnavailable(p))
     : stampedPhotosAll;
 
-  const tabs: { id: FolderTab; label: string; count: number | null; icon: React.ReactNode }[] = [
+  const openIssueCount = towerIssues.filter(i => !i.resolved).length;
+
+  const tabs: { id: FolderTab; label: string; count: number | null; icon: React.ReactNode; badge?: boolean }[] = [
     {
       id: "original",
       label: "Original Images",
@@ -436,6 +464,13 @@ function TowerFolderView({
       label: "Reports",
       count: loadingReports ? null : cableFilteredReports.length,
       icon: <FileText className="w-3.5 h-3.5" />,
+    },
+    {
+      id: "issues",
+      label: "Issues",
+      count: loadingIssues ? null : towerIssues.length,
+      icon: <Flag className="w-3.5 h-3.5" />,
+      badge: openIssueCount > 0,
     },
   ];
 
@@ -525,7 +560,7 @@ function TowerFolderView({
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={[
-                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap relative",
                 active
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
@@ -536,7 +571,9 @@ function TowerFolderView({
               <span
                 className={[
                   "inline-flex items-center justify-center rounded-full text-[10px] font-semibold min-w-[18px] h-[18px] px-1",
-                  active
+                  tab.badge
+                    ? "bg-amber-500 text-white"
+                    : active
                     ? "bg-primary/10 text-primary"
                     : "bg-muted text-muted-foreground",
                 ].join(" ")}
@@ -547,7 +584,7 @@ function TowerFolderView({
           );
         })}
         {/* Hide unavailable toggle — only relevant on photo tabs */}
-        {activeTab !== "reports" && (
+        {activeTab !== "reports" && activeTab !== "issues" && (
           <button
             onClick={() => setHideUnavailable(v => !v)}
             className={[
@@ -669,6 +706,64 @@ function TowerFolderView({
                   {showAllReports ? "Show less" : `Show all ${cableFilteredReports.length} reports`}
                 </button>
               )}
+            </div>
+          )
+        )}
+        {/* Issues tab */}
+        {activeTab === "issues" && (
+          loadingIssues ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+            </div>
+          ) : towerIssues.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/40 border border-dashed rounded-xl">
+              <Flag className="w-10 h-10 mb-2" />
+              <span className="text-sm">No issues raised for this tower</span>
+              <span className="text-xs mt-1">Open a photo in the Image Review page to raise an issue.</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {towerIssues.map(issue => (
+                <div
+                  key={issue.id}
+                  className={`rounded-lg border px-4 py-3 space-y-1.5 transition-colors ${issue.resolved ? "border-border/40 opacity-60" : "border-amber-500/30 bg-amber-500/5"}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-semibold uppercase rounded-full px-2 py-0.5 ${
+                        issue.severity === "critical" ? "bg-red-100 text-red-700" :
+                        issue.severity === "high"     ? "bg-orange-100 text-orange-700" :
+                        issue.severity === "medium"   ? "bg-amber-100 text-amber-700" :
+                        "bg-slate-100 text-slate-600"
+                      }`}>{issue.severity}</span>
+                      <span className="text-xs text-muted-foreground capitalize">{issue.type}</span>
+                      {issue.photoId && (
+                        <span className="text-[10px] font-mono text-muted-foreground/60">{issue.photoId}</span>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0">
+                      {issue.resolved ? (
+                        <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                          <CheckCheck className="w-3.5 h-3.5" />Resolved
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleResolveIssue(issue.id)}
+                          disabled={resolvingId === issue.id}
+                          className="text-xs text-green-600 hover:text-green-700 font-medium transition-colors border border-green-200 rounded-full px-2.5 py-0.5 hover:bg-green-50"
+                        >
+                          {resolvingId === issue.id ? "…" : "Resolve"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-foreground/80 leading-snug">{issue.description}</p>
+                  <p className="text-[10px] text-muted-foreground/50">
+                    {new Date(issue.createdAt).toLocaleDateString()}
+                    {issue.raisedBy && ` · ${issue.raisedBy}`}
+                  </p>
+                </div>
+              ))}
             </div>
           )
         )}

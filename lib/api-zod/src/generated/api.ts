@@ -537,16 +537,21 @@ export const RejectImageResponse = zod.object({
 export const ListIssuesQueryParams = zod.object({
   imageId: zod.coerce.number().optional(),
   phaseId: zod.coerce.number().optional(),
+  photoId: zod.string().optional(),
+  tower: zod.string().optional(),
+  string: zod.string().optional(),
   severity: zod.coerce.string().optional(),
   resolved: zod.coerce.boolean().optional(),
 });
 
 export const ListIssuesResponseItem = zod.object({
   id: zod.number(),
-  imageId: zod.number(),
+  imageId: zod.number().nullish(),
+  photoId: zod.string().nullish(),
   type: zod.string(),
   severity: zod.string(),
   description: zod.string(),
+  raisedBy: zod.string().nullish(),
   resolved: zod.boolean(),
   resolvedBy: zod.string().nullish(),
   resolvedAt: zod.string().nullish(),
@@ -559,10 +564,12 @@ export const ListIssuesResponse = zod.array(ListIssuesResponseItem);
  * @summary Create an issue flag
  */
 export const CreateIssueBody = zod.object({
-  imageId: zod.number(),
+  imageId: zod.number().optional(),
+  photoId: zod.string().optional(),
   type: zod.string(),
   severity: zod.string(),
   description: zod.string(),
+  raisedBy: zod.string().optional(),
 });
 
 /**
@@ -574,10 +581,12 @@ export const GetIssueParams = zod.object({
 
 export const GetIssueResponse = zod.object({
   id: zod.number(),
-  imageId: zod.number(),
+  imageId: zod.number().nullish(),
+  photoId: zod.string().nullish(),
   type: zod.string(),
   severity: zod.string(),
   description: zod.string(),
+  raisedBy: zod.string().nullish(),
   resolved: zod.boolean(),
   resolvedBy: zod.string().nullish(),
   resolvedAt: zod.string().nullish(),
@@ -602,10 +611,12 @@ export const UpdateIssueBody = zod.object({
 
 export const UpdateIssueResponse = zod.object({
   id: zod.number(),
-  imageId: zod.number(),
+  imageId: zod.number().nullish(),
+  photoId: zod.string().nullish(),
   type: zod.string(),
   severity: zod.string(),
   description: zod.string(),
+  raisedBy: zod.string().nullish(),
   resolved: zod.boolean(),
   resolvedBy: zod.string().nullish(),
   resolvedAt: zod.string().nullish(),

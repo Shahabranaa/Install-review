@@ -2,14 +2,16 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag,
 } from "lucide-react";
-import { useState, type ElementType } from "react";
+import { useState, useEffect, type ElementType } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useListLocations, useListStrings } from "@workspace/api-client-react";
 import type { Location } from "@workspace/api-client-react";
+
+const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
 const ACCESS_ICONS = {
   admin: { icon: ShieldCheck, color: "text-red-500", label: "Admin" },
@@ -245,6 +247,14 @@ function ImagesSection({ location }: { location: string }) {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const [openIssueCount, setOpenIssueCount] = useState(0);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}api/issues?resolved=false`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: unknown[]) => setOpenIssueCount(rows.length))
+      .catch(() => {});
+  }, []);
 
   const accessInfo = user
     ? (ACCESS_ICONS[user.accessLevel as keyof typeof ACCESS_ICONS] ?? ACCESS_ICONS.viewer)
@@ -336,6 +346,31 @@ export function AppSidebar() {
             icon={Package}
             isActive={location === "/documents" || location.startsWith("/documents")}
           />
+
+          {/* Punch List / Issues */}
+          <Link href="/issues">
+            <div
+              className={cn(
+                "flex items-center px-2 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors",
+                location === "/issues"
+                  ? "bg-sidebar-primary/10 text-sidebar-primary"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              )}
+            >
+              <Flag
+                className={cn(
+                  "mr-3 h-5 w-5 flex-shrink-0",
+                  location === "/issues" ? "text-sidebar-primary" : "text-amber-500",
+                )}
+              />
+              <span className="flex-1">Punch List</span>
+              {openIssueCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1">
+                  {openIssueCount}
+                </span>
+              )}
+            </div>
+          </Link>
         </nav>
       </div>
 

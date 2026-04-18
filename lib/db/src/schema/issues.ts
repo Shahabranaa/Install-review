@@ -5,10 +5,12 @@ import { imagesTable } from "./images";
 
 export const issuesTable = pgTable("issues", {
   id: serial("id").primaryKey(),
-  imageId: integer("image_id").notNull().references(() => imagesTable.id, { onDelete: "cascade" }),
+  imageId: integer("image_id").references(() => imagesTable.id, { onDelete: "cascade" }),
+  photoId: text("photo_id"),
   type: text("type").notNull(),
   severity: text("severity").notNull(),
   description: text("description").notNull(),
+  raisedBy: text("raised_by"),
   resolved: boolean("resolved").notNull().default(false),
   resolvedBy: text("resolved_by"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),

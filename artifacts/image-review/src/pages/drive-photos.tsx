@@ -37,6 +37,9 @@ import {
   ImageOff,
   Eye,
   EyeOff,
+  Flag,
+  CheckCheck,
+  Plus,
 } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -308,6 +311,65 @@ function FullscreenViewer({
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [showCrop, setShowCrop] = useState(true);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // Issue panel state
+  interface IssueRecord { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; createdAt: string; }
+  const [photoIssues, setPhotoIssues] = useState<IssueRecord[]>([]);
+  const [showIssueForm, setShowIssueForm] = useState(false);
+  const [issueType, setIssueType] = useState("visual");
+  const [issueSeverity, setIssueSeverity] = useState("medium");
+  const [issueDescription, setIssueDescription] = useState("");
+  const [issueSaving, setIssueSaving] = useState(false);
+  const [issueSaved, setIssueSaved] = useState(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!photo.photoId) return;
+    fetch(`${BASE_URL}api/issues?photoId=${encodeURIComponent(photo.photoId)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: IssueRecord[]) => setPhotoIssues(rows))
+      .catch(() => {});
+  }, [photo.photoId]);
+
+  const handleSubmitIssue = async () => {
+    if (!issueDescription.trim()) return;
+    setIssueSaving(true);
+    setIssueError(null);
+    try {
+      const r = await fetch(`${BASE_URL}api/issues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: photo.photoId, type: issueType, severity: issueSeverity, description: issueDescription.trim() }),
+      });
+      if (r.ok) {
+        const newIssue = await r.json() as IssueRecord;
+        setPhotoIssues(prev => [newIssue, ...prev]);
+        setIssueSaved(true);
+        setIssueDescription("");
+        setTimeout(() => { setShowIssueForm(false); setIssueSaved(false); }, 1500);
+      } else {
+        const body = await r.json().catch(() => ({})) as { error?: string };
+        setIssueError(body.error ?? `Save failed (${r.status})`);
+      }
+    } catch (e: unknown) {
+      setIssueError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setIssueSaving(false);
+    }
+  };
+
+  const handleResolveIssue = async (id: number) => {
+    setResolvingId(id);
+    try {
+      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      if (r.ok) {
+        setPhotoIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+      }
+    } catch { /* ignore */ } finally {
+      setResolvingId(null);
+    }
+  };
 
   // Fetch existing DB review on open
   useEffect(() => {
@@ -725,6 +787,119 @@ function FullscreenViewer({
                 <MetaRow label="Signature" value={photo.signatureCapture} />
                 <MetaRow label="Drawing" value={photo.drawingMarkup} />
               </MetaSection>
+
+              <Separator />
+
+              {/* Issues section */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+                    <Flag className="w-3.5 h-3.5 text-amber-500" />
+                    Issues
+                    {photoIssues.filter(i => !i.resolved).length > 0 && (
+                      <span className="rounded-full bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none">
+                        {photoIssues.filter(i => !i.resolved).length}
+                      </span>
+                    )}
+                  </p>
+                  <button
+                    onClick={() => { setShowIssueForm(f => !f); setIssueSaved(false); setIssueError(null); }}
+                    className="flex items-center gap-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 px-2 py-0.5 text-xs font-medium transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Raise
+                  </button>
+                </div>
+
+                {/* Existing issues */}
+                {photoIssues.length > 0 && (
+                  <div className="space-y-1.5">
+                    {photoIssues.map(issue => (
+                      <div key={issue.id} className={`rounded-lg border px-2.5 py-2 space-y-1 ${issue.resolved ? "border-border/40 opacity-60" : "border-amber-500/30 bg-amber-500/5"}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[10px] font-semibold uppercase rounded-full px-1.5 py-0.5 ${
+                              issue.severity === "critical" ? "bg-red-100 text-red-700" :
+                              issue.severity === "high"     ? "bg-orange-100 text-orange-700" :
+                              issue.severity === "medium"   ? "bg-amber-100 text-amber-700" :
+                              "bg-slate-100 text-slate-600"
+                            }`}>{issue.severity}</span>
+                            <span className="text-[10px] text-muted-foreground capitalize">{issue.type}</span>
+                          </div>
+                          {issue.resolved ? (
+                            <span className="text-[10px] text-green-600 font-medium flex items-center gap-0.5"><CheckCheck className="w-3 h-3" />Resolved</span>
+                          ) : (
+                            <button
+                              onClick={() => handleResolveIssue(issue.id)}
+                              disabled={resolvingId === issue.id}
+                              className="text-[10px] text-green-600 hover:text-green-700 font-medium transition-colors"
+                            >
+                              {resolvingId === issue.id ? "…" : "Resolve"}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-foreground/80 leading-snug">{issue.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* New issue form */}
+                {showIssueForm && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-semibold uppercase text-muted-foreground/70">Type</label>
+                        <select
+                          value={issueType}
+                          onChange={e => setIssueType(e.target.value)}
+                          className="w-full rounded border border-border bg-background text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="visual">Visual</option>
+                          <option value="safety">Safety</option>
+                          <option value="quality">Quality</option>
+                          <option value="documentation">Documentation</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-semibold uppercase text-muted-foreground/70">Severity</label>
+                        <select
+                          value={issueSeverity}
+                          onChange={e => setIssueSeverity(e.target.value)}
+                          className="w-full rounded border border-border bg-background text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </div>
+                    </div>
+                    <Textarea
+                      placeholder="Describe the issue…"
+                      value={issueDescription}
+                      onChange={e => setIssueDescription(e.target.value)}
+                      rows={3}
+                      className="text-xs resize-none"
+                    />
+                    {issueError && <p className="text-xs text-red-400">{issueError}</p>}
+                    {issueSaved ? (
+                      <div className="flex items-center gap-1.5 text-green-500 text-xs font-medium justify-center py-1">
+                        <CheckCircle2 className="w-4 h-4" />Issue raised
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleSubmitIssue}
+                        disabled={!issueDescription.trim() || issueSaving}
+                        className="w-full rounded-lg py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-white transition-colors disabled:opacity-40"
+                      >
+                        {issueSaving ? "Saving…" : "Raise Issue"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
             </div>
           )}
