@@ -696,16 +696,19 @@ export default function Towers() {
   const initialTowerName = params.get("tower") ?? undefined;
 
   const [selectedStringId, setSelectedStringId] = useState<number | undefined>(initialStringId);
-  useEffect(() => {
-    const id = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
-    setSelectedStringId(id);
-  }, [search]);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOspId, setSelectedOspId] = useState<number | undefined>(undefined);
   const [selectedTower, setSelectedTower] = useState<TowerRecord | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [lastPack, setLastPack] = useState<{ wasabiKey: string | null; stringName: string } | null>(null);
+
   const { toast } = useToast();
+
+  useEffect(() => {
+    const id = params.get("stringId") ? parseInt(params.get("stringId")!) : undefined;
+    setSelectedStringId(id);
+    setLastPack(null);
+  }, [search]);
 
   const { data: locations } = useListLocations();
   const ospLocations = locations?.filter((l) => l.type === "OSP") ?? [];
@@ -774,6 +777,7 @@ export default function Towers() {
   const generateHandoverPack = useCallback(async () => {
     if (!selectedString) return;
     setGenerating(true);
+    setLastPack(null);
     try {
       const resp = await fetch(`${BASE_URL}api/documents/generate-handover`, {
         method: "POST",
@@ -784,7 +788,7 @@ export default function Towers() {
         const err = await resp.json().catch(() => ({ error: "Unknown error" }));
         throw new Error(err.error ?? `HTTP ${resp.status}`);
       }
-      // If Wasabi is not configured the server sends the PDF directly
+      // If Wasabi is not configured the server sends the PDF directly as a download
       const ct = resp.headers.get("content-type") ?? "";
       if (ct.includes("application/pdf")) {
         const blob = await resp.blob();
@@ -794,8 +798,11 @@ export default function Towers() {
         a.download = `${selectedString.name}-handover.pdf`;
         a.click();
         URL.revokeObjectURL(url);
+        setLastPack({ wasabiKey: null, stringName: selectedString.name });
         toast({ title: "Handover pack downloaded", description: `String ${selectedString.name}` });
       } else {
+        const data = await resp.json();
+        setLastPack({ wasabiKey: data.wasabiKey ?? null, stringName: selectedString.name });
         toast({ title: "Handover pack generated", description: `String ${selectedString.name} — saved to Wasabi.` });
       }
     } catch (err: unknown) {
@@ -842,7 +849,7 @@ export default function Towers() {
               : "Offshore wind turbine locations"}
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           {selectedString && (
             <Button
               variant="outline"
@@ -858,6 +865,18 @@ export default function Towers() {
               )}
               {generating ? "Generating…" : "Generate Handover Pack"}
             </Button>
+          )}
+          {lastPack && lastPack.stringName === selectedString?.name && lastPack.wasabiKey && (
+            <a
+              href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(lastPack.wasabiKey)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="default" size="sm" className="gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                View Pack
+              </Button>
+            </a>
           )}
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Wind className="w-4 h-4" />

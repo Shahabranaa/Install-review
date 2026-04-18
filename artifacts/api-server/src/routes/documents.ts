@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray } from "drizzle-orm";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, pool } from "@workspace/db";
+import { eq, inArray, ne } from "drizzle-orm";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, stringsTable, pool } from "@workspace/db";
 import {
   ListDocumentsQueryParams,
   ListDocumentsResponse,
@@ -12,14 +12,16 @@ import {
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize.js";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
-import { generateHandoverPdf, type HandoverPhoto, type HandoverReport } from "../lib/pdf-handover.js";
+import { generateHandoverPdf, type HandoverPhotoWithBuffer, type HandoverReport } from "../lib/pdf-handover.js";
 import { logger } from "../lib/logger.js";
+import pLimit from "p-limit";
 
 const router: IRouter = Router();
 
 const FIELD_REPORTS_PREFIX = "[Output] Field Reports/";
+const MAX_PHOTOS_IN_PDF    = 120;
 
-// ── Helper: parse drivePath into {site, string, cable, name} ─────────────────
+// ── Helper: parse drivePath into ParsedReport ─────────────────────────────────
 
 interface ParsedReport {
   site: string;
@@ -47,21 +49,18 @@ function parseReportType(name: string): string {
 
 function parseDrivePath(drivePath: string, fileName: string): ParsedReport | null {
   const stripped = drivePath.slice(FIELD_REPORTS_PREFIX.length);
-  const parts = stripped.split("/").filter(Boolean);
-  const last = parts[parts.length - 1];
+  const parts    = stripped.split("/").filter(Boolean);
+  const last     = parts[parts.length - 1];
   const pathParts = (last === fileName || last.toLowerCase() === fileName.toLowerCase())
-    ? parts.slice(0, -1)
-    : parts;
+    ? parts.slice(0, -1) : parts;
   if (pathParts.length < 2) return null;
   const [site, stringName, ...rest] = pathParts;
-  const cable = rest.length > 0 ? rest[0] : null;
-  const name = fileName;
   return {
-    site: site ?? "Unknown",
-    string: stringName ?? "Unknown",
-    cable,
-    name,
-    reportType: parseReportType(name),
+    site:       site       ?? "Unknown",
+    string:     stringName ?? "Unknown",
+    cable:      rest.length > 0 ? rest[0] : null,
+    name:       fileName,
+    reportType: parseReportType(fileName),
   };
 }
 
@@ -70,20 +69,22 @@ function stripNameBlurb(name: string): string {
   return idx !== -1 ? name.slice(idx + 5) : name;
 }
 
-// ── GET /documents ─────────────────────────────────────────────────────────────
+// ── GET /documents — phase docs only (avoids null phaseId breaking zod types) ─
 
 router.get("/documents", async (req, res): Promise<void> => {
   const queryParams = ListDocumentsQueryParams.safeParse(req.query);
   let documents;
   if (queryParams.success && queryParams.data.phaseId) {
-    documents = await db.select().from(documentsTable).where(eq(documentsTable.phaseId, queryParams.data.phaseId));
+    documents = await db.select().from(documentsTable)
+      .where(eq(documentsTable.phaseId, queryParams.data.phaseId));
   } else {
-    documents = await db.select().from(documentsTable);
+    documents = await db.select().from(documentsTable)
+      .where(ne(documentsTable.packType, "handover"));
   }
   res.json(ListDocumentsResponse.parse(serialize(documents)));
 });
 
-// ── GET /documents/handover — list handover packs only ────────────────────────
+// ── GET /documents/handover — list handover packs ──────────────────────────────
 
 router.get("/documents/handover", async (_req, res): Promise<void> => {
   try {
@@ -100,7 +101,7 @@ router.get("/documents/handover", async (_req, res): Promise<void> => {
   }
 });
 
-// ── POST /documents/generate ─────────────────────────────────────────────────
+// ── POST /documents/generate ──────────────────────────────────────────────────
 
 router.post("/documents/generate", async (req, res): Promise<void> => {
   const parsed = GenerateDocumentBody.safeParse(req.body);
@@ -150,8 +151,6 @@ router.post("/documents/generate", async (req, res): Promise<void> => {
     th { background: #f7fafc; font-weight: 600; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
     .critical { background: #fed7d7; color: #c53030; }
-    .warning { background: #fefcbf; color: #b7791f; }
-    .info { background: #bee3f8; color: #2b6cb0; }
     .approved { background: #c6f6d5; color: #276749; }
     .rejected { background: #fed7d7; color: #c53030; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 16px 0; }
@@ -225,7 +224,7 @@ router.post("/documents/generate", async (req, res): Promise<void> => {
   res.status(201).json(GetDocumentResponse.parse(serialize(doc)));
 });
 
-// ── POST /documents/generate-handover — PDF handover pack for a string ────────
+// ── POST /documents/generate-handover ────────────────────────────────────────
 
 router.post("/documents/generate-handover", async (req, res): Promise<void> => {
   const { stringName, generatedBy } = req.body as { stringName?: string; generatedBy?: string };
@@ -242,7 +241,22 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
   const name = stringName.trim();
 
   try {
-    // 1. Fetch approved photos for the string (ordered by cable → phase → req_img_order)
+    // 1. Look up OSP name for this string
+    const [strRow] = await db
+      .select({ locationId: stringsTable.locationId })
+      .from(stringsTable)
+      .where(eq(stringsTable.name, name));
+
+    let ospName = "Unknown";
+    if (strRow) {
+      const [loc] = await db
+        .select({ name: locationsTable.name })
+        .from(locationsTable)
+        .where(eq(locationsTable.id, strRow.locationId));
+      if (loc) ospName = loc.name;
+    }
+
+    // 2. Fetch approved photos (ordered by cable → phase → req_img_order)
     const photoRows = await pool.query<{
       photo_id: string;
       cable_link: string | null;
@@ -251,32 +265,60 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       req_img_order: string | null;
       approval: string | null;
       label: string | null;
+      wasabi_key: string | null;
+      image_available: boolean | null;
     }>(`
-      SELECT photo_id, cable_link, phase_link, req_img_type, req_img_order, approval, label
+      SELECT photo_id, cable_link, phase_link, req_img_type, req_img_order,
+             approval, label, wasabi_key, image_available
       FROM sheet_photos
       WHERE photo_string = $1
         AND LOWER(COALESCE(approval,'')) IN ('approved','checked','verified')
       ORDER BY cable_link NULLS LAST, phase_link NULLS LAST,
-               CAST(NULLIF(regexp_replace(req_img_order,'[^0-9]','','g'),'') AS integer) NULLS LAST
-    `, [name]);
+               CAST(NULLIF(regexp_replace(COALESCE(req_img_order,''),'[^0-9]','','g'),'') AS integer) NULLS LAST
+      LIMIT $2
+    `, [name, MAX_PHOTOS_IN_PDF]);
 
-    const photos: HandoverPhoto[] = photoRows.rows.map(r => ({
-      photoId:    r.photo_id,
-      cableLink:  r.cable_link,
-      phaseLink:  r.phase_link,
-      reqImgType: r.req_img_type,
-      reqImgOrder: r.req_img_order,
-      approval:   r.approval,
-      label:      r.label,
-    }));
+    // 3. Fetch approved photo images from Wasabi (parallel, max 8 concurrent)
+    const wasabi = await getWasabiClientAndCreds();
+    const limit  = pLimit(8);
 
-    // 2. Fetch field reports for the string from the wasabi mirror table
+    const photos: HandoverPhotoWithBuffer[] = await Promise.all(
+      photoRows.rows.map(r => limit(async () => {
+        let imageBuffer: Buffer | null = null;
+        if (wasabi && r.wasabi_key && r.image_available !== false) {
+          try {
+            const cmd = new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: r.wasabi_key });
+            const resp = await wasabi.client.send(cmd);
+            if (resp.Body) {
+              const chunks: Uint8Array[] = [];
+              for await (const chunk of resp.Body as AsyncIterable<Uint8Array>) {
+                chunks.push(chunk);
+              }
+              imageBuffer = Buffer.concat(chunks);
+            }
+          } catch {
+            // If image fetch fails, leave imageBuffer null
+          }
+        }
+        return {
+          photoId:    r.photo_id,
+          cableLink:  r.cable_link,
+          phaseLink:  r.phase_link,
+          reqImgType: r.req_img_type,
+          reqImgOrder: r.req_img_order,
+          approval:   r.approval,
+          label:      r.label,
+          imageBuffer,
+        };
+      })),
+    );
+
+    // 4. Fetch field reports for the string
     const reportRows = await pool.query<{
       drive_path: string;
       file_name: string;
-      wasabi_key: string;
     }>(`
-      SELECT drive_path, file_name, wasabi_key
+      SELECT drive_path, file_name
       FROM wasabi_mirror_tasks
       WHERE drive_path LIKE $1
         AND lower(file_name) LIKE '%.pdf'
@@ -287,8 +329,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
     const reports: HandoverReport[] = [];
     for (const row of reportRows.rows) {
       const parsed = parseDrivePath(row.drive_path, row.file_name);
-      if (!parsed) continue;
-      if (parsed.string !== name) continue;
+      if (!parsed || parsed.string !== name) continue;
       reports.push({
         name:       stripNameBlurb(parsed.name.replace(/\.pdf$/i, "")),
         reportType: parsed.reportType,
@@ -297,17 +338,16 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       });
     }
 
-    // 3. Generate PDF
+    // 5. Generate PDF
     const generatedAt = new Date();
-    const pdfBuffer = generateHandoverPdf({ stringName: name, generatedBy, generatedAt, photos, reports });
+    const pdfBuffer = generateHandoverPdf({ stringName: name, ospName, generatedBy, generatedAt, photos, reports });
 
-    // 4. Upload to Wasabi (if configured)
-    const dateStr = generatedAt.toISOString().slice(0, 10);
-    const timeStr = generatedAt.toISOString().slice(11, 16).replace(":", "");
-    const safeString = name.replace(/[^a-zA-Z0-9\-_.()]/g, "_");
-    const wasabiKey = `[Output] Handover Packs/${safeString}/${safeString}-${dateStr}_${timeStr}.pdf`;
+    // 6. Upload to Wasabi (if configured)
+    const dateStr   = generatedAt.toISOString().slice(0, 10);
+    const timeStr   = generatedAt.toISOString().slice(11, 16).replace(":", "");
+    const safeStr   = name.replace(/[^a-zA-Z0-9\-_.()]/g, "_");
+    const wasabiKey = `[Output] Handover Packs/${safeStr}/${safeStr}-${dateStr}_${timeStr}.pdf`;
 
-    const wasabi = await getWasabiClientAndCreds();
     if (wasabi) {
       await wasabi.client.send(new PutObjectCommand({
         Bucket:      wasabi.creds.bucket,
@@ -317,7 +357,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       }));
     }
 
-    // 5. Record in documents table
+    // 7. Record in DB
     const title = `Handover Pack — String ${name} (${dateStr})`;
     const [doc] = await db.insert(documentsTable).values({
       generatedBy,
@@ -325,15 +365,16 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       title,
       packType:    "handover",
       stringName:  name,
+      ospName,
       wasabiKey:   wasabi ? wasabiKey : null,
       photoCount:  photos.length,
       reportCount: reports.length,
     }).returning();
 
-    // 6. If Wasabi not configured, send the PDF directly as download
+    // 8. If Wasabi not configured, send PDF as a direct download
     if (!wasabi) {
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${safeString}-handover-${dateStr}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${safeStr}-handover-${dateStr}.pdf"`);
       res.send(pdfBuffer);
       return;
     }
@@ -342,6 +383,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       id:          doc.id,
       title:       doc.title,
       stringName:  doc.stringName,
+      ospName:     doc.ospName,
       wasabiKey:   doc.wasabiKey,
       photoCount:  doc.photoCount,
       reportCount: doc.reportCount,
@@ -354,7 +396,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /documents/:id ────────────────────────────────────────────────────────
+// ── GET /documents/:id — phase docs only (avoids zod parse failure on null phaseId) ──
 
 router.get("/documents/:id", async (req, res): Promise<void> => {
   const params = GetDocumentParams.safeParse(req.params);
@@ -367,10 +409,26 @@ router.get("/documents/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Document not found" });
     return;
   }
+  // Handover packs have null phaseId — return a custom shape instead of broken zod parse
+  if (doc.packType === "handover") {
+    res.json({
+      id:          doc.id,
+      title:       doc.title,
+      stringName:  doc.stringName,
+      ospName:     doc.ospName,
+      wasabiKey:   doc.wasabiKey,
+      photoCount:  doc.photoCount,
+      reportCount: doc.reportCount,
+      generatedAt: doc.generatedAt,
+      generatedBy: doc.generatedBy,
+      packType:    "handover",
+    });
+    return;
+  }
   res.json(GetDocumentResponse.parse(serialize(doc)));
 });
 
-// ── GET /documents/:id/download ───────────────────────────────────────────────
+// ── GET /documents/:id/download ────────────────────────────────────────────────
 
 router.get("/documents/:id/download", async (req, res): Promise<void> => {
   const params = DownloadDocumentParams.safeParse(req.params);
@@ -383,13 +441,10 @@ router.get("/documents/:id/download", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Document not found" });
     return;
   }
-
-  // Handover packs are stored as PDFs in Wasabi — redirect to the view endpoint
   if (doc.packType === "handover" && doc.wasabiKey) {
     res.redirect(`/api/reports/view?key=${encodeURIComponent(doc.wasabiKey)}`);
     return;
   }
-
   res.setHeader("Content-Type", "text/html");
   res.setHeader("Content-Disposition", `attachment; filename="${doc.title.replace(/[^a-zA-Z0-9-_]/g, "_")}.html"`);
   res.send(doc.content ?? "<html><body><p>No content</p></body></html>");

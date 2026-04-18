@@ -13,6 +13,7 @@ export const documentsTable = pgTable("documents", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   packType: text("pack_type").default("phase"),
   stringName: text("string_name"),
+  ospName: text("osp_name"),
   wasabiKey: text("wasabi_key"),
   photoCount: integer("photo_count"),
   reportCount: integer("report_count"),
