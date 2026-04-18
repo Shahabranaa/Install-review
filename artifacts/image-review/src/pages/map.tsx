@@ -221,7 +221,7 @@ export default function MapPage() {
                     </span>
                     {openIssues > 0 && (
                       <div className="mt-1">
-                        <Link href={`/punch-list?tower=${encodeURIComponent(tower.name)}`}>
+                        <Link href={`/issues?tower=${encodeURIComponent(tower.name)}`}>
                           <span
                             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-white"
                             style={{ backgroundColor: issueRing ?? "#dc2626" }}
