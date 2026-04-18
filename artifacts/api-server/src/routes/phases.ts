@@ -110,7 +110,7 @@ router.get("/phases/:id", async (req, res): Promise<void> => {
   res.json(GetPhaseResponse.parse(serialize(detail)));
 });
 
-router.patch("/phases/:id", async (req, res): Promise<void> => {
+router.patch("/phases/:id", requireAdmin, async (req, res): Promise<void> => {
   const params = UpdatePhaseParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

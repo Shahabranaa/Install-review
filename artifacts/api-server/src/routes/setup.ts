@@ -308,57 +308,68 @@ async function importPhaseDefinitions(): Promise<{ phaseTypes: number; definitio
   }
   logger.info({ count: defsMap.size }, "[setup] Phase definitions total after merging sheet_photos");
 
-  const phaseTypes = new Set<string>();
-  let created = 0;
-  let updated = 0;
+  // ─── Also collect ALL distinct phaseLink names (even without reqImgType) ──
+  const allPhaseLinkRows = await db
+    .selectDistinct({ phaseLink: sheetPhotosTable.phaseLink })
+    .from(sheetPhotosTable)
+    .where(sql`${sheetPhotosTable.phaseLink} IS NOT NULL`);
+  const allPhaseTypes = new Set<string>(
+    allPhaseLinkRows.map((r) => r.phaseLink).filter((v): v is string => Boolean(v))
+  );
+  // Add any from defsMap too
+  for (const key of defsMap.keys()) {
+    const [pt] = key.split("|||");
+    if (pt) allPhaseTypes.add(pt);
+  }
+
+  let upserted = 0;
 
   for (const [key, extra] of defsMap) {
     const [phaseType, reqImgType] = key.split("|||");
     if (!phaseType || !reqImgType) continue;
-    phaseTypes.add(phaseType);
 
-    const existing = await db
-      .select()
-      .from(requiredImageDefinitionsTable)
-      .where(and(
-        eq(requiredImageDefinitionsTable.phaseType, phaseType),
-        eq(requiredImageDefinitionsTable.reqImgType, reqImgType),
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(requiredImageDefinitionsTable)
-        .set({ reqImgOrder: extra.reqImgOrder, description: extra.description, updatedAt: new Date() })
-        .where(eq(requiredImageDefinitionsTable.id, existing[0]!.id));
-      updated++;
-    } else {
-      await db.insert(requiredImageDefinitionsTable).values({
-        phaseType,
-        reqImgType,
-        reqImgOrder: extra.reqImgOrder,
-        description: extra.description,
+    await db
+      .insert(requiredImageDefinitionsTable)
+      .values({ phaseType, reqImgType, reqImgOrder: extra.reqImgOrder, description: extra.description })
+      .onConflictDoUpdate({
+        target: [requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgType],
+        set: { reqImgOrder: extra.reqImgOrder, description: extra.description, updatedAt: new Date() },
       });
-      created++;
-    }
+    upserted++;
   }
 
-  return { phaseTypes: phaseTypes.size, definitions: defsMap.size, created, updated };
+  return {
+    phaseTypes: allPhaseTypes.size,
+    definitions: defsMap.size,
+    created: upserted,
+    updated: 0,
+    allPhaseTypes: Array.from(allPhaseTypes),
+  };
 }
 
 async function createPhasesForAllLocations(): Promise<{ created: number; skipped: number }> {
-  const phaseTypes = await db
+  // Combine phase types from definitions table AND distinct phaseLink in sheet_photos
+  const fromDefs = await db
     .selectDistinct({ phaseType: requiredImageDefinitionsTable.phaseType })
     .from(requiredImageDefinitionsTable);
-  if (phaseTypes.length === 0) return { created: 0, skipped: 0 };
+  const fromPhotos = await db
+    .selectDistinct({ phaseLink: sheetPhotosTable.phaseLink })
+    .from(sheetPhotosTable)
+    .where(sql`${sheetPhotosTable.phaseLink} IS NOT NULL`);
+
+  const allPhaseTypes = new Set<string>([
+    ...fromDefs.map((r) => r.phaseType).filter((v): v is string => Boolean(v)),
+    ...fromPhotos.map((r) => r.phaseLink).filter((v): v is string => Boolean(v)),
+  ]);
+
+  if (allPhaseTypes.size === 0) return { created: 0, skipped: 0 };
 
   const osps = await db.select().from(locationsTable).where(eq(locationsTable.type, "OSP"));
   let created = 0;
   let skipped = 0;
 
   for (const osp of osps) {
-    for (const { phaseType } of phaseTypes) {
-      if (!phaseType) continue;
+    for (const phaseType of allPhaseTypes) {
       const existing = await db
         .select()
         .from(phasesTable)
