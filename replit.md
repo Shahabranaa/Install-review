@@ -23,7 +23,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API Server** — Express backend on `PORT=8080` (`cd artifacts/api-server && PORT=8080 pnpm run dev`)
 
 ### Required Secrets
-- `DATABASE_URL` — PostgreSQL connection string (Replit-managed)
+- `NEON_DATABASE_URL` — Neon PostgreSQL connection string (preferred; falls back to `DATABASE_URL`)
 - `SESSION_SECRET` — Express session secret
 
 ### Optional Secrets (for full feature access)
