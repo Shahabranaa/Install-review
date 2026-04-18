@@ -226,10 +226,15 @@ router.post("/documents/generate", async (req, res): Promise<void> => {
 // ── POST /documents/generate-handover ────────────────────────────────────────
 
 router.post("/documents/generate-handover", async (req, res): Promise<void> => {
-  const { stringName, generatedBy } = req.body as { stringName?: string; generatedBy?: string };
+  // Accept stringId (preferred) or stringName (legacy fallback)
+  const { stringId, stringName: rawStringName, generatedBy } = req.body as {
+    stringId?: number;
+    stringName?: string;
+    generatedBy?: string;
+  };
 
-  if (!stringName || typeof stringName !== "string" || stringName.trim() === "") {
-    res.status(400).json({ error: "stringName is required" });
+  if (!stringId && (!rawStringName || typeof rawStringName !== "string" || rawStringName.trim() === "")) {
+    res.status(400).json({ error: "stringId or stringName is required" });
     return;
   }
   if (!generatedBy || typeof generatedBy !== "string") {
@@ -237,23 +242,38 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
     return;
   }
 
-  const name = stringName.trim();
-
   try {
-    // 1. Look up OSP name for this string
-    const [strRow] = await db
-      .select({ locationId: stringsTable.locationId })
-      .from(stringsTable)
-      .where(eq(stringsTable.name, name));
-
-    let ospName = "Unknown";
-    if (strRow) {
-      const [loc] = await db
-        .select({ name: locationsTable.name })
-        .from(locationsTable)
-        .where(eq(locationsTable.id, strRow.locationId));
-      if (loc) ospName = loc.name;
+    // 1. Resolve string record (by ID when available, fall back to name lookup)
+    let stringRecord: { name: string; locationId: number } | undefined;
+    if (stringId) {
+      const [row] = await db
+        .select({ name: stringsTable.name, locationId: stringsTable.locationId })
+        .from(stringsTable)
+        .where(eq(stringsTable.id, stringId));
+      stringRecord = row;
+    } else {
+      const nameTrimmed = rawStringName!.trim();
+      const [row] = await db
+        .select({ name: stringsTable.name, locationId: stringsTable.locationId })
+        .from(stringsTable)
+        .where(eq(stringsTable.name, nameTrimmed));
+      stringRecord = row;
     }
+
+    if (!stringRecord) {
+      res.status(404).json({ error: "String not found" });
+      return;
+    }
+
+    const name = stringRecord.name;
+
+    // 1b. Resolve OSP from the string's locationId (authoritative join via ID)
+    let ospName = "Unknown";
+    const [loc] = await db
+      .select({ name: locationsTable.name })
+      .from(locationsTable)
+      .where(eq(locationsTable.id, stringRecord.locationId));
+    if (loc) ospName = loc.name;
 
     // 2. Fetch approved photos (ordered by cable → phase → req_img_order)
     const photoRows = await pool.query<{
