@@ -857,6 +857,167 @@ router.get("/photos/compliance", async (req, res): Promise<void> => {
   }
 });
 
+// ─── Phase matrix & velocity endpoints ───────────────────────────────────────
+
+// GET /api/photos/phase-matrix
+// Returns: phases[], matrix (string × phase coverage pct), summary (zero/gaps/full tower counts)
+router.get("/photos/phase-matrix", async (_req, res): Promise<void> => {
+  try {
+    // 1. Tower counts + string IDs from DB
+    const stringRows = await db
+      .select({
+        stringId:   stringsTable.id,
+        stringName: stringsTable.name,
+        towerCount: sql<number>`count(${towersTable.id})::int`,
+      })
+      .from(stringsTable)
+      .leftJoin(towersTable, eq(towersTable.stringId, stringsTable.id))
+      .groupBy(stringsTable.id, stringsTable.name)
+      .orderBy(stringsTable.name);
+
+    const towerCountByString = new Map(stringRows.map(s => [s.stringName, s.towerCount]));
+    const stringIdByName     = new Map(stringRows.map(s => [s.stringName, s.stringId]));
+
+    // 2. All towers for summary
+    const allTowerRows = await db.select({ name: towersTable.name }).from(towersTable);
+
+    // 3. (photo_string × phase_link) distinct towers with photos
+    const cellResult = await db.execute(sql`
+      SELECT photo_string, phase_link,
+        COUNT(DISTINCT location_link)::int AS towers_with_photos
+      FROM sheet_photos
+      WHERE photo_string IS NOT NULL
+        AND phase_link    IS NOT NULL
+        AND location_link IS NOT NULL
+      GROUP BY photo_string, phase_link
+      ORDER BY photo_string, phase_link
+    `);
+    const cells = Array.isArray(cellResult) ? cellResult : (cellResult as unknown as { rows: unknown[] }).rows;
+    type CellRow = { photo_string: string; phase_link: string; towers_with_photos: number };
+
+    // 4. Phases — order by numeric suffix if available, else alphabetically
+    const allPhases = [...new Set((cells as CellRow[]).map(r => r.phase_link))];
+    const phaseOrder = (ph: string): [string, number] => {
+      const m = ph.match(/^([A-Z]+)_(\d+)_/);
+      return m ? [m[1], parseInt(m[2])] : [ph, 99];
+    };
+    const phases = allPhases.sort((a, b) => {
+      const [pfxA, numA] = phaseOrder(a);
+      const [pfxB, numB] = phaseOrder(b);
+      if (pfxA !== pfxB) return pfxA < pfxB ? -1 : 1;
+      return numA - numB;
+    });
+
+    // 5. Strings — only those with photo data, sorted
+    const allStrings = [...new Set((cells as CellRow[]).map(r => r.photo_string))].sort();
+
+    // 6. Build cell lookup
+    const cellMap = new Map<string, number>();
+    for (const c of cells as CellRow[]) {
+      cellMap.set(`${c.photo_string}|${c.phase_link}`, c.towers_with_photos);
+    }
+
+    // 7. Matrix rows
+    const matrix = allStrings.map(str => {
+      const total    = towerCountByString.get(str) ?? 0;
+      const stringId = stringIdByName.get(str) ?? null;
+      return {
+        string:      str,
+        stringId,
+        totalTowers: total,
+        cells: phases.map(ph => {
+          const n   = cellMap.get(`${str}|${ph}`) ?? 0;
+          const pct = total > 0 ? Math.round(n / total * 100) : 0;
+          return { phase: ph, towersWithPhotos: n, pct };
+        }),
+      };
+    });
+
+    // 8. Tower-level summary
+    const towerPhaseResult = await db.execute(sql`
+      SELECT location_link, COUNT(DISTINCT phase_link)::int AS phase_count
+      FROM sheet_photos
+      WHERE location_link IS NOT NULL AND phase_link IS NOT NULL
+      GROUP BY location_link
+    `);
+    type TowerPhaseRow = { location_link: string; phase_count: number };
+    const towerPhaseArr = Array.isArray(towerPhaseResult)
+      ? towerPhaseResult
+      : (towerPhaseResult as unknown as { rows: unknown[] }).rows;
+
+    const towerPhaseCounts = new Map(
+      (towerPhaseArr as TowerPhaseRow[]).map(r => [r.location_link, r.phase_count])
+    );
+    const towersWithAnyPhoto = new Set(towerPhaseCounts.keys());
+    const totalPhaseCount    = phases.length;
+
+    const zeroPhotos      = allTowerRows.filter(t => !towersWithAnyPhoto.has(t.name)).length;
+    const fullyDocumented = allTowerRows.filter(t => (towerPhaseCounts.get(t.name) ?? 0) >= totalPhaseCount).length;
+    const withGaps        = allTowerRows.filter(t => {
+      const n = towerPhaseCounts.get(t.name) ?? 0;
+      return n > 0 && n < totalPhaseCount;
+    }).length;
+
+    res.json({
+      phases,
+      matrix,
+      summary: {
+        total: allTowerRows.length,
+        zeroPhotos,
+        withGaps,
+        fullyDocumented,
+      },
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/photos/velocity
+// Returns daily photo submission counts for the rolling 60-day window
+router.get("/photos/velocity", async (_req, res): Promise<void> => {
+  try {
+    const result = await db.execute(sql`
+      SELECT creation_date, COUNT(*)::int AS count
+      FROM sheet_photos
+      WHERE creation_date IS NOT NULL
+      GROUP BY creation_date
+    `);
+    const rows = Array.isArray(result) ? result : (result as unknown as { rows: unknown[] }).rows;
+
+    // Parse "M/D/YYYY" → Date and filter last 60 days
+    const now    = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - 60);
+    cutoff.setHours(0, 0, 0, 0);
+
+    type DateRow = { creation_date: string; count: number };
+    const countByKey = new Map<string, number>();
+    for (const r of rows as DateRow[]) {
+      const parts = (r.creation_date ?? "").split("/");
+      if (parts.length !== 3) continue;
+      const [mStr, dStr, yStr] = parts;
+      const d = new Date(parseInt(yStr), parseInt(mStr) - 1, parseInt(dStr));
+      if (d < cutoff || d > now) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      countByKey.set(key, (countByKey.get(key) ?? 0) + r.count);
+    }
+
+    // Build complete 60-day array (fill gaps with 0)
+    const velocity: { date: string; count: number }[] = [];
+    const cur = new Date(cutoff);
+    while (cur <= now) {
+      const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      velocity.push({ date: key, count: countByKey.get(key) ?? 0 });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    res.json({ velocity });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // GET /api/photos/db?tower=<name> — DB listing with optional tower filter, includes driveFileId + imageAvailable
 router.get("/photos/db", async (req, res): Promise<void> => {
   const tower = req.query.tower as string | undefined;
