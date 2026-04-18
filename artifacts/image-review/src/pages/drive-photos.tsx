@@ -356,6 +356,7 @@ function FullscreenViewer({
         setPhotoIssues(prev => [newIssue, ...prev]);
         setIssueSaved(true);
         setIssueDescription("");
+        window.dispatchEvent(new CustomEvent("issues:changed"));
         setTimeout(() => { setShowIssueForm(false); setIssueSaved(false); }, 1500);
       } else {
         const body = await r.json().catch(() => ({})) as { error?: string };
@@ -378,6 +379,7 @@ function FullscreenViewer({
       });
       if (r.ok) {
         setPhotoIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+        window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {
       setResolvingId(null);

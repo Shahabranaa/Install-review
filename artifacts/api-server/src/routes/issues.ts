@@ -7,6 +7,7 @@ import {
   CreateIssueBody,
   GetIssueParams,
   GetIssueResponse,
+  ResolveIssueBody,
   UpdateIssueParams,
   UpdateIssueBody,
   UpdateIssueResponse,
@@ -159,7 +160,8 @@ router.patch("/issues/:id/resolve", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const resolvedBy = typeof req.body?.resolvedBy === "string" ? req.body.resolvedBy : null;
+  const body = ResolveIssueBody.safeParse(req.body ?? {});
+  const resolvedBy = body.success && body.data.resolvedBy ? body.data.resolvedBy : null;
   const [issue] = await db
     .update(issuesTable)
     .set({ resolved: true, resolvedBy, resolvedAt: new Date(), updatedAt: new Date() })

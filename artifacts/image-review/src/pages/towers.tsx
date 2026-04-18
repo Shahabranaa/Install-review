@@ -375,6 +375,7 @@ function TowerFolderView({
       });
       if (r.ok) {
         setTowerIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+        window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {
       setResolvingId(null);

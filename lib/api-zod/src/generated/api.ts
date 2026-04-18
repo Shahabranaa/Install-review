@@ -597,6 +597,13 @@ export const GetIssueResponse = zod.object({
 });
 
 /**
+ * @summary Resolve an issue
+ */
+export const ResolveIssueBody = zod.object({
+  resolvedBy: zod.string().nullish(),
+});
+
+/**
  * @summary Update an issue
  */
 export const UpdateIssueParams = zod.object({

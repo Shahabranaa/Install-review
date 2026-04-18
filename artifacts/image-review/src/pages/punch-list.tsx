@@ -47,6 +47,7 @@ export default function PunchList() {
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
   const [filterTower, setFilterTower] = useState<string>("all");
   const [filterString, setFilterString] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"severity" | "date">("severity");
   const [searchQuery, setSearchQuery] = useState("");
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -70,6 +71,7 @@ export default function PunchList() {
       });
       if (r.ok) {
         setIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true, resolvedAt: new Date().toISOString() } : i));
+        window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {
       setResolvingId(null);
@@ -80,6 +82,7 @@ export default function PunchList() {
     if (!confirm("Delete this issue? This cannot be undone.")) return;
     await fetch(`${BASE_URL}api/issues/${id}`, { method: "DELETE" });
     setIssues(prev => prev.filter(i => i.id !== id));
+    window.dispatchEvent(new CustomEvent("issues:changed"));
   }, []);
 
   const towers = Array.from(new Set(issues.map(i => i.tower).filter(Boolean) as string[])).sort();
@@ -116,9 +119,11 @@ export default function PunchList() {
     })
     .sort((a, b) => {
       if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
-      const sa = SEVERITY_ORDER[a.severity] ?? 9;
-      const sb = SEVERITY_ORDER[b.severity] ?? 9;
-      if (sa !== sb) return sa - sb;
+      if (sortBy === "severity") {
+        const sa = SEVERITY_ORDER[a.severity] ?? 9;
+        const sb = SEVERITY_ORDER[b.severity] ?? 9;
+        if (sa !== sb) return sa - sb;
+      }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
@@ -235,8 +240,25 @@ export default function PunchList() {
           </select>
         )}
 
+        {/* Sort toggle */}
+        <div className="flex rounded-lg border border-border overflow-hidden ml-auto">
+          {(["severity", "date"] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setSortBy(s)}
+              className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                sortBy === s
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {s === "severity" ? "By Severity" : "By Date"}
+            </button>
+          ))}
+        </div>
+
         {/* Search */}
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search issues…"

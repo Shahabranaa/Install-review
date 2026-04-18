@@ -4,7 +4,7 @@ import {
   ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag,
 } from "lucide-react";
-import { useState, useEffect, type ElementType } from "react";
+import { useState, useEffect, useCallback, type ElementType } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -249,12 +249,18 @@ export function AppSidebar() {
   const { user, logout } = useAuth();
   const [openIssueCount, setOpenIssueCount] = useState(0);
 
-  useEffect(() => {
+  const fetchOpenCount = useCallback(() => {
     fetch(`${BASE_URL}api/issues?resolved=false`)
       .then(r => r.ok ? r.json() : [])
       .then((rows: unknown[]) => setOpenIssueCount(rows.length))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetchOpenCount();
+    window.addEventListener("issues:changed", fetchOpenCount);
+    return () => window.removeEventListener("issues:changed", fetchOpenCount);
+  }, [fetchOpenCount]);
 
   const accessInfo = user
     ? (ACCESS_ICONS[user.accessLevel as keyof typeof ACCESS_ICONS] ?? ACCESS_ICONS.viewer)
