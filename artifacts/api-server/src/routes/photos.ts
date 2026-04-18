@@ -1133,9 +1133,10 @@ router.post("/photos/batch-review", async (req, res): Promise<void> => {
     });
   }
   try {
+    let updatedCount = 0;
     await db.transaction(async (tx) => {
       for (const d of valid) {
-        await tx
+        const rows = await tx
           .update(sheetPhotosTable)
           .set({
             approval:      d.approval,
@@ -1143,10 +1144,12 @@ router.post("/photos/batch-review", async (req, res): Promise<void> => {
             reviewComment: d.reviewComment ?? null,
             updatedAt:     new Date(),
           })
-          .where(eq(sheetPhotosTable.photoId, d.photoId));
+          .where(eq(sheetPhotosTable.photoId, d.photoId))
+          .returning({ id: sheetPhotosTable.id });
+        updatedCount += rows.length;
       }
     });
-    res.json({ updated: valid.length });
+    res.json({ updated: updatedCount });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

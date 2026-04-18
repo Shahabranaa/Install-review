@@ -346,6 +346,11 @@ function TowerFolderView({
   const [loadingIssues, setLoadingIssues] = useState(false);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [bulkSession, setBulkSession] = useState<{ photos: BulkSessionPhoto[]; label: string } | null>(null);
+  const [localApprovals, setLocalApprovals] = useState<Map<string, string>>(new Map());
+
+  const handleBulkDecision = useCallback((photoId: string, approval: string) => {
+    setLocalApprovals(prev => new Map([...prev, [photoId, approval]]));
+  }, []);
 
   useEffect(() => {
     fetch(`${BASE_URL}api/photos/compliance?tower=${encodeURIComponent(tower.name)}`)
@@ -487,7 +492,8 @@ function TowerFolderView({
 
   const activePhotos = activeTab === "stamped" ? stampedPhotos : originalPhotos;
   const unreviewedInTab = activePhotos.filter(p => {
-    const a = (p.approval ?? "").toLowerCase();
+    // Merge in any decisions made during the current session
+    const a = (localApprovals.get(p.photoId ?? "") ?? p.approval ?? "").toLowerCase();
     return !["approved", "rejected", "verified", "checked"].includes(a);
   });
 
@@ -511,7 +517,7 @@ function TowerFolderView({
           photos={bulkSession.photos}
           contextLabel={bulkSession.label}
           onClose={() => setBulkSession(null)}
-          onDecision={() => {}}
+          onDecision={handleBulkDecision}
         />
       )}
       {/* ── Header ── */}

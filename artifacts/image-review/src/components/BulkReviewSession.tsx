@@ -59,7 +59,9 @@ export default function BulkReviewSession({
 
   const total = photos.length;
   const reviewed = decisions.size;
-  const skippedCount = skipped.size;
+  // Use a unified processed set so a photo can't be counted in both decisions AND skipped
+  const processedIds = new Set([...decisions.keys(), ...skipped]);
+  const skippedCount = skipped.size; // summary: net skipped (decisions already removed from skipped)
   const approvedCount = [...decisions.values()].filter(d => d === "Approved").length;
   const rejectedCount = [...decisions.values()].filter(d => d === "Rejected").length;
 
@@ -67,7 +69,7 @@ export default function BulkReviewSession({
   const avgMs = decisionTimestamps.length >= 2
     ? (decisionTimestamps[decisionTimestamps.length - 1] - decisionTimestamps[0]) / (decisionTimestamps.length - 1)
     : null;
-  const remaining = total - reviewed - skippedCount;
+  const remaining = total - processedIds.size;
   const etaMs = avgMs !== null && remaining > 0 ? avgMs * remaining : null;
 
   // ── URL resolution ───────────────────────────────────────────────────────
@@ -107,6 +109,8 @@ export default function BulkReviewSession({
   // ── Decision handler ──────────────────────────────────────────────────────
   const makeDecision = useCallback(async (photoId: string, approval: Decision) => {
     setDecisions(prev => new Map([...prev, [photoId, approval]]));
+    // Deciding a photo removes it from the skip set (decision takes precedence)
+    setSkipped(prev => { const s = new Set(prev); s.delete(photoId); return s; });
     setDecisionTimestamps(prev => [...prev, Date.now()]);
     onDecision(photoId, approval);
     setSaveError(null);
@@ -205,11 +209,12 @@ export default function BulkReviewSession({
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // Check if session is done (all photos decided or skipped)
+  // Check if session is done — use processedIds (deduped) to avoid premature completion
   useEffect(() => {
-    if (photos.length > 0 && (decisions.size + skipped.size) >= photos.length) {
+    if (photos.length > 0 && processedIds.size >= photos.length) {
       setSessionDone(true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decisions.size, skipped.size, photos.length]);
 
   const currentPhoto = photos[index];
