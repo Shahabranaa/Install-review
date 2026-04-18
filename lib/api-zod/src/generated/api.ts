@@ -541,7 +541,7 @@ export const ListIssuesQueryParams = zod.object({
   tower: zod.string().optional(),
   string: zod.string().optional(),
   severity: zod.coerce.string().optional(),
-  resolved: zod.coerce.boolean().optional(),
+  resolved: zod.enum(["true", "false"]).optional().transform(v => v === undefined ? undefined : v === "true"),
 });
 
 export const ListIssuesResponseItem = zod.object({
