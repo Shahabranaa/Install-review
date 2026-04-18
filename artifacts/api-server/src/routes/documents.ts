@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, stringsTable, pool } from "@workspace/db";
 import {
@@ -68,7 +68,7 @@ function stripNameBlurb(name: string): string {
   return idx !== -1 ? name.slice(idx + 5) : name;
 }
 
-// ── GET /documents — phase docs only (avoids null phaseId breaking zod types) ─
+// ── GET /documents — returns all docs (phase + handover); filter by phaseId if provided ─
 
 router.get("/documents", async (req, res): Promise<void> => {
   const queryParams = ListDocumentsQueryParams.safeParse(req.query);
@@ -78,7 +78,7 @@ router.get("/documents", async (req, res): Promise<void> => {
       .where(eq(documentsTable.phaseId, queryParams.data.phaseId));
   } else {
     documents = await db.select().from(documentsTable)
-      .where(or(isNull(documentsTable.packType), ne(documentsTable.packType, "handover")));
+      .orderBy(desc(documentsTable.generatedAt));
   }
   res.json(ListDocumentsResponse.parse(serialize(documents)));
 });
@@ -249,10 +249,10 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
     res.status(400).json({ error: "stringId or stringName is required" });
     return;
   }
-  if (!generatedBy || typeof generatedBy !== "string") {
-    res.status(400).json({ error: "generatedBy is required" });
-    return;
-  }
+  // generatedBy is optional; if omitted or empty, fall back to "System"
+  const resolvedGeneratedBy = (typeof generatedBy === "string" && generatedBy.trim())
+    ? generatedBy.trim()
+    : "System";
 
   try {
     // 1. Resolve string record (by ID when available, fall back to name lookup)
@@ -370,7 +370,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
 
     // 5. Generate PDF (async — waits for PDFKit stream to fully flush)
     const generatedAt = new Date();
-    const pdfBuffer = await generateHandoverPdf({ stringName: name, ospName, generatedBy, generatedAt, photos, reports });
+    const pdfBuffer = await generateHandoverPdf({ stringName: name, ospName, generatedBy: resolvedGeneratedBy, generatedAt, photos, reports });
 
     // 6. Upload to Wasabi (if configured)
     const dateStr   = generatedAt.toISOString().slice(0, 10);
@@ -390,7 +390,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
     // 7. Record in DB (single insertion; non-Wasabi path stores PDF as base64 in content)
     const title = `Handover Pack — String ${name} (${dateStr})`;
     const [doc] = await db.insert(documentsTable).values({
-      generatedBy,
+      generatedBy: resolvedGeneratedBy,
       generatedAt,
       title,
       packType:    "handover",
@@ -428,7 +428,7 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /documents/:id — phase docs only (avoids zod parse failure on null phaseId) ──
+// ── GET /documents/:id ────────────────────────────────────────────────────────
 
 router.get("/documents/:id", async (req, res): Promise<void> => {
   const params = GetDocumentParams.safeParse(req.params);
@@ -439,22 +439,6 @@ router.get("/documents/:id", async (req, res): Promise<void> => {
   const [doc] = await db.select().from(documentsTable).where(eq(documentsTable.id, params.data.id));
   if (!doc) {
     res.status(404).json({ error: "Document not found" });
-    return;
-  }
-  // Handover packs have null phaseId — return a custom shape instead of broken zod parse
-  if (doc.packType === "handover") {
-    res.json({
-      id:          doc.id,
-      title:       doc.title,
-      stringName:  doc.stringName,
-      ospName:     doc.ospName,
-      wasabiKey:   doc.wasabiKey,
-      photoCount:  doc.photoCount,
-      reportCount: doc.reportCount,
-      generatedAt: doc.generatedAt,
-      generatedBy: doc.generatedBy,
-      packType:    "handover",
-    });
     return;
   }
   res.json(GetDocumentResponse.parse(serialize(doc)));

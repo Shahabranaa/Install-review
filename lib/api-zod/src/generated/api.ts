@@ -648,12 +648,18 @@ export const ListDocumentsQueryParams = zod.object({
 
 export const ListDocumentsResponseItem = zod.object({
   id: zod.number(),
-  phaseId: zod.number(),
+  phaseId: zod.number().nullish(),
   generatedAt: zod.string(),
   generatedBy: zod.string(),
   title: zod.string(),
   content: zod.string().nullish(),
   createdAt: zod.string(),
+  packType: zod.string().nullish(),
+  stringName: zod.string().nullish(),
+  ospName: zod.string().nullish(),
+  wasabiKey: zod.string().nullish(),
+  photoCount: zod.number().nullish(),
+  reportCount: zod.number().nullish(),
 });
 export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
 
@@ -675,12 +681,18 @@ export const GetDocumentParams = zod.object({
 
 export const GetDocumentResponse = zod.object({
   id: zod.number(),
-  phaseId: zod.number(),
+  phaseId: zod.number().nullish(),
   generatedAt: zod.string(),
   generatedBy: zod.string(),
   title: zod.string(),
   content: zod.string().nullish(),
   createdAt: zod.string(),
+  packType: zod.string().nullish(),
+  stringName: zod.string().nullish(),
+  ospName: zod.string().nullish(),
+  wasabiKey: zod.string().nullish(),
+  photoCount: zod.number().nullish(),
+  reportCount: zod.number().nullish(),
 });
 
 /**

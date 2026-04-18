@@ -782,7 +782,7 @@ export default function Towers() {
       const resp = await fetch(`${BASE_URL}api/documents/generate-handover`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stringId: selectedString.id, stringName: selectedString.name, generatedBy: "User" }),
+        body: JSON.stringify({ stringId: selectedString.id, stringName: selectedString.name }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: "Unknown error" }));
