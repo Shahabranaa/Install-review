@@ -57,28 +57,18 @@ function PackCard({ pack }: { pack: HandoverPack }) {
           </div>
         </div>
 
-        {pack.wasabiKey ? (
-          <a
-            href={`${BASE_URL}api/reports/view?key=${encodeURIComponent(pack.wasabiKey)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline" size="sm" className="w-full gap-2">
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open PDF
-            </Button>
-          </a>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2"
-            onClick={() => window.open(`${BASE_URL}api/documents/${pack.id}/download`, "_blank")}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Download
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full gap-2"
+          onClick={() => window.open(`${BASE_URL}api/documents/${pack.id}/download`, "_blank")}
+        >
+          {pack.wasabiKey ? (
+            <><ExternalLink className="w-3.5 h-3.5" />Open PDF</>
+          ) : (
+            <><Download className="w-3.5 h-3.5" />Download</>
+          )}
+        </Button>
       </CardContent>
     </Card>
   );

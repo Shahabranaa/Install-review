@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray, ne } from "drizzle-orm";
+import { desc, eq, inArray, ne } from "drizzle-orm";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { db, documentsTable, phasesTable, imagesTable, issuesTable, locationsTable, stringsTable, pool } from "@workspace/db";
 import {
@@ -91,7 +91,7 @@ router.get("/documents/handover", async (_req, res): Promise<void> => {
       .select()
       .from(documentsTable)
       .where(eq(documentsTable.packType, "handover"))
-      .orderBy(documentsTable.generatedAt);
+      .orderBy(desc(documentsTable.generatedAt));
 
     res.json({ packs: serialize(packs), total: packs.length });
   } catch (err: unknown) {
@@ -463,15 +463,43 @@ router.get("/documents/:id/download", async (req, res): Promise<void> => {
   }
   if (doc.packType === "handover") {
     if (doc.wasabiKey) {
-      // Stored in Wasabi — proxy through the reports viewer
-      res.redirect(`/api/reports/view?key=${encodeURIComponent(doc.wasabiKey)}`);
+      // Proxy directly from Wasabi — validated via documents table (not reports)
+      const wasabi = await getWasabiClientAndCreds();
+      if (!wasabi) {
+        res.status(503).json({ error: "Wasabi not configured" });
+        return;
+      }
+      try {
+        const obj = await wasabi.client.send(
+          new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: doc.wasabiKey }),
+        );
+        const safeTitle = doc.title.replace(/[^a-zA-Z0-9-_.() ]/g, "_");
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Cache-Control", "public, max-age=3600");
+        res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(safeTitle + ".pdf")}"`);
+        if (obj.ContentLength) res.setHeader("Content-Length", obj.ContentLength);
+        const body = obj.Body;
+        if (!body || typeof (body as { pipe?: unknown }).pipe !== "function") {
+          res.status(502).json({ error: "Empty response from Wasabi" });
+          return;
+        }
+        (body as NodeJS.ReadableStream).pipe(res);
+      } catch (err: unknown) {
+        const code = (err as { name?: string }).name;
+        if (code === "NoSuchKey" || code === "NotFound") {
+          res.status(404).json({ error: "File not found in storage" });
+          return;
+        }
+        logger.error({ err, key: doc.wasabiKey }, "Handover pack proxy error");
+        res.status(500).json({ error: "Failed to fetch handover pack" });
+      }
       return;
     }
     if (doc.content) {
       // Stored as base64 in DB (no Wasabi configured)
       const safeTitle = doc.title.replace(/[^a-zA-Z0-9-_.() ]/g, "_");
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.pdf"`);
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(safeTitle + ".pdf")}"`);
       res.send(Buffer.from(doc.content, "base64"));
       return;
     }
