@@ -247,87 +247,127 @@ router.post("/setup/import-from-sheet", async (req, res): Promise<void> => {
 
 async function importPhaseDefinitions(): Promise<{ phaseTypes: number; definitions: number; created: number; updated: number }> {
   const defsMap = new Map<string, { reqImgOrder: string | null; description: string | null }>();
+  // phaseTypeSet collects ALL distinct phase names (even those with no req_img_type)
+  const phaseTypeSet = new Set<string>();
 
-  // ─── Try gid=8644251 tab first ───────────────────────────────────────────
+  // ─── Fetch spreadsheet metadata to find both the dedicated tab and Photo tab ─
+  let sheetMeta: { sheets?: { properties: { sheetId: number; title: string } }[] } | null = null;
   try {
-    const params = new URLSearchParams({ ranges: "A1:Z1" });
-    const metaResp = await sheetsRequest(`/${SPREADSHEET_ID}?fields=sheets(properties(sheetId,title))`, params);
+    const metaResp = await sheetsRequest(`/${SPREADSHEET_ID}?fields=sheets(properties(sheetId,title))`);
     if (metaResp.ok) {
-      const meta = await metaResp.json() as { sheets?: { properties: { sheetId: number; title: string } }[] };
-      const tab = meta.sheets?.find((s) => s.properties.sheetId === 8644251);
-      if (tab) {
-        const tabName = tab.properties.title;
-        const rows = await fetchSheet(`${tabName}!A:Z`);
-        const headers = rows[0] ?? [];
-        logger.info({ headers, tabName }, "[setup] Phase definitions tab headers");
+      sheetMeta = await metaResp.json() as typeof sheetMeta;
+    }
+  } catch (err) {
+    logger.warn({ err }, "[setup] Could not fetch spreadsheet metadata");
+  }
 
+  // ─── Try gid=8644251 dedicated definitions tab ────────────────────────────
+  if (sheetMeta) {
+    try {
+      const defTab = sheetMeta.sheets?.find((s) => s.properties.sheetId === 8644251);
+      if (defTab) {
+        const rows = await fetchSheet(`${defTab.properties.title}!A:Z`);
+        const headers = rows[0] ?? [];
+        logger.info({ headers, tabName: defTab.properties.title }, "[setup] Phase definitions tab headers");
         const phaseTypeIdx = bestCol(headers, "phase_type", "phase type", "phasetype", "Phase_Type", "Installation_Phase");
         const reqImgTypeIdx = bestCol(headers, "req_img_type", "required_image_type", "Required_Image_Type", "Req_Img_Type", "image_type");
         const reqImgOrderIdx = bestCol(headers, "req_img_order", "Required_Image_Order", "image_order", "order");
         const descIdx = bestCol(headers, "description", "Description", "desc");
         const get = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
-
         if (phaseTypeIdx >= 0 && reqImgTypeIdx >= 0) {
           for (const row of rows.slice(1)) {
             const pt = get(row, phaseTypeIdx);
             const rit = get(row, reqImgTypeIdx);
+            if (pt) phaseTypeSet.add(pt);
             if (!pt || !rit) continue;
-            const key = `${pt}|||${rit}`;
-            defsMap.set(key, {
+            defsMap.set(`${pt}|||${rit}`, {
               reqImgOrder: reqImgOrderIdx >= 0 ? get(row, reqImgOrderIdx) || null : null,
               description: descIdx >= 0 ? get(row, descIdx) || null : null,
             });
           }
-          logger.info({ count: defsMap.size }, "[setup] Phase definitions loaded from dedicated tab");
+          logger.info({ count: defsMap.size }, "[setup] Definitions loaded from dedicated tab");
         }
       }
+    } catch (err) {
+      logger.warn({ err }, "[setup] Could not read dedicated definitions tab");
     }
-  } catch (err) {
-    logger.warn({ err }, "[setup] Could not read gid=8644251 tab, falling back to sheet_photos");
+
+    // ─── Read phaseLink column directly from the main Photo tab ──────────────
+    try {
+      const photoTab = sheetMeta.sheets?.find((s) =>
+        /^photo/i.test(s.properties.title) && !/location|string|cable/i.test(s.properties.title)
+      );
+      if (photoTab) {
+        const headerRows = await fetchSheet(`${photoTab.properties.title}!1:1`);
+        const photoHeaders = headerRows[0] ?? [];
+        const phaseLinkColIdx = bestCol(photoHeaders,
+          "Photo_Installation_Phase_Link", "photo_installation_phase_link",
+          "Phase_Link", "phaseLink", "phase_link"
+        );
+        const reqImgTypeColIdx = bestCol(photoHeaders,
+          "Required_Image_Type", "req_img_type", "Req_Img_Type", "required_image_type"
+        );
+        const reqImgOrderColIdx = bestCol(photoHeaders,
+          "Required_Image_Order", "req_img_order", "Req_Img_Order"
+        );
+        if (phaseLinkColIdx >= 0) {
+          // Fetch only the needed columns to avoid loading the entire photo tab
+          const colLetter = (n: number) => {
+            let s = "";
+            for (let i = n; i >= 0; i = Math.floor(i / 26) - 1) s = String.fromCharCode(65 + (i % 26)) + s;
+            return s;
+          };
+          const rightmostCol = Math.max(phaseLinkColIdx, reqImgTypeColIdx < 0 ? 0 : reqImgTypeColIdx, reqImgOrderColIdx < 0 ? 0 : reqImgOrderColIdx);
+          const photoRows = await fetchSheet(`${photoTab.properties.title}!A:${colLetter(rightmostCol)}`);
+          const get = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
+          for (const row of photoRows.slice(1)) {
+            const pt = get(row, phaseLinkColIdx);
+            if (!pt) continue;
+            phaseTypeSet.add(pt);
+            if (reqImgTypeColIdx < 0) continue;
+            const rit = get(row, reqImgTypeColIdx);
+            if (!rit) continue;
+            const key = `${pt}|||${rit}`;
+            if (!defsMap.has(key)) {
+              defsMap.set(key, {
+                reqImgOrder: reqImgOrderColIdx >= 0 ? get(row, reqImgOrderColIdx) || null : null,
+                description: null,
+              });
+            }
+          }
+          logger.info({ phaseLinkColIdx, photoPhaseTypes: phaseTypeSet.size }, "[setup] Photo tab phaseLink extracted");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "[setup] Could not read phaseLink from Photo tab, using DB fallback");
+    }
   }
 
-  // ─── Always supplement from sheet_photos DISTINCT values ────────────────
-  // This covers phases present in photo data but absent from the definitions tab.
+  // ─── Supplement from sheet_photos DB (handles case where sheet was synced) ─
   const distinctRows = await db
-    .selectDistinct({
-      phaseLink: sheetPhotosTable.phaseLink,
-      reqImgType: sheetPhotosTable.reqImgType,
-      reqImgOrder: sheetPhotosTable.reqImgOrder,
-    })
+    .selectDistinct({ phaseLink: sheetPhotosTable.phaseLink, reqImgType: sheetPhotosTable.reqImgType, reqImgOrder: sheetPhotosTable.reqImgOrder })
     .from(sheetPhotosTable)
-    .where(and(
-      sql`${sheetPhotosTable.phaseLink} IS NOT NULL`,
-      sql`${sheetPhotosTable.reqImgType} IS NOT NULL`,
-    ));
+    .where(sql`${sheetPhotosTable.phaseLink} IS NOT NULL`);
   for (const row of distinctRows) {
-    if (!row.phaseLink || !row.reqImgType) continue;
+    if (!row.phaseLink) continue;
+    phaseTypeSet.add(row.phaseLink);
+    if (!row.reqImgType) continue;
     const key = `${row.phaseLink}|||${row.reqImgType}`;
     if (!defsMap.has(key)) {
       defsMap.set(key, { reqImgOrder: row.reqImgOrder ?? null, description: null });
     }
   }
-  logger.info({ count: defsMap.size }, "[setup] Phase definitions total after merging sheet_photos");
+  logger.info({ total: defsMap.size, phaseTypes: phaseTypeSet.size }, "[setup] Phase definitions total after all sources");
 
-  // ─── Also collect ALL distinct phaseLink names (even without reqImgType) ──
-  const allPhaseLinkRows = await db
-    .selectDistinct({ phaseLink: sheetPhotosTable.phaseLink })
-    .from(sheetPhotosTable)
-    .where(sql`${sheetPhotosTable.phaseLink} IS NOT NULL`);
-  const allPhaseTypes = new Set<string>(
-    allPhaseLinkRows.map((r) => r.phaseLink).filter((v): v is string => Boolean(v))
-  );
-  // Add any from defsMap too
-  for (const key of defsMap.keys()) {
-    const [pt] = key.split("|||");
-    if (pt) allPhaseTypes.add(pt);
-  }
-
-  let upserted = 0;
+  // ─── Count existing rows to compute accurate created/updated ─────────────
+  const beforeCountRow = await db
+    .select({ count: sql<string>`COUNT(*)` })
+    .from(requiredImageDefinitionsTable);
+  const beforeCount = parseInt(beforeCountRow[0]?.count ?? "0");
 
   for (const [key, extra] of defsMap) {
     const [phaseType, reqImgType] = key.split("|||");
     if (!phaseType || !reqImgType) continue;
-
     await db
       .insert(requiredImageDefinitionsTable)
       .values({ phaseType, reqImgType, reqImgOrder: extra.reqImgOrder, description: extra.description })
@@ -335,16 +375,16 @@ async function importPhaseDefinitions(): Promise<{ phaseTypes: number; definitio
         target: [requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgType],
         set: { reqImgOrder: extra.reqImgOrder, description: extra.description, updatedAt: new Date() },
       });
-    upserted++;
   }
 
-  return {
-    phaseTypes: allPhaseTypes.size,
-    definitions: defsMap.size,
-    created: upserted,
-    updated: 0,
-    allPhaseTypes: Array.from(allPhaseTypes),
-  };
+  const afterCountRow = await db
+    .select({ count: sql<string>`COUNT(*)` })
+    .from(requiredImageDefinitionsTable);
+  const afterCount = parseInt(afterCountRow[0]?.count ?? "0");
+  const created = afterCount - beforeCount;
+  const updated = defsMap.size - created;
+
+  return { phaseTypes: phaseTypeSet.size, definitions: defsMap.size, created, updated };
 }
 
 async function createPhasesForAllLocations(): Promise<{ created: number; skipped: number }> {
