@@ -87,8 +87,20 @@ router.get("/documents", async (req, res): Promise<void> => {
 
 router.get("/documents/handover", async (_req, res): Promise<void> => {
   try {
+    // Exclude content (can be large base64 blob for non-Wasabi packs)
     const packs = await db
-      .select()
+      .select({
+        id:          documentsTable.id,
+        title:       documentsTable.title,
+        generatedBy: documentsTable.generatedBy,
+        generatedAt: documentsTable.generatedAt,
+        packType:    documentsTable.packType,
+        stringName:  documentsTable.stringName,
+        ospName:     documentsTable.ospName,
+        wasabiKey:   documentsTable.wasabiKey,
+        photoCount:  documentsTable.photoCount,
+        reportCount: documentsTable.reportCount,
+      })
       .from(documentsTable)
       .where(eq(documentsTable.packType, "handover"))
       .orderBy(desc(documentsTable.generatedAt));
