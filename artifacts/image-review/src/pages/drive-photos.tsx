@@ -316,7 +316,7 @@ function FullscreenViewer({
   const { user } = useAuth();
 
   // Issue panel state
-  interface IssueRecord { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; createdAt: string; }
+  interface IssueRecord { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; resolvedBy?: string | null; resolvedAt?: string | null; createdAt: string; }
   const [photoIssues, setPhotoIssues] = useState<IssueRecord[]>([]);
   const [showIssueForm, setShowIssueForm] = useState(false);
   const [issueType, setIssueType] = useState("visual");
@@ -378,7 +378,8 @@ function FullscreenViewer({
         body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
       });
       if (r.ok) {
-        setPhotoIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+        const updated = await r.json() as Partial<IssueRecord>;
+        setPhotoIssues(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
         window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {

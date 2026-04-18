@@ -374,7 +374,8 @@ function TowerFolderView({
         body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
       });
       if (r.ok) {
-        setTowerIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
+        const updated = await r.json() as Partial<TowerIssue>;
+        setTowerIssues(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
         window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {

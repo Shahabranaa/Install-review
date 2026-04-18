@@ -70,7 +70,8 @@ export default function PunchList() {
         body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
       });
       if (r.ok) {
-        setIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true, resolvedAt: new Date().toISOString() } : i));
+        const updated = await r.json() as Partial<Issue>;
+        setIssues(prev => prev.map(i => i.id === id ? { ...i, ...updated } : i));
         window.dispatchEvent(new CustomEvent("issues:changed"));
       }
     } catch { /* ignore */ } finally {

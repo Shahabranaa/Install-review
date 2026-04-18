@@ -56,8 +56,7 @@ async function enrichIssues(issues: IssueRow[]): Promise<ReturnType<typeof seria
 router.get("/issues", async (req, res): Promise<void> => {
   const queryParams = ListIssuesQueryParams.safeParse(req.query);
   if (!queryParams.success) {
-    const issues = await db.select().from(issuesTable);
-    res.json(ListIssuesResponse.parse(await enrichIssues(issues)));
+    res.status(400).json({ error: queryParams.error.message });
     return;
   }
 
