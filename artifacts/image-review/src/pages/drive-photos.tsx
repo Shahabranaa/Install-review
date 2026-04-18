@@ -681,6 +681,102 @@ function FullscreenViewer({
                   )}
                 </div>
               )}
+
+              <Separator />
+
+              {/* Issues section — in review mode */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+                    <Flag className="w-3.5 h-3.5 text-amber-500" />
+                    Issues
+                    {photoIssues.filter(i => !i.resolved).length > 0 && (
+                      <span className="rounded-full bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none">
+                        {photoIssues.filter(i => !i.resolved).length}
+                      </span>
+                    )}
+                  </p>
+                  <button
+                    onClick={() => { setShowIssueForm(f => !f); setIssueSaved(false); setIssueError(null); }}
+                    className="flex items-center gap-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 px-2 py-0.5 text-xs font-medium transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Raise
+                  </button>
+                </div>
+
+                {showIssueForm && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Type</label>
+                        <select value={issueType} onChange={e => setIssueType(e.target.value)}
+                          className="w-full rounded border border-input bg-background/50 text-xs px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring text-white">
+                          {["visual", "safety", "documentation", "wrong_location", "missing"].map(t => (
+                            <option key={t} value={t}>{t.replace("_", " ")}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Severity</label>
+                        <select value={issueSeverity} onChange={e => setIssueSeverity(e.target.value)}
+                          className="w-full rounded border border-input bg-background/50 text-xs px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring text-white">
+                          {["low", "medium", "high", "critical"].map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <Textarea
+                      placeholder="Describe the issue…"
+                      value={issueDescription}
+                      onChange={e => setIssueDescription(e.target.value)}
+                      rows={2}
+                      className="text-xs resize-none"
+                    />
+                    {issueError && <p className="text-[10px] text-red-400">{issueError}</p>}
+                    {issueSaved && <p className="text-[10px] text-green-400">Issue saved.</p>}
+                    <div className="flex gap-2">
+                      <button onClick={handleSubmitIssue} disabled={issueSaving || !issueDescription.trim()}
+                        className="flex-1 rounded-md bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-white text-xs font-semibold py-1.5 transition-colors">
+                        {issueSaving ? "Saving…" : "Save Issue"}
+                      </button>
+                      <button onClick={() => setShowIssueForm(false)}
+                        className="px-3 rounded-md bg-white/10 hover:bg-white/20 text-white text-xs transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {photoIssues.filter(i => !i.resolved).length > 0 && (
+                  <div className="space-y-1.5">
+                    {photoIssues.filter(i => !i.resolved).map(issue => (
+                      <div key={issue.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[10px] font-semibold uppercase rounded-full px-1.5 py-0.5 ${
+                            issue.severity === "critical" ? "bg-red-100 text-red-700" :
+                            issue.severity === "high"     ? "bg-orange-100 text-orange-700" :
+                            issue.severity === "medium"   ? "bg-amber-100 text-amber-700" :
+                            "bg-slate-100 text-slate-600"
+                          }`}>{issue.severity}</span>
+                          <button onClick={() => handleResolveIssue(issue.id)} disabled={resolvingId === issue.id}
+                            className="text-[10px] text-green-400 hover:text-green-300 font-medium transition-colors">
+                            {resolvingId === issue.id ? "…" : "Resolve"}
+                          </button>
+                        </div>
+                        <p className="text-xs text-white/80 leading-snug">{issue.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {photoIssues.filter(i => i.resolved).length > 0 && (
+                  <p className="text-[10px] text-muted-foreground/50 text-center">
+                    + {photoIssues.filter(i => i.resolved).length} resolved
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
             /* ── Metadata panel ───────────────────────────────── */
