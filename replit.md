@@ -87,7 +87,16 @@ Projects → Sites → Locations (OSPs) → Strings → Towers → Phases → Im
 - Sheet cache TTL: 5 minutes; file ID cache: permanent per server lifetime
 
 ### Frontend Pages (image-review)
-Dashboard, Projects, Strings, Towers, Phases, Images, Drive Photos, Google Drive, Documents, Settings
+Dashboard, Projects, Strings, Towers, Phases, Images, Drive Photos, Google Drive, Documents, Reports, Field Reports, Settings
+
+### Manual Field Reports (in-app authoring)
+- `GET /api/field-reports/templates` — returns the template registry (10 templates: As-Found, As-Left, Pull-in Preparation, Cable Pull-in, Temporary/Permanent Hang Off, Termination Activities L1/L2/L3, Termination Completion, FO Termination, ICCP, Completion Check)
+- `GET /api/field-reports`, `GET/PATCH/DELETE /api/field-reports/:id`, `POST /api/field-reports`, `POST /api/field-reports/:id/finalize`, `GET /api/field-reports/:id/pdf`
+- `field_reports` table stores drafts (`status='draft'`); finalize renders PDF (PDFKit), uploads to Wasabi at `[Output] Field Reports/{osp}/{string}[/{cable}]/<filename>.pdf`, and inserts a `wasabi_mirror_tasks` row (`drive_file_id='manual:<id>'`, `status='done'`) so the file appears in `/api/reports` and is automatically pulled into Handover Packs.
+- UI: `/field-reports` (list, draft/finalized badges) and `/field-reports/new` + `/field-reports/:id/edit` (template-driven dynamic form). Sidebar entry `Field Reports` (ClipboardEdit icon) sits next to Reports.
+- Templates capture: header fields, optional document references, optional per-phase serial number tables (Termination Activities/Completion), Yes/No/N-A + comments checklists, optional numeric fields (Cable Pull-in tensions/times), required-image captions, and remarks.
+- Photo attachments per image-placeholder are intentionally deferred to a follow-up; v1 captures the captions only — the photos themselves still live in the existing image review system.
+- Key files: `lib/db/src/schema/field-reports.ts`, `artifacts/api-server/src/lib/report-templates.ts`, `artifacts/api-server/src/lib/pdf-field-report.ts`, `artifacts/api-server/src/routes/field-reports.ts`, `artifacts/image-review/src/pages/field-reports/{index,edit}.tsx`
 
 ### New Files (CVOW task)
 - `lib/db/src/schema/strings.ts` — stringsTable schema

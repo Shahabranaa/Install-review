@@ -20,6 +20,8 @@ import Setup from "@/pages/setup";
 import Compliance from "@/pages/compliance";
 import TowerCompliance from "@/pages/tower-compliance";
 import PunchList from "@/pages/punch-list";
+import FieldReportsList from "@/pages/field-reports";
+import FieldReportEdit from "@/pages/field-reports/edit";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -63,6 +65,9 @@ function ProtectedRouter() {
         <Route path="/compliance" component={Compliance} />
         <Route path="/tower-compliance" component={TowerCompliance} />
         <Route path="/issues" component={PunchList} />
+        <Route path="/field-reports" component={FieldReportsList} />
+        <Route path="/field-reports/new" component={FieldReportEdit} />
+        <Route path="/field-reports/:id/edit" component={FieldReportEdit} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

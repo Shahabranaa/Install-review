@@ -22,6 +22,7 @@ import reportsRouter from "./reports";
 import cablesRouter from "./cables";
 import setupRouter from "./setup";
 import complianceRouter from "./compliance";
+import fieldReportsRouter from "./field-reports";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(reportsRouter);
 router.use(cablesRouter);
 router.use(setupRouter);
 router.use(complianceRouter);
+router.use(fieldReportsRouter);
 
 export default router;

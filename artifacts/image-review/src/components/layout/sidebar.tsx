@@ -1,7 +1,7 @@
 import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
-  ClipboardCheck, Eye, Camera, ChevronDown, ChevronRight,
+  ClipboardCheck, ClipboardEdit, Eye, Camera, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag,
 } from "lucide-react";
 import { useState, useEffect, useCallback, type ElementType } from "react";
@@ -343,6 +343,14 @@ export function AppSidebar() {
             label="Reports"
             icon={FileText}
             isActive={location === "/reports" || location.startsWith("/reports")}
+          />
+
+          {/* Field Reports (manual creation) */}
+          <NavItem
+            href="/field-reports"
+            label="Field Reports"
+            icon={ClipboardEdit}
+            isActive={location === "/field-reports" || location.startsWith("/field-reports")}
           />
 
           {/* Handover Packs */}
