@@ -132,10 +132,11 @@ export default function Compliance() {
   if (phaseType && phaseType !== "all") params.set("phaseType", phaseType);
   const queryString = params.toString();
 
+  const cableSelected = cableLink !== "none";
   const { data, isLoading, error, refetch } = useQuery<ComplianceResponse>({
     queryKey: ["compliance", cableLink, phaseType],
     queryFn: () => apiFetch(`/api/compliance?${queryString}`),
-    enabled: cableLink !== "none" || phaseType !== "all",
+    enabled: cableSelected,
   });
 
   const grouped = data?.items
@@ -217,10 +218,11 @@ export default function Compliance() {
         </div>
       )}
 
-      {cableLink === "none" && phaseType === "all" ? (
+      {!cableSelected ? (
         <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground space-y-3">
           <ShieldAlert className="w-12 h-12 opacity-30" />
-          <p className="text-sm">Select a cable or phase type to view compliance status.</p>
+          <p className="text-sm font-medium">Select a cable to view compliance status.</p>
+          <p className="text-xs opacity-60">Choose a cable from the filter above to load required-image compliance data.</p>
         </div>
       ) : isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">

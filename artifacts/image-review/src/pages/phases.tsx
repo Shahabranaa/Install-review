@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { CheckSquare, AlertTriangle, Clock, Activity, Plus, Trash2, Download, RefreshCw, Pencil, Building2 } from "lucide-react";
 import { format } from "date-fns";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -62,6 +62,7 @@ export default function Phases() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newLocationId, setNewLocationId] = useState("");
   const [newPhaseType, setNewPhaseType] = useState("");
+  const [newPhaseTypeCustom, setNewPhaseTypeCustom] = useState("");
   const [newReqCount, setNewReqCount] = useState("0");
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editPhaseType, setEditPhaseType] = useState("");
@@ -75,6 +76,16 @@ export default function Phases() {
   );
   const { data: locations } = useListLocations();
   const osps = locations?.filter((l) => l.type === "OSP") ?? [];
+
+  const { data: definedPhaseTypes } = useQuery<string[]>({
+    queryKey: ["compliance-phase-types"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/compliance/phase-types`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const resolvedPhaseType = newPhaseType === "__custom__" ? newPhaseTypeCustom : newPhaseType;
 
   function openEdit(phase: EditTarget) {
     setEditTarget(phase);
@@ -117,20 +128,21 @@ export default function Phases() {
   }
 
   async function handleCreate() {
-    if (!newLocationId || !newPhaseType) return;
+    if (!newLocationId || !resolvedPhaseType) return;
     setBusy(true);
     try {
       await apiFetch("/api/phases", {
         method: "POST",
         body: JSON.stringify({
           locationId: parseInt(newLocationId),
-          phaseType: newPhaseType,
+          phaseType: resolvedPhaseType,
           requiredImageCount: parseInt(newReqCount) || 0,
         }),
       });
       setShowNewDialog(false);
       setNewLocationId("");
       setNewPhaseType("");
+      setNewPhaseTypeCustom("");
       setNewReqCount("0");
       qc.invalidateQueries({ queryKey: ["phases"] });
     } catch (err) {
@@ -308,12 +320,36 @@ export default function Phases() {
             </div>
             <div>
               <Label>Phase Type</Label>
-              <Input
-                className="mt-1"
-                value={newPhaseType}
-                onChange={(e) => setNewPhaseType(e.target.value)}
-                placeholder="e.g. Phase 2 - Pull In"
-              />
+              {definedPhaseTypes && definedPhaseTypes.length > 0 ? (
+                <>
+                  <Select value={newPhaseType} onValueChange={setNewPhaseType}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select phase type…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {definedPhaseTypes.map((pt) => (
+                        <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                      ))}
+                      <SelectItem value="__custom__">Other (custom)…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {newPhaseType === "__custom__" && (
+                    <Input
+                      className="mt-2"
+                      value={newPhaseTypeCustom}
+                      onChange={(e) => setNewPhaseTypeCustom(e.target.value)}
+                      placeholder="Enter custom phase type…"
+                    />
+                  )}
+                </>
+              ) : (
+                <Input
+                  className="mt-1"
+                  value={newPhaseType}
+                  onChange={(e) => setNewPhaseType(e.target.value)}
+                  placeholder="e.g. Phase 2 - Pull In"
+                />
+              )}
             </div>
             <div>
               <Label>Required Image Count</Label>
@@ -328,7 +364,7 @@ export default function Phases() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={busy || !newLocationId || !newPhaseType}>
+            <Button onClick={handleCreate} disabled={busy || !newLocationId || !resolvedPhaseType}>
               {busy ? "Creating…" : "Create Phase"}
             </Button>
           </DialogFooter>
