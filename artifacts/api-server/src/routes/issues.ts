@@ -160,7 +160,11 @@ router.patch("/issues/:id/resolve", async (req, res): Promise<void> => {
     return;
   }
   const body = ResolveIssueBody.safeParse(req.body ?? {});
-  const resolvedBy = body.success && body.data.resolvedBy ? body.data.resolvedBy : null;
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const resolvedBy = body.data.resolvedBy ?? null;
   const [issue] = await db
     .update(issuesTable)
     .set({ resolved: true, resolvedBy, resolvedAt: new Date(), updatedAt: new Date() })
