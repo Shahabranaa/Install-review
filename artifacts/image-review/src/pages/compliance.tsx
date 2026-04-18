@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert, DatabaseZap, Loader2, Layers } from "lucide-react";
+import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldAlert, DatabaseZap, Loader2, Layers, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -186,6 +186,24 @@ function TowerComplianceCard({ item }: { item: TowerItem }) {
   return cardContent;
 }
 
+interface SyncStatus {
+  lastSyncedAt: string | null;
+  intervalMs: number;
+}
+
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60_000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export default function Compliance() {
   const [cableLink, setCableLink] = useState<string>("none");
   const [phaseType, setPhaseType] = useState<string>("all");
@@ -194,6 +212,12 @@ export default function Compliance() {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
 
+  const { data: syncStatus } = useQuery<SyncStatus>({
+    queryKey: ["photos-sync-status"],
+    queryFn: () => apiFetch("/api/photos/sync/status"),
+    refetchInterval: 60_000,
+  });
+
   const syncMutation = useMutation({
     mutationFn: () =>
       apiFetch<{ ok: boolean; synced: number }>("/api/photos/sync", { method: "POST" }),
@@ -201,6 +225,7 @@ export default function Compliance() {
       toast({ title: `Sync complete — ${result.synced} photos loaded from sheet` });
       qc.invalidateQueries({ queryKey: ["compliance"] });
       qc.invalidateQueries({ queryKey: ["compliance-cables"] });
+      qc.invalidateQueries({ queryKey: ["photos-sync-status"] });
     },
     onError: (err: Error) => {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
@@ -275,26 +300,42 @@ export default function Compliance() {
           <h1 className="text-3xl font-bold tracking-tight">Compliance</h1>
           <p className="text-muted-foreground mt-2">Check which required images have been submitted per cable and phase.</p>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              title="Pull latest photos from Google Sheet into the database"
-            >
-              {syncMutation.isPending
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <DatabaseZap className="w-4 h-4 mr-2" />
-              }
-              {syncMutation.isPending ? "Syncing…" : "Sync Photos"}
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                title="Pull latest photos from Google Sheet into the database"
+              >
+                {syncMutation.isPending
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <DatabaseZap className="w-4 h-4 mr-2" />
+                }
+                {syncMutation.isPending ? "Syncing…" : "Sync Photos"}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
             </Button>
+          </div>
+          {syncStatus && (
+            <p
+              className="flex items-center gap-1 text-xs text-muted-foreground"
+              title={syncStatus.lastSyncedAt ? new Date(syncStatus.lastSyncedAt).toLocaleString() : "No sync recorded yet"}
+            >
+              <Clock className="w-3 h-3 shrink-0" />
+              Last synced: {formatSyncTime(syncStatus.lastSyncedAt)}
+              {syncStatus.intervalMs > 0 && (
+                <span className="opacity-60">
+                  &nbsp;· auto every {Math.round(syncStatus.intervalMs / 60_000)}m
+                </span>
+              )}
+            </p>
           )}
-          <Button variant="ghost" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { syncCablesFromSheet } from "./routes/cables";
-import { scanImageAvailability } from "./routes/photos";
+import { scanImageAvailability, syncPhotosFromSheet, parseSyncIntervalMs } from "./routes/photos";
 
 const rawPort = process.env["PORT"];
 
@@ -94,4 +94,20 @@ app.listen(port, (err) => {
       logger.warn({ err }, "Startup: image availability scan skipped");
     }
   })();
+
+  // Pass 5: schedule automatic photo sync from Google Sheet
+  const syncIntervalMs = parseSyncIntervalMs();
+
+  logger.info({ syncIntervalMs }, "Auto-sync: scheduling photo sync interval");
+
+  setInterval(() => {
+    void (async () => {
+      try {
+        const result = await syncPhotosFromSheet();
+        logger.info(result, "Auto-sync: photo sync complete");
+      } catch (err: unknown) {
+        logger.warn({ err }, "Auto-sync: photo sync failed");
+      }
+    })();
+  }, syncIntervalMs);
 });

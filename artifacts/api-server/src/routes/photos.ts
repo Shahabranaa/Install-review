@@ -421,14 +421,32 @@ async function upsertPhotosToDb(photos: PhotoRecord[]): Promise<void> {
   console.log(`[sheet-photos] Upserted ${photos.length} records to DB`);
 }
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
+// ─── Auto-sync state ──────────────────────────────────────────────────────────
 
-// POST /api/photos/sync — force a fresh fetch from Google Sheets and await the full DB upsert
-router.post("/photos/sync", requireAdmin, async (req, res): Promise<void> => {
-  if (!isSheetsConfigured()) {
-    res.status(503).json({ error: "Google Sheets not configured" });
-    return;
+const DEFAULT_SYNC_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+
+export function parseSyncIntervalMs(): number {
+  const raw = process.env["PHOTO_SYNC_INTERVAL_MS"];
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SYNC_INTERVAL_MS;
+}
+
+let lastAutoSyncAt: Date | null = null;
+let syncInProgress = false;
+
+export function getLastSyncAt(): Date | null {
+  return lastAutoSyncAt;
+}
+
+export async function syncPhotosFromSheet(): Promise<{ synced: number }> {
+  if (syncInProgress) {
+    throw new Error("Sync already in progress");
   }
+  if (!isSheetsConfigured()) {
+    throw new Error("Google Sheets not configured");
+  }
+
+  syncInProgress = true;
   try {
     // Bust the in-memory cache so we always get fresh data from the sheet
     sheetCache = null;
@@ -447,10 +465,37 @@ router.post("/photos/sync", requireAdmin, async (req, res): Promise<void> => {
     // Await the upsert (unlike the background path in GET /photos/sheet)
     await upsertPhotosToDb(photos);
 
-    res.json({ ok: true, synced: photos.length });
+    lastAutoSyncAt = new Date();
+    return { synced: photos.length };
+  } finally {
+    syncInProgress = false;
+  }
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+// GET /api/photos/sync/status — returns last sync timestamp and configured interval
+router.get("/photos/sync/status", async (_req, res): Promise<void> => {
+  res.json({
+    lastSyncedAt: lastAutoSyncAt ? lastAutoSyncAt.toISOString() : null,
+    intervalMs: parseSyncIntervalMs(),
+    syncInProgress,
+  });
+});
+
+// POST /api/photos/sync — force a fresh fetch from Google Sheets and await the full DB upsert
+router.post("/photos/sync", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const result = await syncPhotosFromSheet();
+    res.json({ ok: true, synced: result.synced });
   } catch (err: unknown) {
-    console.error("Photos sync error:", err);
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    const status =
+      msg === "Google Sheets not configured" ? 503 :
+      msg === "Sync already in progress"     ? 409 :
+      500;
+    if (status === 500) console.error("Photos sync error:", err);
+    res.status(status).json({ error: msg });
   }
 });
 
