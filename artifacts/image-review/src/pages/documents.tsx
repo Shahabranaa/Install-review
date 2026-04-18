@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Clock, Package, Camera, BarChart2, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { FileText, Download, Clock, Package, Camera, BarChart2, Eye, ExternalLink, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -19,7 +20,9 @@ interface HandoverPack {
   generatedBy: string;
 }
 
-function PackCard({ pack }: { pack: HandoverPack }) {
+function PackCard({ pack, onPreview }: { pack: HandoverPack; onPreview: (pack: HandoverPack) => void }) {
+  const isEmpty = (pack.photoCount ?? 0) === 0 && (pack.reportCount ?? 0) === 0;
+  const downloadUrl = `${BASE_URL}api/documents/${pack.id}/download`;
   return (
     <Card className="flex flex-col hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
@@ -57,24 +60,75 @@ function PackCard({ pack }: { pack: HandoverPack }) {
           </div>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full gap-2"
-          onClick={() => window.open(`${BASE_URL}api/documents/${pack.id}/download`, "_blank")}
-        >
-          {pack.wasabiKey ? (
-            <><ExternalLink className="w-3.5 h-3.5" />Open PDF</>
-          ) : (
-            <><Download className="w-3.5 h-3.5" />Download</>
-          )}
-        </Button>
+        {isEmpty && (
+          <div className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span>This pack has no photos or reports — the PDF will be a cover page only.</span>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => onPreview(pack)}
+          >
+            <Eye className="w-3.5 h-3.5" />Preview
+          </Button>
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
+              {pack.wasabiKey
+                ? <><ExternalLink className="w-3.5 h-3.5" />Open</>
+                : <><Download className="w-3.5 h-3.5" />Download</>}
+            </a>
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function OspSection({ ospName, packs }: { ospName: string; packs: HandoverPack[] }) {
+function PreviewModal({ pack, onClose }: { pack: HandoverPack | null; onClose: () => void }) {
+  const open = pack !== null;
+  const url = pack ? `${BASE_URL}api/documents/${pack.id}/download` : "";
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-5 py-3 border-b">
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Package className="w-4 h-4 text-primary" />
+            {pack?.title}
+          </DialogTitle>
+          <DialogDescription className="text-xs flex items-center gap-3 flex-wrap">
+            <span>{pack?.photoCount ?? 0} photos · {pack?.reportCount ?? 0} reports</span>
+            {pack && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3" />Open in new tab
+              </a>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 bg-muted/40 overflow-hidden">
+          {pack && (
+            <iframe
+              key={pack.id}
+              src={url}
+              title={pack.title}
+              className="w-full h-full border-0"
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OspSection({ ospName, packs, onPreview }: { ospName: string; packs: HandoverPack[]; onPreview: (pack: HandoverPack) => void }) {
   const [open, setOpen] = useState(true);
 
   // Group packs by string name within the OSP
@@ -104,7 +158,7 @@ function OspSection({ ospName, packs }: { ospName: string; packs: HandoverPack[]
             <div key={strName} className="space-y-3">
               <h3 className="text-sm font-medium text-muted-foreground">String {strName}</h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {strPacks.map(pack => <PackCard key={pack.id} pack={pack} />)}
+                {strPacks.map(pack => <PackCard key={pack.id} pack={pack} onPreview={onPreview} />)}
               </div>
             </div>
           ))}
@@ -118,6 +172,7 @@ export default function Documents() {
   const [packs, setPacks] = useState<HandoverPack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [previewPack, setPreviewPack] = useState<HandoverPack | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -169,10 +224,12 @@ export default function Documents() {
       ) : (
         <div className="space-y-8">
           {Array.from(byOsp.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([ospName, ospPacks]) => (
-            <OspSection key={ospName} ospName={ospName} packs={ospPacks} />
+            <OspSection key={ospName} ospName={ospName} packs={ospPacks} onPreview={setPreviewPack} />
           ))}
         </div>
       )}
+
+      <PreviewModal pack={previewPack} onClose={() => setPreviewPack(null)} />
     </div>
   );
 }

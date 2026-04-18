@@ -368,6 +368,18 @@ router.post("/documents/generate-handover", async (req, res): Promise<void> => {
       });
     }
 
+    // 4b. Refuse to generate an empty pack unless caller opts in via `allowEmpty`.
+    const allowEmpty = (req.body as { allowEmpty?: boolean })?.allowEmpty === true;
+    if (!allowEmpty && photos.length === 0 && reports.length === 0) {
+      res.status(409).json({
+        error: "Empty pack",
+        message: `String ${name} has no approved photos and no field reports yet. Pass allowEmpty: true to generate anyway.`,
+        photoCount: 0,
+        reportCount: 0,
+      });
+      return;
+    }
+
     // 5. Generate PDF (async — waits for PDFKit stream to fully flush)
     const generatedAt = new Date();
     const pdfBuffer = await generateHandoverPdf({ stringName: name, ospName, generatedBy: resolvedGeneratedBy, generatedAt, photos, reports });
