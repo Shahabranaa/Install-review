@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, isNotNull } from "drizzle-orm";
-import { db, towersTable } from "@workspace/db";
+import { db, towersTable, stringsTable } from "@workspace/db";
 import { sheetsRequest, isSheetsConfigured, SPREADSHEET_ID } from "../lib/google-sheets";
 import { logger } from "../lib/logger";
 
@@ -87,16 +87,23 @@ export async function syncCablesFromSheet(): Promise<number> {
 // The `string` field is enriched from the in-memory sheet cache when available.
 router.get("/cables", async (req, res): Promise<void> => {
   try {
-    const towers = await db
-      .select({ name: towersTable.name, connectedTo: towersTable.connectedTo })
+    // Derive the cable→string mapping from the DB (towers.string_id → strings.name).
+    // Falls back to the in-memory sheet cache when a tower has no string FK set.
+    const rows = await db
+      .select({
+        towerName:   towersTable.name,
+        connectedTo: towersTable.connectedTo,
+        stringName:  stringsTable.name,
+      })
       .from(towersTable)
+      .leftJoin(stringsTable, eq(towersTable.stringId, stringsTable.id))
       .where(isNotNull(towersTable.connectedTo))
       .orderBy(towersTable.name);
 
-    const cables: CableRow[] = towers.map(t => ({
-      cableName: t.connectedTo!,
-      tower:     t.name,
-      string:    stringByTower.get(t.name) ?? "",
+    const cables: CableRow[] = rows.map(r => ({
+      cableName: r.connectedTo!,
+      tower:     r.towerName,
+      string:    r.stringName ?? stringByTower.get(r.towerName) ?? "",
     }));
 
     res.json({ cables });

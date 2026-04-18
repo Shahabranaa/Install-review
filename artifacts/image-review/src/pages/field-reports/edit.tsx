@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListStrings } from "@workspace/api-client-react";
+import { useListStrings, useListLocations, useListCables } from "@workspace/api-client-react";
 import { Save, FileCheck2, Eye, ChevronLeft } from "lucide-react";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
@@ -78,10 +78,40 @@ export default function EditFieldReportPage(): JSX.Element {
   const [finalizing, setFinalizing] = useState(false);
 
   const stringsQ = useListStrings();
-  const stringOptions = useMemo(
-    () => (stringsQ.data?.strings ?? []).map(s => s.name).sort(),
-    [stringsQ.data],
-  );
+  const locationsQ = useListLocations();
+  const cablesQ = useListCables();
+
+  // Group strings by their OSP location: [{ ospName, strings: [name, ...] }, ...]
+  const stringGroups = useMemo(() => {
+    const strings = stringsQ.data ?? [];
+    const ospById = new Map(
+      (locationsQ.data ?? []).filter(l => l.type === "OSP").map(l => [l.id, l.name]),
+    );
+    const byOsp = new Map<string, string[]>();
+    for (const s of strings) {
+      const osp = ospById.get(s.locationId) ?? "Other";
+      if (!byOsp.has(osp)) byOsp.set(osp, []);
+      byOsp.get(osp)!.push(s.name);
+    }
+    return Array.from(byOsp.entries())
+      .map(([ospName, names]) => ({ ospName, strings: names.sort() }))
+      .sort((a, b) => a.ospName.localeCompare(b.ospName));
+  }, [stringsQ.data, locationsQ.data]);
+
+  // Cables for the currently-selected string, sorted naturally.
+  const cableOptions = useMemo(() => {
+    if (!stringName) return [] as string[];
+    const rows = cablesQ.data?.cables ?? [];
+    const matches = rows.filter(c => c.string === stringName).map(c => c.cableName);
+    return Array.from(new Set(matches)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [cablesQ.data, stringName]);
+
+  // When the loaded draft (or user) sets a cable that isn't in the list — e.g.
+  // a legacy free-text value or a string with no synced cables — keep it visible.
+  const cableOptionsWithCurrent = useMemo(() => {
+    if (cableName && !cableOptions.includes(cableName)) return [cableName, ...cableOptions];
+    return cableOptions;
+  }, [cableOptions, cableName]);
 
   const template = useMemo(() => templates.find(t => t.id === templateId), [templates, templateId]);
 
@@ -239,17 +269,46 @@ export default function EditFieldReportPage(): JSX.Element {
           </div>
           <div>
             <Label>String</Label>
-            <Select value={stringName} onValueChange={setStringName} disabled={isFinal}>
+            <Select
+              value={stringName}
+              onValueChange={(v) => { setStringName(v); setCableName(""); }}
+              disabled={isFinal}
+            >
               <SelectTrigger><SelectValue placeholder="Pick a string" /></SelectTrigger>
               <SelectContent>
-                {stringOptions.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                {stringGroups.map(g => (
+                  <div key={g.ospName}>
+                    <div className="px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">{g.ospName}</div>
+                    {g.strings.map(name => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </div>
+                ))}
               </SelectContent>
             </Select>
           </div>
           {template?.scope === "cable" && (
             <div>
               <Label>Cable</Label>
-              <Input value={cableName} onChange={(e) => setCableName(e.target.value)} placeholder="e.g. A02-1" disabled={isFinal} />
+              {cableOptionsWithCurrent.length > 0 ? (
+                <Select value={cableName} onValueChange={setCableName} disabled={isFinal || !stringName}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={stringName ? "Pick a cable" : "Pick a string first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cableOptionsWithCurrent.map(name => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={cableName}
+                  onChange={(e) => setCableName(e.target.value)}
+                  placeholder={stringName ? "No cables synced — type one (e.g. A02-1)" : "Pick a string first"}
+                  disabled={isFinal || !stringName}
+                />
+              )}
             </div>
           )}
         </CardContent>
