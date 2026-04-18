@@ -571,6 +571,8 @@ export const ListIssuesResponse = zod.array(ListIssuesResponseItem);
 export const CreateIssueBody = zod.object({
   imageId: zod.number().optional(),
   photoId: zod.string().optional(),
+  tower: zod.string().nullish(),
+  string: zod.string().nullish(),
   cable: zod.string().nullish(),
   type: zod.string(),
   severity: zod.string(),
@@ -623,6 +625,8 @@ export const UpdateIssueBody = zod.object({
   type: zod.string().optional(),
   severity: zod.string().optional(),
   description: zod.string().optional(),
+  tower: zod.string().nullish(),
+  string: zod.string().nullish(),
   cable: zod.string().nullish(),
   status: zod.enum(["open", "in_progress", "resolved"]).optional(),
   resolved: zod.boolean().optional(),

@@ -670,6 +670,7 @@ function NewTaskDialog({
   const [severity, setSeverity] = useState<string>("medium");
   const [description, setDescription] = useState("");
   const [tower, setTower] = useState<string>("");
+  const [stringName, setStringName] = useState<string>("");
   const [cable, setCable] = useState<string>("");
   const [raisedBy, setRaisedBy] = useState<string>(defaultRaisedBy);
   const [submitting, setSubmitting] = useState(false);
@@ -681,6 +682,7 @@ function NewTaskDialog({
       setSeverity("medium");
       setDescription("");
       setTower("");
+      setStringName("");
       setCable("");
       setRaisedBy(defaultRaisedBy);
       setError(null);
@@ -692,8 +694,9 @@ function NewTaskDialog({
     setSubmitting(true);
     setError(null);
     try {
-      // The backend requires either imageId or photoId. We use a synthetic photoId
-      // derived from the user-entered tower/cable so the issue is correctly bucketed.
+      // Backend requires either imageId or photoId. For manual tasks we still
+      // provide a synthetic photoId for legacy bucket compatibility, but the
+      // canonical scope lives in the explicit tower/string/cable columns.
       const photoId = tower
         ? `manual:tower:${tower}`
         : cable
@@ -709,6 +712,8 @@ function NewTaskDialog({
           description: description.trim(),
           raisedBy: raisedBy || undefined,
           status: defaultStatus,
+          tower: tower || undefined,
+          string: stringName || undefined,
           cable: cable || undefined,
         }),
       });
@@ -718,12 +723,7 @@ function NewTaskDialog({
         return;
       }
       const created = await r.json() as Issue;
-      onCreated({
-        ...created,
-        tower: tower || created.tower || null,
-        string: created.string ?? null,
-        cable: cable || created.cable || null,
-      });
+      onCreated(created);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -775,7 +775,7 @@ function NewTaskDialog({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <label className="space-y-1 text-xs font-medium">
               <span className="text-muted-foreground">Tower</span>
               <input
@@ -787,6 +787,19 @@ function NewTaskDialog({
               />
               <datalist id="punch-towers">
                 {towers.map(t => <option key={t} value={t} />)}
+              </datalist>
+            </label>
+            <label className="space-y-1 text-xs font-medium">
+              <span className="text-muted-foreground">String</span>
+              <input
+                list="punch-strings"
+                value={stringName}
+                onChange={e => setStringName(e.target.value)}
+                placeholder="optional"
+                className="w-full h-9 rounded-lg border border-border bg-background text-sm px-2.5 focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <datalist id="punch-strings">
+                {strings.map(s => <option key={s} value={s} />)}
               </datalist>
             </label>
             <label className="space-y-1 text-xs font-medium">

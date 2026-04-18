@@ -61,11 +61,15 @@ async function enrichIssues(issues: IssueRow[]): Promise<ReturnType<typeof seria
     const serialized = row as Record<string, unknown>;
     const pid = serialized.photoId as string | null | undefined;
     const manual = parseManualPhotoId(pid);
+    // Precedence: explicit column on row > sheet_photos lookup > synthetic photoId
+    const explicitTower = (serialized.tower as string | null | undefined) ?? null;
+    const explicitString = (serialized.string as string | null | undefined) ?? null;
+    const explicitCable = (serialized.cable as string | null | undefined) ?? null;
     return {
       ...serialized,
-      tower: (pid ? towerMap.get(pid) ?? null : null) ?? manual.tower,
-      string: pid ? (stringMap.get(pid) ?? null) : null,
-      cable: ((serialized.cable as string | null | undefined) ?? null) ?? manual.cable,
+      tower: explicitTower ?? (pid ? towerMap.get(pid) ?? null : null) ?? manual.tower,
+      string: explicitString ?? (pid ? stringMap.get(pid) ?? null : null),
+      cable: explicitCable ?? manual.cable,
       status: deriveStatus({ status: serialized.status as string | null | undefined, resolved: !!serialized.resolved }),
     };
   });
@@ -232,7 +236,8 @@ router.post("/issues", async (req, res): Promise<void> => {
       resolved: status === "resolved",
     })
     .returning();
-  res.status(201).json(GetIssueResponse.parse({ ...serialize(issue), tower: null, string: null }));
+  const [enriched] = await enrichIssues([issue]);
+  res.status(201).json(GetIssueResponse.parse(enriched));
 });
 
 router.get("/issues/:id", async (req, res): Promise<void> => {
