@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useContext, createContext, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -312,6 +313,8 @@ function FullscreenViewer({
   const [showCrop, setShowCrop] = useState(true);
   const imgRef = useRef<HTMLImageElement>(null);
 
+  const { user } = useAuth();
+
   // Issue panel state
   interface IssueRecord { id: number; type: string; severity: string; description: string; raisedBy?: string | null; resolved: boolean; createdAt: string; }
   const [photoIssues, setPhotoIssues] = useState<IssueRecord[]>([]);
@@ -340,7 +343,13 @@ function FullscreenViewer({
       const r = await fetch(`${BASE_URL}api/issues`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId: photo.photoId, type: issueType, severity: issueSeverity, description: issueDescription.trim() }),
+        body: JSON.stringify({
+          photoId: photo.photoId,
+          type: issueType,
+          severity: issueSeverity,
+          description: issueDescription.trim(),
+          raisedBy: user?.displayName ?? null,
+        }),
       });
       if (r.ok) {
         const newIssue = await r.json() as IssueRecord;
@@ -362,7 +371,11 @@ function FullscreenViewer({
   const handleResolveIssue = async (id: number) => {
     setResolvingId(id);
     try {
-      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
+      });
       if (r.ok) {
         setPhotoIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
       }
@@ -811,11 +824,11 @@ function FullscreenViewer({
                   </button>
                 </div>
 
-                {/* Existing issues */}
-                {photoIssues.length > 0 && (
+                {/* Open issues */}
+                {photoIssues.filter(i => !i.resolved).length > 0 && (
                   <div className="space-y-1.5">
-                    {photoIssues.map(issue => (
-                      <div key={issue.id} className={`rounded-lg border px-2.5 py-2 space-y-1 ${issue.resolved ? "border-border/40 opacity-60" : "border-amber-500/30 bg-amber-500/5"}`}>
+                    {photoIssues.filter(i => !i.resolved).map(issue => (
+                      <div key={issue.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`text-[10px] font-semibold uppercase rounded-full px-1.5 py-0.5 ${
@@ -826,22 +839,26 @@ function FullscreenViewer({
                             }`}>{issue.severity}</span>
                             <span className="text-[10px] text-muted-foreground capitalize">{issue.type}</span>
                           </div>
-                          {issue.resolved ? (
-                            <span className="text-[10px] text-green-600 font-medium flex items-center gap-0.5"><CheckCheck className="w-3 h-3" />Resolved</span>
-                          ) : (
-                            <button
-                              onClick={() => handleResolveIssue(issue.id)}
-                              disabled={resolvingId === issue.id}
-                              className="text-[10px] text-green-600 hover:text-green-700 font-medium transition-colors"
-                            >
-                              {resolvingId === issue.id ? "…" : "Resolve"}
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleResolveIssue(issue.id)}
+                            disabled={resolvingId === issue.id}
+                            className="text-[10px] text-green-600 hover:text-green-700 font-medium transition-colors"
+                          >
+                            {resolvingId === issue.id ? "…" : "Resolve"}
+                          </button>
                         </div>
                         <p className="text-xs text-foreground/80 leading-snug">{issue.description}</p>
+                        {issue.raisedBy && <p className="text-[10px] text-muted-foreground/50">By {issue.raisedBy}</p>}
                       </div>
                     ))}
                   </div>
+                )}
+
+                {/* Resolved issues (collapsed) */}
+                {photoIssues.filter(i => i.resolved).length > 0 && (
+                  <p className="text-[10px] text-muted-foreground/50 text-center">
+                    + {photoIssues.filter(i => i.resolved).length} resolved
+                  </p>
                 )}
 
                 {/* New issue form */}

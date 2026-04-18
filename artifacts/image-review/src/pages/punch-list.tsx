@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ interface Issue {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tower: string | null;
 }
 
 function severityBadge(severity: string) {
@@ -37,10 +39,12 @@ function severityBadge(severity: string) {
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 export default function PunchList() {
+  const { user } = useAuth();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterResolved, setFilterResolved] = useState<"all" | "open" | "resolved">("open");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [filterTower, setFilterTower] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -58,9 +62,9 @@ export default function PunchList() {
     setResolvingId(id);
     try {
       const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
       });
       if (r.ok) {
         setIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true, resolvedAt: new Date().toISOString() } : i));
@@ -68,13 +72,15 @@ export default function PunchList() {
     } catch { /* ignore */ } finally {
       setResolvingId(null);
     }
-  }, []);
+  }, [user]);
 
   const handleDelete = useCallback(async (id: number) => {
     if (!confirm("Delete this issue? This cannot be undone.")) return;
     await fetch(`${BASE_URL}api/issues/${id}`, { method: "DELETE" });
     setIssues(prev => prev.filter(i => i.id !== id));
   }, []);
+
+  const towers = Array.from(new Set(issues.map(i => i.tower).filter(Boolean) as string[])).sort();
 
   const filtered = issues
     .filter(i => {
@@ -83,6 +89,7 @@ export default function PunchList() {
       return true;
     })
     .filter(i => filterSeverity === "all" || i.severity === filterSeverity)
+    .filter(i => filterTower === "all" || i.tower === filterTower)
     .filter(i => {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
@@ -90,7 +97,8 @@ export default function PunchList() {
         i.description.toLowerCase().includes(q) ||
         i.type.toLowerCase().includes(q) ||
         (i.photoId ?? "").toLowerCase().includes(q) ||
-        (i.raisedBy ?? "").toLowerCase().includes(q)
+        (i.raisedBy ?? "").toLowerCase().includes(q) ||
+        (i.tower ?? "").toLowerCase().includes(q)
       );
     })
     .sort((a, b) => {
@@ -186,6 +194,20 @@ export default function PunchList() {
           ))}
         </div>
 
+        {/* Tower filter */}
+        {towers.length > 0 && (
+          <select
+            value={filterTower}
+            onChange={e => setFilterTower(e.target.value)}
+            className="h-9 rounded-lg border border-border bg-background text-xs text-foreground px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="all">All Towers</option>
+            {towers.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )}
+
         {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -233,6 +255,11 @@ export default function PunchList() {
                       {issue.severity}
                     </span>
                     <Badge variant="outline" className="text-xs capitalize">{issue.type}</Badge>
+                    {issue.tower && (
+                      <span className="text-[11px] font-semibold text-primary/70 bg-primary/10 px-2 py-0.5 rounded-full">
+                        {issue.tower}
+                      </span>
+                    )}
                     {issue.photoId && (
                       <span className="text-[11px] font-mono text-muted-foreground/60 bg-muted px-1.5 rounded">{issue.photoId}</span>
                     )}

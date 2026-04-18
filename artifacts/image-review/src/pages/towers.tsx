@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSearch } from "wouter";
 import { useListStrings, useListTowers, useListLocations } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -362,17 +363,23 @@ function TowerFolderView({
       .finally(() => setLoadingIssues(false));
   }, [tower.name]);
 
+  const { user } = useAuth();
+
   const handleResolveIssue = useCallback(async (id: number) => {
     setResolvingId(id);
     try {
-      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const r = await fetch(`${BASE_URL}api/issues/${id}/resolve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolvedBy: user?.displayName ?? null }),
+      });
       if (r.ok) {
         setTowerIssues(prev => prev.map(i => i.id === id ? { ...i, resolved: true } : i));
       }
     } catch { /* ignore */ } finally {
       setResolvingId(null);
     }
-  }, []);
+  }, [user]);
 
   const photoCount = photoCounts.get(tower.name) ?? 0;
   const selectedString = strings?.find(s => s.id === tower.stringId);
@@ -721,51 +728,77 @@ function TowerFolderView({
               <span className="text-sm">No issues raised for this tower</span>
               <span className="text-xs mt-1">Open a photo in the Image Review page to raise an issue.</span>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {towerIssues.map(issue => (
-                <div
-                  key={issue.id}
-                  className={`rounded-lg border px-4 py-3 space-y-1.5 transition-colors ${issue.resolved ? "border-border/40 opacity-60" : "border-amber-500/30 bg-amber-500/5"}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs font-semibold uppercase rounded-full px-2 py-0.5 ${
-                        issue.severity === "critical" ? "bg-red-100 text-red-700" :
-                        issue.severity === "high"     ? "bg-orange-100 text-orange-700" :
-                        issue.severity === "medium"   ? "bg-amber-100 text-amber-700" :
-                        "bg-slate-100 text-slate-600"
-                      }`}>{issue.severity}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{issue.type}</span>
-                      {issue.photoId && (
-                        <span className="text-[10px] font-mono text-muted-foreground/60">{issue.photoId}</span>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0">
-                      {issue.resolved ? (
-                        <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                          <CheckCheck className="w-3.5 h-3.5" />Resolved
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleResolveIssue(issue.id)}
-                          disabled={resolvingId === issue.id}
-                          className="text-xs text-green-600 hover:text-green-700 font-medium transition-colors border border-green-200 rounded-full px-2.5 py-0.5 hover:bg-green-50"
-                        >
-                          {resolvingId === issue.id ? "…" : "Resolve"}
-                        </button>
-                      )}
-                    </div>
+          ) : (() => {
+            const openIssues = towerIssues.filter(i => !i.resolved);
+            const resolvedIssues = towerIssues.filter(i => i.resolved);
+            const IssueCard = ({ issue }: { issue: TowerIssue }) => (
+              <div
+                className={`rounded-lg border px-4 py-3 space-y-1.5 transition-colors ${issue.resolved ? "border-border/40 bg-muted/20 opacity-70" : "border-amber-500/30 bg-amber-500/5"}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-semibold uppercase rounded-full px-2 py-0.5 ${
+                      issue.severity === "critical" ? "bg-red-100 text-red-700" :
+                      issue.severity === "high"     ? "bg-orange-100 text-orange-700" :
+                      issue.severity === "medium"   ? "bg-amber-100 text-amber-700" :
+                      "bg-slate-100 text-slate-600"
+                    }`}>{issue.severity}</span>
+                    <span className="text-xs text-muted-foreground capitalize">{issue.type}</span>
+                    {issue.photoId && (
+                      <span className="text-[10px] font-mono text-muted-foreground/60">{issue.photoId}</span>
+                    )}
                   </div>
-                  <p className="text-sm text-foreground/80 leading-snug">{issue.description}</p>
-                  <p className="text-[10px] text-muted-foreground/50">
-                    {new Date(issue.createdAt).toLocaleDateString()}
-                    {issue.raisedBy && ` · ${issue.raisedBy}`}
-                  </p>
+                  <div className="flex-shrink-0">
+                    {issue.resolved ? (
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                        <CheckCheck className="w-3.5 h-3.5" />Resolved
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleResolveIssue(issue.id)}
+                        disabled={resolvingId === issue.id}
+                        className="text-xs text-green-600 hover:text-green-700 font-medium transition-colors border border-green-200 rounded-full px-2.5 py-0.5 hover:bg-green-50"
+                      >
+                        {resolvingId === issue.id ? "…" : "Resolve"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )
+                <p className="text-sm text-foreground/80 leading-snug">{issue.description}</p>
+                <p className="text-[10px] text-muted-foreground/50">
+                  {new Date(issue.createdAt).toLocaleDateString()}
+                  {issue.raisedBy && ` · Raised by ${issue.raisedBy}`}
+                </p>
+              </div>
+            );
+            return (
+              <div className="space-y-6">
+                {openIssues.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/40 border border-dashed rounded-xl">
+                    <CheckCheck className="w-8 h-8 mb-2 text-green-500/40" />
+                    <span className="text-sm">All issues resolved</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 flex items-center gap-1.5">
+                      <Flag className="w-3.5 h-3.5" />
+                      Open ({openIssues.length})
+                    </p>
+                    {openIssues.map(issue => <IssueCard key={issue.id} issue={issue} />)}
+                  </div>
+                )}
+                {resolvedIssues.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-green-600 flex items-center gap-1.5">
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      Resolved ({resolvedIssues.length})
+                    </p>
+                    {resolvedIssues.map(issue => <IssueCard key={issue.id} issue={issue} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })()
         )}
       </div>
 

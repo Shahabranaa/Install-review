@@ -548,6 +548,7 @@ export const ListIssuesResponseItem = zod.object({
   id: zod.number(),
   imageId: zod.number().nullish(),
   photoId: zod.string().nullish(),
+  tower: zod.string().nullish(),
   type: zod.string(),
   severity: zod.string(),
   description: zod.string(),

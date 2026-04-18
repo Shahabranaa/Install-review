@@ -16,11 +16,31 @@ import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function enrichIssuesWithTower(issues: any[]): Promise<Array<Record<string, unknown>>> {
+  const photoIds = issues.map(i => i.photoId as string | null).filter(Boolean) as string[];
+  const towerMap = new Map<string, string>();
+  if (photoIds.length > 0) {
+    const photos = await db
+      .select({ photoId: sheetPhotosTable.photoId, cableLink: sheetPhotosTable.cableLink })
+      .from(sheetPhotosTable)
+      .where(inArray(sheetPhotosTable.photoId, photoIds));
+    for (const p of photos) {
+      if (p.photoId && p.cableLink) towerMap.set(p.photoId, p.cableLink);
+    }
+  }
+  return (serialize(issues) as Array<Record<string, unknown>>).map(i => ({
+    ...i,
+    tower: i.photoId ? (towerMap.get(i.photoId as string) ?? null) : null,
+  }));
+}
+
 router.get("/issues", async (req, res): Promise<void> => {
   const queryParams = ListIssuesQueryParams.safeParse(req.query);
   if (!queryParams.success) {
     const issues = await db.select().from(issuesTable);
-    res.json(ListIssuesResponse.parse(serialize(issues)));
+    const enriched = await enrichIssuesWithTower(issues);
+    res.json(ListIssuesResponse.parse(enriched));
     return;
   }
 
@@ -68,7 +88,8 @@ router.get("/issues", async (req, res): Promise<void> => {
     ? await db.select().from(issuesTable).where(and(...conditions))
     : await db.select().from(issuesTable);
 
-  res.json(ListIssuesResponse.parse(serialize(issues)));
+  const enriched = await enrichIssuesWithTower(issues);
+  res.json(ListIssuesResponse.parse(enriched));
 });
 
 router.post("/issues", async (req, res): Promise<void> => {
@@ -99,7 +120,7 @@ router.get("/issues/:id", async (req, res): Promise<void> => {
   res.json(GetIssueResponse.parse(serialize(issue)));
 });
 
-router.post("/issues/:id/resolve", async (req, res): Promise<void> => {
+router.patch("/issues/:id/resolve", async (req, res): Promise<void> => {
   const params = GetIssueParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
