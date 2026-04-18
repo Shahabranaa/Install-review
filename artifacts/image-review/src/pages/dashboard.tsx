@@ -180,7 +180,7 @@ function CompletionMatrix({
                     cellColor(cell.pct),
                     row.stringId
                       ? "cursor-pointer hover:opacity-70 transition-opacity"
-                      : "",
+                      : "cursor-default opacity-60",
                   ].join(" ")}
                   title={`${row.string} × ${cell.phase}: ${cell.towersWithPhotos}/${row.totalTowers} towers (${cell.pct}%)`}
                   onClick={() => onCellClick(row.stringId, row.string, cell.phase)}
@@ -296,8 +296,9 @@ export default function Dashboard() {
   });
 
   function handleCellClick(stringId: number | null, _stringName: string, phase: string) {
+    if (!stringId) return; // photo-only strings not in DB have no compliance scope
     const p = new URLSearchParams();
-    if (stringId) p.set("stringId", String(stringId));
+    p.set("stringId", String(stringId));
     if (phase) p.set("phase", phase);
     navigate(`/tower-compliance?${p.toString()}`);
   }
