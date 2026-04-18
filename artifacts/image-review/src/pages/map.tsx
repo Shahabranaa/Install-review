@@ -6,7 +6,8 @@ import type { LatLngBoundsExpression } from "leaflet";
 import { useListTowers, useListStrings, useListLocations } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wind } from "lucide-react";
+import { Wind, AlertTriangle } from "lucide-react";
+import { useIssueRollup } from "@/hooks/use-issue-rollup";
 
 const STATUS_COLOR: Record<string, string> = {
   "Complete":    "#22c55e",
@@ -89,6 +90,14 @@ export default function MapPage() {
 
   const stringLookup = new Map((strings ?? []).map((s) => [s.id, s]));
   const ospLookup = new Map((locations ?? []).map((l) => [l.id, l]));
+  const { rollup } = useIssueRollup();
+
+  const ISSUE_COLOR: Record<string, string> = {
+    critical: "#dc2626",
+    high:     "#f97316",
+    medium:   "#f59e0b",
+    low:      "#94a3b8",
+  };
 
   if (towerLoading) {
     return (
@@ -179,16 +188,19 @@ export default function MapPage() {
             const str = stringLookup.get(tower.stringId);
             const osp = str ? ospLookup.get(str.locationId) : undefined;
             const color = getColor(tower.progressStatus);
+            const issues = rollup.towers[tower.name];
+            const openIssues = issues ? issues.open + issues.in_progress : 0;
+            const issueRing = openIssues > 0 && issues?.worstSeverity ? ISSUE_COLOR[issues.worstSeverity] : null;
             return (
               <CircleMarker
                 key={tower.id}
                 center={[tower.lat!, tower.lng!]}
-                radius={active ? 8 : 5}
+                radius={active ? (issueRing ? 10 : 8) : 5}
                 pathOptions={{
-                  color: active ? color : "#94a3b8",
+                  color: active ? (issueRing ?? color) : "#94a3b8",
                   fillColor: active ? color : "#e2e8f0",
                   fillOpacity: active ? 0.85 : 0.35,
-                  weight: active ? 2 : 1,
+                  weight: active ? (issueRing ? 3 : 2) : 1,
                   opacity: active ? 1 : 0.4,
                 }}
               >
@@ -207,6 +219,19 @@ export default function MapPage() {
                     >
                       {(STATUS_LABEL[tower.progressStatus] ?? tower.progressStatus) || "—"}
                     </span>
+                    {openIssues > 0 && (
+                      <div className="mt-1">
+                        <Link href={`/punch-list?tower=${encodeURIComponent(tower.name)}`}>
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                            style={{ backgroundColor: issueRing ?? "#dc2626" }}
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            {openIssues} open issue{openIssues !== 1 ? "s" : ""}
+                          </span>
+                        </Link>
+                      </div>
+                    )}
                     {tower.lat != null && (
                       <p className="text-xs text-gray-400 font-mono mt-1">
                         {tower.lat.toFixed(5)}, {tower.lng!.toFixed(5)}

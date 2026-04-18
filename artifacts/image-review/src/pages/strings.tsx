@@ -2,9 +2,10 @@ import { useListLocations, useListStrings } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Network, ChevronRight, MapPin, Activity } from "lucide-react";
+import { Network, ChevronRight, MapPin, Activity, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import type { StringRecord } from "@workspace/api-zod";
+import { useIssueRollup, severityClass, type RollupBucket } from "@/hooks/use-issue-rollup";
 
 const STATUS_COLORS: Record<string, string> = {
   "In Progress": "bg-blue-100 text-blue-800",
@@ -20,7 +21,8 @@ function getStatusClass(status: string) {
   return STATUS_COLORS[status] ?? "bg-slate-100 text-slate-700";
 }
 
-function StringCard({ str, ospName }: { str: StringRecord; ospName?: string }) {
+function StringCard({ str, ospName, issues }: { str: StringRecord; ospName?: string; issues?: RollupBucket }) {
+  const openIssues = issues ? issues.open + issues.in_progress : 0;
   return (
     <Link href={`/towers?stringId=${str.id}`}>
       <Card className="hover-elevate cursor-pointer transition-all group">
@@ -40,11 +42,20 @@ function StringCard({ str, ospName }: { str: StringRecord; ospName?: string }) {
               <span>{ospName}</span>
             </div>
           )}
-          <div className="flex items-center gap-1.5 text-sm">
+          <div className="flex items-center gap-1.5 text-sm flex-wrap">
             <Activity className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
             <Badge className={`text-xs ${getStatusClass(str.status)}`}>
               {str.status || "No status"}
             </Badge>
+            {openIssues > 0 && (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-semibold rounded-full border px-2 py-0.5 ${severityClass(issues?.worstSeverity ?? null)}`}
+                title={`${openIssues} open issue${openIssues !== 1 ? "s" : ""} · worst: ${issues?.worstSeverity ?? "n/a"}`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {openIssues}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -58,6 +69,7 @@ export default function Strings() {
 
   const isLoading = locLoading || strLoading;
   const ospLocations = locations?.filter((l) => l.type === "OSP") ?? [];
+  const { rollup } = useIssueRollup();
 
   // Group strings by OSP location
   const stringsByOsp: Record<number, StringRecord[]> = {};
@@ -120,7 +132,7 @@ export default function Strings() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {ospStrings.map((str) => (
-                    <StringCard key={str.id} str={str} ospName={osp.name} />
+                    <StringCard key={str.id} str={str} ospName={osp.name} issues={rollup.strings[str.name]} />
                   ))}
                 </div>
               </section>

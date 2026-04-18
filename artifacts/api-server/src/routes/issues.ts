@@ -19,6 +19,21 @@ const router: IRouter = Router();
 
 type IssueRow = typeof issuesTable.$inferSelect;
 
+const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function deriveStatus(row: { status?: string | null; resolved: boolean }): "open" | "in_progress" | "resolved" {
+  const s = (row.status ?? "").toLowerCase();
+  if (s === "in_progress" || s === "resolved" || s === "open") return s;
+  return row.resolved ? "resolved" : "open";
+}
+
+function parseManualPhotoId(pid: string | null | undefined): { tower: string | null; cable: string | null } {
+  if (!pid) return { tower: null, cable: null };
+  const m = /^manual:(tower|cable):(.+)$/.exec(pid);
+  if (!m) return { tower: null, cable: null };
+  return m[1] === "tower" ? { tower: m[2]!, cable: null } : { tower: null, cable: m[2]! };
+}
+
 async function enrichIssues(issues: IssueRow[]): Promise<ReturnType<typeof serialize>[]> {
   const photoIds = issues.map(i => i.photoId).filter((id): id is string => id !== null);
   const towerMap = new Map<string, string>();
@@ -45,10 +60,13 @@ async function enrichIssues(issues: IssueRow[]): Promise<ReturnType<typeof seria
   return (serialize(issues) as ReturnType<typeof serialize>[]).map(row => {
     const serialized = row as Record<string, unknown>;
     const pid = serialized.photoId as string | null | undefined;
+    const manual = parseManualPhotoId(pid);
     return {
       ...serialized,
-      tower: pid ? (towerMap.get(pid) ?? null) : null,
+      tower: (pid ? towerMap.get(pid) ?? null : null) ?? manual.tower,
       string: pid ? (stringMap.get(pid) ?? null) : null,
+      cable: ((serialized.cable as string | null | undefined) ?? null) ?? manual.cable,
+      status: deriveStatus({ status: serialized.status as string | null | undefined, resolved: !!serialized.resolved }),
     };
   });
 }
@@ -60,10 +78,9 @@ router.get("/issues", async (req, res): Promise<void> => {
     return;
   }
 
-  const { imageId, phaseId, photoId, tower, string: stringName, severity, resolved } = queryParams.data;
+  const { imageId, phaseId, photoId, tower, string: stringName, severity, resolved, status } = queryParams.data;
   const conditions: SQL[] = [];
 
-  // imageId and phaseId filter on the issues table directly
   if (imageId) {
     conditions.push(eq(issuesTable.imageId, imageId));
   } else if (phaseId) {
@@ -75,10 +92,8 @@ router.get("/issues", async (req, res): Promise<void> => {
     }
     conditions.push(inArray(issuesTable.imageId, ids));
   } else if (photoId) {
-    // Single photo lookup — direct equality
     conditions.push(eq(issuesTable.photoId, photoId));
   } else {
-    // Tower and/or string: resolve to a set of photoIds, then combine via intersection
     let toweredPhotoIds: string[] | null = null;
     let stringedPhotoIds: string[] | null = null;
 
@@ -88,6 +103,8 @@ router.get("/issues", async (req, res): Promise<void> => {
         .from(sheetPhotosTable)
         .where(eq(sheetPhotosTable.cableLink, tower));
       toweredPhotoIds = rows.map(r => r.photoId).filter((id): id is string => id !== null);
+      // Also include manually-created issues addressed to this tower via synthetic photoId
+      toweredPhotoIds.push(`manual:tower:${tower}`);
     }
 
     if (stringName) {
@@ -99,7 +116,6 @@ router.get("/issues", async (req, res): Promise<void> => {
     }
 
     if (toweredPhotoIds !== null || stringedPhotoIds !== null) {
-      // Intersect the two sets if both are provided
       let combined: string[];
       if (toweredPhotoIds !== null && stringedPhotoIds !== null) {
         const tSet = new Set(toweredPhotoIds);
@@ -117,12 +133,84 @@ router.get("/issues", async (req, res): Promise<void> => {
 
   if (severity) conditions.push(eq(issuesTable.severity, severity));
   if (resolved !== undefined) conditions.push(eq(issuesTable.resolved, resolved));
+  if (status) conditions.push(eq(issuesTable.status, status));
 
   const issues = conditions.length > 0
     ? await db.select().from(issuesTable).where(and(...conditions))
     : await db.select().from(issuesTable);
 
   res.json(ListIssuesResponse.parse(await enrichIssues(issues)));
+});
+
+// Lightweight rollup of open-issue counts + worst severity, grouped by tower / string / cable.
+router.get("/issues/rollup", async (_req, res): Promise<void> => {
+  const issues = await db.select().from(issuesTable);
+
+  // Resolve photoId -> tower/string for issues that don't carry an explicit cable column.
+  const photoIds = issues.map(i => i.photoId).filter((id): id is string => id !== null);
+  const photoTower = new Map<string, string | null>();
+  const photoString = new Map<string, string | null>();
+  if (photoIds.length > 0) {
+    const photos = await db
+      .select({
+        photoId: sheetPhotosTable.photoId,
+        cableLink: sheetPhotosTable.cableLink,
+        photoString: sheetPhotosTable.photoString,
+      })
+      .from(sheetPhotosTable)
+      .where(inArray(sheetPhotosTable.photoId, photoIds));
+    for (const p of photos) {
+      if (p.photoId) {
+        photoTower.set(p.photoId, p.cableLink ?? null);
+        photoString.set(p.photoId, p.photoString ?? null);
+      }
+    }
+  }
+
+  type Bucket = { open: number; in_progress: number; resolved: number; total: number; worstSeverity: string | null };
+  const empty = (): Bucket => ({ open: 0, in_progress: 0, resolved: 0, total: 0, worstSeverity: null });
+  const towers = new Map<string, Bucket>();
+  const strings = new Map<string, Bucket>();
+  const cables = new Map<string, Bucket>();
+
+  const bumpWorst = (bucket: Bucket, severity: string) => {
+    const rank = SEVERITY_RANK[severity] ?? 9;
+    const currentRank = bucket.worstSeverity ? (SEVERITY_RANK[bucket.worstSeverity] ?? 9) : 99;
+    if (rank < currentRank) bucket.worstSeverity = severity;
+  };
+
+  const addTo = (map: Map<string, Bucket>, key: string | null | undefined, status: string, severity: string) => {
+    if (!key) return;
+    const bucket = map.get(key) ?? empty();
+    if (status === "open") bucket.open += 1;
+    else if (status === "in_progress") bucket.in_progress += 1;
+    else if (status === "resolved") bucket.resolved += 1;
+    bucket.total += 1;
+    if (status !== "resolved") bumpWorst(bucket, severity);
+    map.set(key, bucket);
+  };
+
+  // Fallback: parse synthetic photoIds like "manual:tower:NAME" / "manual:cable:ID"
+  const parseManual = (pid: string | null) => {
+    if (!pid) return { tower: null, cable: null };
+    const m = /^manual:(tower|cable):(.+)$/.exec(pid);
+    if (!m) return { tower: null, cable: null };
+    return m[1] === "tower" ? { tower: m[2], cable: null } : { tower: null, cable: m[2] };
+  };
+
+  for (const i of issues) {
+    const status = deriveStatus(i);
+    const manual = parseManual(i.photoId);
+    const tower = (i.photoId ? photoTower.get(i.photoId) : null) ?? manual.tower;
+    const stringName = i.photoId ? photoString.get(i.photoId) ?? null : null;
+    const cable = i.cable ?? manual.cable;
+    addTo(towers, tower, status, i.severity);
+    addTo(strings, stringName, status, i.severity);
+    addTo(cables, cable, status, i.severity);
+  }
+
+  const toObj = (m: Map<string, Bucket>) => Object.fromEntries(m);
+  res.json({ towers: toObj(towers), strings: toObj(strings), cables: toObj(cables) });
 });
 
 router.post("/issues", async (req, res): Promise<void> => {
@@ -135,8 +223,16 @@ router.post("/issues", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Either imageId or photoId is required" });
     return;
   }
-  const [issue] = await db.insert(issuesTable).values(parsed.data).returning();
-  res.status(201).json(GetIssueResponse.parse(serialize(issue)));
+  const status = parsed.data.status ?? "open";
+  const [issue] = await db
+    .insert(issuesTable)
+    .values({
+      ...parsed.data,
+      status,
+      resolved: status === "resolved",
+    })
+    .returning();
+  res.status(201).json(GetIssueResponse.parse({ ...serialize(issue), tower: null, string: null }));
 });
 
 router.get("/issues/:id", async (req, res): Promise<void> => {
@@ -150,7 +246,8 @@ router.get("/issues/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Issue not found" });
     return;
   }
-  res.json(GetIssueResponse.parse(serialize(issue)));
+  const [enriched] = await enrichIssues([issue]);
+  res.json(GetIssueResponse.parse(enriched));
 });
 
 router.patch("/issues/:id/resolve", async (req, res): Promise<void> => {
@@ -167,14 +264,15 @@ router.patch("/issues/:id/resolve", async (req, res): Promise<void> => {
   const resolvedBy = body.data.resolvedBy ?? null;
   const [issue] = await db
     .update(issuesTable)
-    .set({ resolved: true, resolvedBy, resolvedAt: new Date(), updatedAt: new Date() })
+    .set({ resolved: true, status: "resolved", resolvedBy, resolvedAt: new Date(), updatedAt: new Date() })
     .where(eq(issuesTable.id, params.data.id))
     .returning();
   if (!issue) {
     res.status(404).json({ error: "Issue not found" });
     return;
   }
-  res.json(UpdateIssueResponse.parse(serialize(issue)));
+  const [enriched] = await enrichIssues([issue]);
+  res.json(UpdateIssueResponse.parse(enriched));
 });
 
 router.patch("/issues/:id", async (req, res): Promise<void> => {
@@ -189,15 +287,33 @@ router.patch("/issues/:id", async (req, res): Promise<void> => {
     return;
   }
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
-  if (parsed.data.resolved && !updateData.resolvedAt) {
-    updateData.resolvedAt = new Date();
+
+  // Status drives `resolved` / `resolvedAt` to keep things in lockstep.
+  if (parsed.data.status) {
+    if (parsed.data.status === "resolved") {
+      updateData.resolved = true;
+      if (!updateData.resolvedAt) updateData.resolvedAt = new Date();
+    } else {
+      updateData.resolved = false;
+      updateData.resolvedAt = null;
+      updateData.resolvedBy = null;
+    }
+  } else if (parsed.data.resolved !== undefined) {
+    updateData.status = parsed.data.resolved ? "resolved" : "open";
+    if (parsed.data.resolved && !updateData.resolvedAt) updateData.resolvedAt = new Date();
+    if (!parsed.data.resolved) {
+      updateData.resolvedAt = null;
+      updateData.resolvedBy = null;
+    }
   }
+
   const [issue] = await db.update(issuesTable).set(updateData).where(eq(issuesTable.id, params.data.id)).returning();
   if (!issue) {
     res.status(404).json({ error: "Issue not found" });
     return;
   }
-  res.json(UpdateIssueResponse.parse(serialize(issue)));
+  const [enriched] = await enrichIssues([issue]);
+  res.json(UpdateIssueResponse.parse(enriched));
 });
 
 router.delete("/issues/:id", async (req, res): Promise<void> => {

@@ -11,8 +11,9 @@ import BulkReviewSession, { type BulkSessionPhoto } from "@/components/BulkRevie
 import {
   Wind, Search, Camera, FileText, X, ChevronLeft, ChevronRight,
   ArrowLeft, ZoomIn, ExternalLink, ImageOff, EyeOff, Eye, Cable,
-  Package, Loader2, Flag, CheckCheck, PlayCircle,
+  Package, Loader2, Flag, CheckCheck, PlayCircle, AlertTriangle,
 } from "lucide-react";
+import { useIssueRollup, severityClass } from "@/hooks/use-issue-rollup";
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "") + "/";
 
@@ -908,6 +909,8 @@ export default function Towers() {
 
   const isLoading = strLoading || towerLoading;
 
+  const { rollup } = useIssueRollup();
+
   const filteredTowers = (towers ?? []).filter(t =>
     !searchQuery ||
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1150,6 +1153,8 @@ export default function Towers() {
           {filteredTowers.map(tower => {
             const photoCount = photoCounts.get(tower.name) ?? 0;
             const st = statusStyle(tower.progressStatus);
+            const issueBucket = rollup.towers[tower.name];
+            const openIssues = issueBucket ? issueBucket.open + issueBucket.in_progress : 0;
             return (
               <button
                 key={tower.id}
@@ -1172,6 +1177,15 @@ export default function Towers() {
                   <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 font-medium">
                     <Cable className="w-3 h-3 flex-shrink-0" />
                     <span className="truncate">{tower.connectedTo}</span>
+                  </span>
+                )}
+                {openIssues > 0 && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-full border px-1.5 py-0.5 self-start ${severityClass(issueBucket?.worstSeverity ?? null)}`}
+                    title={`${openIssues} open · worst: ${issueBucket?.worstSeverity ?? "n/a"}`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                    {openIssues} open
                   </span>
                 )}
               </button>

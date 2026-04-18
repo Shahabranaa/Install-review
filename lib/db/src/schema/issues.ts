@@ -12,6 +12,8 @@ export const issuesTable = pgTable("issues", {
   description: text("description").notNull(),
   raisedBy: text("raised_by"),
   resolved: boolean("resolved").notNull().default(false),
+  status: text("status").notNull().default("open"),
+  cable: text("cable"),
   resolvedBy: text("resolved_by"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
