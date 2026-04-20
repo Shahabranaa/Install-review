@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, ClipboardEdit, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag, BarChart3,
 } from "lucide-react";
 import { useState, useEffect, useCallback, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -359,6 +359,14 @@ export function AppSidebar() {
             label="Handover Packs"
             icon={Package}
             isActive={location === "/documents" || location.startsWith("/documents")}
+          />
+
+          {/* Installation Progress */}
+          <NavItem
+            href="/progress"
+            label="Progress"
+            icon={BarChart3}
+            isActive={location === "/progress"}
           />
 
           {/* Punch List / Issues */}

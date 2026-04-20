@@ -14,3 +14,7 @@ export * from "./app-settings";
 export * from "./wasabi-mirror-tasks";
 export * from "./required-image-definitions";
 export * from "./field-reports";
+export * from "./installation-tasks";
+export * from "./campaigns";
+export * from "./location-task-progress";
+export * from "./task-progress-updates";

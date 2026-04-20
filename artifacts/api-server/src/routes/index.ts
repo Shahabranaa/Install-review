@@ -24,6 +24,7 @@ import setupRouter from "./setup";
 import complianceRouter from "./compliance";
 import fieldReportsRouter from "./field-reports";
 import fieldReportImagesRouter from "./field-report-images";
+import progressRouter from "./progress";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(setupRouter);
 router.use(complianceRouter);
 router.use(fieldReportsRouter);
 router.use(fieldReportImagesRouter);
+router.use(progressRouter);
 
 export default router;
