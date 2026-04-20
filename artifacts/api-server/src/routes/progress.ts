@@ -464,6 +464,12 @@ router.get("/progress/location-progress", async (req, res): Promise<void> => {
         latestCompletedAt: update?.completedAt ?? null,
         durationActual: update?.durationActual ?? null,
         workActivity: update?.workActivity ?? null,
+        loggedBy: update?.createdBy ?? null,
+        creationDatetime: update?.creationDatetime ?? null,
+        creationLocation: update?.creationLocation ?? null,
+        editDatetime: update?.editDatetime ?? null,
+        editUser: update?.editUser ?? null,
+        editLocation: update?.editLocation ?? null,
       };
     });
 

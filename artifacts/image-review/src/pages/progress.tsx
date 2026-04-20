@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   RefreshCw, CheckCircle2, Clock, ChevronDown, ChevronRight,
-  BarChart3, Activity,
+  BarChart3, Activity, User, MapPin, CalendarClock, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +42,12 @@ interface TaskRow {
   latestCompletedAt: string | null;
   durationActual: string | null;
   workActivity: string | null;
+  loggedBy: string | null;
+  creationDatetime: string | null;
+  creationLocation: string | null;
+  editDatetime: string | null;
+  editUser: string | null;
+  editLocation: string | null;
 }
 
 interface Campaign {
@@ -70,6 +76,136 @@ function ProgressBar({ pct, completed }: { pct: number; completed: boolean }) {
         {pct}%
       </span>
     </div>
+  );
+}
+
+const ZERO_GPS = "0.000000, 0.000000";
+
+function hasUpdateDetail(task: TaskRow): boolean {
+  return !!(task.workActivity || task.loggedBy || task.creationDatetime || task.creationLocation);
+}
+
+function TaskDetailPanel({ task }: { task: TaskRow }) {
+  const gps = task.creationLocation && task.creationLocation !== ZERO_GPS
+    ? task.creationLocation
+    : null;
+  const editGps = task.editLocation && task.editLocation !== ZERO_GPS
+    ? task.editLocation
+    : null;
+  const editedByDifferent =
+    task.editDatetime &&
+    (task.editUser !== task.loggedBy || task.editDatetime !== task.creationDatetime);
+
+  return (
+    <tr className="bg-muted/20 border-b border-dashed">
+      <td colSpan={7} className="px-6 py-3">
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+          {task.workActivity && (
+            <div className="flex items-start gap-1.5">
+              <Activity className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-blue-500" />
+              <span className="text-foreground font-medium">{task.workActivity}</span>
+            </div>
+          )}
+          {task.loggedBy && (
+            <div className="flex items-center gap-1.5">
+              <User className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>{task.loggedBy}</span>
+            </div>
+          )}
+          {task.creationDatetime && (
+            <div className="flex items-center gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>{task.creationDatetime}</span>
+            </div>
+          )}
+          {gps && (
+            <div className="flex items-center gap-1.5">
+              <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-rose-500" />
+              <span className="font-mono">{gps}</span>
+            </div>
+          )}
+          {editedByDifferent && (
+            <div className="flex items-center gap-1.5">
+              <Pencil className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                Edited {task.editDatetime}
+                {task.editUser && task.editUser !== task.loggedBy && ` by ${task.editUser}`}
+                {editGps && ` · ${editGps}`}
+              </span>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function TaskTableRow({ task }: { task: TaskRow }) {
+  const [expanded, setExpanded] = useState(false);
+  const expandable = hasUpdateDetail(task);
+
+  return (
+    <>
+      <tr
+        onClick={() => expandable && setExpanded((e) => !e)}
+        className={cn(
+          "transition-colors",
+          task.completed ? "bg-emerald-50/50 dark:bg-emerald-950/10" : "hover:bg-muted/30",
+          expandable && "cursor-pointer",
+        )}
+      >
+        <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+          {task.sequence ?? "—"}
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-2">
+            {task.completed ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+            ) : task.latestProgressPct > 0 ? (
+              <Activity className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+            ) : (
+              <Clock className="h-3.5 w-3.5 text-muted-foreground/40 flex-shrink-0" />
+            )}
+            <span className={cn("font-medium", task.completed && "text-muted-foreground")}>
+              {task.taskName}
+            </span>
+            {expandable && (
+              expanded
+                ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 ml-1 flex-shrink-0" />
+                : <ChevronRight className="h-3 w-3 text-muted-foreground/30 ml-1 flex-shrink-0" />
+            )}
+          </div>
+        </td>
+        <td className="px-3 py-2 hidden sm:table-cell">
+          <Badge variant="outline" className="text-[10px] py-0 h-4">
+            {task.taskType ?? "—"}
+          </Badge>
+        </td>
+        <td className="px-3 py-2 text-right tabular-nums text-xs text-muted-foreground hidden md:table-cell">
+          {task.durationPlanned ?? "—"}
+        </td>
+        <td className="px-3 py-2 text-right tabular-nums text-xs hidden md:table-cell">
+          {task.durationActual ? (
+            <span className={cn(
+              parseFloat(task.durationActual) > parseFloat(task.durationPlanned ?? "0")
+                ? "text-amber-600"
+                : "text-emerald-600",
+            )}>
+              {parseFloat(task.durationActual).toFixed(1)}
+            </span>
+          ) : "—"}
+        </td>
+        <td className="px-3 py-2 w-40">
+          <ProgressBar pct={task.latestProgressPct} completed={task.completed} />
+        </td>
+        <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
+          {task.latestCompletedAt
+            ? new Date(task.latestCompletedAt).toLocaleDateString("en-GB")
+            : "—"}
+        </td>
+      </tr>
+      {expanded && <TaskDetailPanel task={task} />}
+    </>
   );
 }
 
@@ -105,58 +241,7 @@ function TaskTable({ tasks }: { tasks: TaskRow[] }) {
           </thead>
           <tbody className="divide-y">
             {sorted.map((task) => (
-              <tr
-                key={task.id}
-                className={cn(
-                  "transition-colors",
-                  task.completed ? "bg-emerald-50/50 dark:bg-emerald-950/10" : "hover:bg-muted/30",
-                )}
-              >
-                <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
-                  {task.sequence ?? "—"}
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {task.completed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
-                    ) : task.latestProgressPct > 0 ? (
-                      <Activity className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                    ) : (
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground/40 flex-shrink-0" />
-                    )}
-                    <span className={cn("font-medium", task.completed && "text-muted-foreground")}>
-                      {task.taskName}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 hidden sm:table-cell">
-                  <Badge variant="outline" className="text-[10px] py-0 h-4">
-                    {task.taskType ?? "—"}
-                  </Badge>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-xs text-muted-foreground hidden md:table-cell">
-                  {task.durationPlanned ?? "—"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-xs hidden md:table-cell">
-                  {task.durationActual ? (
-                    <span className={cn(
-                      parseFloat(task.durationActual) > parseFloat(task.durationPlanned ?? "0")
-                        ? "text-amber-600"
-                        : "text-emerald-600",
-                    )}>
-                      {parseFloat(task.durationActual).toFixed(1)}
-                    </span>
-                  ) : "—"}
-                </td>
-                <td className="px-3 py-2 w-40">
-                  <ProgressBar pct={task.latestProgressPct} completed={task.completed} />
-                </td>
-                <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell">
-                  {task.latestCompletedAt
-                    ? new Date(task.latestCompletedAt).toLocaleDateString("en-GB")
-                    : "—"}
-                </td>
-              </tr>
+              <TaskTableRow key={task.id} task={task} />
             ))}
           </tbody>
         </table>
