@@ -10,6 +10,11 @@ export const taskProgressUpdatesTable = pgTable("task_progress_updates", {
   durationActual: numeric("duration_actual", { precision: 10, scale: 2 }),
   workActivity: text("work_activity"),
   createdBy: text("created_by"),
+  creationDatetime: text("creation_datetime"),
+  creationLocation: text("creation_location"),
+  editDatetime: text("edit_datetime"),
+  editUser: text("edit_user"),
+  editLocation: text("edit_location"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

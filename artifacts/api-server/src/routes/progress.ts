@@ -262,6 +262,11 @@ async function syncAllSheets(): Promise<SyncResult> {
     const tpIdIdx = colIdx(h, "Task_Progress_ID", "task_progress_id");
     const activityIdx = colIdx(h, "Work_Activity", "work_activity");
     const userIdx = colIdx(h, "CreationUser", "creation_user", "created_by");
+    const creationDtIdx = colIdx(h, "CreationDateTime", "creation_datetime");
+    const creationLocIdx = colIdx(h, "CreationLocation", "creation_location");
+    const editDtIdx = colIdx(h, "EditDateTime", "edit_datetime");
+    const editUserIdx = colIdx(h, "EditUser", "edit_user");
+    const editLocIdx = colIdx(h, "EditLocation", "edit_location");
 
     type TpInsert = typeof taskProgressUpdatesTable.$inferInsert;
     const items: TpInsert[] = rows.slice(1).flatMap((row) => {
@@ -278,6 +283,11 @@ async function syncAllSheets(): Promise<SyncResult> {
         durationActual: dur != null ? String(dur) : null,
         workActivity: get(row, activityIdx) || null,
         createdBy: get(row, userIdx) || null,
+        creationDatetime: get(row, creationDtIdx) || null,
+        creationLocation: get(row, creationLocIdx) || null,
+        editDatetime: get(row, editDtIdx) || null,
+        editUser: get(row, editUserIdx) || null,
+        editLocation: get(row, editLocIdx) || null,
       }];
     });
 
@@ -292,6 +302,11 @@ async function syncAllSheets(): Promise<SyncResult> {
           durationActual: sql`excluded.duration_actual`,
           workActivity: sql`excluded.work_activity`,
           createdBy: sql`excluded.created_by`,
+          creationDatetime: sql`excluded.creation_datetime`,
+          creationLocation: sql`excluded.creation_location`,
+          editDatetime: sql`excluded.edit_datetime`,
+          editUser: sql`excluded.edit_user`,
+          editLocation: sql`excluded.edit_location`,
           updatedAt: sql`NOW()`,
         },
       });
