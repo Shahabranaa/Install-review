@@ -62,6 +62,7 @@ function TypePill({ label, variant }: { label: string; variant: "missing" | "pre
 
 function PhaseSection({ phase }: { phase: PhaseCompliance }) {
   if (phase.expected.length === 0) return null;
+  const filteredMissing = phase.missing.filter(m => !m.startsWith("OSP"));
   const phasePct = Math.round(phase.present.length / phase.expected.length * 100);
   const { bar } = statusColor(phasePct);
   return (
@@ -76,11 +77,11 @@ function PhaseSection({ phase }: { phase: PhaseCompliance }) {
           {phase.present.length}/{phase.expected.length}
         </span>
       </div>
-      {(phase.missing.length > 0 || phase.present.length > 0) && (
+      {(filteredMissing.length > 0 || phase.present.length > 0) && (
         <div className="ml-5 space-y-1">
-          {phase.missing.length > 0 && (
+          {filteredMissing.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {phase.missing.map(m => <TypePill key={m} label={m} variant="missing" />)}
+              {filteredMissing.map(m => <TypePill key={m} label={m} variant="missing" />)}
             </div>
           )}
           {phase.present.length > 0 && (
@@ -160,17 +161,20 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
           ) : (
             /* Flat fallback (no phase definitions) */
             <>
-              {t.missing.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">
-                    <XCircle className="w-3.5 h-3.5" />
-                    Missing ({t.missing.length})
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {t.missing.map(m => <TypePill key={m} label={m} variant="missing" />)}
+              {(() => {
+                const filteredMissing = t.missing.filter(m => !m.startsWith("OSP"));
+                return filteredMissing.length > 0 ? (
+                  <div>
+                    <p className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">
+                      <XCircle className="w-3.5 h-3.5" />
+                      Missing ({filteredMissing.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {filteredMissing.map(m => <TypePill key={m} label={m} variant="missing" />)}
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null;
+              })()}
 
               {t.present.length > 0 && (
                 <div>
