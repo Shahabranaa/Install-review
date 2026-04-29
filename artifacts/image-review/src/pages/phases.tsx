@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useListPhases, useListLocations } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,12 +79,19 @@ function PhaseDefGroupCard({ group, complianceMap }: {
   ).length;
   const total = group.items.length;
   const complete = submitted === total && total > 0;
-  const [open, setOpen] = useState(!complete);
+
+  // Default open; auto-collapse once compliance data confirms the group is complete,
+  // but preserve any manual user toggle.
+  const [open, setOpen] = useState(true);
+  const [userToggled, setUserToggled] = useState(false);
+  useEffect(() => {
+    if (!userToggled && complete) setOpen(false);
+  }, [complete, userToggled]);
 
   return (
     <div className="border rounded-lg overflow-hidden">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { setUserToggled(true); setOpen((o) => !o); }}
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors text-left"
       >
         {open

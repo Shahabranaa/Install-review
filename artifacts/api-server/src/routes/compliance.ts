@@ -36,6 +36,11 @@ router.get("/compliance", async (req, res): Promise<void> => {
     const { stringId, locationId, cableLink, locationLink, phaseType, locationType } = req.query as Record<string, string>;
 
     const cableLinkConditions: ReturnType<typeof eq>[] = [];
+    const locationLinkConditions: ReturnType<typeof eq>[] = [];
+
+    if (locationLink) {
+      locationLinkConditions.push(eq(sheetPhotosTable.locationLink, locationLink));
+    }
 
     if (cableLink) {
       cableLinkConditions.push(eq(sheetPhotosTable.cableLink, cableLink));
@@ -55,13 +60,17 @@ router.get("/compliance", async (req, res): Promise<void> => {
         const names = strings.map((s) => s.name).filter(Boolean);
         if (names.length > 0) {
           cableLinkConditions.push(inArray(sheetPhotosTable.cableLink, names));
+        } else {
+          // No strings — likely a tower location: fall back to locationLink using location name
+          const [loc] = await db
+            .select({ name: locationsTable.name })
+            .from(locationsTable)
+            .where(eq(locationsTable.id, locId));
+          if (loc?.name) {
+            locationLinkConditions.push(eq(sheetPhotosTable.locationLink, loc.name));
+          }
         }
       }
-    }
-
-    const locationLinkConditions: ReturnType<typeof eq>[] = [];
-    if (locationLink) {
-      locationLinkConditions.push(eq(sheetPhotosTable.locationLink, locationLink));
     }
 
     const hasFilter = cableLinkConditions.length > 0 || locationLinkConditions.length > 0;
