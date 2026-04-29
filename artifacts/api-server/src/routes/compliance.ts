@@ -177,12 +177,13 @@ router.get("/compliance/phase-defs", async (req, res): Promise<void> => {
       }
     }
 
-    if (resolvedLocationType === "other") {
+    // Return empty when type is 'other', unresolved, or unknown
+    if (!resolvedLocationType || resolvedLocationType === "other") {
       res.json([]);
       return;
     }
 
-    const ltFilter = defLocationTypeFilter(resolvedLocationType ?? "");
+    const ltFilter = defLocationTypeFilter(resolvedLocationType);
     const defs = await db
       .select()
       .from(requiredImageDefinitionsTable)
