@@ -32,7 +32,7 @@ export interface PhaseTemplate {
 }
 
 // ── GET /api/phase-templates ────────────────────────────────────────────────
-router.get("/phase-templates", async (_req, res): Promise<void> => {
+router.get("/phase-templates", requireAdmin, async (_req, res): Promise<void> => {
   try {
     const defs = await db
       .select()
