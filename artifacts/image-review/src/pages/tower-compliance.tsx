@@ -98,6 +98,7 @@ function PhaseSection({ phase }: { phase: PhaseCompliance }) {
 function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: TowerCompliance) => void }) {
   const [expanded, setExpanded] = useState(false);
   const { bar, badge, label } = statusColor(t.pct);
+  const filteredMissing = t.missing.filter(m => !m.startsWith("OSP"));
 
   const hasPhases = t.hasPhaseData && t.byPhase.length > 0;
 
@@ -161,20 +162,17 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
           ) : (
             /* Flat fallback (no phase definitions) */
             <>
-              {(() => {
-                const filteredMissing = t.missing.filter(m => !m.startsWith("OSP"));
-                return filteredMissing.length > 0 ? (
-                  <div>
-                    <p className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">
-                      <XCircle className="w-3.5 h-3.5" />
-                      Missing ({filteredMissing.length})
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {filteredMissing.map(m => <TypePill key={m} label={m} variant="missing" />)}
-                    </div>
+              {filteredMissing.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-red-600 mb-1.5 flex items-center gap-1">
+                    <XCircle className="w-3.5 h-3.5" />
+                    Missing ({filteredMissing.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {filteredMissing.map(m => <TypePill key={m} label={m} variant="missing" />)}
                   </div>
-                ) : null;
-              })()}
+                </div>
+              )}
 
               {t.present.length > 0 && (
                 <div>
@@ -188,7 +186,7 @@ function TowerRow({ t, onNavigate }: { t: TowerCompliance; onNavigate: (t: Tower
                 </div>
               )}
 
-              {t.present.length === 0 && t.missing.length === 0 && (
+              {t.present.length === 0 && filteredMissing.length === 0 && (
                 <p className="text-xs text-muted-foreground italic">No required image data available for this tower.</p>
               )}
             </>
