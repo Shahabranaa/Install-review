@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and, isNotNull, inArray, or } from "drizzle-orm";
+import { eq, and, isNotNull, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   requiredImageDefinitionsTable,
@@ -24,6 +24,10 @@ function defLocationTypeFilter(locationType: string) {
       eq(requiredImageDefinitionsTable.locationType, "both"),
     )!;
   }
+  if (locationType === "other") {
+    return sql`1=0`;
+  }
+  // Empty string / no locationType = no filter (caller decides)
   return undefined;
 }
 

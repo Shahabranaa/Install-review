@@ -243,7 +243,8 @@ export default function Phases() {
     filterLocationId !== "all" ? { locationId: parseInt(filterLocationId) } : {}
   );
   const { data: locations } = useListLocations();
-  const osps = locations?.filter((l) => l.type === "OSP") ?? [];
+  const selectableLocations = (locations ?? []).filter((l) => l.type === "OSP" || l.type === "tower");
+  const osps = (locations ?? []).filter((l) => l.type === "OSP");
   const selectedLocation = filterLocationId !== "all"
     ? locations?.find((l) => l.id === parseInt(filterLocationId))
     : undefined;
@@ -394,10 +395,10 @@ export default function Phases() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All locations</SelectItem>
-            {osps.map((osp) => (
-              <SelectItem key={osp.id} value={String(osp.id)}>
-                {osp.name}
-                <span className="ml-1.5 text-xs text-muted-foreground">{osp.type}</span>
+            {selectableLocations.map((loc) => (
+              <SelectItem key={loc.id} value={String(loc.id)}>
+                {loc.name}
+                <span className="ml-1.5 text-xs text-muted-foreground">{loc.type}</span>
               </SelectItem>
             ))}
           </SelectContent>
