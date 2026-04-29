@@ -4,10 +4,11 @@ import { z } from "zod/v4";
 
 export const requiredImageDefinitionsTable = pgTable("required_image_definitions", {
   id: serial("id").primaryKey(),
-  phaseType:   text("phase_type").notNull(),
-  reqImgType:  text("req_img_type").notNull(),
-  reqImgOrder: text("req_img_order"),
-  description: text("description"),
+  phaseType:    text("phase_type").notNull(),
+  reqImgType:   text("req_img_type").notNull(),
+  reqImgOrder:  text("req_img_order"),
+  description:  text("description"),
+  locationType: text("location_type").notNull().default("both"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => [

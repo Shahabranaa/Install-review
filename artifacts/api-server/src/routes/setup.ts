@@ -476,16 +476,19 @@ router.get("/setup/required-image-definitions", async (req, res): Promise<void> 
 });
 
 router.post("/setup/required-image-definitions", requireAdmin, async (req, res): Promise<void> => {
-  const { phaseType, reqImgType, reqImgOrder, description } = req.body as {
+  const { phaseType, reqImgType, reqImgOrder, description, locationType } = req.body as {
     phaseType?: string;
     reqImgType?: string;
     reqImgOrder?: string;
     description?: string;
+    locationType?: string;
   };
   if (!phaseType?.trim() || !reqImgType?.trim()) {
     res.status(400).json({ error: "phaseType and reqImgType are required" });
     return;
   }
+  const validLocationTypes = ["TP", "OSP", "both"];
+  const resolvedLocationType = locationType?.trim() && validLocationTypes.includes(locationType.trim()) ? locationType.trim() : "both";
   try {
     const [row] = await db
       .insert(requiredImageDefinitionsTable)
@@ -494,6 +497,7 @@ router.post("/setup/required-image-definitions", requireAdmin, async (req, res):
         reqImgType: reqImgType.trim(),
         reqImgOrder: reqImgOrder?.trim() || null,
         description: description?.trim() || null,
+        locationType: resolvedLocationType,
       })
       .returning();
     res.status(201).json(row);
@@ -514,11 +518,12 @@ router.patch("/setup/required-image-definitions/:id", requireAdmin, async (req, 
     res.status(400).json({ error: "Invalid id" });
     return;
   }
-  const { phaseType, reqImgType, reqImgOrder, description } = req.body as {
+  const { phaseType, reqImgType, reqImgOrder, description, locationType } = req.body as {
     phaseType?: string;
     reqImgType?: string;
     reqImgOrder?: string | null;
     description?: string | null;
+    locationType?: string | null;
   };
   if (phaseType !== undefined && !phaseType.trim()) {
     res.status(400).json({ error: "phaseType cannot be empty" });
@@ -528,11 +533,13 @@ router.patch("/setup/required-image-definitions/:id", requireAdmin, async (req, 
     res.status(400).json({ error: "reqImgType cannot be empty" });
     return;
   }
-  const set: Partial<{ phaseType: string; reqImgType: string; reqImgOrder: string | null; description: string | null; updatedAt: Date }> = { updatedAt: new Date() };
+  const validLocationTypes = ["TP", "OSP", "both"];
+  const set: Partial<{ phaseType: string; reqImgType: string; reqImgOrder: string | null; description: string | null; locationType: string; updatedAt: Date }> = { updatedAt: new Date() };
   if (phaseType !== undefined) set.phaseType = phaseType.trim();
   if (reqImgType !== undefined) set.reqImgType = reqImgType.trim();
   if (reqImgOrder !== undefined) set.reqImgOrder = reqImgOrder?.trim() || null;
   if (description !== undefined) set.description = description?.trim() || null;
+  if (locationType !== undefined && locationType && validLocationTypes.includes(locationType)) set.locationType = locationType;
 
   try {
     const [row] = await db

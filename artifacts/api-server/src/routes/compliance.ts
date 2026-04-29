@@ -1,18 +1,35 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, isNotNull, inArray, or } from "drizzle-orm";
 import {
   db,
   requiredImageDefinitionsTable,
   sheetPhotosTable,
   stringsTable,
+  locationsTable,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+function defLocationTypeFilter(locationType: string) {
+  if (locationType === "TP" || locationType === "tower") {
+    return or(
+      eq(requiredImageDefinitionsTable.locationType, "TP"),
+      eq(requiredImageDefinitionsTable.locationType, "both"),
+    )!;
+  }
+  if (locationType === "OSP") {
+    return or(
+      eq(requiredImageDefinitionsTable.locationType, "OSP"),
+      eq(requiredImageDefinitionsTable.locationType, "both"),
+    )!;
+  }
+  return undefined;
+}
+
 router.get("/compliance", async (req, res): Promise<void> => {
   try {
-    const { stringId, locationId, cableLink, locationLink, phaseType } = req.query as Record<string, string>;
+    const { stringId, locationId, cableLink, locationLink, phaseType, locationType } = req.query as Record<string, string>;
 
     const cableLinkConditions: ReturnType<typeof eq>[] = [];
 
@@ -49,10 +66,15 @@ router.get("/compliance", async (req, res): Promise<void> => {
       return;
     }
 
+    const defConditions = [];
+    if (phaseType) defConditions.push(eq(requiredImageDefinitionsTable.phaseType, phaseType));
+    const ltFilter = defLocationTypeFilter(locationType ?? "");
+    if (ltFilter) defConditions.push(ltFilter);
+
     const defs = await db
       .select()
       .from(requiredImageDefinitionsTable)
-      .where(phaseType ? eq(requiredImageDefinitionsTable.phaseType, phaseType) : undefined)
+      .where(defConditions.length > 0 ? and(...defConditions) : undefined)
       .orderBy(requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgOrder);
 
     const photoConditions = [isNotNull(sheetPhotosTable.reqImgType)];
@@ -73,6 +95,7 @@ router.get("/compliance", async (req, res): Promise<void> => {
         reqImgType: def.reqImgType,
         reqImgOrder: def.reqImgOrder,
         phaseType: def.phaseType,
+        locationType: def.locationType,
         status: matching.length > 0 ? "submitted" : "missing",
         photos: matching.map((p) => ({
           photoId: p.photoId,
@@ -112,14 +135,62 @@ router.get("/compliance/cables", async (_req, res): Promise<void> => {
   }
 });
 
-router.get("/compliance/phase-types", async (_req, res): Promise<void> => {
+router.get("/compliance/phase-types", async (req, res): Promise<void> => {
   try {
+    const { locationType } = req.query as Record<string, string>;
+    const ltFilter = defLocationTypeFilter(locationType ?? "");
     const rows = await db
       .selectDistinct({ phaseType: requiredImageDefinitionsTable.phaseType })
       .from(requiredImageDefinitionsTable)
+      .where(ltFilter)
       .orderBy(requiredImageDefinitionsTable.phaseType);
     res.json(rows.map((r) => r.phaseType));
   } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get("/compliance/phase-defs", async (req, res): Promise<void> => {
+  try {
+    const { locationType, locationId } = req.query as Record<string, string>;
+
+    let resolvedLocationType = locationType;
+
+    if (!resolvedLocationType && locationId) {
+      const locId = parseInt(locationId);
+      if (!isNaN(locId)) {
+        const [loc] = await db.select({ type: locationsTable.type }).from(locationsTable).where(eq(locationsTable.id, locId));
+        if (loc) resolvedLocationType = loc.type;
+      }
+    }
+
+    if (resolvedLocationType === "other") {
+      res.json([]);
+      return;
+    }
+
+    const ltFilter = defLocationTypeFilter(resolvedLocationType ?? "");
+    const defs = await db
+      .select()
+      .from(requiredImageDefinitionsTable)
+      .where(ltFilter)
+      .orderBy(requiredImageDefinitionsTable.phaseType, requiredImageDefinitionsTable.reqImgOrder, requiredImageDefinitionsTable.reqImgType);
+
+    const grouped: Record<string, { phaseType: string; locationType: string; items: { reqImgType: string; reqImgOrder: string | null; description: string | null }[] }> = {};
+    for (const def of defs) {
+      if (!grouped[def.phaseType]) {
+        grouped[def.phaseType] = { phaseType: def.phaseType, locationType: def.locationType, items: [] };
+      }
+      grouped[def.phaseType]!.items.push({
+        reqImgType: def.reqImgType,
+        reqImgOrder: def.reqImgOrder,
+        description: def.description,
+      });
+    }
+
+    res.json(Object.values(grouped));
+  } catch (err) {
+    logger.error({ err }, "phase-defs endpoint error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

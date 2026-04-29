@@ -8,10 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { CheckSquare, AlertTriangle, Clock, Activity, Plus, Trash2, Download, RefreshCw, Pencil, Building2 } from "lucide-react";
+import {
+  CheckSquare, AlertTriangle, Clock, Activity, Plus, Trash2,
+  Download, RefreshCw, Pencil, Building2, ChevronDown, ChevronRight,
+  Image as ImageIcon, CheckCircle2, XCircle, Layers,
+} from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -53,6 +58,169 @@ interface EditTarget {
   requiredImageCount: number;
 }
 
+interface PhaseDefGroup {
+  phaseType: string;
+  locationType: string;
+  items: { reqImgType: string; reqImgOrder: string | null; description: string | null }[];
+}
+
+interface ComplianceItem {
+  reqImgType: string;
+  phaseType: string;
+  status: "submitted" | "missing";
+}
+
+function PhaseDefGroupCard({ group, complianceMap }: {
+  group: PhaseDefGroup;
+  complianceMap: Map<string, "submitted" | "missing">;
+}) {
+  const submitted = group.items.filter(
+    (it) => complianceMap.get(`${group.phaseType}|||${it.reqImgType}`) === "submitted",
+  ).length;
+  const total = group.items.length;
+  const complete = submitted === total && total > 0;
+  const [open, setOpen] = useState(!complete);
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors text-left"
+      >
+        {open
+          ? <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          : <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        }
+        <span className="font-medium text-sm flex-1">{group.phaseType}</span>
+        <span className="text-xs text-muted-foreground mr-2">{submitted}/{total}</span>
+        <Badge
+          variant={complete ? "default" : submitted > 0 ? "secondary" : "outline"}
+          className={cn("text-[10px] min-w-[50px] justify-center", complete && "bg-emerald-500")}
+        >
+          {complete ? "Complete" : submitted > 0 ? `${submitted}/${total}` : "Missing"}
+        </Badge>
+      </button>
+
+      {open && (
+        <div className="border-t bg-muted/10">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <th className="text-left px-4 py-1.5 font-medium text-muted-foreground">Image Type</th>
+                <th className="text-left px-4 py-1.5 font-medium text-muted-foreground hidden sm:table-cell">Description</th>
+                <th className="text-right px-4 py-1.5 font-medium text-muted-foreground">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {[...group.items].sort((a, b) => {
+                const aStatus = complianceMap.get(`${group.phaseType}|||${a.reqImgType}`);
+                const bStatus = complianceMap.get(`${group.phaseType}|||${b.reqImgType}`);
+                if (aStatus === "missing" && bStatus !== "missing") return -1;
+                if (aStatus !== "missing" && bStatus === "missing") return 1;
+                return (a.reqImgOrder ?? "").localeCompare(b.reqImgOrder ?? "");
+              }).map((item) => {
+                const status = complianceMap.get(`${group.phaseType}|||${item.reqImgType}`);
+                return (
+                  <tr key={item.reqImgType} className="hover:bg-muted/20">
+                    <td className="px-4 py-2 font-mono">{item.reqImgType}</td>
+                    <td className="px-4 py-2 text-muted-foreground hidden sm:table-cell">
+                      {item.description ?? "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {status === "submitted" ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600">
+                          <CheckCircle2 className="h-3 w-3" /> Captured
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-muted-foreground/60">
+                          <XCircle className="h-3 w-3" /> Missing
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequiredImagesPanel({ locationId, locationType }: { locationId: number; locationType: string }) {
+  const { data: groups, isLoading: defsLoading } = useQuery<PhaseDefGroup[]>({
+    queryKey: ["phase-defs", locationId],
+    queryFn: () => apiFetch(`/api/compliance/phase-defs?locationId=${locationId}`),
+  });
+
+  const { data: compliance } = useQuery<{ items: ComplianceItem[] }>({
+    queryKey: ["compliance-location", locationId],
+    queryFn: () => apiFetch(`/api/compliance?locationId=${locationId}&locationType=${locationType}`),
+    enabled: !!groups && groups.length > 0,
+  });
+
+  const complianceMap = new Map<string, "submitted" | "missing">(
+    (compliance?.items ?? []).map((it) => [`${it.phaseType}|||${it.reqImgType}`, it.status]),
+  );
+
+  if (defsLoading) {
+    return (
+      <div className="space-y-2 mt-4">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+      </div>
+    );
+  }
+
+  if (!groups || groups.length === 0) {
+    return (
+      <div className="mt-4 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        No required image definitions found for {locationType === "OSP" ? "OSP" : "tower"} locations.
+        {locationType !== "other" && (
+          <p className="mt-1 text-xs">Use "Import Phase Definitions" to load them from the spreadsheet.</p>
+        )}
+      </div>
+    );
+  }
+
+  const sortedGroups = [...groups].sort((a, b) => {
+    const aSubmitted = a.items.filter((it) => complianceMap.get(`${a.phaseType}|||${it.reqImgType}`) === "submitted").length;
+    const bSubmitted = b.items.filter((it) => complianceMap.get(`${b.phaseType}|||${it.reqImgType}`) === "submitted").length;
+    const aComplete = aSubmitted === a.items.length;
+    const bComplete = bSubmitted === b.items.length;
+    if (!aComplete && bComplete) return -1;
+    if (aComplete && !bComplete) return 1;
+    return a.phaseType.localeCompare(b.phaseType);
+  });
+
+  const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
+  const totalSubmitted = groups.reduce(
+    (s, g) => s + g.items.filter((it) => complianceMap.get(`${g.phaseType}|||${it.reqImgType}`) === "submitted").length,
+    0,
+  );
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+          <ImageIcon className="h-4 w-4" />
+          Required Images by Phase
+          <Badge variant="outline" className="text-[10px] font-normal ml-1">
+            {locationType === "OSP" ? "OSP" : "Tower (TP)"}
+          </Badge>
+        </h3>
+        <span className="text-xs text-muted-foreground">{totalSubmitted}/{totalItems} captured</span>
+      </div>
+      <div className="space-y-2">
+        {sortedGroups.map((group) => (
+          <PhaseDefGroupCard key={group.phaseType} group={group} complianceMap={complianceMap} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Phases() {
   const { user } = useAuth();
   const isAdmin = user?.accessLevel === "admin";
@@ -76,6 +244,9 @@ export default function Phases() {
   );
   const { data: locations } = useListLocations();
   const osps = locations?.filter((l) => l.type === "OSP") ?? [];
+  const selectedLocation = filterLocationId !== "all"
+    ? locations?.find((l) => l.id === parseInt(filterLocationId))
+    : undefined;
 
   const { data: definedPhaseTypes } = useQuery<string[]>({
     queryKey: ["compliance-phase-types"],
@@ -106,6 +277,7 @@ export default function Phases() {
         `Phases: ${p.created ?? 0} created, ${p.skipped ?? 0} already existed.`
       );
       qc.invalidateQueries({ queryKey: ["phases"] });
+      qc.invalidateQueries({ queryKey: ["phase-defs"] });
     } catch (err) {
       setImportMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -215,15 +387,18 @@ export default function Phases() {
       )}
 
       <div className="flex items-center gap-3">
-        <Label className="text-sm font-medium">Filter by OSP:</Label>
+        <Label className="text-sm font-medium">Filter by location:</Label>
         <Select value={filterLocationId} onValueChange={setFilterLocationId}>
           <SelectTrigger className="w-52">
-            <SelectValue placeholder="All OSPs" />
+            <SelectValue placeholder="All locations" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All OSPs</SelectItem>
+            <SelectItem value="all">All locations</SelectItem>
             {osps.map((osp) => (
-              <SelectItem key={osp.id} value={String(osp.id)}>{osp.name}</SelectItem>
+              <SelectItem key={osp.id} value={String(osp.id)}>
+                {osp.name}
+                <span className="ml-1.5 text-xs text-muted-foreground">{osp.type}</span>
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -296,6 +471,13 @@ export default function Phases() {
             </Card>
           ))}
         </div>
+      )}
+
+      {selectedLocation && selectedLocation.type !== "other" && (
+        <RequiredImagesPanel
+          locationId={selectedLocation.id}
+          locationType={selectedLocation.type}
+        />
       )}
 
       {/* New Phase Dialog */}
