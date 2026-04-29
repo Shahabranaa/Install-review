@@ -23,6 +23,7 @@ import PunchList from "@/pages/punch-list";
 import FieldReportsList from "@/pages/field-reports";
 import FieldReportEdit from "@/pages/field-reports/edit";
 import ProgressPage from "@/pages/progress";
+import TemplatesPage from "@/pages/templates";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -70,6 +71,7 @@ function ProtectedRouter() {
         <Route path="/field-reports/new" component={FieldReportEdit} />
         <Route path="/field-reports/:id/edit" component={FieldReportEdit} />
         <Route path="/progress" component={ProgressPage} />
+        <Route path="/templates" component={TemplatesPage} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>
