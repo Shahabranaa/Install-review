@@ -38,8 +38,8 @@ type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISS
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 
 interface ComplianceItem {
-  certificationId: number;
-  certificationName: string;
+  certId: number;
+  name: string;
   category: string | null;
   status: CertStatus;
   expiryDate: string | null;
@@ -71,6 +71,16 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
   const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
 
   if (!worker || !site) throw new Error("Worker or site not found");
+
+  // Require an active (or pending) assignment to compute compliance
+  const [assignment] = await db.select()
+    .from(siteAssignmentsTable)
+    .where(and(
+      eq(siteAssignmentsTable.workerId, workerId),
+      eq(siteAssignmentsTable.siteId, siteId),
+      or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+    ));
+  if (!assignment) throw new Error(`No active/pending assignment for worker ${workerId} at site ${siteId}`);
 
   // Required cert IDs from site
   const siteReqs = await db.select()
@@ -151,8 +161,8 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
     }
 
     items.push({
-      certificationId: certId,
-      certificationName: cert.name,
+      certId,
+      name: cert.name,
       category: cert.category,
       status,
       expiryDate: held?.expiryDate ?? null,
@@ -826,14 +836,19 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
     const nonCompliantCount = [...byWorker.values()].filter(s => s === "NOT_COMPLIANT").length;
 
     // Expiring within 30 days
-    const expiringItems: { workerId: number; workerName: string; certificationName: string; expiryDate: string; daysUntilExpiry: number }[] = [];
+    const expiringItems: { workerId: number; workerName: string; certName: string; expiryDate: string; daysUntilExpiry: number }[] = [];
+    // Aggregate cert status counts across all resolved compliance results
+    const certStatusCounts: Record<CertStatus, number> = {
+      VALID: 0, EXPIRING_SOON: 0, EXPIRED: 0, NOT_VERIFIED: 0, MISSING: 0,
+    };
     for (const r of resolved) {
       for (const item of r.items) {
+        certStatusCounts[item.status] = (certStatusCounts[item.status] ?? 0) + 1;
         if (item.status === "EXPIRING_SOON" && item.expiryDate && item.daysUntilExpiry !== null) {
           expiringItems.push({
             workerId: r.workerId,
             workerName: r.workerName,
-            certificationName: item.certificationName,
+            certName: item.name,
             expiryDate: item.expiryDate,
             daysUntilExpiry: item.daysUntilExpiry,
           });
@@ -848,6 +863,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
       expiringCount,
       nonCompliantCount,
       unassignedCount: totalWorkers - byWorker.size,
+      certificationsByStatus: certStatusCounts,
       expiringInNext30Days: expiringItems,
     });
   } catch (err) {
