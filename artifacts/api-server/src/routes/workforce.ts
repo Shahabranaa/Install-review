@@ -35,6 +35,9 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 // ── Compliance logic helper ──────────────────────────────────────────────────
 
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
+// WorkerStatus extends the spec's READY|EXPIRING_SOON|NOT_COMPLIANT with NO_REQUIREMENTS:
+// a worker has NO_REQUIREMENTS when no site/role/override certs are defined — treated as
+// a distinct state (not READY) so the frontend can surface "no cert rules configured" UX.
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 
 class NotFoundError extends Error {
@@ -810,7 +813,12 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
 });
 
 // ── Dashboard Summary ─────────────────────────────────────────────────────────
-
+// GET /workforce/dashboard
+// Counting model: readyCount/expiringCount/nonCompliantCount are based on workers
+// with at least one active assignment (worst compliance status wins per worker).
+// Active workers with NO assignments are excluded from those counts and surfaced
+// via unassignedCount instead. Workers with NO_REQUIREMENTS status are also unassigned
+// for dashboard purposes.
 router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void> => {
   try {
     const today = new Date();
