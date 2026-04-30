@@ -60,6 +60,12 @@ app.use(
   }),
 );
 
+// Strip any base-path prefix forwarded by the Vercel proxy (e.g. /workforce/api/... → /api/...)
+app.use((req, _res, next) => {
+  req.url = req.url.replace(/^\/workforce\/api\//, "/api/");
+  next();
+});
+
 app.use("/api", router);
 
 seedAdminUser().catch((err) => logger.error({ err }, "Failed to seed admin user"));
