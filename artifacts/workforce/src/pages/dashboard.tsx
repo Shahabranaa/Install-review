@@ -90,6 +90,34 @@ export default function DashboardPage() {
 
   const selectedSite = sites?.find(s => s.id === selectedSiteId) ?? null;
 
+  const { data: siteCompliance } = useQuery<{
+    workerId: number;
+    workerName: string;
+    items: { certId: number; name: string; status: string; expiryDate: string | null; daysUntilExpiry: number | null }[];
+  }[]>({
+    queryKey: ["site-compliance", selectedSiteId],
+    queryFn: () =>
+      apiFetch(`/api/workforce/compliance/site/${selectedSiteId}`),
+    enabled: selectedSiteId !== null,
+    staleTime: 60_000,
+  });
+
+  const siteExpiringItems = selectedSiteId && siteCompliance
+    ? siteCompliance.flatMap((wc) =>
+        wc.items
+          .filter((i) => i.status === "EXPIRING_SOON" && i.expiryDate !== null)
+          .map((i) => ({
+            workerId: wc.workerId,
+            workerName: wc.workerName,
+            certName: i.name,
+            expiryDate: i.expiryDate!,
+            daysUntilExpiry: i.daysUntilExpiry ?? 0,
+          })),
+      ).sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
+    : null;
+
+  const expiringItems = siteExpiringItems ?? (data?.expiringInNext30Days ?? []);
+
   const displayCounts = selectedSite
     ? {
         totalWorkers: selectedSite.workerCount,
@@ -233,23 +261,26 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Expiring certifications (global only) */}
+        {/* Expiring certifications */}
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-500" />
             <h2 className="font-semibold text-sm">Expiring in Next 30 Days</h2>
+            {selectedSite && (
+              <span className="ml-auto text-xs text-muted-foreground">{selectedSite.name}</span>
+            )}
           </div>
-          {isLoading ? (
+          {isLoading || (selectedSiteId !== null && !siteCompliance) ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
             </div>
-          ) : !data?.expiringInNext30Days.length ? (
+          ) : !expiringItems.length ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               No certifications expiring in the next 30 days.
             </div>
           ) : (
             <div className="divide-y">
-              {data.expiringInNext30Days.map((item, i) => (
+              {expiringItems.map((item, i) => (
                 <div key={i} className="flex items-center gap-3 px-4 py-2.5">
                   <div className="flex-1 min-w-0">
                     <Link href={`/workers/${item.workerId}`}>

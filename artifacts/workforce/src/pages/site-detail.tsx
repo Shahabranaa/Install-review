@@ -65,6 +65,11 @@ interface Certification {
   category: string | null;
 }
 
+interface WorkerMeta {
+  company: string;
+  roleName: string | null;
+}
+
 function workerStatusConfig(status: WorkerStatus) {
   switch (status) {
     case "READY": return { label: "Ready", icon: CheckCircle2, color: "text-emerald-500", badge: "border-emerald-400 text-emerald-600" };
@@ -86,7 +91,7 @@ function certStatusColor(status: CertStatus) {
 
 const STATUS_ORDER: Record<WorkerStatus, number> = { NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3 };
 
-function WorkerRow({ result }: { result: WorkerCompliance }) {
+function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMeta }) {
   const [open, setOpen] = useState(false);
   const cfg = workerStatusConfig(result.status);
   const StatusIcon = cfg.icon;
@@ -101,16 +106,24 @@ function WorkerRow({ result }: { result: WorkerCompliance }) {
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
             <StatusIcon className={cn("h-4 w-4 flex-shrink-0", cfg.color)} />
-            <Link href={`/workers/${result.workerId}`}>
-              <a
-                className="font-medium text-sm hover:underline"
-                onClick={(e) => e.stopPropagation()}
-                data-testid={`link-worker-${result.workerId}`}
-              >
-                {result.workerName}
-              </a>
-            </Link>
+            <div>
+              <Link href={`/workers/${result.workerId}`}>
+                <a
+                  className="font-medium text-sm hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`link-worker-${result.workerId}`}
+                >
+                  {result.workerName}
+                </a>
+              </Link>
+              {meta?.roleName && (
+                <p className="text-xs text-muted-foreground">{meta.roleName}</p>
+              )}
+            </div>
           </div>
+        </td>
+        <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
+          {meta?.company ?? "—"}
         </td>
         <td className="px-4 py-3 text-sm text-muted-foreground">
           {result.validCount}/{result.requiredCount} valid
@@ -129,7 +142,7 @@ function WorkerRow({ result }: { result: WorkerCompliance }) {
       </tr>
       {open && result.items.length > 0 && (
         <tr>
-          <td colSpan={4} className="bg-muted/10 px-8 py-3 border-b">
+          <td colSpan={5} className="bg-muted/10 px-8 py-3 border-b">
             <div className="space-y-1">
               {result.items.map((item) => (
                 <div key={item.certId} className="flex items-center gap-2 text-xs">
@@ -185,6 +198,17 @@ export default function SiteDetailPage() {
     queryFn: () => apiFetch<Certification[]>("/api/workforce/certifications"),
     enabled: isAdmin,
   });
+
+  const { data: workers } = useQuery<{ id: number; company: string; roleName: string | null }[]>({
+    queryKey: ["workforce-workers-meta"],
+    queryFn: () => apiFetch<{ id: number; company: string; roleName: string | null }[]>("/api/workforce/workers"),
+    enabled: !isNaN(siteId),
+    staleTime: 5 * 60_000,
+  });
+
+  const workerMetaMap = new Map<number, WorkerMeta>(
+    (workers ?? []).map((w) => [w.id, { company: w.company, roleName: w.roleName }]),
+  );
 
   const updateReqsMutation = useMutation({
     mutationFn: (items: { certificationId: number; required: boolean }[]) =>
@@ -399,13 +423,16 @@ export default function SiteDetailPage() {
             <thead>
               <tr className="bg-muted/30 border-b">
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Worker</th>
+                <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground hidden md:table-cell">Company</th>
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground hidden sm:table-cell">Certs</th>
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Status</th>
                 <th className="w-8" />
               </tr>
             </thead>
             <tbody className="divide-y">
-              {sorted.map((r) => <WorkerRow key={r.workerId} result={r} />)}
+              {sorted.map((r) => (
+                <WorkerRow key={r.workerId} result={r} meta={workerMetaMap.get(r.workerId)} />
+              ))}
             </tbody>
           </table>
         )}
