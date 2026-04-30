@@ -117,7 +117,9 @@ export default function WorkerProfilePage() {
   const qc = useQueryClient();
   const [showAddCert, setShowAddCert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
   const [certForm, setCertForm] = useState({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
+  const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "" });
 
   const { data: worker, isLoading } = useQuery<WorkerDetail>({
@@ -210,6 +212,37 @@ export default function WorkerProfilePage() {
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
+
+  const updateCertMutation = useMutation({
+    mutationFn: (certId: number) => apiPatch(
+      `/api/workforce/workers/${workerId}/certifications/${certId}`,
+      {
+        dateAchieved: certEditForm.dateAchieved || null,
+        expiryDate: certEditForm.expiryDate || null,
+        verified: certEditForm.verified,
+        fileUrl: certEditForm.fileUrl || null,
+        notes: certEditForm.notes || null,
+      },
+    ),
+    onSuccess: () => {
+      toast({ title: "Certification updated" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+      setEditingCert(null);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  function openEditCert(wc: WorkerCert) {
+    setCertEditForm({
+      dateAchieved: wc.dateAchieved ?? "",
+      expiryDate: wc.expiryDate ?? "",
+      verified: wc.verified,
+      fileUrl: wc.fileUrl ?? "",
+      notes: wc.notes ?? "",
+    });
+    setEditingCert(wc);
+  }
 
   if (isLoading) {
     return (
@@ -356,15 +389,26 @@ export default function WorkerProfilePage() {
                     {label}
                   </Badge>
                   {isAdmin && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0"
-                      onClick={() => removeCertMutation.mutate(wc.certificationId)}
-                      data-testid={`button-remove-cert-${wc.certificationId}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        onClick={() => openEditCert(wc)}
+                        data-testid={`button-edit-cert-${wc.certificationId}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeCertMutation.mutate(wc.certificationId)}
+                        data-testid={`button-remove-cert-${wc.certificationId}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   )}
                 </div>
               );
@@ -428,7 +472,7 @@ export default function WorkerProfilePage() {
       )}
 
       {/* Site Assignments */}
-      {worker.assignments.length > 0 && validSiteCompliance.length === 0 && (
+      {worker.assignments.length > 0 && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Building2 className="h-4 w-4 text-primary" />
@@ -556,6 +600,69 @@ export default function WorkerProfilePage() {
               data-testid="button-save-cert"
             >
               {addCertMutation.isPending ? "Saving…" : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit cert dialog */}
+      <Dialog open={!!editingCert} onOpenChange={(open) => { if (!open) setEditingCert(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Certification — {editingCert?.certification.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Date Achieved</Label>
+                <Input
+                  type="date"
+                  value={certEditForm.dateAchieved}
+                  onChange={(e) => setCertEditForm({ ...certEditForm, dateAchieved: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Expiry Date</Label>
+                <Input
+                  type="date"
+                  value={certEditForm.expiryDate}
+                  onChange={(e) => setCertEditForm({ ...certEditForm, expiryDate: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>File URL</Label>
+              <Input
+                value={certEditForm.fileUrl}
+                onChange={(e) => setCertEditForm({ ...certEditForm, fileUrl: e.target.value })}
+                placeholder="https://…"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                value={certEditForm.notes}
+                onChange={(e) => setCertEditForm({ ...certEditForm, notes: e.target.value })}
+                placeholder="Optional notes"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={certEditForm.verified}
+                onChange={(e) => setCertEditForm({ ...certEditForm, verified: e.target.checked })}
+              />
+              Verified
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCert(null)}>Cancel</Button>
+            <Button
+              onClick={() => editingCert && updateCertMutation.mutate(editingCert.certificationId)}
+              disabled={updateCertMutation.isPending}
+              data-testid="button-save-cert-edit"
+            >
+              {updateCertMutation.isPending ? "Saving…" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

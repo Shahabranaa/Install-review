@@ -204,6 +204,7 @@ export default function WorkersPage() {
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden sm:table-cell">Company</th>
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden md:table-cell">Role</th>
+                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden lg:table-cell">WINDA ID</th>
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Compliance</th>
                 <th className="w-8" />
               </tr>
@@ -234,6 +235,9 @@ export default function WorkersPage() {
                       {w.roleName ? (
                         <Badge variant="secondary" className="text-xs">{w.roleName}</Badge>
                       ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell text-xs font-mono text-muted-foreground">
+                      {w.windaId ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className={cn("text-[10px] flex items-center gap-1", cfg.cls)}>

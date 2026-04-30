@@ -21,8 +21,8 @@ const queryClient = new QueryClient({
   },
 });
 
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+function AuthGate({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -33,6 +33,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return <LoginPage />;
+  if (adminOnly && !isAdmin) return <Redirect to="/" />;
 
   return <AppLayout>{children}</AppLayout>;
 }
@@ -69,7 +70,7 @@ function Router() {
       </Route>
       <Route path="/certifications">
         {() => (
-          <AuthGate>
+          <AuthGate adminOnly>
             <CertificationsPage />
           </AuthGate>
         )}
@@ -97,7 +98,7 @@ function Router() {
       </Route>
       <Route path="/roles">
         {() => (
-          <AuthGate>
+          <AuthGate adminOnly>
             <RolesPage />
           </AuthGate>
         )}

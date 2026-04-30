@@ -17,20 +17,23 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workers", label: "Workers", icon: Users },
-  { href: "/certifications", label: "Certifications", icon: Award },
+  { href: "/certifications", label: "Certifications", icon: Award, adminOnly: true },
   { href: "/sites", label: "Sites", icon: Building2 },
   { href: "/site-compliance", label: "Site Compliance", icon: ShieldCheck },
-  { href: "/roles", label: "Roles", icon: Briefcase },
+  { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
 ];
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
+
+  const visibleItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <aside className="w-60 flex-shrink-0 flex flex-col border-r bg-sidebar h-screen sticky top-0">
@@ -45,7 +48,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {visibleItems.map(({ href, label, icon: Icon }) => {
           const active = location === href;
           return (
             <Link key={href} href={href}>
