@@ -1,11 +1,14 @@
 {
-  "buildCommand": "pnpm install && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/image-review run build",
+  "buildCommand": "pnpm install && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/image-review run build && BASE_PATH=/workforce/ pnpm --filter @workspace/workforce run build && mkdir -p artifacts/image-review/dist/public/workforce && cp -r artifacts/workforce/dist/public/. artifacts/image-review/dist/public/workforce/",
   "outputDirectory": "artifacts/image-review/dist/public",
   "env": {
     "BASE_PATH": "/"
   },
   "rewrites": [
+    { "source": "/workforce/api/(.*)", "destination": "/api" },
     { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/((?!api).*)", "destination": "/index.html" }
+    { "source": "/workforce", "destination": "/workforce/index.html" },
+    { "source": "/workforce/(.*)", "destination": "/workforce/index.html" },
+    { "source": "/((?!api|workforce).*)", "destination": "/index.html" }
   ]
 }
