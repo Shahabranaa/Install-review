@@ -7,6 +7,9 @@ import {
   Users, ShieldCheck, AlertTriangle, Clock, UserX, Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+} from "recharts";
 
 interface DashboardData {
   totalWorkers: number;
@@ -23,6 +26,13 @@ interface DashboardData {
     daysUntilExpiry: number;
   }[];
 }
+
+const CHART_COLORS = {
+  READY: "#10b981",
+  EXPIRING_SOON: "#f59e0b",
+  NOT_COMPLIANT: "#ef4444",
+  UNASSIGNED: "#94a3b8",
+};
 
 function StatCard({
   label, value, icon: Icon, color, href,
@@ -58,6 +68,13 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   });
 
+  const complianceChartData = data ? [
+    { name: "Ready", value: data.readyCount, color: CHART_COLORS.READY },
+    { name: "Expiring Soon", value: data.expiringCount, color: CHART_COLORS.EXPIRING_SOON },
+    { name: "Not Compliant", value: data.nonCompliantCount, color: CHART_COLORS.NOT_COMPLIANT },
+    { name: "Unassigned", value: data.unassignedCount, color: CHART_COLORS.UNASSIGNED },
+  ].filter(d => d.value > 0) : [];
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
@@ -70,6 +87,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {/* Stat cards */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -85,6 +103,52 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* Compliance donut chart */}
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Compliance Breakdown</h2>
+          </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-48">
+              <Skeleton className="h-36 w-36 rounded-full" />
+            </div>
+          ) : complianceChartData.length === 0 ? (
+            <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+              No assigned workers.
+            </div>
+          ) : (
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={complianceChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {complianceChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, name: string) => [`${value} workers`, name]}
+                    contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+                  />
+                  <Legend
+                    iconType="circle"
+                    iconSize={8}
+                    formatter={(value) => <span className="text-xs text-foreground">{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
         {/* Expiring certifications */}
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
@@ -133,52 +197,44 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
 
-        {/* Certification breakdown */}
+      {/* Certification issues */}
+      {data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Award className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-sm">Certification Issues</h2>
+            <h2 className="font-semibold text-sm">Certification Issues by Type</h2>
           </div>
-          {isLoading ? (
-            <div className="p-4 space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
-            </div>
-          ) : !data?.certificationsByStatus.filter(c => c.missing + c.expired + c.expiring > 0).length ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No certification issues found.
-            </div>
-          ) : (
-            <div className="divide-y">
-              {data?.certificationsByStatus
-                .filter(c => c.missing + c.expired + c.expiring > 0)
-                .sort((a, b) => (b.expired + b.missing) - (a.expired + a.missing))
-                .map((cert) => (
-                  <div key={cert.name} className="flex items-center gap-3 px-4 py-2.5">
-                    <p className="flex-1 text-sm font-medium truncate">{cert.name}</p>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {cert.missing > 0 && (
-                        <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                          {cert.missing} missing
-                        </Badge>
-                      )}
-                      {cert.expired > 0 && (
-                        <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                          {cert.expired} expired
-                        </Badge>
-                      )}
-                      {cert.expiring > 0 && (
-                        <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600">
-                          {cert.expiring} expiring
-                        </Badge>
-                      )}
-                    </div>
+          <div className="divide-y">
+            {data.certificationsByStatus
+              .filter(c => c.missing + c.expired + c.expiring > 0)
+              .sort((a, b) => (b.expired + b.missing) - (a.expired + a.missing))
+              .map((cert) => (
+                <div key={cert.name} className="flex items-center gap-3 px-4 py-2.5">
+                  <p className="flex-1 text-sm font-medium truncate">{cert.name}</p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {cert.missing > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
+                        {cert.missing} missing
+                      </Badge>
+                    )}
+                    {cert.expired > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
+                        {cert.expired} expired
+                      </Badge>
+                    )}
+                    {cert.expiring > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600">
+                        {cert.expiring} expiring
+                      </Badge>
+                    )}
                   </div>
-                ))}
-            </div>
-          )}
+                </div>
+              ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

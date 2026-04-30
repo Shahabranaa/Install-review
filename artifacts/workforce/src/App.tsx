@@ -10,6 +10,7 @@ import WorkersPage from "@/pages/workers";
 import WorkerProfilePage from "@/pages/worker-profile";
 import CertificationsPage from "@/pages/certifications";
 import SitesPage from "@/pages/sites";
+import SiteDetailPage from "@/pages/site-detail";
 import SiteCompliancePage from "@/pages/site-compliance";
 import RolesPage from "@/pages/roles";
 import NotFound from "@/pages/not-found";
@@ -77,6 +78,13 @@ function Router() {
         {() => (
           <AuthGate>
             <SitesPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/sites/:id">
+        {() => (
+          <AuthGate>
+            <SiteDetailPage />
           </AuthGate>
         )}
       </Route>

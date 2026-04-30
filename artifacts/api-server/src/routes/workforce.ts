@@ -385,6 +385,18 @@ router.get("/workforce/sites", requireAuth, async (_req, res): Promise<void> => 
   }
 });
 
+router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, id));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+    res.json(site);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { name, location, description } = req.body;
@@ -910,6 +922,125 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
     });
   } catch (err) {
     logger.error({ err }, "workforce dashboard error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Workers compliance summary (for workers list page) ───────────────────────
+// GET /workforce/workers-compliance-summary
+// Returns all active workers with their overall compliance status.
+// Status is the WORST status across all active site assignments;
+// workers with no active assignments are UNASSIGNED.
+router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, res): Promise<void> => {
+  try {
+    const workers = await db.select().from(workersTable).where(eq(workersTable.active, true));
+    const workerIds = workers.map(w => w.id);
+    if (workerIds.length === 0) { res.json([]); return; }
+
+    // Role names
+    const roleIds = [...new Set(workers.map(w => w.roleId).filter(Boolean) as number[])];
+    const roles = roleIds.length > 0
+      ? await db.select().from(workforceRolesTable).where(inArray(workforceRolesTable.id, roleIds))
+      : [];
+    const roleMap = new Map(roles.map(r => [r.id, r.name]));
+
+    // Active assignments for all workers
+    const assignments = await db.select()
+      .from(siteAssignmentsTable)
+      .where(and(
+        inArray(siteAssignmentsTable.workerId, workerIds),
+        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+      ));
+
+    const pairsByWorker = new Map<number, number[]>();
+    for (const a of assignments) {
+      if (!pairsByWorker.has(a.workerId)) pairsByWorker.set(a.workerId, []);
+      pairsByWorker.get(a.workerId)!.push(a.siteId);
+    }
+
+    const statusPriority: Record<WorkerStatus, number> = {
+      NOT_COMPLIANT: 3, EXPIRING_SOON: 2, READY: 1, NO_REQUIREMENTS: 0,
+    };
+
+    const results = await Promise.all(workers.map(async (w) => {
+      const siteIds = pairsByWorker.get(w.id) ?? [];
+      let overallStatus: WorkerStatus | "UNASSIGNED" = "UNASSIGNED";
+      for (const siteId of siteIds) {
+        try {
+          const cr = await computeCompliance(w.id, siteId);
+          if (overallStatus === "UNASSIGNED" ||
+            statusPriority[cr.status] > statusPriority[overallStatus as WorkerStatus]) {
+            overallStatus = cr.status;
+          }
+        } catch {
+          // skip errors
+        }
+      }
+      return {
+        workerId: w.id,
+        name: w.name,
+        email: w.email,
+        company: w.company,
+        roleName: w.roleId ? (roleMap.get(w.roleId) ?? null) : null,
+        active: w.active,
+        status: overallStatus,
+      };
+    }));
+    res.json(results);
+  } catch (err) {
+    logger.error({ err }, "workforce workers-compliance-summary error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Sites with compliance stats ───────────────────────────────────────────────
+// GET /workforce/sites-with-stats
+// Returns all sites with assigned worker count and compliance breakdown.
+router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promise<void> => {
+  try {
+    const sites = await db.select().from(mobSitesTable).orderBy(mobSitesTable.name);
+    const siteIds = sites.map(s => s.id);
+    if (siteIds.length === 0) { res.json([]); return; }
+
+    const assignments = await db.select()
+      .from(siteAssignmentsTable)
+      .where(and(
+        inArray(siteAssignmentsTable.siteId, siteIds),
+        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+      ));
+
+    const pairsBySite = new Map<number, number[]>();
+    for (const a of assignments) {
+      if (!pairsBySite.has(a.siteId)) pairsBySite.set(a.siteId, []);
+      pairsBySite.get(a.siteId)!.push(a.workerId);
+    }
+
+    const results = await Promise.all(sites.map(async (site) => {
+      const workerIds = pairsBySite.get(site.id) ?? [];
+      let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
+      for (const workerId of workerIds) {
+        try {
+          const cr = await computeCompliance(workerId, site.id);
+          if (cr.status === "READY") readyCount++;
+          else if (cr.status === "EXPIRING_SOON") expiringCount++;
+          else if (cr.status === "NOT_COMPLIANT") nonCompliantCount++;
+          else noReqCount++;
+        } catch {
+          // skip errors
+        }
+      }
+      return {
+        ...site,
+        workerCount: workerIds.length,
+        readyCount,
+        expiringCount,
+        nonCompliantCount,
+        noReqCount,
+      };
+    }));
+    res.json(results);
+  } catch (err) {
+    logger.error({ err }, "workforce sites-with-stats error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

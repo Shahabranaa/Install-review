@@ -12,8 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, Search, ChevronRight, Building2 } from "lucide-react";
+import {
+  Users, Plus, Search, ChevronRight, Building2,
+  CheckCircle2, AlertTriangle, Clock, HelpCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type ComplianceStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS" | "UNASSIGNED";
 
 interface Worker {
   id: number;
@@ -24,45 +29,76 @@ interface Worker {
   roleId: number | null;
   roleName: string | null;
   active: boolean;
-  notes: string | null;
 }
 
-interface Role {
-  id: number;
+interface WorkerCompliance {
+  workerId: number;
   name: string;
+  email: string | null;
+  company: string | null;
+  roleName: string | null;
+  active: boolean;
+  status: ComplianceStatus;
 }
 
-function WorkerStatusDot({ active }: { active: boolean }) {
-  return (
-    <span className={cn(
-      "inline-block h-2 w-2 rounded-full flex-shrink-0",
-      active ? "bg-emerald-500" : "bg-muted-foreground/40",
-    )} />
-  );
+interface Role { id: number; name: string }
+
+function complianceConfig(status: ComplianceStatus) {
+  switch (status) {
+    case "READY": return { label: "Ready", icon: CheckCircle2, cls: "border-emerald-400 text-emerald-600" };
+    case "EXPIRING_SOON": return { label: "Expiring Soon", icon: Clock, cls: "border-amber-400 text-amber-600" };
+    case "NOT_COMPLIANT": return { label: "Not Compliant", icon: AlertTriangle, cls: "border-red-400 text-red-600" };
+    case "NO_REQUIREMENTS": return { label: "No Requirements", icon: HelpCircle, cls: "text-muted-foreground" };
+    case "UNASSIGNED": return { label: "Unassigned", icon: HelpCircle, cls: "text-muted-foreground" };
+  }
 }
+
+const STATUS_FILTERS: { label: string; value: ComplianceStatus | "ALL" }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Ready", value: "READY" },
+  { label: "Expiring Soon", value: "EXPIRING_SOON" },
+  { label: "Not Compliant", value: "NOT_COMPLIANT" },
+  { label: "Unassigned", value: "UNASSIGNED" },
+];
 
 export default function WorkersPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "" });
 
-  const { data: workers, isLoading } = useQuery<Worker[]>({
-    queryKey: ["workforce-workers", search, roleFilter],
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (roleFilter) params.set("roleId", roleFilter);
-      return apiFetch<Worker[]>(`/api/workforce/workers?${params}`);
-    },
+  const { data: complianceSummary, isLoading: compLoading } = useQuery<WorkerCompliance[]>({
+    queryKey: ["workforce-compliance-summary"],
+    queryFn: () => apiFetch<WorkerCompliance[]>("/api/workforce/workers-compliance-summary"),
+    refetchInterval: 60_000,
   });
 
   const { data: roles } = useQuery<Role[]>({
     queryKey: ["workforce-roles"],
     queryFn: () => apiFetch<Role[]>("/api/workforce/roles"),
+  });
+
+  const { data: rawWorkers } = useQuery<Worker[]>({
+    queryKey: ["workforce-workers-raw"],
+    queryFn: () => apiFetch<Worker[]>("/api/workforce/workers"),
+  });
+
+  const isLoading = compLoading;
+
+  const compMap = new Map((complianceSummary ?? []).map(c => [c.workerId, c]));
+
+  const displayWorkers: (Worker & { complianceStatus: ComplianceStatus })[] = (rawWorkers ?? []).map(w => ({
+    ...w,
+    complianceStatus: compMap.get(w.id)?.status ?? "UNASSIGNED",
+  })).filter(w => {
+    if (search && !w.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (roleFilter && String(w.roleId) !== roleFilter) return false;
+    if (statusFilter !== "ALL" && w.complianceStatus !== statusFilter) return false;
+    return true;
   });
 
   const createMutation = useMutation({
@@ -75,7 +111,8 @@ export default function WorkersPage() {
     }),
     onSuccess: () => {
       toast({ title: "Worker added" });
-      void qc.invalidateQueries({ queryKey: ["workforce-workers"] });
+      void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
+      void qc.invalidateQueries({ queryKey: ["workforce-compliance-summary"] });
       setShowNew(false);
       setForm({ name: "", email: "", company: "", windaId: "", roleId: "" });
     },
@@ -90,13 +127,39 @@ export default function WorkersPage() {
             <Users className="h-6 w-6 text-primary" />
             Workers
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">All registered workforce members.</p>
+          <p className="text-sm text-muted-foreground mt-1">All registered workforce members with compliance status.</p>
         </div>
         {isAdmin && (
           <Button size="sm" onClick={() => setShowNew(true)} data-testid="button-add-worker">
             <Plus className="h-4 w-4 mr-1" /> Add Worker
           </Button>
         )}
+      </div>
+
+      {/* Status filter tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        {STATUS_FILTERS.map(({ label, value }) => (
+          <button
+            key={value}
+            onClick={() => setStatusFilter(value)}
+            className={cn(
+              "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+              statusFilter === value
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border hover:border-primary/50",
+            )}
+            data-testid={`filter-status-${value.toLowerCase()}`}
+          >
+            {label}
+            {value !== "ALL" && (
+              <span className="ml-1.5 text-[10px] opacity-70">
+                {(rawWorkers ?? []).filter(w =>
+                  (compMap.get(w.id)?.status ?? "UNASSIGNED") === value,
+                ).length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -127,11 +190,11 @@ export default function WorkersPage() {
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
         </div>
-      ) : !workers?.length ? (
+      ) : !displayWorkers.length ? (
         <div className="border rounded-xl p-10 text-center text-muted-foreground">
           <Users className="h-10 w-10 mx-auto mb-3 opacity-20" />
           <p className="font-medium">No workers found</p>
-          {search && <p className="text-sm mt-1">Try adjusting your search.</p>}
+          {(search || statusFilter !== "ALL") && <p className="text-sm mt-1">Try adjusting your filters.</p>}
         </div>
       ) : (
         <div className="border rounded-xl overflow-hidden">
@@ -141,62 +204,56 @@ export default function WorkersPage() {
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Name</th>
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden sm:table-cell">Company</th>
                 <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden md:table-cell">Role</th>
-                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden lg:table-cell">WINDA ID</th>
-                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Status</th>
+                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Compliance</th>
                 <th className="w-8" />
               </tr>
             </thead>
             <tbody className="divide-y">
-              {workers.map((w) => (
-                <tr key={w.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <WorkerStatusDot active={w.active} />
+              {displayWorkers.map((w) => {
+                const cfg = complianceConfig(w.complianceStatus);
+                const StatusIcon = cfg.icon;
+                return (
+                  <tr key={w.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3">
                       <Link href={`/workers/${w.id}`}>
                         <a className="font-medium hover:underline" data-testid={`link-worker-${w.id}`}>
                           {w.name}
                         </a>
                       </Link>
-                    </div>
-                    {w.email && <p className="text-xs text-muted-foreground ml-4 mt-0.5">{w.email}</p>}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">
-                    {w.company ? (
-                      <span className="flex items-center gap-1">
-                        <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
-                        {w.company}
-                      </span>
-                    ) : "—"}
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell">
-                    {w.roleName ? (
-                      <Badge variant="secondary" className="text-xs">{w.roleName}</Badge>
-                    ) : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono hidden lg:table-cell">
-                    {w.windaId ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      variant={w.active ? "default" : "outline"}
-                      className={cn("text-[10px]", w.active && "bg-emerald-500 hover:bg-emerald-500")}
-                    >
-                      {w.active ? "Active" : "Inactive"}
-                    </Badge>
-                  </td>
-                  <td className="px-2 py-3">
-                    <Link href={`/workers/${w.id}`}>
-                      <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      {w.email && <p className="text-xs text-muted-foreground mt-0.5">{w.email}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">
+                      {w.company ? (
+                        <span className="flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                          {w.company}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      {w.roleName ? (
+                        <Badge variant="secondary" className="text-xs">{w.roleName}</Badge>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="outline" className={cn("text-[10px] flex items-center gap-1", cfg.cls)}>
+                        <StatusIcon className="h-3 w-3" />
+                        {cfg.label}
+                      </Badge>
+                    </td>
+                    <td className="px-2 py-3">
+                      <Link href={`/workers/${w.id}`}>
+                        <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Add worker dialog */}
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent>
           <DialogHeader>
@@ -205,12 +262,7 @@ export default function WorkersPage() {
           <div className="space-y-3 py-2">
             <div>
               <Label>Name *</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Full name"
-                data-testid="input-worker-name"
-              />
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" data-testid="input-worker-name" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -229,12 +281,7 @@ export default function WorkersPage() {
               </div>
               <div>
                 <Label>Role</Label>
-                <select
-                  className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-                  value={form.roleId}
-                  onChange={(e) => setForm({ ...form, roleId: e.target.value })}
-                  data-testid="select-worker-role"
-                >
+                <select className="w-full border rounded-md px-3 py-2 text-sm bg-background" value={form.roleId} onChange={(e) => setForm({ ...form, roleId: e.target.value })} data-testid="select-worker-role">
                   <option value="">No role</option>
                   {roles?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
@@ -243,11 +290,7 @@ export default function WorkersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={!form.name || createMutation.isPending}
-              data-testid="button-save-worker"
-            >
+            <Button onClick={() => createMutation.mutate()} disabled={!form.name || createMutation.isPending} data-testid="button-save-worker">
               {createMutation.isPending ? "Saving…" : "Add Worker"}
             </Button>
           </DialogFooter>
