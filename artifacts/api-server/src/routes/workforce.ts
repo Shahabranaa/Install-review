@@ -37,6 +37,11 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 
+class NotFoundError extends Error {
+  status = 404;
+  constructor(msg: string) { super(msg); this.name = "NotFoundError"; }
+}
+
 interface ComplianceItem {
   certId: number;
   name: string;
@@ -70,7 +75,8 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
   const [worker] = await db.select().from(workersTable).where(eq(workersTable.id, workerId));
   const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
 
-  if (!worker || !site) throw new Error("Worker or site not found");
+  if (!worker) throw new NotFoundError(`Worker ${workerId} not found`);
+  if (!site) throw new NotFoundError(`Site ${siteId} not found`);
 
   // Require an active (or pending) assignment to compute compliance
   const [assignment] = await db.select()
@@ -80,7 +86,7 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
       eq(siteAssignmentsTable.siteId, siteId),
       or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
     ));
-  if (!assignment) throw new Error(`No active/pending assignment for worker ${workerId} at site ${siteId}`);
+  if (!assignment) throw new NotFoundError(`No active/pending assignment for worker ${workerId} at site ${siteId}`);
 
   // Required cert IDs from site
   const siteReqs = await db.select()
@@ -203,26 +209,23 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
   try {
     const { search, roleId, siteId, status } = req.query as Record<string, string>;
 
-    let workers;
+    // Resolve siteId filter to a worker ID list (composable with other filters)
+    let siteWorkerIds: number[] | undefined;
     if (siteId) {
       const assignments = await db.select({ workerId: siteAssignmentsTable.workerId })
         .from(siteAssignmentsTable)
         .where(eq(siteAssignmentsTable.siteId, parseInt(siteId)));
-      const ids = assignments.map(a => a.workerId);
-      if (ids.length === 0) { res.json([]); return; }
-      workers = await db.select().from(workersTable)
-        .where(and(
-          inArray(workersTable.id, ids),
-          status === "inactive" ? eq(workersTable.active, false) : eq(workersTable.active, true),
-        ));
-    } else {
-      workers = await db.select().from(workersTable)
-        .where(and(
-          status === "inactive" ? eq(workersTable.active, false) : eq(workersTable.active, true),
-          roleId ? eq(workersTable.roleId, parseInt(roleId)) : undefined,
-          search ? ilike(workersTable.name, `%${search}%`) : undefined,
-        ));
+      siteWorkerIds = assignments.map(a => a.workerId);
+      if (siteWorkerIds.length === 0) { res.json([]); return; }
     }
+
+    const workers = await db.select().from(workersTable)
+      .where(and(
+        status === "inactive" ? eq(workersTable.active, false) : eq(workersTable.active, true),
+        roleId ? eq(workersTable.roleId, parseInt(roleId)) : undefined,
+        search ? ilike(workersTable.name, `%${search}%`) : undefined,
+        siteWorkerIds ? inArray(workersTable.id, siteWorkerIds) : undefined,
+      ));
 
     // Attach role names
     const roleIds = [...new Set(workers.map(w => w.roleId).filter(Boolean) as number[])];
@@ -566,6 +569,8 @@ router.get("/workforce/sites/:id/requirements", requireAuth, async (req, res): P
   }
 });
 
+// PUT /sites/:id/requirements — REPLACE-SET semantics: deletes all existing requirements
+// for the site and inserts the supplied array. Send the full desired set each time.
 router.put("/workforce/sites/:id/requirements", requireAdmin, async (req, res): Promise<void> => {
   try {
     const siteId = parseInt(req.params.id ?? "");
@@ -747,7 +752,8 @@ router.get("/workforce/compliance", requireAuth, async (req, res): Promise<void>
     const result = await computeCompliance(workerId, siteId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    const status = err instanceof NotFoundError ? 404 : 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
