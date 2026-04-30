@@ -99,6 +99,39 @@ Dashboard, Projects, Strings, Towers, Phases, Images, Drive Photos, Google Drive
 - Templates capture: header fields, optional document references, optional per-phase serial number tables (Termination Activities/Completion), Yes/No/N-A + comments checklists, optional numeric fields (Cable Pull-in tensions/times), required-image captions, and remarks.
 - Key files: `lib/db/src/schema/field-reports.ts`, `artifacts/api-server/src/lib/report-templates.ts`, `artifacts/api-server/src/lib/pdf-field-report.ts`, `artifacts/api-server/src/routes/field-reports.ts`, `artifacts/api-server/src/routes/field-report-images.ts`, `artifacts/image-review/src/pages/field-reports/{index,edit}.tsx`
 
+## Project: Workforce Compliance Manager (`/workforce/`)
+
+Separate React/Vite artifact at `artifacts/workforce/` (port 21728), served under `/workforce/`.
+
+### Pages
+- **Dashboard** — stat cards (total/ready/expiring/non-compliant/unassigned) + expiring-in-30-days table + cert issues table
+- **Workers** — searchable/filterable table; add worker dialog (admin only); links to profile
+- **Worker Profile** — details, certifications with VALID/EXPIRING_SOON/EXPIRED/NOT_VERIFIED/MISSING badges, site assignments; add/remove certs (admin)
+- **Certifications** — cert catalogue with holder count; create/edit/delete (admin)
+- **Sites** — site cards with location; create/edit/deactivate (admin); compliance button
+- **Site Compliance** — select a site, see all assigned workers' status sorted by severity (NOT_COMPLIANT → READY); expandable cert details per worker
+- **Roles** — role list with worker count and required certs; create/edit/delete (admin)
+
+### Key Files
+- `artifacts/workforce/src/App.tsx` — routing (wouter), auth guard, `QueryClient`
+- `artifacts/workforce/src/contexts/AuthContext.tsx` — auth state, login/logout/refresh
+- `artifacts/workforce/src/lib/api.ts` — `apiFetch` / `apiPost` / `apiPatch` / `apiDelete` helpers
+- `artifacts/workforce/src/components/layout/sidebar.tsx` — sidebar nav
+- `artifacts/workforce/src/pages/` — all 7 pages
+
+### API Endpoints (api-server)
+- Workers: `GET/POST /api/workforce/workers`, `GET/PATCH /api/workforce/workers/:id`, `POST/DELETE /api/workforce/workers/:id/certifications`
+- Roles: `GET/POST /api/workforce/roles`, `PATCH/DELETE /api/workforce/roles/:id`
+- Sites: `GET/POST /api/workforce/sites`, `PATCH /api/workforce/sites/:id`
+- Certifications: `GET/POST /api/workforce/certifications`, `PATCH/DELETE /api/workforce/certifications/:id`
+- Compliance: `GET /api/workforce/compliance/site/:siteId`, `GET /api/workforce/compliance/worker/:workerId`
+- Dashboard: `GET /api/workforce/dashboard`
+
+### Progress Tracking (`/progress` on image-review)
+- 4 DB tables: `installation_tasks`, `campaigns`, `location_task_progress`, `task_progress_updates`
+- Sync endpoint: `POST /api/progress/sync` (upserts from Google Sheets)
+- Frontend page: `artifacts/image-review/src/pages/progress.tsx`
+
 ### New Files (CVOW task)
 - `lib/db/src/schema/strings.ts` — stringsTable schema
 - `lib/db/src/schema/towers.ts` — towersTable schema

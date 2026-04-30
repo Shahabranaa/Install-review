@@ -1,27 +1,106 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AppLayout } from "@/components/layout";
+import LoginPage from "@/pages/login";
+import DashboardPage from "@/pages/dashboard";
+import WorkersPage from "@/pages/workers";
+import WorkerProfilePage from "@/pages/worker-profile";
+import CertificationsPage from "@/pages/certifications";
+import SitesPage from "@/pages/sites";
+import SiteCompliancePage from "@/pages/site-compliance";
+import RolesPage from "@/pages/roles";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 30_000 },
+  },
+});
 
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Replit Agent is building...</h1>
-        <p className="mt-2 text-sm text-gray-600">Your app will appear here once it's ready.</p>
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
+  return <AppLayout>{children}</AppLayout>;
 }
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route component={NotFound} />
+      <Route path="/login">
+        {() => {
+          const { user } = useAuth();
+          return user ? <Redirect to="/" /> : <LoginPage />;
+        }}
+      </Route>
+      <Route path="/">
+        {() => (
+          <AuthGate>
+            <DashboardPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/workers">
+        {() => (
+          <AuthGate>
+            <WorkersPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/workers/:id">
+        {() => (
+          <AuthGate>
+            <WorkerProfilePage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/certifications">
+        {() => (
+          <AuthGate>
+            <CertificationsPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/sites">
+        {() => (
+          <AuthGate>
+            <SitesPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/site-compliance">
+        {() => (
+          <AuthGate>
+            <SiteCompliancePage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/roles">
+        {() => (
+          <AuthGate>
+            <RolesPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route>
+        {() => (
+          <AuthGate>
+            <NotFound />
+          </AuthGate>
+        )}
+      </Route>
     </Switch>
   );
 }
@@ -31,7 +110,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthProvider>
+            <Router />
+          </AuthProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
