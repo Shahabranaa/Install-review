@@ -2,7 +2,7 @@ import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const workforceRolesTable = pgTable("workforce_roles", {
+export const workforceRolesTable = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),

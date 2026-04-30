@@ -837,13 +837,17 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
 
     // Expiring within 30 days
     const expiringItems: { workerId: number; workerName: string; certName: string; expiryDate: string; daysUntilExpiry: number }[] = [];
-    // Aggregate cert status counts across all resolved compliance results
-    const certStatusCounts: Record<CertStatus, number> = {
-      VALID: 0, EXPIRING_SOON: 0, EXPIRED: 0, NOT_VERIFIED: 0, MISSING: 0,
-    };
+    // Per-cert breakdown: [{name, missing, expired, expiring}]
+    const certBreakdown = new Map<string, { name: string; missing: number; expired: number; expiring: number }>();
     for (const r of resolved) {
       for (const item of r.items) {
-        certStatusCounts[item.status] = (certStatusCounts[item.status] ?? 0) + 1;
+        if (!certBreakdown.has(item.name)) {
+          certBreakdown.set(item.name, { name: item.name, missing: 0, expired: 0, expiring: 0 });
+        }
+        const entry = certBreakdown.get(item.name)!;
+        if (item.status === "MISSING" || item.status === "NOT_VERIFIED") entry.missing++;
+        else if (item.status === "EXPIRED") entry.expired++;
+        else if (item.status === "EXPIRING_SOON") entry.expiring++;
         if (item.status === "EXPIRING_SOON" && item.expiryDate && item.daysUntilExpiry !== null) {
           expiringItems.push({
             workerId: r.workerId,
@@ -863,7 +867,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
       expiringCount,
       nonCompliantCount,
       unassignedCount: totalWorkers - byWorker.size,
-      certificationsByStatus: certStatusCounts,
+      certificationsByStatus: [...certBreakdown.values()],
       expiringInNext30Days: expiringItems,
     });
   } catch (err) {
