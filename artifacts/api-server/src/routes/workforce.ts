@@ -205,6 +205,10 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
 
 // ── Workers ──────────────────────────────────────────────────────────────────
 
+// GET /workforce/workers
+// Filters: ?search= (name ilike), ?roleId=, ?siteId= (workers assigned to that site),
+//          ?status=inactive (default: active workers only — worker active flag, not compliance status)
+// All filters are composable and ANDed together.
 router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> => {
   try {
     const { search, roleId, siteId, status } = req.query as Record<string, string>;
@@ -762,9 +766,13 @@ router.get("/workforce/compliance/site/:siteId", requireAuth, async (req, res): 
     const siteId = parseInt(req.params.siteId ?? "");
     if (isNaN(siteId)) { res.status(400).json({ error: "Invalid siteId" }); return; }
 
+    // Include both active and pending assignments — mirrors computeCompliance behaviour
     const assignments = await db.select()
       .from(siteAssignmentsTable)
-      .where(and(eq(siteAssignmentsTable.siteId, siteId), eq(siteAssignmentsTable.status, "active")));
+      .where(and(
+        eq(siteAssignmentsTable.siteId, siteId),
+        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+      ));
 
     const results = await Promise.all(
       assignments.map(a => computeCompliance(a.workerId, siteId).catch(err => ({
@@ -782,9 +790,13 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
     const workerId = parseInt(req.params.workerId ?? "");
     if (isNaN(workerId)) { res.status(400).json({ error: "Invalid workerId" }); return; }
 
+    // Include both active and pending assignments — mirrors computeCompliance behaviour
     const assignments = await db.select()
       .from(siteAssignmentsTable)
-      .where(and(eq(siteAssignmentsTable.workerId, workerId), eq(siteAssignmentsTable.status, "active")));
+      .where(and(
+        eq(siteAssignmentsTable.workerId, workerId),
+        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+      ));
 
     const results = await Promise.all(
       assignments.map(a => computeCompliance(workerId, a.siteId).catch(err => ({
