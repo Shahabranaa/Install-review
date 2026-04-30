@@ -490,6 +490,8 @@ router.get("/workforce/workers/:id/certifications", requireAuth, async (req, res
   try {
     const workerId = parseInt(req.params.id ?? "");
     if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [worker] = await db.select({ id: workersTable.id }).from(workersTable).where(eq(workersTable.id, workerId));
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
     const certs = await db.select({
       wc: workerCertificationsTable,
       cert: certificationsTable,
@@ -563,6 +565,8 @@ router.get("/workforce/sites/:id/requirements", requireAuth, async (req, res): P
   try {
     const siteId = parseInt(req.params.id ?? "");
     if (isNaN(siteId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [site] = await db.select({ id: mobSitesTable.id }).from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
     const reqs = await db.select({
       req: siteCertRequirementsTable,
       cert: certificationsTable,
@@ -602,6 +606,8 @@ router.get("/workforce/roles/:id/requirements", requireAuth, async (req, res): P
   try {
     const roleId = parseInt(req.params.id ?? "");
     if (isNaN(roleId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [role] = await db.select({ id: workforceRolesTable.id }).from(workforceRolesTable).where(eq(workforceRolesTable.id, roleId));
+    if (!role) { res.status(404).json({ error: "Role not found" }); return; }
     const reqs = await db.select({
       req: roleCertRequirementsTable,
       cert: certificationsTable,
@@ -639,6 +645,8 @@ router.get("/workforce/workers/:id/overrides", requireAuth, async (req, res): Pr
   try {
     const workerId = parseInt(req.params.id ?? "");
     if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [worker] = await db.select({ id: workersTable.id }).from(workersTable).where(eq(workersTable.id, workerId));
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
     const overrides = await db.select({
       override: workerCertOverridesTable,
       cert: certificationsTable,
@@ -683,9 +691,13 @@ router.put("/workforce/workers/:id/overrides", requireAdmin, async (req, res): P
 router.get("/workforce/assignments", requireAuth, async (req, res): Promise<void> => {
   try {
     const { siteId, workerId } = req.query as Record<string, string>;
+    const parsedSiteId = siteId ? parseInt(siteId) : NaN;
+    const parsedWorkerId = workerId ? parseInt(workerId) : NaN;
+    if (siteId && isNaN(parsedSiteId)) { res.status(400).json({ error: "Invalid siteId" }); return; }
+    if (workerId && isNaN(parsedWorkerId)) { res.status(400).json({ error: "Invalid workerId" }); return; }
     const conditions = [];
-    if (siteId) conditions.push(eq(siteAssignmentsTable.siteId, parseInt(siteId)));
-    if (workerId) conditions.push(eq(siteAssignmentsTable.workerId, parseInt(workerId)));
+    if (!isNaN(parsedSiteId)) conditions.push(eq(siteAssignmentsTable.siteId, parsedSiteId));
+    if (!isNaN(parsedWorkerId)) conditions.push(eq(siteAssignmentsTable.workerId, parsedWorkerId));
 
     const assignments = await db.select({
       sa: siteAssignmentsTable,
