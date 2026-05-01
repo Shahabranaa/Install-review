@@ -992,85 +992,219 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
 // GET /workforce/dashboard
 // Counting model: readyCount/expiringCount/nonCompliantCount are based on workers
 // with at least one active assignment (worst compliance status wins per worker).
-// Active workers with NO assignments are excluded from those counts and surfaced
-// via unassignedCount instead. Workers with NO_REQUIREMENTS status are also unassigned
-// for dashboard purposes.
+// Active workers with NO assignments (or only NO_REQUIREMENTS sites) are surfaced
+// via unassignedCount instead.
+// Two CTE queries, all CTEs fully inlined — no SQL fragment composition.
 router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const in30Days = new Date(today);
-    in30Days.setDate(in30Days.getDate() + 30);
+    // Both queries run in parallel — start both before awaiting either
+    const countsRowsPromise = db.execute(sql`
+      WITH worker_site_pairs AS (
+        SELECT sa.worker_id, sa.site_id, wr.role_id
+        FROM site_assignments sa
+        JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
+        WHERE sa.status IN ('active', 'pending')
+      ),
+      required_certs AS (
+        SELECT wsp.worker_id, wsp.site_id, scr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN site_cert_requirements scr ON scr.site_id = wsp.site_id AND scr.required = true
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, rcr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN role_cert_requirements rcr ON rcr.role_id = wsp.role_id AND rcr.required = true
+        WHERE wsp.role_id IS NOT NULL
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, wco.certification_id
+        FROM worker_site_pairs wsp
+        JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT rc.worker_id, rc.site_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      ),
+      cert_eval AS (
+        SELECT
+          fr.worker_id,
+          fr.site_id,
+          CASE
+            WHEN wc.id IS NULL                                                    THEN 'bad'
+            WHEN NOT wc.verified                                                  THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE    THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL
+              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')          THEN 'expiring'
+            ELSE 'good'
+          END AS cert_status
+        FROM final_required fr
+        LEFT JOIN worker_certifications wc
+          ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+      ),
+      site_compliance AS (
+        SELECT
+          wsp.worker_id,
+          wsp.site_id,
+          CASE
+            WHEN COUNT(fr.certification_id) = 0                                         THEN 'no_req'
+            WHEN MAX(CASE WHEN ce.cert_status = 'bad'      THEN 1 ELSE 0 END) = 1      THEN 'non_compliant'
+            WHEN MAX(CASE WHEN ce.cert_status = 'expiring' THEN 1 ELSE 0 END) = 1      THEN 'expiring'
+            ELSE 'ready'
+          END AS compliance
+        FROM worker_site_pairs wsp
+        LEFT JOIN final_required fr ON fr.worker_id = wsp.worker_id AND fr.site_id = wsp.site_id
+        LEFT JOIN cert_eval ce ON ce.worker_id = wsp.worker_id AND ce.site_id = wsp.site_id
+        GROUP BY wsp.worker_id, wsp.site_id
+      ),
+      worker_status AS (
+        SELECT
+          w.id AS worker_id,
+          CASE
+            WHEN MAX(CASE WHEN sc.compliance = 'non_compliant' THEN 1 ELSE 0 END) = 1  THEN 'non_compliant'
+            WHEN MAX(CASE WHEN sc.compliance = 'expiring'      THEN 1 ELSE 0 END) = 1  THEN 'expiring'
+            WHEN MAX(CASE WHEN sc.compliance = 'ready'         THEN 1 ELSE 0 END) = 1  THEN 'ready'
+            ELSE 'unassigned'
+          END AS overall_status
+        FROM workers w
+        LEFT JOIN site_compliance sc ON sc.worker_id = w.id
+        WHERE w.active = true
+        GROUP BY w.id
+      )
+      SELECT
+        COUNT(*)::int                                                            AS total_workers,
+        COUNT(CASE WHEN overall_status = 'ready'         THEN 1 END)::int      AS ready_count,
+        COUNT(CASE WHEN overall_status = 'expiring'      THEN 1 END)::int      AS expiring_count,
+        COUNT(CASE WHEN overall_status = 'non_compliant' THEN 1 END)::int      AS non_compliant_count,
+        COUNT(CASE WHEN overall_status = 'unassigned'    THEN 1 END)::int      AS unassigned_count
+      FROM worker_status
+    `);
 
-    const [totalRow] = await db.select({ cnt: sql<number>`count(*)::int` })
-      .from(workersTable).where(eq(workersTable.active, true));
-    const totalWorkers = totalRow?.cnt ?? 0;
+    // Query 2: per-cert breakdown + expiring items (with names) — run parallel to query 1
+    const certRowsPromise = db.execute(sql`
+      WITH worker_site_pairs AS (
+        SELECT sa.worker_id, sa.site_id, wr.role_id
+        FROM site_assignments sa
+        JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
+        WHERE sa.status IN ('active', 'pending')
+      ),
+      required_certs AS (
+        SELECT wsp.worker_id, wsp.site_id, scr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN site_cert_requirements scr ON scr.site_id = wsp.site_id AND scr.required = true
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, rcr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN role_cert_requirements rcr ON rcr.role_id = wsp.role_id AND rcr.required = true
+        WHERE wsp.role_id IS NOT NULL
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, wco.certification_id
+        FROM worker_site_pairs wsp
+        JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT DISTINCT rc.worker_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      ),
+      cert_eval_detail AS (
+        SELECT
+          fr.worker_id,
+          c.name                                                          AS cert_name,
+          w2.name                                                         AS worker_name,
+          wc.expiry_date,
+          CASE
+            WHEN wc.id IS NULL                                            THEN 'missing'
+            WHEN NOT wc.verified                                          THEN 'not_verified'
+            WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE  THEN 'expired'
+            WHEN wc.expiry_date IS NOT NULL
+              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')  THEN 'expiring'
+            ELSE 'valid'
+          END                                                             AS cert_status,
+          CASE
+            WHEN wc.expiry_date IS NOT NULL
+            THEN CEIL(EXTRACT(EPOCH FROM (wc.expiry_date::timestamptz - NOW())) / 86400)::int
+            ELSE NULL
+          END                                                             AS days_until_expiry
+        FROM final_required fr
+        LEFT JOIN worker_certifications wc
+          ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+        JOIN certifications c ON c.id = fr.certification_id
+        JOIN workers w2 ON w2.id = fr.worker_id
+      )
+      SELECT
+        'breakdown'                                                       AS row_type,
+        cert_name,
+        NULL::int                                                         AS worker_id,
+        NULL::text                                                        AS worker_name,
+        NULL::date                                                        AS expiry_date,
+        NULL::int                                                         AS days_until_expiry,
+        COUNT(CASE WHEN cert_status IN ('missing','not_verified') THEN 1 END)::int  AS missing_count,
+        COUNT(CASE WHEN cert_status = 'expired'  THEN 1 END)::int        AS expired_count,
+        COUNT(CASE WHEN cert_status = 'expiring' THEN 1 END)::int        AS expiring_count
+      FROM cert_eval_detail
+      GROUP BY cert_name
+      HAVING COUNT(CASE WHEN cert_status IN ('missing','not_verified','expired','expiring') THEN 1 END) > 0
 
-    // Get all active assignments
-    const assignments = await db.select()
-      .from(siteAssignmentsTable)
-      .where(eq(siteAssignmentsTable.status, "active"));
+      UNION ALL
 
-    // Compute compliance for all unique worker+site pairs
-    const pairs = assignments.map(a => ({ workerId: a.workerId, siteId: a.siteId }));
-    const complianceResults = await Promise.allSettled(
-      pairs.map(p => computeCompliance(p.workerId, p.siteId)),
-    );
+      SELECT
+        'expiring'                                                        AS row_type,
+        cert_name,
+        worker_id,
+        worker_name,
+        expiry_date,
+        days_until_expiry,
+        NULL::int                                                         AS missing_count,
+        NULL::int                                                         AS expired_count,
+        NULL::int                                                         AS expiring_count
+      FROM cert_eval_detail
+      WHERE cert_status = 'expiring'
+      ORDER BY row_type, expiry_date NULLS LAST
+    `);
 
-    const resolved = complianceResults
-      .filter((r): r is PromiseFulfilledResult<WorkerComplianceResult> => r.status === "fulfilled")
-      .map(r => r.value);
+    const [countsRows, certRows] = await Promise.all([countsRowsPromise, certRowsPromise]);
+    const counts = (countsRows.rows[0] ?? {}) as Record<string, unknown>;
 
-    // Deduplicate by worker (use worst status per worker)
-    const byWorker = new Map<number, WorkerStatus>();
-    const statusPriority: Record<WorkerStatus, number> = {
-      NOT_COMPLIANT: 3, EXPIRING_SOON: 2, READY: 1, NO_REQUIREMENTS: 0,
-    };
-    for (const r of resolved) {
-      const current = byWorker.get(r.workerId);
-      if (!current || statusPriority[r.status] > statusPriority[current]) {
-        byWorker.set(r.workerId, r.status);
+    const certificationsByStatus: { name: string; missing: number; expired: number; expiring: number }[] = [];
+    const expiringInNext30Days: { workerId: number; workerName: string; certName: string; expiryDate: string; daysUntilExpiry: number }[] = [];
+
+    for (const row of certRows.rows as Record<string, unknown>[]) {
+      if (row.row_type === "breakdown") {
+        certificationsByStatus.push({
+          name: String(row.cert_name),
+          missing: Number(row.missing_count),
+          expired: Number(row.expired_count),
+          expiring: Number(row.expiring_count),
+        });
+      } else {
+        expiringInNext30Days.push({
+          workerId: Number(row.worker_id),
+          workerName: String(row.worker_name),
+          certName: String(row.cert_name),
+          expiryDate: String(row.expiry_date),
+          daysUntilExpiry: Number(row.days_until_expiry),
+        });
       }
     }
-
-    const readyCount = [...byWorker.values()].filter(s => s === "READY").length;
-    const expiringCount = [...byWorker.values()].filter(s => s === "EXPIRING_SOON").length;
-    const nonCompliantCount = [...byWorker.values()].filter(s => s === "NOT_COMPLIANT").length;
-
-    // Expiring within 30 days
-    const expiringItems: { workerId: number; workerName: string; certName: string; expiryDate: string; daysUntilExpiry: number }[] = [];
-    // Per-cert breakdown: [{name, missing, expired, expiring}]
-    const certBreakdown = new Map<string, { name: string; missing: number; expired: number; expiring: number }>();
-    for (const r of resolved) {
-      for (const item of r.items) {
-        if (!certBreakdown.has(item.name)) {
-          certBreakdown.set(item.name, { name: item.name, missing: 0, expired: 0, expiring: 0 });
-        }
-        const entry = certBreakdown.get(item.name)!;
-        if (item.status === "MISSING" || item.status === "NOT_VERIFIED") entry.missing++;
-        else if (item.status === "EXPIRED") entry.expired++;
-        else if (item.status === "EXPIRING_SOON") entry.expiring++;
-        if (item.status === "EXPIRING_SOON" && item.expiryDate && item.daysUntilExpiry !== null) {
-          expiringItems.push({
-            workerId: r.workerId,
-            workerName: r.workerName,
-            certName: item.name,
-            expiryDate: item.expiryDate,
-            daysUntilExpiry: item.daysUntilExpiry,
-          });
-        }
-      }
-    }
-    expiringItems.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
+    expiringInNext30Days.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
 
     res.json({
-      totalWorkers,
-      readyCount,
-      expiringCount,
-      nonCompliantCount,
-      unassignedCount: totalWorkers - byWorker.size,
-      certificationsByStatus: [...certBreakdown.values()],
-      expiringInNext30Days: expiringItems,
+      totalWorkers: Number(counts.total_workers ?? 0),
+      readyCount: Number(counts.ready_count ?? 0),
+      expiringCount: Number(counts.expiring_count ?? 0),
+      nonCompliantCount: Number(counts.non_compliant_count ?? 0),
+      unassignedCount: Number(counts.unassigned_count ?? 0),
+      certificationsByStatus,
+      expiringInNext30Days,
     });
   } catch (err) {
     logger.error({ err }, "workforce dashboard error");
@@ -1082,62 +1216,109 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
 // GET /workforce/workers-compliance-summary
 // Returns all active workers with their overall compliance status.
 // Status is the WORST status across all active site assignments;
-// workers with no active assignments are UNASSIGNED.
+// workers with no active assignments (or only NO_REQUIREMENTS sites) are UNASSIGNED.
+// Single CTE query — one DB round-trip regardless of worker count.
 router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const workers = await db.select().from(workersTable).where(eq(workersTable.active, true));
-    const workerIds = workers.map(w => w.id);
-    if (workerIds.length === 0) { res.json([]); return; }
+    const rows = await db.execute(sql`
+      WITH worker_site_pairs AS (
+        SELECT sa.worker_id, sa.site_id, wr.role_id
+        FROM site_assignments sa
+        JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
+        WHERE sa.status IN ('active', 'pending')
+      ),
+      required_certs AS (
+        SELECT wsp.worker_id, wsp.site_id, scr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN site_cert_requirements scr ON scr.site_id = wsp.site_id AND scr.required = true
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, rcr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN role_cert_requirements rcr ON rcr.role_id = wsp.role_id AND rcr.required = true
+        WHERE wsp.role_id IS NOT NULL
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, wco.certification_id
+        FROM worker_site_pairs wsp
+        JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT rc.worker_id, rc.site_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      ),
+      cert_eval AS (
+        SELECT
+          fr.worker_id,
+          fr.site_id,
+          CASE
+            WHEN wc.id IS NULL                                                    THEN 'bad'
+            WHEN NOT wc.verified                                                  THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE    THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL
+              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')          THEN 'expiring'
+            ELSE 'good'
+          END AS cert_status
+        FROM final_required fr
+        LEFT JOIN worker_certifications wc
+          ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+      ),
+      site_compliance AS (
+        SELECT
+          wsp.worker_id,
+          CASE
+            WHEN COUNT(fr.certification_id) = 0                                         THEN 'NO_REQUIREMENTS'
+            WHEN MAX(CASE WHEN ce.cert_status = 'bad'      THEN 1 ELSE 0 END) = 1      THEN 'NOT_COMPLIANT'
+            WHEN MAX(CASE WHEN ce.cert_status = 'expiring' THEN 1 ELSE 0 END) = 1      THEN 'EXPIRING_SOON'
+            ELSE 'READY'
+          END AS compliance
+        FROM worker_site_pairs wsp
+        LEFT JOIN final_required fr ON fr.worker_id = wsp.worker_id AND fr.site_id = wsp.site_id
+        LEFT JOIN cert_eval ce ON ce.worker_id = wsp.worker_id AND ce.site_id = wsp.site_id
+        GROUP BY wsp.worker_id, wsp.site_id
+      ),
+      worker_worst AS (
+        SELECT
+          sc.worker_id,
+          CASE
+            WHEN MAX(CASE WHEN sc.compliance = 'NOT_COMPLIANT'  THEN 1 ELSE 0 END) = 1 THEN 'NOT_COMPLIANT'
+            WHEN MAX(CASE WHEN sc.compliance = 'EXPIRING_SOON'  THEN 1 ELSE 0 END) = 1 THEN 'EXPIRING_SOON'
+            WHEN MAX(CASE WHEN sc.compliance = 'READY'          THEN 1 ELSE 0 END) = 1 THEN 'READY'
+            WHEN MAX(CASE WHEN sc.compliance = 'NO_REQUIREMENTS' THEN 1 ELSE 0 END) = 1 THEN 'NO_REQUIREMENTS'
+            ELSE 'UNASSIGNED'
+          END AS status
+        FROM site_compliance sc
+        GROUP BY sc.worker_id
+      )
+      SELECT
+        w.id                   AS worker_id,
+        w.name,
+        w.email,
+        w.company,
+        w.active,
+        r.name                 AS role_name,
+        COALESCE(ww.status, 'UNASSIGNED') AS status
+      FROM workers w
+      LEFT JOIN worker_worst ww ON ww.worker_id = w.id
+      LEFT JOIN roles r ON r.id = w.role_id
+      WHERE w.active = true
+      ORDER BY w.name
+    `);
 
-    // Role names
-    const roleIds = [...new Set(workers.map(w => w.roleId).filter(Boolean) as number[])];
-    const roles = roleIds.length > 0
-      ? await db.select().from(workforceRolesTable).where(inArray(workforceRolesTable.id, roleIds))
-      : [];
-    const roleMap = new Map(roles.map(r => [r.id, r.name]));
-
-    // Active assignments for all workers
-    const assignments = await db.select()
-      .from(siteAssignmentsTable)
-      .where(and(
-        inArray(siteAssignmentsTable.workerId, workerIds),
-        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
-      ));
-
-    const pairsByWorker = new Map<number, number[]>();
-    for (const a of assignments) {
-      if (!pairsByWorker.has(a.workerId)) pairsByWorker.set(a.workerId, []);
-      pairsByWorker.get(a.workerId)!.push(a.siteId);
-    }
-
-    const statusPriority: Record<WorkerStatus, number> = {
-      NOT_COMPLIANT: 3, EXPIRING_SOON: 2, READY: 1, NO_REQUIREMENTS: 0,
-    };
-
-    const results = await Promise.all(workers.map(async (w) => {
-      const siteIds = pairsByWorker.get(w.id) ?? [];
-      let overallStatus: WorkerStatus | "UNASSIGNED" = "UNASSIGNED";
-      for (const siteId of siteIds) {
-        try {
-          const cr = await computeCompliance(w.id, siteId);
-          if (overallStatus === "UNASSIGNED" ||
-            statusPriority[cr.status] > statusPriority[overallStatus as WorkerStatus]) {
-            overallStatus = cr.status;
-          }
-        } catch {
-          // skip errors
-        }
-      }
-      return {
-        workerId: w.id,
-        name: w.name,
-        email: w.email,
-        company: w.company,
-        roleName: w.roleId ? (roleMap.get(w.roleId) ?? null) : null,
-        active: w.active,
-        status: overallStatus,
-      };
+    const results = (rows.rows as Record<string, unknown>[]).map(r => ({
+      workerId: Number(r.worker_id),
+      name: r.name,
+      email: r.email,
+      company: r.company,
+      active: r.active,
+      roleName: r.role_name ?? null,
+      status: r.status,
     }));
+
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce workers-compliance-summary error");
