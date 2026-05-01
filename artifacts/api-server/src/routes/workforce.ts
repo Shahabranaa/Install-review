@@ -1035,6 +1035,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         SELECT
           fr.worker_id,
           fr.site_id,
+          fr.certification_id,
           CASE
             WHEN wc.id IS NULL                                                    THEN 'bad'
             WHEN NOT wc.verified                                                  THEN 'bad'
@@ -1059,7 +1060,9 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
           END AS compliance
         FROM worker_site_pairs wsp
         LEFT JOIN final_required fr ON fr.worker_id = wsp.worker_id AND fr.site_id = wsp.site_id
-        LEFT JOIN cert_eval ce ON ce.worker_id = wsp.worker_id AND ce.site_id = wsp.site_id
+        LEFT JOIN cert_eval ce
+          ON ce.worker_id = fr.worker_id AND ce.site_id = fr.site_id
+          AND ce.certification_id = fr.certification_id
         GROUP BY wsp.worker_id, wsp.site_id
       ),
       worker_status AS (
@@ -1261,6 +1264,7 @@ router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, re
         SELECT
           fr.worker_id,
           fr.site_id,
+          fr.certification_id,
           CASE
             WHEN wc.id IS NULL                                                    THEN 'bad'
             WHEN NOT wc.verified                                                  THEN 'bad'
@@ -1284,7 +1288,9 @@ router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, re
           END AS compliance
         FROM worker_site_pairs wsp
         LEFT JOIN final_required fr ON fr.worker_id = wsp.worker_id AND fr.site_id = wsp.site_id
-        LEFT JOIN cert_eval ce ON ce.worker_id = wsp.worker_id AND ce.site_id = wsp.site_id
+        LEFT JOIN cert_eval ce
+          ON ce.worker_id = fr.worker_id AND ce.site_id = fr.site_id
+          AND ce.certification_id = fr.certification_id
         GROUP BY wsp.worker_id, wsp.site_id
       ),
       worker_worst AS (
