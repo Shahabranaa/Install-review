@@ -631,6 +631,37 @@ router.post(
   },
 );
 
+/** Shared helper: stream a cert file from Wasabi (or redirect legacy http URLs). */
+async function streamCertFile(fileUrl: string, res: Response): Promise<void> {
+  if (fileUrl.startsWith("http")) {
+    res.redirect(fileUrl);
+    return;
+  }
+  const wasabi = await getWasabiClientAndCreds();
+  if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
+
+  const obj = await wasabi.client.send(new GetObjectCommand({
+    Bucket: wasabi.creds.bucket,
+    Key: fileUrl,
+  }));
+
+  const contentType = obj.ContentType ?? "application/octet-stream";
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "private, max-age=300");
+  if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+  if (obj.Body instanceof Readable) {
+    obj.Body.pipe(res);
+  } else if (obj.Body) {
+    const buf = Buffer.from(
+      await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+    );
+    res.send(buf);
+  } else {
+    res.status(502).json({ error: "Empty body from storage" });
+  }
+}
+
 // GET /workforce/workers/:id/certifications/:certId/file
 // Stream the stored certification file from Wasabi.
 router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, async (req, res): Promise<void> => {
@@ -648,35 +679,7 @@ router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, as
     if (!row) { res.status(404).json({ error: "Worker certification not found" }); return; }
     if (!row.fileUrl) { res.status(404).json({ error: "No file attached to this certification" }); return; }
 
-    // Legacy plain URL — redirect
-    if (row.fileUrl.startsWith("http")) {
-      res.redirect(row.fileUrl);
-      return;
-    }
-
-    const wasabi = await getWasabiClientAndCreds();
-    if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
-
-    const obj = await wasabi.client.send(new GetObjectCommand({
-      Bucket: wasabi.creds.bucket,
-      Key: row.fileUrl,
-    }));
-
-    const contentType = obj.ContentType ?? "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "private, max-age=300");
-    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
-
-    if (obj.Body instanceof Readable) {
-      obj.Body.pipe(res);
-    } else if (obj.Body) {
-      const buf = Buffer.from(
-        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
-      );
-      res.send(buf);
-    } else {
-      res.status(502).json({ error: "Empty body from storage" });
-    }
+    await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -695,34 +698,7 @@ router.get("/workforce/certifications/:id/file", requireAuth, async (req, res): 
     if (!row) { res.status(404).json({ error: "Worker certification not found" }); return; }
     if (!row.fileUrl) { res.status(404).json({ error: "No file attached to this certification" }); return; }
 
-    if (row.fileUrl.startsWith("http")) {
-      res.redirect(row.fileUrl);
-      return;
-    }
-
-    const wasabi = await getWasabiClientAndCreds();
-    if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
-
-    const obj = await wasabi.client.send(new GetObjectCommand({
-      Bucket: wasabi.creds.bucket,
-      Key: row.fileUrl,
-    }));
-
-    const contentType = obj.ContentType ?? "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "private, max-age=300");
-    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
-
-    if (obj.Body instanceof Readable) {
-      obj.Body.pipe(res);
-    } else if (obj.Body) {
-      const buf = Buffer.from(
-        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
-      );
-      res.send(buf);
-    } else {
-      res.status(502).json({ error: "Empty body from storage" });
-    }
+    await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file (alias)");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
