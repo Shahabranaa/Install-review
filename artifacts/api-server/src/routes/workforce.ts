@@ -1,5 +1,8 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, and, or, ilike, inArray, sql } from "drizzle-orm";
+import multer from "multer";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import {
   db,
   workersTable,
@@ -12,9 +15,15 @@ import {
   workerCertOverridesTable,
   siteAssignmentsTable,
 } from "@workspace/db";
-import { logger } from "../lib/logger";
+import { getWasabiClientAndCreds } from "../lib/wasabi.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
+
+const certFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+});
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.session?.userId) {
@@ -567,6 +576,109 @@ router.delete("/workforce/workers/:id/certifications/:certId", requireAdmin, asy
       ));
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /workforce/workers/:id/certifications/:certId/file
+// Upload a file for a worker certification. Stores in Wasabi and updates file_url.
+router.post(
+  "/workforce/workers/:id/certifications/:certId/file",
+  requireAuth,
+  certFileUpload.single("file"),
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      const certificationId = parseInt(req.params.certId ?? "");
+      if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
+      if (!req.file) { res.status(400).json({ error: "Missing 'file' field" }); return; }
+
+      const [row] = await db.select()
+        .from(workerCertificationsTable)
+        .where(and(
+          eq(workerCertificationsTable.workerId, workerId),
+          eq(workerCertificationsTable.certificationId, certificationId),
+        ));
+      if (!row) { res.status(404).json({ error: "Worker certification not found" }); return; }
+
+      const wasabi = await getWasabiClientAndCreds();
+      if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
+
+      const safeName = req.file.originalname
+        .replace(/[\\/\r\n\t]+/g, "_")
+        .replace(/\.\.+/g, "_")
+        .slice(0, 120);
+      const key = `workforce/certifications/${row.id}/${safeName}`;
+
+      await wasabi.client.send(new PutObjectCommand({
+        Bucket: wasabi.creds.bucket,
+        Key: key,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+      }));
+
+      const [updated] = await db.update(workerCertificationsTable)
+        .set({ fileUrl: key, updatedAt: new Date() })
+        .where(eq(workerCertificationsTable.id, row.id))
+        .returning();
+
+      logger.info({ workerId, certificationId, key }, "Cert file uploaded to Wasabi");
+      res.status(201).json({ fileUrl: key, workerCertification: updated });
+    } catch (err) {
+      logger.error({ err }, "Failed to upload cert file");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// GET /workforce/workers/:id/certifications/:certId/file
+// Stream the stored certification file from Wasabi.
+router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = parseInt(req.params.id ?? "");
+    const certificationId = parseInt(req.params.certId ?? "");
+    if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [row] = await db.select()
+      .from(workerCertificationsTable)
+      .where(and(
+        eq(workerCertificationsTable.workerId, workerId),
+        eq(workerCertificationsTable.certificationId, certificationId),
+      ));
+    if (!row) { res.status(404).json({ error: "Worker certification not found" }); return; }
+    if (!row.fileUrl) { res.status(404).json({ error: "No file attached to this certification" }); return; }
+
+    // Legacy plain URL — redirect
+    if (row.fileUrl.startsWith("http")) {
+      res.redirect(row.fileUrl);
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
+
+    const obj = await wasabi.client.send(new GetObjectCommand({
+      Bucket: wasabi.creds.bucket,
+      Key: row.fileUrl,
+    }));
+
+    const contentType = obj.ContentType ?? "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch cert file");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

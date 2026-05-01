@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
@@ -15,8 +15,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
+  Paperclip, X as XIcon, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
 type WorkerSiteStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
@@ -121,6 +124,8 @@ export default function WorkerProfilePage() {
   const [certForm, setCertForm] = useState({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "" });
+  const [fileUploading, setFileUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: worker, isLoading } = useQuery<WorkerDetail>({
     queryKey: ["worker", workerId],
@@ -242,6 +247,38 @@ export default function WorkerProfilePage() {
       notes: wc.notes ?? "",
     });
     setEditingCert(wc);
+  }
+
+  async function handleCertFileUpload(file: File) {
+    if (!editingCert) return;
+    setFileUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `${BASE}/api/workforce/workers/${workerId}/certifications/${editingCert.certificationId}/file`,
+        { method: "POST", credentials: "include", body: form },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `Upload failed: ${res.status}`);
+      }
+      const data = (await res.json()) as { fileUrl: string };
+      setCertEditForm((f) => ({ ...f, fileUrl: data.fileUrl }));
+      toast({ title: "File uploaded" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setFileUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function certFileHref(wc: WorkerCert): string {
+    if (!wc.fileUrl) return "#";
+    if (wc.fileUrl.startsWith("http")) return wc.fileUrl;
+    return `${BASE}/api/workforce/workers/${wc.workerId}/certifications/${wc.certificationId}/file`;
   }
 
   if (isLoading) {
@@ -379,8 +416,13 @@ export default function WorkerProfilePage() {
                         </span>
                       )}
                       {wc.fileUrl && (
-                        <a href={wc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-0.5">
-                          View file
+                        <a
+                          href={certFileHref(wc)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-0.5"
+                        >
+                          <Paperclip className="h-3 w-3" /> View file
                         </a>
                       )}
                     </div>
@@ -631,12 +673,65 @@ export default function WorkerProfilePage() {
               </div>
             </div>
             <div>
-              <Label>File URL</Label>
-              <Input
-                value={certEditForm.fileUrl}
-                onChange={(e) => setCertEditForm({ ...certEditForm, fileUrl: e.target.value })}
-                placeholder="https://…"
-              />
+              <Label>Certificate File</Label>
+              {certEditForm.fileUrl ? (
+                <div className="mt-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm bg-muted/40">
+                  <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="flex-1 truncate text-muted-foreground">
+                    {certEditForm.fileUrl.startsWith("http")
+                      ? certEditForm.fileUrl
+                      : certEditForm.fileUrl.split("/").pop()}
+                  </span>
+                  <a
+                    href={
+                      certEditForm.fileUrl.startsWith("http")
+                        ? certEditForm.fileUrl
+                        : editingCert
+                          ? `${BASE}/api/workforce/workers/${workerId}/certifications/${editingCert.certificationId}/file`
+                          : "#"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary text-xs hover:underline flex-shrink-0"
+                  >
+                    View
+                  </a>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive flex-shrink-0"
+                    onClick={() => setCertEditForm((f) => ({ ...f, fileUrl: "" }))}
+                    title="Remove file"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleCertFileUpload(file);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={fileUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {fileUploading ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading…</>
+                    ) : (
+                      <><Paperclip className="h-4 w-4 mr-2" /> Attach file</>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
             <div>
               <Label>Notes</Label>
