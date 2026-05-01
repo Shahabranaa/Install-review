@@ -5,6 +5,7 @@ import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
 import {
   db,
+  usersTable,
   workersTable,
   workforceRolesTable,
   mobSitesTable,
@@ -592,6 +593,23 @@ router.post(
       const certificationId = parseInt(req.params.certId ?? "");
       if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
       if (!req.file) { res.status(400).json({ error: "Missing 'file' field" }); return; }
+
+      // Enforce ownership: admins may upload to any worker; non-admins may only
+      // upload to the worker record whose email matches their own account email.
+      if (req.session.accessLevel !== "admin") {
+        const [authUser] = await db.select({ email: usersTable.email })
+          .from(usersTable)
+          .where(eq(usersTable.id, req.session.userId!));
+        const [targetWorker] = await db.select({ email: workersTable.email })
+          .from(workersTable)
+          .where(eq(workersTable.id, workerId));
+        const userEmail = authUser?.email?.toLowerCase() ?? "";
+        const workerEmail = targetWorker?.email?.toLowerCase() ?? "";
+        if (!userEmail || !workerEmail || userEmail !== workerEmail) {
+          res.status(403).json({ error: "You may only upload files to your own certification records" });
+          return;
+        }
+      }
 
       const [row] = await db.select()
         .from(workerCertificationsTable)

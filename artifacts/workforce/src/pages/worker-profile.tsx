@@ -115,7 +115,7 @@ function siteStatusConfig(status: WorkerSiteStatus) {
 export default function WorkerProfilePage() {
   const [, params] = useRoute("/workers/:id");
   const workerId = params ? parseInt(params.id) : NaN;
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showAddCert, setShowAddCert] = useState(false);
@@ -330,6 +330,12 @@ export default function WorkerProfilePage() {
     (r): r is SiteComplianceResult => "status" in r,
   );
 
+  const isSelf =
+    !isAdmin &&
+    !!user?.email &&
+    !!worker?.email &&
+    user.email.toLowerCase() === worker.email.toLowerCase();
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <Link href="/workers">
@@ -410,6 +416,7 @@ export default function WorkerProfilePage() {
       <input
         ref={cardFileInputRef}
         type="file"
+        accept="application/pdf,image/*"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -470,7 +477,7 @@ export default function WorkerProfilePage() {
                     {label}
                   </Badge>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {!isAdmin && (
+                    {isSelf && (
                       <Button
                         size="icon"
                         variant="ghost"
@@ -769,6 +776,7 @@ export default function WorkerProfilePage() {
                   <input
                     ref={fileInputRef}
                     type="file"
+                    accept="application/pdf,image/*"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
