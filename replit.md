@@ -60,3 +60,18 @@ Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-se
 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — (optional) Google OAuth login
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Vercel Deployment
+
+Vercel is the production hosting target. Key files:
+
+- `vercel.json` — build command, output directory, rewrite rules, function config
+- `scripts/build.sh` — full production build (API server + both frontends; copies workforce into image-review dist)
+- `api/index.mjs` — Vercel serverless function entry point (re-exports Express app from `artifacts/api-server/dist/app.mjs`)
+
+Build output structure (all under `artifacts/image-review/dist/public/`):
+- `/` → image-review SPA
+- `/workforce/` → workforce SPA (built with `BASE_PATH=/workforce/`, then copied in)
+- `/api` → Vercel serverless function (served from `api/index.mjs`)
+
+To deploy: push to the connected Git branch; Vercel auto-builds using `scripts/build.sh`.
