@@ -158,21 +158,18 @@ const workers = dataLines.map((line) => {
   const cols = line.split("\t");
   const g = (i) => clean(cols[i] ?? "");
 
-  const noteParts = [];
-  if (g(COL.phone))     noteParts.push(`Phone: ${g(COL.phone)}`);
-  if (g(COL.dob))       noteParts.push(`DOB: ${g(COL.dob)}`);
-  if (g(COL.passport))  noteParts.push(`Passport: ${g(COL.passport)}`);
-  if (g(COL.airport))   noteParts.push(`Airport: ${g(COL.airport)}`);
-  if (g(COL.qualifications)) noteParts.push(`Qualifications: ${g(COL.qualifications)}`);
-  if (g(COL.comments))  noteParts.push(`Notes: ${g(COL.comments)}`);
-
   return {
-    uniqueId:  g(COL.uniqueId),
-    name:      g(COL.name),
-    email:     nullIfEmpty(g(COL.email)),
-    windaId:   nullIfEmpty(g(COL.windaId)),
-    roleName:  nullIfEmpty(g(COL.role)),
-    notes:     noteParts.length ? noteParts.join(" | ") : null,
+    uniqueId:         g(COL.uniqueId),
+    name:             g(COL.name),
+    email:            nullIfEmpty(g(COL.email)),
+    windaId:          nullIfEmpty(g(COL.windaId)),
+    roleName:         nullIfEmpty(g(COL.role)),
+    phone:            nullIfEmpty(g(COL.phone)),
+    dob:              nullIfEmpty(g(COL.dob)),
+    passportNo:       nullIfEmpty(g(COL.passport)),
+    preferredAirport: nullIfEmpty(g(COL.airport)),
+    qualifications:   nullIfEmpty(g(COL.qualifications)),
+    notes:            nullIfEmpty(g(COL.comments)),
     certs: CERT_COLS.map(({ idx, name }) => {
       const raw = g(idx);
       const date = parseDate(raw);
@@ -230,30 +227,38 @@ async function run() {
       // Strategy: upsert by winda_id if present, else by email, else by name
       let workerId = null;
 
+      const commonSet = `
+        name=$1, email=COALESCE(EXCLUDED.email, workers.email),
+        role_id=COALESCE(EXCLUDED.role_id, workers.role_id),
+        unique_id=COALESCE(EXCLUDED.unique_id, workers.unique_id),
+        phone=COALESCE(EXCLUDED.phone, workers.phone),
+        dob=COALESCE(EXCLUDED.dob, workers.dob),
+        passport_no=COALESCE(EXCLUDED.passport_no, workers.passport_no),
+        preferred_airport=COALESCE(EXCLUDED.preferred_airport, workers.preferred_airport),
+        qualifications=COALESCE(EXCLUDED.qualifications, workers.qualifications),
+        notes=COALESCE(EXCLUDED.notes, workers.notes),
+        updated_at=NOW()
+      `;
+
       if (w.windaId) {
         const res = await client.query(
-          `INSERT INTO workers (name, email, winda_id, role_id, notes)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (winda_id) DO UPDATE
-             SET name=$1, email=COALESCE(EXCLUDED.email, workers.email),
-                 role_id=COALESCE($4, workers.role_id),
-                 notes=COALESCE($5, workers.notes),
-                 updated_at=NOW()
+          `INSERT INTO workers
+             (name, email, winda_id, role_id, unique_id, phone, dob, passport_no, preferred_airport, qualifications, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           ON CONFLICT (winda_id) DO UPDATE SET ${commonSet}
            RETURNING id`,
-          [w.name, w.email, w.windaId, roleId, w.notes],
+          [w.name, w.email, w.windaId, roleId, w.uniqueId||null, w.phone, w.dob, w.passportNo, w.preferredAirport, w.qualifications, w.notes],
         );
         workerId = res.rows[0].id;
         updated++;
       } else if (w.email) {
         const res = await client.query(
-          `INSERT INTO workers (name, email, role_id, notes)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (email) DO UPDATE
-             SET name=$1, role_id=COALESCE($3, workers.role_id),
-                 notes=COALESCE($4, workers.notes),
-                 updated_at=NOW()
+          `INSERT INTO workers
+             (name, email, role_id, unique_id, phone, dob, passport_no, preferred_airport, qualifications, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           ON CONFLICT (email) DO UPDATE SET ${commonSet}
            RETURNING id`,
-          [w.name, w.email, roleId, w.notes],
+          [w.name, w.email, roleId, w.uniqueId||null, w.phone, w.dob, w.passportNo, w.preferredAirport, w.qualifications, w.notes],
         );
         workerId = res.rows[0].id;
         updated++;
@@ -266,14 +271,23 @@ async function run() {
         if (existing.rows.length) {
           workerId = existing.rows[0].id;
           await client.query(
-            `UPDATE workers SET role_id=COALESCE($2, role_id), notes=COALESCE($3, notes), updated_at=NOW() WHERE id=$1`,
-            [workerId, roleId, w.notes],
+            `UPDATE workers SET
+               role_id=COALESCE($2, role_id),
+               unique_id=COALESCE($3, unique_id),
+               phone=COALESCE($4, phone), dob=COALESCE($5, dob),
+               passport_no=COALESCE($6, passport_no),
+               preferred_airport=COALESCE($7, preferred_airport),
+               qualifications=COALESCE($8, qualifications),
+               notes=COALESCE($9, notes), updated_at=NOW()
+             WHERE id=$1`,
+            [workerId, roleId, w.uniqueId||null, w.phone, w.dob, w.passportNo, w.preferredAirport, w.qualifications, w.notes],
           );
           updated++;
         } else {
           const res = await client.query(
-            `INSERT INTO workers (name, role_id, notes) VALUES ($1, $2, $3) RETURNING id`,
-            [w.name, roleId, w.notes],
+            `INSERT INTO workers (name, role_id, unique_id, phone, dob, passport_no, preferred_airport, qualifications, notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+            [w.name, roleId, w.uniqueId||null, w.phone, w.dob, w.passportNo, w.preferredAirport, w.qualifications, w.notes],
           );
           workerId = res.rows[0].id;
           inserted++;

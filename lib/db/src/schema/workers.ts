@@ -12,6 +12,12 @@ export const workersTable = pgTable("workers", {
   roleId: integer("role_id").references(() => workforceRolesTable.id, { onDelete: "set null" }),
   notes: text("notes"),
   active: boolean("active").notNull().default(true),
+  uniqueId: text("unique_id"),
+  phone: text("phone"),
+  dob: text("dob"),
+  passportNo: text("passport_no"),
+  preferredAirport: text("preferred_airport"),
+  qualifications: text("qualifications"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
