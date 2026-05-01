@@ -1,27 +1,20 @@
-export * from "./projects";
-export * from "./sites";
-export * from "./locations";
-export * from "./strings";
-export * from "./towers";
-export * from "./phases";
-export * from "./images";
-export * from "./issues";
-export * from "./decisions";
-export * from "./documents";
-export * from "./users";
-export * from "./sheet-photos";
-export * from "./app-settings";
-export * from "./wasabi-mirror-tasks";
-export * from "./required-image-definitions";
-export * from "./field-reports";
-export * from "./installation-tasks";
-export * from "./campaigns";
-export * from "./location-task-progress";
-export * from "./task-progress-updates";
-export * from "./workforce-roles";
-export * from "./mob-sites";
-export * from "./certifications";
-export * from "./workers";
-export * from "./worker-certifications";
-export * from "./cert-requirements";
-export * from "./site-assignments";
+// Export your models here. Add one export per file
+// export * from "./posts";
+//
+// Each model/table should ideally be split into different files.
+// Each model/table should define a Drizzle table, insert schema, and types:
+//
+//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
+//   import { createInsertSchema } from "drizzle-zod";
+//   import { z } from "zod/v4";
+//
+//   export const postsTable = pgTable("posts", {
+//     id: serial("id").primaryKey(),
+//     title: text("title").notNull(),
+//   });
+//
+//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
+//   export type InsertPost = z.infer<typeof insertPostSchema>;
+//   export type Post = typeof postsTable.$inferSelect;
+
+export {}
