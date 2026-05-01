@@ -123,7 +123,7 @@ export default function WorkerProfilePage() {
   const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
   const [certForm, setCertForm] = useState({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
-  const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "" });
+  const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
@@ -152,6 +152,11 @@ export default function WorkerProfilePage() {
     queryFn: () => apiFetch<Role[]>("/api/workforce/roles"),
   });
 
+  const { data: allSites } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["workforce-sites"],
+    queryFn: () => apiFetch<{ id: number; name: string }[]>("/api/workforce/sites"),
+  });
+
   function openEdit() {
     if (!worker) return;
     setEditForm({
@@ -161,19 +166,29 @@ export default function WorkerProfilePage() {
       windaId: worker.windaId ?? "",
       notes: worker.notes ?? "",
       roleId: worker.roleId ? String(worker.roleId) : "",
+      newSiteId: "",
     });
     setShowEdit(true);
   }
 
   const updateMutation = useMutation({
-    mutationFn: () => apiPatch(`/api/workforce/workers/${workerId}`, {
-      name: editForm.name,
-      email: editForm.email || null,
-      company: editForm.company || null,
-      windaId: editForm.windaId || null,
-      notes: editForm.notes || null,
-      roleId: editForm.roleId ? parseInt(editForm.roleId) : null,
-    }),
+    mutationFn: async () => {
+      await apiPatch(`/api/workforce/workers/${workerId}`, {
+        name: editForm.name,
+        email: editForm.email || null,
+        company: editForm.company || null,
+        windaId: editForm.windaId || null,
+        notes: editForm.notes || null,
+        roleId: editForm.roleId ? parseInt(editForm.roleId) : null,
+      });
+      if (editForm.newSiteId) {
+        await apiPost("/api/workforce/assignments", {
+          workerId,
+          siteId: parseInt(editForm.newSiteId),
+          status: "active",
+        });
+      }
+    },
     onSuccess: () => {
       toast({ title: "Worker updated" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
@@ -648,6 +663,31 @@ export default function WorkerProfilePage() {
             <div>
               <Label>Notes</Label>
               <Input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Optional notes" />
+            </div>
+            <div>
+              <Label>Site Assignments</Label>
+              {worker?.assignments && worker.assignments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-1 mb-2">
+                  {worker.assignments.filter(a => a.status === "active" || a.status === "pending").map((a) => (
+                    <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                      <Building2 className="h-3 w-3" /> {a.site.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1 mb-2">No site assignments yet.</p>
+              )}
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={editForm.newSiteId}
+                onChange={(e) => setEditForm({ ...editForm, newSiteId: e.target.value })}
+                data-testid="select-edit-site"
+              >
+                <option value="">Add to a site… (optional)</option>
+                {allSites
+                  ?.filter(s => !worker?.assignments.some(a => a.site.id === s.id && (a.status === "active" || a.status === "pending")))
+                  .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
           </div>
           <DialogFooter>

@@ -1148,48 +1148,123 @@ router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, re
 // ── Sites with compliance stats ───────────────────────────────────────────────
 // GET /workforce/sites-with-stats
 // Returns all sites with assigned worker count and compliance breakdown.
+// Single CTE query — one DB round-trip regardless of worker/site count.
 router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promise<void> => {
   try {
-    const sites = await db.select().from(mobSitesTable).orderBy(mobSitesTable.name);
-    const siteIds = sites.map(s => s.id);
-    if (siteIds.length === 0) { res.json([]); return; }
+    const rows = await db.execute(sql`
+      WITH active_assignments AS (
+        SELECT sa.site_id, sa.worker_id
+        FROM site_assignments sa
+        WHERE sa.status IN ('active', 'pending')
+      ),
+      site_required AS (
+        SELECT aa.site_id, aa.worker_id, scr.certification_id
+        FROM active_assignments aa
+        JOIN site_cert_requirements scr ON scr.site_id = aa.site_id AND scr.required = true
+      ),
+      role_required AS (
+        SELECT aa.site_id, aa.worker_id, rcr.certification_id
+        FROM active_assignments aa
+        JOIN workers w ON w.id = aa.worker_id AND w.role_id IS NOT NULL
+        JOIN role_cert_requirements rcr ON rcr.role_id = w.role_id AND rcr.required = true
+      ),
+      override_add AS (
+        SELECT aa.site_id, aa.worker_id, wco.certification_id
+        FROM active_assignments aa
+        JOIN worker_cert_overrides wco ON wco.worker_id = aa.worker_id AND wco.required = true
+      ),
+      all_required_pre AS (
+        SELECT site_id, worker_id, certification_id FROM site_required
+        UNION
+        SELECT site_id, worker_id, certification_id FROM role_required
+        UNION
+        SELECT site_id, worker_id, certification_id FROM override_add
+      ),
+      override_remove AS (
+        SELECT aa.site_id, aa.worker_id, wco.certification_id
+        FROM active_assignments aa
+        JOIN worker_cert_overrides wco ON wco.worker_id = aa.worker_id AND wco.required = false
+      ),
+      all_required AS (
+        SELECT arp.site_id, arp.worker_id, arp.certification_id
+        FROM all_required_pre arp
+        WHERE NOT EXISTS (
+          SELECT 1 FROM override_remove orr
+          WHERE orr.site_id = arp.site_id
+            AND orr.worker_id = arp.worker_id
+            AND orr.certification_id = arp.certification_id
+        )
+      ),
+      cert_eval AS (
+        SELECT
+          ar.site_id,
+          ar.worker_id,
+          ar.certification_id,
+          CASE
+            WHEN wc.id IS NULL                                                      THEN 'bad'
+            WHEN NOT wc.verified                                                    THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE      THEN 'bad'
+            WHEN wc.expiry_date IS NOT NULL
+              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')            THEN 'expiring'
+            ELSE 'good'
+          END AS cert_status
+        FROM all_required ar
+        LEFT JOIN worker_certifications wc
+          ON wc.worker_id = ar.worker_id AND wc.certification_id = ar.certification_id
+      ),
+      worker_compliance AS (
+        SELECT
+          aa.site_id,
+          aa.worker_id,
+          CASE
+            WHEN COUNT(ar.certification_id) = 0                                               THEN 'no_req'
+            WHEN MAX(CASE WHEN ce.cert_status = 'bad'      THEN 1 ELSE 0 END) = 1            THEN 'non_compliant'
+            WHEN MAX(CASE WHEN ce.cert_status = 'expiring' THEN 1 ELSE 0 END) = 1            THEN 'expiring'
+            ELSE 'ready'
+          END AS compliance_status
+        FROM active_assignments aa
+        LEFT JOIN all_required ar
+          ON ar.site_id = aa.site_id AND ar.worker_id = aa.worker_id
+        LEFT JOIN cert_eval ce
+          ON ce.site_id = aa.site_id AND ce.worker_id = aa.worker_id
+          AND ce.certification_id = ar.certification_id
+        GROUP BY aa.site_id, aa.worker_id
+      )
+      SELECT
+        ms.id,
+        ms.name,
+        ms.location,
+        ms.description,
+        ms.active,
+        ms.created_at  AS "createdAt",
+        ms.updated_at  AS "updatedAt",
+        COUNT(wc.worker_id)                                          AS "workerCount",
+        COUNT(CASE WHEN wc.compliance_status = 'ready'        THEN 1 END) AS "readyCount",
+        COUNT(CASE WHEN wc.compliance_status = 'expiring'     THEN 1 END) AS "expiringCount",
+        COUNT(CASE WHEN wc.compliance_status = 'non_compliant' THEN 1 END) AS "nonCompliantCount",
+        COUNT(CASE WHEN wc.compliance_status = 'no_req'       THEN 1 END) AS "noReqCount"
+      FROM mob_sites ms
+      LEFT JOIN worker_compliance wc ON wc.site_id = ms.id
+      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.created_at, ms.updated_at
+      ORDER BY ms.name
+    `);
 
-    const assignments = await db.select()
-      .from(siteAssignmentsTable)
-      .where(and(
-        inArray(siteAssignmentsTable.siteId, siteIds),
-        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
-      ));
-
-    const pairsBySite = new Map<number, number[]>();
-    for (const a of assignments) {
-      if (!pairsBySite.has(a.siteId)) pairsBySite.set(a.siteId, []);
-      pairsBySite.get(a.siteId)!.push(a.workerId);
-    }
-
-    const results = await Promise.all(sites.map(async (site) => {
-      const workerIds = pairsBySite.get(site.id) ?? [];
-      let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
-      for (const workerId of workerIds) {
-        try {
-          const cr = await computeCompliance(workerId, site.id);
-          if (cr.status === "READY") readyCount++;
-          else if (cr.status === "EXPIRING_SOON") expiringCount++;
-          else if (cr.status === "NOT_COMPLIANT") nonCompliantCount++;
-          else noReqCount++;
-        } catch {
-          // skip errors
-        }
-      }
-      return {
-        ...site,
-        workerCount: workerIds.length,
-        readyCount,
-        expiringCount,
-        nonCompliantCount,
-        noReqCount,
-      };
+    // drizzle execute returns { rows: [...] } — cast counts to numbers
+    const results = rows.rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      name: r.name,
+      location: r.location,
+      description: r.description,
+      active: r.active,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      workerCount: Number(r.workerCount),
+      readyCount: Number(r.readyCount),
+      expiringCount: Number(r.expiringCount),
+      nonCompliantCount: Number(r.nonCompliantCount),
+      noReqCount: Number(r.noReqCount),
     }));
+
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce sites-with-stats error");
