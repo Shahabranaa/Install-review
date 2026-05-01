@@ -683,6 +683,52 @@ router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, as
   }
 });
 
+// GET /workforce/certifications/:id/file (alias — :id is the PK of worker_certifications)
+router.get("/workforce/certifications/:id/file", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [row] = await db.select()
+      .from(workerCertificationsTable)
+      .where(eq(workerCertificationsTable.id, id));
+    if (!row) { res.status(404).json({ error: "Worker certification not found" }); return; }
+    if (!row.fileUrl) { res.status(404).json({ error: "No file attached to this certification" }); return; }
+
+    if (row.fileUrl.startsWith("http")) {
+      res.redirect(row.fileUrl);
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Wasabi not configured" }); return; }
+
+    const obj = await wasabi.client.send(new GetObjectCommand({
+      Bucket: wasabi.creds.bucket,
+      Key: row.fileUrl,
+    }));
+
+    const contentType = obj.ContentType ?? "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch cert file (alias)");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // ── Requirements ─────────────────────────────────────────────────────────────
 
 router.get("/workforce/sites/:id/requirements", requireAuth, async (req, res): Promise<void> => {

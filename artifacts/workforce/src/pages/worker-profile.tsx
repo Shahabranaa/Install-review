@@ -126,6 +126,9 @@ export default function WorkerProfilePage() {
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "" });
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
+  const cardFileInputRef = useRef<HTMLInputElement>(null);
+  const cardUploadTargetRef = useRef<WorkerCert | null>(null);
 
   const { data: worker, isLoading } = useQuery<WorkerDetail>({
     queryKey: ["worker", workerId],
@@ -281,6 +284,30 @@ export default function WorkerProfilePage() {
     return `${BASE}/api/workforce/workers/${wc.workerId}/certifications/${wc.certificationId}/file`;
   }
 
+  async function handleCardFileUpload(wc: WorkerCert, file: File) {
+    setCardUploadingCertId(wc.certificationId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `${BASE}/api/workforce/workers/${workerId}/certifications/${wc.certificationId}/file`,
+        { method: "POST", credentials: "include", body: form },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `Upload failed: ${res.status}`);
+      }
+      toast({ title: "File attached" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setCardUploadingCertId(null);
+      cardUploadTargetRef.current = null;
+      if (cardFileInputRef.current) cardFileInputRef.current.value = "";
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="p-6 max-w-4xl mx-auto space-y-4">
@@ -379,6 +406,18 @@ export default function WorkerProfilePage() {
         </div>
       </div>
 
+      {/* Hidden file input for card-level uploads (non-admin & admin quick upload) */}
+      <input
+        ref={cardFileInputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          const target = cardUploadTargetRef.current;
+          if (file && target) void handleCardFileUpload(target, file);
+        }}
+      />
+
       {/* Certifications */}
       <div className="border rounded-xl bg-card overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
@@ -430,28 +469,48 @@ export default function WorkerProfilePage() {
                   <Badge variant="outline" className={cn("text-[10px] flex-shrink-0", color.replace("text-", "border-").replace("-500", "-400"))}>
                     {label}
                   </Badge>
-                  {isAdmin && (
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {!isAdmin && (
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-muted-foreground hover:text-primary"
-                        onClick={() => openEditCert(wc)}
-                        data-testid={`button-edit-cert-${wc.certificationId}`}
+                        title="Attach file"
+                        disabled={cardUploadingCertId === wc.certificationId}
+                        onClick={() => {
+                          cardUploadTargetRef.current = wc;
+                          cardFileInputRef.current?.click();
+                        }}
+                        data-testid={`button-upload-cert-${wc.certificationId}`}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        {cardUploadingCertId === wc.certificationId
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Paperclip className="h-3.5 w-3.5" />}
                       </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeCertMutation.mutate(wc.certificationId)}
-                        data-testid={`button-remove-cert-${wc.certificationId}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
+                    )}
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          onClick={() => openEditCert(wc)}
+                          data-testid={`button-edit-cert-${wc.certificationId}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeCertMutation.mutate(wc.certificationId)}
+                          data-testid={`button-remove-cert-${wc.certificationId}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
