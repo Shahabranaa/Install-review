@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight } from "lucide-react";
+import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SiteWithStats {
@@ -28,6 +28,8 @@ interface SiteWithStats {
   noReqCount: number;
 }
 
+interface Worker { id: number; name: string; company: string | null }
+
 const emptyForm = { name: "", location: "", description: "" };
 
 export default function SitesPage() {
@@ -38,10 +40,34 @@ export default function SitesPage() {
   const [editing, setEditing] = useState<SiteWithStats | null>(null);
   const [form, setForm] = useState(emptyForm);
 
+  const [assignSite, setAssignSite] = useState<SiteWithStats | null>(null);
+  const [assignWorkerId, setAssignWorkerId] = useState("");
+
   const { data: sites, isLoading } = useQuery<SiteWithStats[]>({
     queryKey: ["workforce-sites-stats"],
     queryFn: () => apiFetch<SiteWithStats[]>("/api/workforce/sites-with-stats"),
     refetchInterval: 60_000,
+  });
+
+  const { data: workers } = useQuery<Worker[]>({
+    queryKey: ["workforce-workers-raw"],
+    queryFn: () => apiFetch<Worker[]>("/api/workforce/workers"),
+    enabled: !!assignSite,
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: () => apiPost("/api/workforce/assignments", {
+      workerId: parseInt(assignWorkerId),
+      siteId: assignSite!.id,
+      status: "active",
+    }),
+    onSuccess: () => {
+      toast({ title: "Worker assigned" });
+      void qc.invalidateQueries({ queryKey: ["workforce-sites-stats"] });
+      setAssignSite(null);
+      setAssignWorkerId("");
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function openNew() { setEditing(null); setForm(emptyForm); setShowDialog(true); }
@@ -183,6 +209,9 @@ export default function SitesPage() {
                               </Button>
                             </a>
                           </Link>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" title="Assign worker" onClick={() => { setAssignSite(s); setAssignWorkerId(""); }} data-testid={`button-assign-worker-${s.id}`}>
+                            <UserPlus className="h-3.5 w-3.5" />
+                          </Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(s)} data-testid={`button-edit-site-${s.id}`}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -232,6 +261,41 @@ export default function SitesPage() {
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
             <Button onClick={() => saveMutation.mutate()} disabled={!form.name || saveMutation.isPending} data-testid="button-save-site">
               {saveMutation.isPending ? "Saving…" : editing ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Worker dialog */}
+      <Dialog open={!!assignSite} onOpenChange={(open) => { if (!open) { setAssignSite(null); setAssignWorkerId(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Worker — {assignSite?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Label>Select Worker</Label>
+            <select
+              className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+              value={assignWorkerId}
+              onChange={(e) => setAssignWorkerId(e.target.value)}
+              data-testid="select-assign-worker"
+            >
+              <option value="">Choose a worker…</option>
+              {workers?.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}{w.company ? ` — ${w.company}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAssignSite(null); setAssignWorkerId(""); }}>Cancel</Button>
+            <Button
+              onClick={() => assignMutation.mutate()}
+              disabled={!assignWorkerId || assignMutation.isPending}
+              data-testid="button-confirm-assign-worker"
+            >
+              {assignMutation.isPending ? "Assigning…" : "Assign"}
             </Button>
           </DialogFooter>
         </DialogContent>
