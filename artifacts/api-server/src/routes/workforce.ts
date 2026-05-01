@@ -1110,8 +1110,11 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         FROM worker_site_pairs wsp
         JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
       ),
-      -- DISTINCT collapses multi-site workers: count each (worker, cert) once in the breakdown,
-      -- not once per site. This is more correct than the old per-site-pair accumulation.
+      -- INTENTIONAL BEHAVIOR: DISTINCT collapses multi-site workers so each (worker, cert)
+      -- pair is counted once in certificationsByStatus, regardless of how many sites require
+      -- that cert. This differs from the prior loop which accumulated one count per site
+      -- assignment, causing multi-site workers to inflate totals. The current behavior is
+      -- more correct for a "how many workers are missing cert X?" question.
       final_required AS (
         SELECT DISTINCT rc.worker_id, rc.certification_id
         FROM required_certs rc
