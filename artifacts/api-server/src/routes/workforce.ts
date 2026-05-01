@@ -1219,8 +1219,10 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
 // ── Workers compliance summary (for workers list page) ───────────────────────
 // GET /workforce/workers-compliance-summary
 // Returns all active workers with their overall compliance status.
-// Status is the WORST status across all active site assignments;
-// workers with no active assignments (or only NO_REQUIREMENTS sites) are UNASSIGNED.
+// Status is the WORST status across all active site assignments:
+//   NOT_COMPLIANT > EXPIRING_SOON > READY > NO_REQUIREMENTS > UNASSIGNED (no assignments)
+// Workers assigned only to sites with no cert requirements return NO_REQUIREMENTS.
+// Workers with zero active/pending assignments return UNASSIGNED.
 // Single CTE query — one DB round-trip regardless of worker count.
 router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, res): Promise<void> => {
   try {
