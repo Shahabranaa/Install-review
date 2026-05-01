@@ -48,7 +48,17 @@ const sessionStore = dbUrl
 app.use(
   session({
     store: sessionStore,
-    secret: process.env["SESSION_SECRET"] ?? "fallback-dev-secret-change-me",
+    secret: (() => {
+      const secret = process.env["SESSION_SECRET"];
+      if (!secret) {
+        if (process.env["NODE_ENV"] === "production") {
+          throw new Error("SESSION_SECRET environment variable is required in production");
+        }
+        logger.warn("SESSION_SECRET not set — using insecure fallback (development only)");
+        return "fallback-dev-secret-change-me";
+      }
+      return secret;
+    })(),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -68,6 +78,9 @@ app.use((req, _res, next) => {
 
 app.use("/api", router);
 
-seedAdminUser().catch((err) => logger.error({ err }, "Failed to seed admin user"));
+// Only seed default admin in development with no existing users
+if (process.env["NODE_ENV"] !== "production") {
+  seedAdminUser().catch((err) => logger.error({ err }, "Failed to seed admin user"));
+}
 
 export default app;
