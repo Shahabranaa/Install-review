@@ -998,12 +998,14 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
 router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void> => {
   try {
     // Both queries run in parallel — start both before awaiting either
+    // Dashboard uses status='active' only (matching original behavior; workers-compliance-summary
+    // uses ('active','pending') to match the computeCompliance predecessor behavior there).
     const countsRowsPromise = db.execute(sql`
       WITH worker_site_pairs AS (
         SELECT sa.worker_id, sa.site_id, wr.role_id
         FROM site_assignments sa
         JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
-        WHERE sa.status IN ('active', 'pending')
+        WHERE sa.status = 'active'
       ),
       required_certs AS (
         SELECT wsp.worker_id, wsp.site_id, scr.certification_id
@@ -1089,7 +1091,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         SELECT sa.worker_id, sa.site_id, wr.role_id
         FROM site_assignments sa
         JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
-        WHERE sa.status IN ('active', 'pending')
+        WHERE sa.status = 'active'
       ),
       required_certs AS (
         SELECT wsp.worker_id, wsp.site_id, scr.certification_id
@@ -1105,6 +1107,8 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         FROM worker_site_pairs wsp
         JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
       ),
+      -- DISTINCT collapses multi-site workers: count each (worker, cert) once in the breakdown,
+      -- not once per site. This is more correct than the old per-site-pair accumulation.
       final_required AS (
         SELECT DISTINCT rc.worker_id, rc.certification_id
         FROM required_certs rc
