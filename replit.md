@@ -2,19 +2,32 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. This project contains two frontend web apps + a shared API server + database.
+
+## Apps
+
+### Image Review (`artifacts/image-review`) — served at `/`
+Installation Image Review Platform. A web app for reviewing installation photos: project/site/location/phase management, image approval/rejection, issue flagging, field reports, and compliance tracking. Uses auth (session-based) with username/password login.
+
+### Workforce Compliance (`artifacts/workforce`) — served at `/workforce/`
+Workforce compliance management app: worker profiles, certifications, mob sites, site assignments, and compliance reporting.
+
+### API Server (`artifacts/api-server`) — served at `/api`
+Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-session), Google Sheets/Drive integration, Wasabi S3 integration, PDF generation, and comprehensive REST API.
+
+**Default admin credentials**: username=`admin`, password=`admin123`
 
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
 - **Node.js version**: 24
 - **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **Frontend**: React + Vite + Tailwind CSS v4 + shadcn/ui + wouter (routing)
+- **Backend**: Express 5 + pino logging
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **Build**: esbuild (API server), Vite (frontend)
 
 ## Key Commands
 
@@ -23,5 +36,27 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
+
+## Database Schema (Key Tables)
+
+- `users` — auth users with access levels (admin/reviewer/viewer)
+- `projects`, `sites`, `locations`, `towers`, `strings` — project hierarchy
+- `phases` — installation phases per location
+- `images`, `sheet_photos` — image records and Google Sheets photo sync
+- `issues` — image issue flags
+- `decisions` — review decisions (audit trail)
+- `documents` — generated PDF documents
+- `field_reports` — field report records
+- `workers`, `certifications`, `workforce_roles`, `mob_sites`, `site_assignments` — workforce data
+- `wasabi_mirror_tasks` — Wasabi S3 mirroring task queue
+- `app_settings` — global application settings
+
+## Environment Variables Required
+
+- `DATABASE_URL` or `NEON_DATABASE_URL` — PostgreSQL connection string
+- `SESSION_SECRET` — express-session secret
+- `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY` — Google Sheets/Drive API
+- `WASABI_ACCESS_KEY_ID`, `WASABI_SECRET_ACCESS_KEY`, `WASABI_BUCKET`, `WASABI_ENDPOINT` — Wasabi S3
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — (optional) Google OAuth login
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

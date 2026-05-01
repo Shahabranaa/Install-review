@@ -3,13 +3,32 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Installation Image Review App API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: projects
+    description: Project operations
+  - name: sites
+    description: Site operations
+  - name: locations
+    description: Location operations
+  - name: phases
+    description: Installation phase operations
+  - name: images
+    description: Image record operations
+  - name: issues
+    description: Issue flag operations
+  - name: decisions
+    description: Review decision operations
+  - name: documents
+    description: Document generation operations
+  - name: dashboard
+    description: Dashboard summary operations
+
 paths:
   /healthz:
     get:
@@ -24,6 +43,883 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectBody"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /sites:
+    get:
+      operationId: listSites
+      tags: [sites]
+      summary: List sites
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of sites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Site"
+    post:
+      operationId: createSite
+      tags: [sites]
+      summary: Create a site
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSiteBody"
+      responses:
+        "201":
+          description: Created site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+
+  /sites/{id}:
+    get:
+      operationId: getSite
+      tags: [sites]
+      summary: Get a site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSite
+      tags: [sites]
+      summary: Update a site
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSiteBody"
+      responses:
+        "200":
+          description: Updated site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /locations:
+    get:
+      operationId: listLocations
+      tags: [locations]
+      summary: List locations
+      parameters:
+        - name: siteId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+    post:
+      operationId: createLocation
+      tags: [locations]
+      summary: Create a location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLocationBody"
+      responses:
+        "201":
+          description: Created location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+
+  /locations/{id}:
+    get:
+      operationId: getLocation
+      tags: [locations]
+      summary: Get a location
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /phases:
+    get:
+      operationId: listPhases
+      tags: [phases]
+      summary: List phases
+      parameters:
+        - name: locationId
+          in: query
+          schema:
+            type: integer
+        - name: siteId
+          in: query
+          schema:
+            type: integer
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of phases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Phase"
+    post:
+      operationId: createPhase
+      tags: [phases]
+      summary: Create a phase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePhaseBody"
+      responses:
+        "201":
+          description: Created phase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Phase"
+
+  /phases/{id}:
+    get:
+      operationId: getPhase
+      tags: [phases]
+      summary: Get a phase with summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Phase with summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhaseDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePhase
+      tags: [phases]
+      summary: Update a phase
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePhaseBody"
+      responses:
+        "200":
+          description: Updated phase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Phase"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /phases/{id}/approve:
+    post:
+      operationId: approvePhase
+      tags: [phases]
+      summary: Approve a phase
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovePhaseBody"
+      responses:
+        "200":
+          description: Phase approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Phase"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /phases/{id}/reject:
+    post:
+      operationId: rejectPhase
+      tags: [phases]
+      summary: Reject a phase
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectPhaseBody"
+      responses:
+        "200":
+          description: Phase rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Phase"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /images:
+    get:
+      operationId: listImages
+      tags: [images]
+      summary: List images
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+        - name: siteId
+          in: query
+          schema:
+            type: integer
+        - name: locationId
+          in: query
+          schema:
+            type: integer
+        - name: phaseId
+          in: query
+          schema:
+            type: integer
+        - name: reviewStatus
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of images
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImageRecord"
+    post:
+      operationId: createImage
+      tags: [images]
+      summary: Create an image record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateImageBody"
+      responses:
+        "201":
+          description: Created image record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageRecord"
+
+  /images/{id}:
+    get:
+      operationId: getImage
+      tags: [images]
+      summary: Get an image with issues
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Image with issues
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateImage
+      tags: [images]
+      summary: Update an image record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateImageBody"
+      responses:
+        "200":
+          description: Updated image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /images/{id}/approve:
+    post:
+      operationId: approveImage
+      tags: [images]
+      summary: Approve an image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveImageBody"
+      responses:
+        "200":
+          description: Image approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /images/{id}/reject:
+    post:
+      operationId: rejectImage
+      tags: [images]
+      summary: Reject an image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectImageBody"
+      responses:
+        "200":
+          description: Image rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /issues:
+    get:
+      operationId: listIssues
+      tags: [issues]
+      summary: List issues
+      parameters:
+        - name: imageId
+          in: query
+          schema:
+            type: integer
+        - name: phaseId
+          in: query
+          schema:
+            type: integer
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: resolved
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IssueFlagRecord"
+    post:
+      operationId: createIssue
+      tags: [issues]
+      summary: Create an issue flag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueBody"
+      responses:
+        "201":
+          description: Created issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueFlagRecord"
+
+  /issues/{id}:
+    get:
+      operationId: getIssue
+      tags: [issues]
+      summary: Get an issue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueFlagRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateIssue
+      tags: [issues]
+      summary: Update an issue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssueBody"
+      responses:
+        "200":
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueFlagRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteIssue
+      tags: [issues]
+      summary: Delete an issue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /decisions:
+    get:
+      operationId: listDecisions
+      tags: [decisions]
+      summary: List review decisions (audit trail)
+      parameters:
+        - name: imageId
+          in: query
+          schema:
+            type: integer
+        - name: phaseId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of decisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewDecision"
+
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: List documents
+      parameters:
+        - name: phaseId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentRecord"
+
+  /documents/generate:
+    post:
+      operationId: generateDocument
+      tags: [documents]
+      summary: Generate a completion document for a phase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateDocumentBody"
+      responses:
+        "201":
+          description: Generated document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentRecord"
+        "400":
+          description: Phase not ready for document generation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documents/{id}:
+    get:
+      operationId: getDocument
+      tags: [documents]
+      summary: Get a document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /documents/{id}/download:
+    get:
+      operationId: downloadDocument
+      tags: [documents]
+      summary: Download a document as HTML
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Document HTML content
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get overall dashboard summary
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/phase-statuses:
+    get:
+      operationId: getPhaseStatuses
+      tags: [dashboard]
+      summary: Get phase status breakdown
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+        - name: siteId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Phase status counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhaseStatusBreakdown"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent review activity
+      responses:
+        "200":
+          description: Recent decisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewDecision"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +930,608 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - createdAt
+        - updatedAt
+
+    CreateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+      required:
+        - name
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+
+    Site:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - projectId
+        - name
+        - createdAt
+        - updatedAt
+
+    CreateSiteBody:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+      required:
+        - projectId
+        - name
+
+    UpdateSiteBody:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+
+    Location:
+      type: object
+      properties:
+        id:
+          type: integer
+        siteId:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - siteId
+        - name
+        - type
+        - createdAt
+        - updatedAt
+
+    CreateLocationBody:
+      type: object
+      properties:
+        siteId:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required:
+        - siteId
+        - name
+        - type
+
+    Phase:
+      type: object
+      properties:
+        id:
+          type: integer
+        locationId:
+          type: integer
+        phaseType:
+          type: string
+        status:
+          type: string
+        requiredImageCount:
+          type: integer
+        approvedBy:
+          type: ["string", "null"]
+        approvedAt:
+          type: ["string", "null"]
+        rejectedBy:
+          type: ["string", "null"]
+        rejectedAt:
+          type: ["string", "null"]
+        rejectionReason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - locationId
+        - phaseType
+        - status
+        - requiredImageCount
+        - createdAt
+        - updatedAt
+
+    PhaseDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        locationId:
+          type: integer
+        phaseType:
+          type: string
+        status:
+          type: string
+        requiredImageCount:
+          type: integer
+        approvedBy:
+          type: ["string", "null"]
+        approvedAt:
+          type: ["string", "null"]
+        rejectedBy:
+          type: ["string", "null"]
+        rejectedAt:
+          type: ["string", "null"]
+        rejectionReason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        totalImages:
+          type: integer
+        approvedImages:
+          type: integer
+        rejectedImages:
+          type: integer
+        pendingImages:
+          type: integer
+        criticalIssues:
+          type: integer
+        warningIssues:
+          type: integer
+        infoIssues:
+          type: integer
+        location:
+          $ref: "#/components/schemas/Location"
+      required:
+        - id
+        - locationId
+        - phaseType
+        - status
+        - requiredImageCount
+        - createdAt
+        - updatedAt
+        - totalImages
+        - approvedImages
+        - rejectedImages
+        - pendingImages
+        - criticalIssues
+        - warningIssues
+        - infoIssues
+        - location
+
+    CreatePhaseBody:
+      type: object
+      properties:
+        locationId:
+          type: integer
+        phaseType:
+          type: string
+        requiredImageCount:
+          type: integer
+      required:
+        - locationId
+        - phaseType
+
+    UpdatePhaseBody:
+      type: object
+      properties:
+        phaseType:
+          type: string
+        status:
+          type: string
+        requiredImageCount:
+          type: integer
+
+    ApprovePhaseBody:
+      type: object
+      properties:
+        approvedBy:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required:
+        - approvedBy
+
+    RejectPhaseBody:
+      type: object
+      properties:
+        rejectedBy:
+          type: string
+        reason:
+          type: string
+      required:
+        - rejectedBy
+        - reason
+
+    ImageRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        driveFileId:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        projectId:
+          type: ["integer", "null"]
+        siteId:
+          type: ["integer", "null"]
+        locationId:
+          type: ["integer", "null"]
+        phaseId:
+          type: integer
+        uploadedAt:
+          type: string
+        uploadedBy:
+          type: ["string", "null"]
+        filename:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        reviewStatus:
+          type: string
+        reviewedBy:
+          type: ["string", "null"]
+        reviewedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - phaseId
+        - uploadedAt
+        - reviewStatus
+        - createdAt
+        - updatedAt
+
+    ImageDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        driveFileId:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        projectId:
+          type: ["integer", "null"]
+        siteId:
+          type: ["integer", "null"]
+        locationId:
+          type: ["integer", "null"]
+        phaseId:
+          type: integer
+        uploadedAt:
+          type: string
+        uploadedBy:
+          type: ["string", "null"]
+        filename:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        reviewStatus:
+          type: string
+        reviewedBy:
+          type: ["string", "null"]
+        reviewedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueFlagRecord"
+        decisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewDecision"
+      required:
+        - id
+        - phaseId
+        - uploadedAt
+        - reviewStatus
+        - createdAt
+        - updatedAt
+        - issues
+        - decisions
+
+    CreateImageBody:
+      type: object
+      properties:
+        phaseId:
+          type: integer
+        projectId:
+          type: ["integer", "null"]
+        siteId:
+          type: ["integer", "null"]
+        locationId:
+          type: ["integer", "null"]
+        driveFileId:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        uploadedBy:
+          type: ["string", "null"]
+        filename:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - phaseId
+
+    UpdateImageBody:
+      type: object
+      properties:
+        notes:
+          type: ["string", "null"]
+        filename:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+
+    ApproveImageBody:
+      type: object
+      properties:
+        reviewedBy:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required:
+        - reviewedBy
+
+    RejectImageBody:
+      type: object
+      properties:
+        reviewedBy:
+          type: string
+        reason:
+          type: string
+      required:
+        - reviewedBy
+        - reason
+
+    IssueFlagRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        imageId:
+          type: integer
+        type:
+          type: string
+        severity:
+          type: string
+        description:
+          type: string
+        resolved:
+          type: boolean
+        resolvedBy:
+          type: ["string", "null"]
+        resolvedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - imageId
+        - type
+        - severity
+        - description
+        - resolved
+        - createdAt
+        - updatedAt
+
+    CreateIssueBody:
+      type: object
+      properties:
+        imageId:
+          type: integer
+        type:
+          type: string
+        severity:
+          type: string
+        description:
+          type: string
+      required:
+        - imageId
+        - type
+        - severity
+        - description
+
+    UpdateIssueBody:
+      type: object
+      properties:
+        type:
+          type: string
+        severity:
+          type: string
+        description:
+          type: string
+        resolved:
+          type: boolean
+        resolvedBy:
+          type: ["string", "null"]
+
+    ReviewDecision:
+      type: object
+      properties:
+        id:
+          type: integer
+        imageId:
+          type: ["integer", "null"]
+        phaseId:
+          type: ["integer", "null"]
+        approvedBy:
+          type: string
+        decision:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - approvedBy
+        - decision
+        - createdAt
+
+    DocumentRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        phaseId:
+          type: integer
+        generatedAt:
+          type: string
+        generatedBy:
+          type: string
+        title:
+          type: string
+        content:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - phaseId
+        - generatedAt
+        - generatedBy
+        - title
+        - createdAt
+
+    GenerateDocumentBody:
+      type: object
+      properties:
+        phaseId:
+          type: integer
+        generatedBy:
+          type: string
+        title:
+          type: ["string", "null"]
+      required:
+        - phaseId
+        - generatedBy
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalProjects:
+          type: integer
+        totalSites:
+          type: integer
+        totalPhases:
+          type: integer
+        totalImages:
+          type: integer
+        pendingImages:
+          type: integer
+        approvedImages:
+          type: integer
+        rejectedImages:
+          type: integer
+        completedPhases:
+          type: integer
+        incompletePhases:
+          type: integer
+        needsReviewPhases:
+          type: integer
+        criticalIssues:
+          type: integer
+        openIssues:
+          type: integer
+        documentsGenerated:
+          type: integer
+      required:
+        - totalProjects
+        - totalSites
+        - totalPhases
+        - totalImages
+        - pendingImages
+        - approvedImages
+        - rejectedImages
+        - completedPhases
+        - incompletePhases
+        - needsReviewPhases
+        - criticalIssues
+        - openIssues
+        - documentsGenerated
+
+    PhaseStatusBreakdown:
+      type: object
+      properties:
+        complete:
+          type: integer
+        incomplete:
+          type: integer
+        needsReview:
+          type: integer
+        pending:
+          type: integer
+      required:
+        - complete
+        - incomplete
+        - needsReview
+        - pending
