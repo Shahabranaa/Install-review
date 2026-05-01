@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiFetch, apiPost } from "@/lib/api";
@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Users, Plus, Search, ChevronRight,
   CheckCircle2, AlertTriangle, Clock, HelpCircle,
+  ChevronUp, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -62,8 +63,69 @@ const STATUS_FILTERS: { label: string; value: ComplianceStatus | "ALL" }[] = [
   { label: "Unassigned", value: "UNASSIGNED" },
 ];
 
+type SortCol = "uniqueId" | "name" | "roleName" | "dob" | "preferredAirport" | "complianceStatus";
+type SortDir = "asc" | "desc";
+
+const COMPLIANCE_ORDER: Record<ComplianceStatus, number> = {
+  NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3, UNASSIGNED: 4,
+};
+
+/** Extract trailing number from "S_N" for natural sort */
+function uidNum(uid: string | null): number {
+  if (!uid) return Infinity;
+  const m = uid.match(/\d+$/);
+  return m ? parseInt(m[0]) : Infinity;
+}
+
+function sortWorkers<T extends { uniqueId: string | null; name: string; roleName: string | null; dob: string | null; preferredAirport: string | null; complianceStatus: ComplianceStatus }>(
+  workers: T[], col: SortCol, dir: SortDir,
+): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...workers].sort((a, b) => {
+    let cmp = 0;
+    switch (col) {
+      case "uniqueId":  cmp = uidNum(a.uniqueId) - uidNum(b.uniqueId); break;
+      case "name":      cmp = a.name.localeCompare(b.name); break;
+      case "roleName":  cmp = (a.roleName ?? "").localeCompare(b.roleName ?? ""); break;
+      case "dob":       cmp = (a.dob ?? "").localeCompare(b.dob ?? ""); break;
+      case "preferredAirport": cmp = (a.preferredAirport ?? "").localeCompare(b.preferredAirport ?? ""); break;
+      case "complianceStatus": cmp = COMPLIANCE_ORDER[a.complianceStatus] - COMPLIANCE_ORDER[b.complianceStatus]; break;
+    }
+    return cmp !== 0 ? cmp * sign : uidNum(a.uniqueId) - uidNum(b.uniqueId);
+  });
+}
+
 const cell = "px-3 py-2.5 text-sm whitespace-nowrap";
 const hCell = "px-3 py-2 text-xs font-semibold text-muted-foreground whitespace-nowrap text-left";
+
+function SortTh({ label, col, active, onSort, className }: {
+  label: string;
+  col: SortCol;
+  active: { col: SortCol; dir: SortDir };
+  onSort: (col: SortCol) => void;
+  className?: string;
+}) {
+  const isActive = active.col === col;
+  const Icon = isActive ? (active.dir === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  return (
+    <th
+      className={cn(
+        hCell,
+        "cursor-pointer select-none hover:text-foreground group",
+        className,
+      )}
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <Icon className={cn(
+          "h-3 w-3 transition-colors",
+          isActive ? "text-primary" : "text-muted-foreground/40 group-hover:text-muted-foreground",
+        )} />
+      </span>
+    </th>
+  );
+}
 
 export default function WorkersPage() {
   const { isAdmin } = useAuth();
@@ -72,6 +134,7 @@ export default function WorkersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "" });
 
@@ -95,25 +158,37 @@ export default function WorkersPage() {
 
   const compMap = new Map((complianceSummary ?? []).map(c => [c.workerId, c.status]));
 
-  const displayWorkers = (rawWorkers ?? []).map(w => ({
-    ...w,
-    complianceStatus: (compMap.get(w.id) ?? "UNASSIGNED") as ComplianceStatus,
-  })).filter(w => {
-    if (search) {
-      const q = search.toLowerCase();
-      const matched =
-        w.name.toLowerCase().includes(q) ||
-        (w.email ?? "").toLowerCase().includes(q) ||
-        (w.windaId ?? "").toLowerCase().includes(q) ||
-        (w.uniqueId ?? "").toLowerCase().includes(q) ||
-        (w.phone ?? "").toLowerCase().includes(q) ||
-        (w.passportNo ?? "").toLowerCase().includes(q);
-      if (!matched) return false;
-    }
-    if (roleFilter && String(w.roleId) !== roleFilter) return false;
-    if (statusFilter !== "ALL" && w.complianceStatus !== statusFilter) return false;
-    return true;
-  });
+  function toggleSort(col: SortCol) {
+    setSort(prev => prev.col === col
+      ? { col, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { col, dir: "asc" },
+    );
+  }
+
+  const displayWorkers = useMemo(() => {
+    const mapped = (rawWorkers ?? []).map(w => ({
+      ...w,
+      complianceStatus: (compMap.get(w.id) ?? "UNASSIGNED") as ComplianceStatus,
+    }));
+    const filtered = mapped.filter(w => {
+      if (search) {
+        const q = search.toLowerCase();
+        const matched =
+          w.name.toLowerCase().includes(q) ||
+          (w.email ?? "").toLowerCase().includes(q) ||
+          (w.windaId ?? "").toLowerCase().includes(q) ||
+          (w.uniqueId ?? "").toLowerCase().includes(q) ||
+          (w.phone ?? "").toLowerCase().includes(q) ||
+          (w.passportNo ?? "").toLowerCase().includes(q);
+        if (!matched) return false;
+      }
+      if (roleFilter && String(w.roleId) !== roleFilter) return false;
+      if (statusFilter !== "ALL" && w.complianceStatus !== statusFilter) return false;
+      return true;
+    });
+    return sortWorkers(filtered, sort.col, sort.dir);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawWorkers, complianceSummary, search, roleFilter, statusFilter, sort]);
 
   const createMutation = useMutation({
     mutationFn: () => apiPost("/api/workforce/workers", {
@@ -219,17 +294,17 @@ export default function WorkersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/60 border-b">
-                <th className={hCell}>ID</th>
-                <th className={hCell}>Name</th>
-                <th className={hCell}>Role</th>
+                <SortTh label="ID"          col="uniqueId"         active={sort} onSort={toggleSort} />
+                <SortTh label="Name"        col="name"             active={sort} onSort={toggleSort} className="min-w-[160px]" />
+                <SortTh label="Role"        col="roleName"         active={sort} onSort={toggleSort} className="min-w-[160px]" />
                 <th className={hCell}>Email</th>
                 <th className={hCell}>Tel No.</th>
                 <th className={hCell}>WINDA ID</th>
-                <th className={hCell}>DOB</th>
+                <SortTh label="DOB"         col="dob"              active={sort} onSort={toggleSort} />
                 <th className={hCell}>Passport No.</th>
-                <th className={hCell}>Airport</th>
+                <SortTh label="Airport"     col="preferredAirport" active={sort} onSort={toggleSort} />
                 <th className={hCell}>Qualifications</th>
-                <th className={hCell}>Compliance</th>
+                <SortTh label="Compliance"  col="complianceStatus" active={sort} onSort={toggleSort} />
                 <th className="w-8" />
               </tr>
             </thead>
