@@ -20,21 +20,22 @@ interface CertIssueWorker {
 }
 
 function CertWorkerPopover({
-  certName, status, count, siteId, className,
+  certName, status, count, siteId, expiryDays, className,
 }: {
   certName: string;
   status: "expired" | "expiring" | "missing";
   count: number;
   siteId: number | null;
+  expiryDays: number;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
 
-  const params = new URLSearchParams({ certName, status });
+  const params = new URLSearchParams({ certName, status, expiryDays: String(expiryDays) });
   if (siteId) params.set("siteId", String(siteId));
 
   const { data, isLoading } = useQuery<CertIssueWorker[]>({
-    queryKey: ["cert-issue-workers", certName, status, siteId],
+    queryKey: ["cert-issue-workers", certName, status, siteId, expiryDays],
     queryFn: () => apiFetch<CertIssueWorker[]>(`/api/workforce/cert-issue-workers?${params}`),
     enabled: open,
     staleTime: 60_000,
@@ -152,12 +153,15 @@ function StatCard({
 
 export default function DashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [expiryDays, setExpiryDays] = useState<30 | 60>(30);
 
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ["workforce-dashboard", selectedSiteId],
-    queryFn: () => apiFetch<DashboardData>(
-      selectedSiteId ? `/api/workforce/dashboard?siteId=${selectedSiteId}` : "/api/workforce/dashboard"
-    ),
+    queryKey: ["workforce-dashboard", selectedSiteId, expiryDays],
+    queryFn: () => {
+      const params = new URLSearchParams({ expiryDays: String(expiryDays) });
+      if (selectedSiteId) params.set("siteId", String(selectedSiteId));
+      return apiFetch<DashboardData>(`/api/workforce/dashboard?${params}`);
+    },
     refetchInterval: 60_000,
   });
 
@@ -317,10 +321,26 @@ export default function DashboardPage() {
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-500" />
-            <h2 className="font-semibold text-sm">Expiring in Next 30 Days</h2>
-            {selectedSite && (
-              <span className="ml-auto text-xs text-muted-foreground">{selectedSite.name}</span>
-            )}
+            <h2 className="font-semibold text-sm">Expiring in Next {expiryDays} Days</h2>
+            <div className="ml-auto flex items-center gap-1">
+              {selectedSite && (
+                <span className="text-xs text-muted-foreground mr-2">{selectedSite.name}</span>
+              )}
+              {([30, 60] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setExpiryDays(d)}
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors",
+                    expiryDays === d
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : "text-muted-foreground border-border hover:border-amber-400 hover:text-amber-600",
+                  )}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
           </div>
           {isLoading ? (
             <div className="p-4 space-y-2">
@@ -328,7 +348,7 @@ export default function DashboardPage() {
             </div>
           ) : !expiringItems.length ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No certifications expiring in the next 30 days.
+              No certifications expiring in the next {expiryDays} days.
             </div>
           ) : (
             <div className="divide-y">
@@ -434,13 +454,13 @@ export default function DashboardPage() {
                   <p className="flex-1 text-sm font-medium truncate">{cert.name}</p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {cert.missing > 0 && (
-                      <CertWorkerPopover certName={cert.name} status="missing" count={cert.missing} siteId={selectedSiteId} />
+                      <CertWorkerPopover certName={cert.name} status="missing" count={cert.missing} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                     {cert.expired > 0 && (
-                      <CertWorkerPopover certName={cert.name} status="expired" count={cert.expired} siteId={selectedSiteId} />
+                      <CertWorkerPopover certName={cert.name} status="expired" count={cert.expired} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                     {cert.expiring > 0 && (
-                      <CertWorkerPopover certName={cert.name} status="expiring" count={cert.expiring} siteId={selectedSiteId} />
+                      <CertWorkerPopover certName={cert.name} status="expiring" count={cert.expiring} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                   </div>
                 </div>

@@ -1001,6 +1001,10 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
     const siteId = rawSiteId ? parseInt(rawSiteId as string) : null;
     const siteFilter = siteId ? sql` AND sa.site_id = ${siteId}` : sql``;
 
+    const rawDays = parseInt((req.query.expiryDays as string) ?? "30");
+    const expiryDays = [30, 60, 90].includes(rawDays) ? rawDays : 30;
+    const expiryInterval = sql`INTERVAL '1 day' * ${expiryDays}`;
+
     // Both queries run in parallel — start both before awaiting either
     // Dashboard uses status='active' only (matching original behavior; workers-compliance-summary
     // uses ('active','pending') to match the computeCompliance predecessor behavior there).
@@ -1045,7 +1049,7 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
             WHEN NOT wc.verified                                                  THEN 'bad'
             WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE    THEN 'bad'
             WHEN wc.expiry_date IS NOT NULL
-              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')          THEN 'expiring'
+              AND wc.expiry_date <= (CURRENT_DATE + ${expiryInterval})          THEN 'expiring'
             ELSE 'good'
           END AS cert_status
         FROM final_required fr
@@ -1139,7 +1143,7 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
             WHEN wc.id IS NULL                                            THEN 'missing'
             WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE  THEN 'expired'
             WHEN wc.expiry_date IS NOT NULL
-              AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')  THEN 'expiring'
+              AND wc.expiry_date <= (CURRENT_DATE + ${expiryInterval})  THEN 'expiring'
             WHEN NOT wc.verified                                          THEN 'not_verified'
             ELSE 'valid'
           END                                                             AS cert_status,
@@ -1239,13 +1243,16 @@ router.get("/workforce/cert-issue-workers", requireAuth, async (req, res): Promi
     if (!certName || !status) { res.status(400).json({ error: "certName and status are required" }); return; }
 
     const siteFilter = siteId ? sql` AND sa.site_id = ${siteId}` : sql``;
+    const rawDays2 = parseInt((req.query.expiryDays as string) ?? "30");
+    const expiryDays2 = [30, 60, 90].includes(rawDays2) ? rawDays2 : 30;
+    const expiryInterval2 = sql`INTERVAL '1 day' * ${expiryDays2}`;
 
     // Map incoming status to the CASE logic used in cert_eval_detail
     let statusFilter: ReturnType<typeof sql>;
     if (status === "expired")      statusFilter = sql`wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE`;
-    else if (status === "expiring") statusFilter = sql`wc.expiry_date IS NOT NULL AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days') AND wc.expiry_date >= CURRENT_DATE`;
+    else if (status === "expiring") statusFilter = sql`wc.expiry_date IS NOT NULL AND wc.expiry_date <= (CURRENT_DATE + ${expiryInterval2}) AND wc.expiry_date >= CURRENT_DATE`;
     else if (status === "missing")  statusFilter = sql`wc.id IS NULL`;
-    else if (status === "not_verified") statusFilter = sql`wc.id IS NOT NULL AND NOT wc.verified AND (wc.expiry_date IS NULL OR wc.expiry_date > (CURRENT_DATE + INTERVAL '30 days'))`;
+    else if (status === "not_verified") statusFilter = sql`wc.id IS NOT NULL AND NOT wc.verified AND (wc.expiry_date IS NULL OR wc.expiry_date > (CURRENT_DATE + ${expiryInterval2}))`;
     else { res.status(400).json({ error: "Invalid status" }); return; }
 
     const rows = await db.execute(sql`
