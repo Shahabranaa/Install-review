@@ -92,33 +92,7 @@ export default function DashboardPage() {
 
   const selectedSite = sites?.find(s => s.id === selectedSiteId) ?? null;
 
-  const { data: siteCompliance } = useQuery<{
-    workerId: number;
-    workerName: string;
-    items: { certId: number; name: string; status: string; expiryDate: string | null; daysUntilExpiry: number | null }[];
-  }[]>({
-    queryKey: ["site-compliance", selectedSiteId],
-    queryFn: () =>
-      apiFetch(`/api/workforce/compliance/site/${selectedSiteId}`),
-    enabled: selectedSiteId !== null,
-    staleTime: 60_000,
-  });
-
-  const siteExpiringItems = selectedSiteId && siteCompliance
-    ? siteCompliance.flatMap((wc) =>
-        wc.items
-          .filter((i) => i.status === "EXPIRING_SOON" && i.expiryDate !== null)
-          .map((i) => ({
-            workerId: wc.workerId,
-            workerName: wc.workerName,
-            certName: i.name,
-            expiryDate: i.expiryDate!,
-            daysUntilExpiry: i.daysUntilExpiry ?? 0,
-          })),
-      ).sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
-    : null;
-
-  const expiringItems = siteExpiringItems ?? (data?.expiringInNext30Days ?? []);
+  const expiringItems = data?.expiringInNext30Days ?? [];
 
   const displayCounts = selectedSite
     ? {
@@ -272,7 +246,7 @@ export default function DashboardPage() {
               <span className="ml-auto text-xs text-muted-foreground">{selectedSite.name}</span>
             )}
           </div>
-          {isLoading || (selectedSiteId !== null && !siteCompliance) ? (
+          {isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
             </div>
