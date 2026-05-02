@@ -995,8 +995,12 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
 // Active workers with NO assignments (or only NO_REQUIREMENTS sites) are surfaced
 // via unassignedCount instead.
 // Two CTE queries, all CTEs fully inlined — no SQL fragment composition.
-router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void> => {
+router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> => {
   try {
+    const rawSiteId = req.query.siteId;
+    const siteId = rawSiteId ? parseInt(rawSiteId as string) : null;
+    const siteFilter = siteId ? sql` AND sa.site_id = ${siteId}` : sql``;
+
     // Both queries run in parallel — start both before awaiting either
     // Dashboard uses status='active' only (matching original behavior; workers-compliance-summary
     // uses ('active','pending') to match the computeCompliance predecessor behavior there).
@@ -1005,7 +1009,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         SELECT sa.worker_id, sa.site_id, wr.role_id
         FROM site_assignments sa
         JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
-        WHERE sa.status = 'active'
+        WHERE sa.status = 'active'${siteFilter}
       ),
       required_certs AS (
         SELECT wsp.worker_id, wsp.site_id, scr.certification_id
@@ -1094,7 +1098,7 @@ router.get("/workforce/dashboard", requireAuth, async (_req, res): Promise<void>
         SELECT sa.worker_id, sa.site_id, wr.role_id
         FROM site_assignments sa
         JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
-        WHERE sa.status = 'active'
+        WHERE sa.status = 'active'${siteFilter}
       ),
       required_certs AS (
         SELECT wsp.worker_id, wsp.site_id, scr.certification_id

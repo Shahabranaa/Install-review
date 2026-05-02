@@ -78,8 +78,10 @@ export default function DashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ["workforce-dashboard"],
-    queryFn: () => apiFetch<DashboardData>("/api/workforce/dashboard"),
+    queryKey: ["workforce-dashboard", selectedSiteId],
+    queryFn: () => apiFetch<DashboardData>(
+      selectedSiteId ? `/api/workforce/dashboard?siteId=${selectedSiteId}` : "/api/workforce/dashboard"
+    ),
     refetchInterval: 60_000,
   });
 
@@ -366,8 +368,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Certification issues (global only when no site selected) */}
-      {!selectedSite && data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
+      {/* Certification issues */}
+      {data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Award className="h-4 w-4 text-primary" />
