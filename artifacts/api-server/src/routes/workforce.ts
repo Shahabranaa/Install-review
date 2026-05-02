@@ -1226,6 +1226,83 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
   }
 });
 
+// ── Cert issue workers — who has a specific cert in a given status ─────────────
+// GET /workforce/cert-issue-workers?certName=Medical&status=expired&siteId=2
+// status: "expired" | "expiring" | "missing" | "not_verified"
+router.get("/workforce/cert-issue-workers", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const certName = req.query.certName as string | undefined;
+    const status   = req.query.status   as string | undefined;
+    const rawSiteId = req.query.siteId;
+    const siteId = rawSiteId ? parseInt(rawSiteId as string) : null;
+
+    if (!certName || !status) { res.status(400).json({ error: "certName and status are required" }); return; }
+
+    const siteFilter = siteId ? sql` AND sa.site_id = ${siteId}` : sql``;
+
+    // Map incoming status to the CASE logic used in cert_eval_detail
+    let statusFilter: ReturnType<typeof sql>;
+    if (status === "expired")      statusFilter = sql`wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE`;
+    else if (status === "expiring") statusFilter = sql`wc.expiry_date IS NOT NULL AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days') AND wc.expiry_date >= CURRENT_DATE`;
+    else if (status === "missing")  statusFilter = sql`wc.id IS NULL`;
+    else if (status === "not_verified") statusFilter = sql`wc.id IS NOT NULL AND NOT wc.verified AND (wc.expiry_date IS NULL OR wc.expiry_date > (CURRENT_DATE + INTERVAL '30 days'))`;
+    else { res.status(400).json({ error: "Invalid status" }); return; }
+
+    const rows = await db.execute(sql`
+      WITH worker_site_pairs AS (
+        SELECT sa.worker_id, sa.site_id, wr.role_id
+        FROM site_assignments sa
+        JOIN workers wr ON wr.id = sa.worker_id AND wr.active = true
+        WHERE sa.status = 'active'${siteFilter}
+      ),
+      required_certs AS (
+        SELECT wsp.worker_id, wsp.site_id, scr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN site_cert_requirements scr ON scr.site_id = wsp.site_id AND scr.required = true
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, rcr.certification_id
+        FROM worker_site_pairs wsp
+        JOIN role_cert_requirements rcr ON rcr.role_id = wsp.role_id AND rcr.required = true
+        WHERE wsp.role_id IS NOT NULL
+        UNION
+        SELECT wsp.worker_id, wsp.site_id, wco.certification_id
+        FROM worker_site_pairs wsp
+        JOIN worker_cert_overrides wco ON wco.worker_id = wsp.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT DISTINCT rc.worker_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      )
+      SELECT DISTINCT
+        w.id         AS worker_id,
+        w.name       AS worker_name,
+        wc.expiry_date
+      FROM final_required fr
+      JOIN workers w ON w.id = fr.worker_id
+      JOIN certifications c ON c.id = fr.certification_id AND c.name = ${certName}
+      LEFT JOIN worker_certifications wc
+        ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+      WHERE ${statusFilter}
+      ORDER BY w.name
+    `);
+
+    res.json((rows.rows as Record<string, unknown>[]).map(r => ({
+      workerId: Number(r.worker_id),
+      workerName: String(r.worker_name),
+      expiryDate: r.expiry_date ? String(r.expiry_date) : null,
+    })));
+  } catch (err) {
+    logger.error({ err }, "cert-issue-workers error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // ── Workers compliance summary (for workers list page) ───────────────────────
 // GET /workforce/workers-compliance-summary
 // Returns all active workers with their overall compliance status.

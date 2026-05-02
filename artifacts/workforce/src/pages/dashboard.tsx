@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe,
 } from "lucide-react";
@@ -11,6 +12,81 @@ import { cn } from "@/lib/utils";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
+
+interface CertIssueWorker {
+  workerId: number;
+  workerName: string;
+  expiryDate: string | null;
+}
+
+function CertWorkerPopover({
+  certName, status, count, siteId, className,
+}: {
+  certName: string;
+  status: "expired" | "expiring" | "missing";
+  count: number;
+  siteId: number | null;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const params = new URLSearchParams({ certName, status });
+  if (siteId) params.set("siteId", String(siteId));
+
+  const { data, isLoading } = useQuery<CertIssueWorker[]>({
+    queryKey: ["cert-issue-workers", certName, status, siteId],
+    queryFn: () => apiFetch<CertIssueWorker[]>(`/api/workforce/cert-issue-workers?${params}`),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className={cn("cursor-pointer", className)}>
+          <Badge variant="outline" className={cn(
+            "text-[10px] hover:opacity-80 transition-opacity",
+            status === "expiring"
+              ? "border-amber-400 text-amber-600"
+              : "border-red-400 text-red-600",
+          )}>
+            {count} {status}
+          </Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="end">
+        <div className="px-3 py-2 border-b">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{certName}</p>
+          <p className="text-xs text-muted-foreground capitalize">{status}</p>
+        </div>
+        <div className="max-h-56 overflow-y-auto divide-y">
+          {isLoading ? (
+            <div className="p-3 space-y-1.5">
+              {Array.from({ length: Math.min(count, 4) }).map((_, i) => (
+                <Skeleton key={i} className="h-4 w-full" />
+              ))}
+            </div>
+          ) : !data?.length ? (
+            <p className="text-xs text-muted-foreground p-3">No workers found.</p>
+          ) : (
+            data.map((w) => (
+              <div key={w.workerId} className="flex items-center justify-between px-3 py-1.5 hover:bg-muted/40">
+                <Link href={`/workers/${w.workerId}`}>
+                  <a className="text-xs font-medium hover:underline truncate max-w-[140px] block">{w.workerName}</a>
+                </Link>
+                {w.expiryDate && (
+                  <span className="text-[10px] text-muted-foreground flex-shrink-0 ml-2">
+                    {new Date(w.expiryDate).toLocaleDateString("en-GB")}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface DashboardData {
   totalWorkers: number;
@@ -358,19 +434,13 @@ export default function DashboardPage() {
                   <p className="flex-1 text-sm font-medium truncate">{cert.name}</p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {cert.missing > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                        {cert.missing} missing
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="missing" count={cert.missing} siteId={selectedSiteId} />
                     )}
                     {cert.expired > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                        {cert.expired} expired
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="expired" count={cert.expired} siteId={selectedSiteId} />
                     )}
                     {cert.expiring > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600">
-                        {cert.expiring} expiring
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="expiring" count={cert.expiring} siteId={selectedSiteId} />
                     )}
                   </div>
                 </div>
