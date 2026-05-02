@@ -1137,10 +1137,10 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
           wc.expiry_date,
           CASE
             WHEN wc.id IS NULL                                            THEN 'missing'
-            WHEN NOT wc.verified                                          THEN 'not_verified'
             WHEN wc.expiry_date IS NOT NULL AND wc.expiry_date < CURRENT_DATE  THEN 'expired'
             WHEN wc.expiry_date IS NOT NULL
               AND wc.expiry_date <= (CURRENT_DATE + INTERVAL '30 days')  THEN 'expiring'
+            WHEN NOT wc.verified                                          THEN 'not_verified'
             ELSE 'valid'
           END                                                             AS cert_status,
           CASE
