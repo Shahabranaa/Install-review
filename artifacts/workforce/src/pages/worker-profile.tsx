@@ -127,6 +127,7 @@ export default function WorkerProfilePage() {
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
+  const [verifyingCertIds, setVerifyingCertIds] = useState<Set<number>>(new Set());
   const cardFileInputRef = useRef<HTMLInputElement>(null);
   const cardUploadTargetRef = useRef<WorkerCert | null>(null);
 
@@ -259,6 +260,8 @@ export default function WorkerProfilePage() {
   const toggleVerifyMutation = useMutation({
     mutationFn: ({ certId, newVerified }: { certId: number; newVerified: boolean }) =>
       apiPatch(`/api/workforce/workers/${workerId}/certifications/${certId}`, { verified: newVerified }),
+    onMutate: ({ certId }) => setVerifyingCertIds((prev) => new Set(prev).add(certId)),
+    onSettled: (_, __, { certId }) => setVerifyingCertIds((prev) => { const next = new Set(prev); next.delete(certId); return next; }),
     onSuccess: (_, { newVerified }) => {
       toast({ title: newVerified ? "Certification verified" : "Verification removed" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
@@ -533,11 +536,11 @@ export default function WorkerProfilePage() {
                               : "text-muted-foreground hover:text-emerald-500",
                           )}
                           title={wc.verified ? "Mark as unverified" : "Mark as verified"}
-                          disabled={toggleVerifyMutation.isPending && toggleVerifyMutation.variables?.certId === wc.certificationId}
+                          disabled={verifyingCertIds.has(wc.certificationId)}
                           onClick={() => toggleVerifyMutation.mutate({ certId: wc.certificationId, newVerified: !wc.verified })}
                           data-testid={`button-verify-cert-${wc.certificationId}`}
                         >
-                          {toggleVerifyMutation.isPending && toggleVerifyMutation.variables?.certId === wc.certificationId
+                          {verifyingCertIds.has(wc.certificationId)
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             : <CheckCircle2 className="h-3.5 w-3.5" />}
                         </Button>
