@@ -256,6 +256,17 @@ export default function WorkerProfilePage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
+  const toggleVerifyMutation = useMutation({
+    mutationFn: ({ certId, newVerified }: { certId: number; newVerified: boolean }) =>
+      apiPatch(`/api/workforce/workers/${workerId}/certifications/${certId}`, { verified: newVerified }),
+    onSuccess: (_, { newVerified }) => {
+      toast({ title: newVerified ? "Certification verified" : "Verification removed" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
   function openEditCert(wc: WorkerCert) {
     setCertEditForm({
       dateAchieved: wc.dateAchieved ?? "",
@@ -512,6 +523,24 @@ export default function WorkerProfilePage() {
                     )}
                     {isAdmin && (
                       <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={cn(
+                            "h-7 w-7 transition-colors",
+                            wc.verified
+                              ? "text-emerald-500 hover:text-emerald-600"
+                              : "text-muted-foreground hover:text-emerald-500",
+                          )}
+                          title={wc.verified ? "Mark as unverified" : "Mark as verified"}
+                          disabled={toggleVerifyMutation.isPending && toggleVerifyMutation.variables?.certId === wc.certificationId}
+                          onClick={() => toggleVerifyMutation.mutate({ certId: wc.certificationId, newVerified: !wc.verified })}
+                          data-testid={`button-verify-cert-${wc.certificationId}`}
+                        >
+                          {toggleVerifyMutation.isPending && toggleVerifyMutation.variables?.certId === wc.certificationId
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        </Button>
                         <Button
                           size="icon"
                           variant="ghost"
