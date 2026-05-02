@@ -330,7 +330,7 @@ export default function WorkersPage() {
                 return (
                   <tr key={w.id} className="hover:bg-muted/20 transition-colors">
                     <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                      {w.uniqueId ?? "—"}
+                      {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
                     </td>
                     <td className={cn(cell, "min-w-[160px]")}>
                       <Link href={`/workers/${w.id}`}>
