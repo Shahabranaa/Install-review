@@ -272,22 +272,22 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Compliance donut chart */}
-        <div className="border rounded-xl bg-card overflow-hidden">
+        <div className="border rounded-xl bg-card overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
             <h2 className="font-semibold text-sm">Compliance Breakdown</h2>
             {selectedSite && <span className="text-xs text-muted-foreground">· {selectedSite.name}</span>}
           </div>
           {isLoading ? (
-            <div className="flex items-center justify-center h-48">
+            <div className="flex-1 flex items-center justify-center h-48">
               <Skeleton className="h-36 w-36 rounded-full" />
             </div>
           ) : !displayCounts ? (
-            <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+            <div className="flex-1 flex items-center justify-center h-48 text-sm text-muted-foreground">
               No assigned workers.
             </div>
           ) : (
-            <div className="p-4 flex flex-col items-center gap-4">
+            <div className="flex-1 p-4 flex flex-col items-center justify-center gap-4">
               <div className="relative" style={{ width: 200, height: 200 }}>
                 <PieChart width={200} height={200}>
                   <Pie
