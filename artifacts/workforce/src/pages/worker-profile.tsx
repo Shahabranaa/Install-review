@@ -121,7 +121,16 @@ export default function WorkerProfilePage() {
   const [showAddCert, setShowAddCert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
-  const [certForm, setCertForm] = useState({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
+  const [certForm, setCertForm] = useState({ certificationIds: [] as number[], dateAchieved: "", expiryDate: "", verified: false });
+
+  function toggleCertFormId(id: number) {
+    setCertForm((prev) => ({
+      ...prev,
+      certificationIds: prev.certificationIds.includes(id)
+        ? prev.certificationIds.filter((x) => x !== id)
+        : [...prev.certificationIds, id],
+    }));
+  }
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
@@ -211,18 +220,22 @@ export default function WorkerProfilePage() {
   });
 
   const addCertMutation = useMutation({
-    mutationFn: () => apiPost(`/api/workforce/workers/${workerId}/certifications`, {
-      certificationId: parseInt(certForm.certificationId),
-      dateAchieved: certForm.dateAchieved || null,
-      expiryDate: certForm.expiryDate || null,
-      verified: certForm.verified,
-    }),
-    onSuccess: () => {
-      toast({ title: "Certification added" });
+    mutationFn: () => Promise.all(
+      certForm.certificationIds.map((certificationId) =>
+        apiPost(`/api/workforce/workers/${workerId}/certifications`, {
+          certificationId,
+          dateAchieved: certForm.dateAchieved || null,
+          expiryDate: certForm.expiryDate || null,
+          verified: certForm.verified,
+        }),
+      ),
+    ),
+    onSuccess: (results) => {
+      toast({ title: results.length === 1 ? "Certification added" : `${results.length} certifications added` });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
       setShowAddCert(false);
-      setCertForm({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
+      setCertForm({ certificationIds: [], dateAchieved: "", expiryDate: "", verified: false });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -736,22 +749,41 @@ export default function WorkerProfilePage() {
       </Dialog>
 
       {/* Add cert dialog */}
-      <Dialog open={showAddCert} onOpenChange={setShowAddCert}>
+      <Dialog open={showAddCert} onOpenChange={(open) => { setShowAddCert(open); if (!open) setCertForm({ certificationIds: [], dateAchieved: "", expiryDate: "", verified: false }); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Certification</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Add Certifications</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Certification *</Label>
-              <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
-                value={certForm.certificationId}
-                onChange={(e) => setCertForm({ ...certForm, certificationId: e.target.value })}
-                data-testid="select-certification"
-              >
-                <option value="">Select…</option>
-                {allCerts?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <Label className="mb-1 block">Certifications *</Label>
+              {(() => {
+                const existingIds = new Set((worker?.certifications ?? []).map((wc) => wc.certificationId));
+                const available = (allCerts ?? []).filter((c) => !existingIds.has(c.id));
+                return available.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">All certifications have already been added.</p>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto border rounded-md divide-y">
+                    {available.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 select-none"
+                        data-testid={`checkbox-add-cert-worker-${c.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={certForm.certificationIds.includes(c.id)}
+                          onChange={() => toggleCertFormId(c.id)}
+                          data-testid={`select-certification`}
+                        />
+                        <span className="flex-1 text-sm font-medium">{c.name}</span>
+                        {c.category && <span className="text-xs text-muted-foreground">{c.category}</span>}
+                      </label>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
+            <p className="text-xs text-muted-foreground -mt-1">These dates and status apply to all selected certifications.</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Date Achieved</Label>
@@ -776,10 +808,14 @@ export default function WorkerProfilePage() {
             <Button variant="outline" onClick={() => setShowAddCert(false)}>Cancel</Button>
             <Button
               onClick={() => addCertMutation.mutate()}
-              disabled={!certForm.certificationId || addCertMutation.isPending}
+              disabled={certForm.certificationIds.length === 0 || addCertMutation.isPending}
               data-testid="button-save-cert"
             >
-              {addCertMutation.isPending ? "Saving…" : "Add"}
+              {addCertMutation.isPending
+                ? "Saving…"
+                : certForm.certificationIds.length > 0
+                  ? `Add ${certForm.certificationIds.length} Cert${certForm.certificationIds.length !== 1 ? "s" : ""}`
+                  : "Add"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -172,7 +172,15 @@ export default function SiteDetailPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [showAddReq, setShowAddReq] = useState(false);
-  const [selectedCertId, setSelectedCertId] = useState("");
+  const [selectedCertIds, setSelectedCertIds] = useState<Set<number>>(new Set());
+
+  function toggleSelectedCertId(id: number) {
+    setSelectedCertIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const { data: site, isLoading: siteLoading } = useQuery<Site>({
     queryKey: ["site", siteId],
@@ -218,22 +226,22 @@ export default function SiteDetailPage() {
       void qc.invalidateQueries({ queryKey: ["site-requirements", siteId] });
       void qc.invalidateQueries({ queryKey: ["site-compliance", siteId] });
       setShowAddReq(false);
-      setSelectedCertId("");
+      setSelectedCertIds(new Set());
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function addRequirement() {
-    if (!selectedCertId) return;
+    if (selectedCertIds.size === 0) return;
     const existing = (requirements ?? []).map(r => ({
       certificationId: r.certificationId, required: r.required,
     }));
-    const certId = parseInt(selectedCertId);
-    if (existing.find(e => e.certificationId === certId)) {
-      toast({ title: "Already added" });
-      return;
-    }
-    updateReqsMutation.mutate([...existing, { certificationId: certId, required: true }]);
+    const toAdd = [...selectedCertIds].filter(id => !existing.find(e => e.certificationId === id));
+    if (toAdd.length === 0) { toast({ title: "Already added" }); return; }
+    updateReqsMutation.mutate([
+      ...existing,
+      ...toAdd.map(id => ({ certificationId: id, required: true })),
+    ]);
   }
 
   function removeRequirement(certId: number) {
@@ -439,33 +447,52 @@ export default function SiteDetailPage() {
       </div>
 
       {/* Add requirement dialog */}
-      <Dialog open={showAddReq} onOpenChange={setShowAddReq}>
+      <Dialog open={showAddReq} onOpenChange={(open) => { setShowAddReq(open); if (!open) setSelectedCertIds(new Set()); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Required Certification</DialogTitle></DialogHeader>
-          <div className="py-3">
-            <select
-              className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-              value={selectedCertId}
-              onChange={(e) => setSelectedCertId(e.target.value)}
-              data-testid="select-add-requirement"
-            >
-              <option value="">Select certification…</option>
-              {availableCerts.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {availableCerts.length === 0 && (
-              <p className="text-xs text-muted-foreground mt-2">All certifications are already required for this site.</p>
+          <DialogHeader>
+            <DialogTitle>Add Required Certifications</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {availableCerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">All certifications are already required for this site.</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select one or more certifications to add as requirements.
+                </p>
+                <div className="max-h-72 overflow-y-auto border rounded-md divide-y">
+                  {availableCerts.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 select-none"
+                      data-testid={`checkbox-req-cert-${c.id}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={selectedCertIds.has(c.id)}
+                        onChange={() => toggleSelectedCertId(c.id)}
+                      />
+                      <span className="flex-1 text-sm font-medium">{c.name}</span>
+                      {c.category && <span className="text-xs text-muted-foreground">{c.category}</span>}
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddReq(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowAddReq(false); setSelectedCertIds(new Set()); }}>Cancel</Button>
             <Button
               onClick={addRequirement}
-              disabled={!selectedCertId || updateReqsMutation.isPending}
+              disabled={selectedCertIds.size === 0 || updateReqsMutation.isPending}
               data-testid="button-confirm-add-requirement"
             >
-              {updateReqsMutation.isPending ? "Saving…" : "Add Requirement"}
+              {updateReqsMutation.isPending
+                ? "Saving…"
+                : selectedCertIds.size > 0
+                  ? `Add ${selectedCertIds.size} Requirement${selectedCertIds.size !== 1 ? "s" : ""}`
+                  : "Add Requirements"}
             </Button>
           </DialogFooter>
         </DialogContent>
