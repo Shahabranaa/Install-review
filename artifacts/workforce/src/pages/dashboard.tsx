@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from "recharts";
 
 interface CertIssueWorker {
@@ -197,7 +197,8 @@ export default function DashboardPage() {
     { name: "Expiring Soon", value: displayCounts.expiringCount, color: CHART_COLORS.EXPIRING_SOON },
     { name: "Not Compliant", value: displayCounts.nonCompliantCount, color: CHART_COLORS.NOT_COMPLIANT },
     { name: selectedSite ? "No Requirements" : "Unassigned", value: displayCounts.unassignedCount, color: CHART_COLORS.UNASSIGNED },
-  ].filter(d => d.value > 0) : [];
+  ] : [];
+  const compliancePieData = complianceChartData.filter(d => d.value > 0);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -281,24 +282,34 @@ export default function DashboardPage() {
             <div className="flex items-center justify-center h-48">
               <Skeleton className="h-36 w-36 rounded-full" />
             </div>
-          ) : complianceChartData.length === 0 ? (
+          ) : !displayCounts ? (
             <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
               No assigned workers.
             </div>
           ) : (
-            <div className="p-4">
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
+            <div className="p-4 flex flex-col items-center gap-4">
+              <div className="relative" style={{ width: 200, height: 200 }}>
+                <PieChart width={200} height={200}>
                   <Pie
-                    data={complianceChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={2}
+                    data={[{ value: 1 }]}
+                    cx={100} cy={100}
+                    innerRadius={56} outerRadius={84}
                     dataKey="value"
+                    stroke="none"
+                    isAnimationActive={false}
                   >
-                    {complianceChartData.map((entry, index) => (
+                    <Cell fill="#f1f5f9" />
+                  </Pie>
+                  <Pie
+                    data={compliancePieData}
+                    cx={100} cy={100}
+                    innerRadius={56} outerRadius={84}
+                    paddingAngle={compliancePieData.length > 1 ? 2 : 0}
+                    dataKey="value"
+                    startAngle={90}
+                    endAngle={-270}
+                  >
+                    {compliancePieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -306,13 +317,23 @@ export default function DashboardPage() {
                     formatter={(value: number, name: string) => [`${value} workers`, name]}
                     contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
                   />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    formatter={(value) => <span className="text-xs text-foreground">{value}</span>}
-                  />
                 </PieChart>
-              </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-2xl font-bold tabular-nums">{displayCounts.totalWorkers}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">workers</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-2 w-full max-w-[280px]">
+                {complianceChartData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                    <span className="text-xs text-muted-foreground truncate">{item.name}</span>
+                    <span className={cn("text-xs font-semibold ml-auto tabular-nums", item.value === 0 && "text-muted-foreground/50")}>
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
