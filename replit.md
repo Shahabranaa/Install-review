@@ -53,7 +53,7 @@ Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-se
 
 ## Environment Variables Required
 
-- `DATABASE_URL` or `NEON_DATABASE_URL` — PostgreSQL connection string
+- `NEON_DATABASE_URL` — Neon PostgreSQL connection string (EU West 2 / London, ep-sparkling-field). GDPR-compliant EU data residency. Falls back to `DATABASE_URL` if not set.
 - `SESSION_SECRET` — express-session secret
 - `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY` — Google Sheets/Drive API
 - `WASABI_ACCESS_KEY_ID`, `WASABI_SECRET_ACCESS_KEY`, `WASABI_BUCKET`, `WASABI_ENDPOINT` — Wasabi S3
