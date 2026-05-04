@@ -4,15 +4,15 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-function buildPool(): InstanceType<typeof Pool> {
-  const connStr = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-  if (!connStr) {
-    throw new Error("No database configuration found. Set NEON_DATABASE_URL or DATABASE_URL.");
-  }
-  return new Pool({ connectionString: connStr });
+const connectionString = process.env.NEON_DATABASE_URL ?? process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error(
+    "DATABASE_URL must be set. Did you forget to provision a database?",
+  );
 }
 
-export const pool = buildPool();
+export const pool = new Pool({ connectionString });
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

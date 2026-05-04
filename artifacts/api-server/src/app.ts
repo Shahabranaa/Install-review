@@ -37,17 +37,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PgSession = connectPgSimple(session);
-
-function buildSessionPool(): InstanceType<typeof Pool> | null {
-  const connStr = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-  if (!connStr) return null;
-  return new Pool({ connectionString: connStr });
-}
-
-const sessionPool = buildSessionPool();
-const sessionStore = sessionPool
+const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+const sessionStore = dbUrl
   ? new PgSession({
-      pool: sessionPool,
+      pool: new Pool({ connectionString: dbUrl }),
       createTableIfMissing: false,
     })
   : undefined;

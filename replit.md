@@ -53,19 +53,11 @@ Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-se
 
 ## Environment Variables Required
 
-- `NEON_DATABASE_URL` — Primary Neon PostgreSQL connection string (EU West 2 / London). Currently active.
-- `DATABASE_URL` — Fallback PostgreSQL connection string (Replit local Helium DB, empty)
-- Aurora IAM path (future): set `NEON_DATABASE_PGHOST`, `NEON_DATABASE_PGPORT`, `NEON_DATABASE_PGUSER`, `NEON_DATABASE_PGDATABASE`, `NEON_DATABASE_AWS_REGION`, `NEON_DATABASE_PGSSLMODE` — the server will automatically use IAM auth via `@aws-sdk/rds-signer` when `NEON_DATABASE_URL` is absent
+- `DATABASE_URL` or `NEON_DATABASE_URL` — PostgreSQL connection string
 - `SESSION_SECRET` — express-session secret
 - `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY` — Google Sheets/Drive API
 - `WASABI_ACCESS_KEY_ID`, `WASABI_SECRET_ACCESS_KEY`, `WASABI_BUCKET`, `WASABI_ENDPOINT` — Wasabi S3
 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — (optional) Google OAuth login
-
-### DB Connection Priority (lib/db/src/index.ts + artifacts/api-server/src/app.ts)
-1. `NEON_DATABASE_URL` set → Neon connection string (current, EU West 2)
-2. `NEON_DATABASE_PGHOST` set → Aurora IAM auth via RDS Signer (future)
-3. `DATABASE_URL` set → generic connection string fallback
-4. Error thrown if none found
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
 
