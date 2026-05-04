@@ -3,7 +3,6 @@ import cors from "cors";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { Pool } from "pg";
-import { Signer } from "@aws-sdk/rds-signer";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -40,35 +39,9 @@ app.use(express.urlencoded({ extended: true }));
 const PgSession = connectPgSimple(session);
 
 function buildSessionPool(): InstanceType<typeof Pool> | null {
-  if (process.env["NEON_DATABASE_URL"]) {
-    return new Pool({ connectionString: process.env["NEON_DATABASE_URL"] });
-  }
-  const host = process.env["NEON_DATABASE_PGHOST"];
-  if (host) {
-    const port = parseInt(process.env["NEON_DATABASE_PGPORT"] ?? "5432", 10);
-    const user = process.env["NEON_DATABASE_PGUSER"];
-    const database = process.env["NEON_DATABASE_PGDATABASE"];
-    const region = process.env["NEON_DATABASE_AWS_REGION"];
-    const ssl = process.env["NEON_DATABASE_PGSSLMODE"] !== "disable";
-    if (!user || !database || !region) {
-      throw new Error(
-        "Aurora env vars incomplete for session pool: need NEON_DATABASE_PGUSER, NEON_DATABASE_PGDATABASE, NEON_DATABASE_AWS_REGION",
-      );
-    }
-    const signer = new Signer({ hostname: host, port, username: user, region });
-    return new Pool({
-      host,
-      port,
-      user,
-      database,
-      ssl: ssl ? { rejectUnauthorized: true } : false,
-      password: () => signer.getAuthToken(),
-    });
-  }
-  if (process.env["DATABASE_URL"]) {
-    return new Pool({ connectionString: process.env["DATABASE_URL"] });
-  }
-  return null;
+  const connStr = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+  if (!connStr) return null;
+  return new Pool({ connectionString: connStr });
 }
 
 const sessionPool = buildSessionPool();
