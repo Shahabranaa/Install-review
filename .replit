@@ -37,3 +37,16 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+NEON_DATABASE_PGHOST = "aws-apg-cinnabar-forest.cluster-chak4awsait4.eu-central-1.rds.amazonaws.com"
+NEON_DATABASE_PGPORT = "5432"
+NEON_DATABASE_PGUSER = "postgres"
+NEON_DATABASE_PGDATABASE = "postgres"
+NEON_DATABASE_AWS_REGION = "eu-central-1"
+NEON_DATABASE_PGSSLMODE = "require"
+NEON_DATABASE_AWS_ACCOUNT_ID = "450444046451"
+NEON_DATABASE_AWS_RESOURCE_ARN = "arn:aws:rds:eu-central-1:450444046451:cluster:aws-apg-cinnabar-forest"
+NEON_DATABASE_AWS_ROLE_ARN = "arn:aws:iam::450444046451:role/Vercel/access-apg-cinnabar-forest"
