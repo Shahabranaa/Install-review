@@ -50,7 +50,11 @@ function buildSessionPool(): InstanceType<typeof Pool> | null {
     const database = process.env["NEON_DATABASE_PGDATABASE"];
     const region = process.env["NEON_DATABASE_AWS_REGION"];
     const ssl = process.env["NEON_DATABASE_PGSSLMODE"] !== "disable";
-    if (!user || !database || !region) return null;
+    if (!user || !database || !region) {
+      throw new Error(
+        "Aurora env vars incomplete for session pool: need NEON_DATABASE_PGUSER, NEON_DATABASE_PGDATABASE, NEON_DATABASE_AWS_REGION",
+      );
+    }
     const signer = new Signer({ hostname: host, port, username: user, region });
     return new Pool({
       host,
