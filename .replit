@@ -43,7 +43,7 @@ channel = "stable-25_05"
 [userenv.shared]
 NEON_DATABASE_PGHOST = "aws-apg-cinnabar-forest.cluster-chak4awsait4.eu-central-1.rds.amazonaws.com"
 NEON_DATABASE_PGPORT = "5432"
-NEON_DATABASE_PGUSER = "postgres"
+NEON_DATABASE_PGUSER = "iamuser"
 NEON_DATABASE_PGDATABASE = "postgres"
 NEON_DATABASE_AWS_REGION = "eu-central-1"
 NEON_DATABASE_PGSSLMODE = "require"
