@@ -38,9 +38,15 @@ app.use(express.urlencoded({ extended: true }));
 
 const PgSession = connectPgSimple(session);
 const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+function buildSessionPool() {
+  if (!dbUrl) return undefined;
+  const p = new Pool({ connectionString: dbUrl });
+  p.on("connect", (client) => { client.query("SET search_path TO public").catch(() => {}); });
+  return p;
+}
 const sessionStore = dbUrl
   ? new PgSession({
-      pool: new Pool({ connectionString: dbUrl }),
+      pool: buildSessionPool()!,
       createTableIfMissing: false,
     })
   : undefined;
