@@ -62,10 +62,10 @@ Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-se
 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — (optional) Google OAuth login
 
 ### DB Connection Priority (lib/db/src/index.ts + artifacts/api-server/src/app.ts)
-1. `NEON_DATABASE_URL` present → Neon (current, EU West 2)
-2. `NEON_DATABASE_PGHOST` present → Aurora IAM auth via RDS Signer (future)
-3. `DATABASE_URL` present → connection string fallback
-4. Error if none found
+1. `NEON_DATABASE_URL` set → Neon connection string (current, EU West 2)
+2. `NEON_DATABASE_PGHOST` set → Aurora IAM auth via RDS Signer (future)
+3. `DATABASE_URL` set → generic connection string fallback
+4. Error thrown if none found
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
 

@@ -32,19 +32,20 @@ function buildAuroraPool(): InstanceType<typeof Pool> {
 }
 
 function buildPool(): InstanceType<typeof Pool> {
-  const connectionString =
-    process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-
-  if (connectionString) {
-    return new Pool({ connectionString });
+  if (process.env["NEON_DATABASE_URL"]) {
+    return new Pool({ connectionString: process.env["NEON_DATABASE_URL"] });
   }
 
   if (process.env["NEON_DATABASE_PGHOST"]) {
     return buildAuroraPool();
   }
 
+  if (process.env["DATABASE_URL"]) {
+    return new Pool({ connectionString: process.env["DATABASE_URL"] });
+  }
+
   throw new Error(
-    "No database configuration found. Set NEON_DATABASE_URL, DATABASE_URL, or NEON_DATABASE_PGHOST.",
+    "No database configuration found. Set NEON_DATABASE_URL, NEON_DATABASE_PGHOST, or DATABASE_URL.",
   );
 }
 

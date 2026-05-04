@@ -40,10 +40,8 @@ app.use(express.urlencoded({ extended: true }));
 const PgSession = connectPgSimple(session);
 
 function buildSessionPool(): InstanceType<typeof Pool> | null {
-  const connectionString =
-    process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-  if (connectionString) {
-    return new Pool({ connectionString });
+  if (process.env["NEON_DATABASE_URL"]) {
+    return new Pool({ connectionString: process.env["NEON_DATABASE_URL"] });
   }
   const host = process.env["NEON_DATABASE_PGHOST"];
   if (host) {
@@ -62,6 +60,9 @@ function buildSessionPool(): InstanceType<typeof Pool> | null {
       ssl: ssl ? { rejectUnauthorized: true } : false,
       password: () => signer.getAuthToken(),
     });
+  }
+  if (process.env["DATABASE_URL"]) {
+    return new Pool({ connectionString: process.env["DATABASE_URL"] });
   }
   return null;
 }
