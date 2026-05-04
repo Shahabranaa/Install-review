@@ -3,6 +3,7 @@ import cors from "cors";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { Pool } from "pg";
+import { Signer } from "@aws-sdk/rds-signer";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -37,10 +38,38 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PgSession = connectPgSimple(session);
-const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-const sessionStore = dbUrl
+
+function buildSessionPool(): InstanceType<typeof Pool> | null {
+  const connectionString =
+    process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+  if (connectionString) {
+    return new Pool({ connectionString });
+  }
+  const host = process.env["NEON_DATABASE_PGHOST"];
+  if (host) {
+    const port = parseInt(process.env["NEON_DATABASE_PGPORT"] ?? "5432", 10);
+    const user = process.env["NEON_DATABASE_PGUSER"];
+    const database = process.env["NEON_DATABASE_PGDATABASE"];
+    const region = process.env["NEON_DATABASE_AWS_REGION"];
+    const ssl = process.env["NEON_DATABASE_PGSSLMODE"] !== "disable";
+    if (!user || !database || !region) return null;
+    const signer = new Signer({ hostname: host, port, username: user, region });
+    return new Pool({
+      host,
+      port,
+      user,
+      database,
+      ssl: ssl ? { rejectUnauthorized: true } : false,
+      password: () => signer.getAuthToken(),
+    });
+  }
+  return null;
+}
+
+const sessionPool = buildSessionPool();
+const sessionStore = sessionPool
   ? new PgSession({
-      pool: new Pool({ connectionString: dbUrl }),
+      pool: sessionPool,
       createTableIfMissing: false,
     })
   : undefined;
