@@ -653,6 +653,11 @@ export default function WorkerProfilePage() {
                   <p className="font-medium text-sm">{a.site.name}</p>
                   {a.site.location && <p className="text-xs text-muted-foreground">{a.site.location}</p>}
                 </div>
+                {worker.role && (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    {worker.role.name}
+                  </Badge>
+                )}
                 <Badge
                   variant="outline"
                   className={cn("text-[10px]",
