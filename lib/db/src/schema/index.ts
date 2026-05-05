@@ -25,3 +25,4 @@ export * from "./workers";
 export * from "./worker-certifications";
 export * from "./cert-requirements";
 export * from "./site-assignments";
+export * from "./email-logs";

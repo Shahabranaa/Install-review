@@ -29,7 +29,8 @@
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "node-mailjet": "^6.0.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
