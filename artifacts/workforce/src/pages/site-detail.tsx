@@ -322,15 +322,27 @@ export default function SiteDetailPage() {
         {!compLoading && validCompliance.length > 0 && (
           <div className="grid grid-cols-4 gap-3 mt-4 pt-4 border-t">
             {[
-              { label: "Ready", value: ready, color: "text-emerald-600" },
-              { label: "Expiring", value: expiring, color: "text-amber-600" },
-              { label: "Not Compliant", value: nonCompliant, color: "text-red-600" },
-              { label: "No Requirements", value: noReq, color: "text-muted-foreground" },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="text-center">
+              { label: "Ready", value: ready, color: "text-emerald-600", filter: "READY" as const },
+              { label: "Expiring", value: expiring, color: "text-amber-600", filter: "EXPIRING_SOON" as const },
+              { label: "Not Compliant", value: nonCompliant, color: "text-red-600", filter: "NOT_COMPLIANT" as const },
+              { label: "No Requirements", value: noReq, color: "text-muted-foreground", filter: "NO_REQUIREMENTS" as const },
+            ].map(({ label, value, color, filter }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  setStatusFilter(filter);
+                  document.getElementById("worker-compliance-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className={cn(
+                  "text-center rounded-md py-1 transition-colors hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  statusFilter === filter && "bg-muted",
+                )}
+                data-testid={`stat-${filter.toLowerCase()}`}
+              >
                 <p className={cn("text-xl font-bold tabular-nums", color)}>{value}</p>
                 <p className="text-[10px] text-muted-foreground">{label}</p>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -391,7 +403,7 @@ export default function SiteDetailPage() {
       </div>
 
       {/* Worker compliance */}
-      <div className="border rounded-xl bg-card overflow-hidden">
+      <div id="worker-compliance-section" className="border rounded-xl bg-card overflow-hidden scroll-mt-4">
         <div className="px-4 py-3 border-b flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-primary" />
           <h2 className="font-semibold text-sm">Worker Compliance ({validCompliance.length})</h2>
