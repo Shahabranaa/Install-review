@@ -766,6 +766,56 @@ router.put("/workforce/sites/:id/requirements", requireAdmin, async (req, res): 
   }
 });
 
+// GET /workforce/sites/:id/role-requirements — roles assigned to this site with their cert requirements
+router.get("/workforce/sites/:id/role-requirements", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.id ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [site] = await db.select({ id: mobSitesTable.id }).from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+
+    // Find unique role IDs of workers with active/pending assignments at this site
+    const assignments = await db.select({ workerId: siteAssignmentsTable.workerId })
+      .from(siteAssignmentsTable)
+      .where(and(
+        eq(siteAssignmentsTable.siteId, siteId),
+        or(eq(siteAssignmentsTable.status, "active"), eq(siteAssignmentsTable.status, "pending")),
+      ));
+
+    const workerIds = assignments.map(a => a.workerId);
+    if (workerIds.length === 0) { res.json([]); return; }
+
+    const workers = await db.select({ roleId: workersTable.roleId })
+      .from(workersTable)
+      .where(and(inArray(workersTable.id, workerIds), eq(workersTable.active, true)));
+
+    const roleIds = [...new Set(workers.map(w => w.roleId).filter((id): id is number => id !== null && id !== undefined))];
+    if (roleIds.length === 0) { res.json([]); return; }
+
+    const roles = await db.select().from(workforceRolesTable).where(inArray(workforceRolesTable.id, roleIds));
+    const roleMap = new Map(roles.map(r => [r.id, r]));
+
+    const reqs = await db.select({ req: roleCertRequirementsTable, cert: certificationsTable })
+      .from(roleCertRequirementsTable)
+      .innerJoin(certificationsTable, eq(roleCertRequirementsTable.certificationId, certificationsTable.id))
+      .where(inArray(roleCertRequirementsTable.roleId, roleIds));
+
+    const grouped = new Map<number, { roleId: number; roleName: string; certifications: { certificationId: number; required: boolean; certification: { id: number; name: string; category: string | null } }[] }>();
+    for (const roleId of roleIds) {
+      const role = roleMap.get(roleId);
+      if (role) grouped.set(roleId, { roleId, roleName: role.name, certifications: [] });
+    }
+    for (const r of reqs) {
+      const group = grouped.get(r.req.roleId);
+      if (group) group.certifications.push({ certificationId: r.req.certificationId, required: r.req.required, certification: r.cert });
+    }
+
+    res.json([...grouped.values()]);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 router.get("/workforce/roles/:id/requirements", requireAuth, async (req, res): Promise<void> => {
   try {
     const roleId = parseInt(req.params.id ?? "");

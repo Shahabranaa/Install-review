@@ -6,6 +6,7 @@ import {
   Building2,
   ShieldCheck,
   Briefcase,
+  Mail,
   LogOut,
   HardHat,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { href: "/sites", label: "Sites", icon: Building2 },
   { href: "/site-compliance", label: "Site Compliance", icon: ShieldCheck },
   { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
+  { href: "/emails", label: "Emails", icon: Mail, adminOnly: true },
 ];
 
 export function Sidebar() {

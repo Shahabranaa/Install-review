@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
-  Clock, HelpCircle, ChevronRight, Award, Plus, Trash2, MapPin,
+  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -51,6 +51,16 @@ interface SiteCertRequirement {
   certification: { id: number; name: string; category: string | null };
 }
 
+interface RoleRequirement {
+  roleId: number;
+  roleName: string;
+  certifications: {
+    certificationId: number;
+    required: boolean;
+    certification: { id: number; name: string; category: string | null };
+  }[];
+}
+
 interface Site {
   id: number;
   name: string;
@@ -88,8 +98,6 @@ function certStatusColor(status: CertStatus) {
     case "MISSING": return "text-red-600";
   }
 }
-
-const STATUS_ORDER: Record<WorkerStatus, number> = { NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3 };
 
 function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMeta }) {
   const [open, setOpen] = useState(false);
@@ -164,6 +172,45 @@ function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMe
   );
 }
 
+function RoleRequirementRow({ role }: { role: RoleRequirement }) {
+  const [open, setOpen] = useState(false);
+  const ChevronIcon = open ? ChevronDown : ChevronRight;
+  return (
+    <div className="border-b last:border-b-0">
+      <button
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left"
+        onClick={() => setOpen((o) => !o)}
+        data-testid={`row-role-req-${role.roleId}`}
+      >
+        <ChevronIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <span className="flex-1 text-sm font-medium">{role.roleName}</span>
+        <span className="text-xs text-muted-foreground">{role.certifications.length} cert{role.certifications.length !== 1 ? "s" : ""}</span>
+      </button>
+      {open && (
+        <div className="bg-muted/10 px-10 py-2 pb-3 border-t space-y-1.5">
+          {role.certifications.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No certifications required for this role.</p>
+          ) : (
+            role.certifications.map((c) => (
+              <div key={c.certificationId} className="flex items-center gap-2 text-sm">
+                <Award className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="flex-1">{c.certification.name}</span>
+                {c.certification.category && (
+                  <span className="text-xs text-muted-foreground">{c.certification.category}</span>
+                )}
+                <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600">
+                  {c.required ? "Required" : "Optional"}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SiteDetailPage() {
   const [, params] = useRoute("/sites/:id");
   const siteId = params ? parseInt(params.id) : NaN;
@@ -205,6 +252,12 @@ export default function SiteDetailPage() {
     queryKey: ["workforce-certifications-list"],
     queryFn: () => apiFetch<Certification[]>("/api/workforce/certifications"),
     enabled: isAdmin,
+  });
+
+  const { data: roleRequirements, isLoading: roleReqLoading } = useQuery<RoleRequirement[]>({
+    queryKey: ["site-role-requirements", siteId],
+    queryFn: () => apiFetch<RoleRequirement[]>(`/api/workforce/sites/${siteId}/role-requirements`),
+    enabled: !isNaN(siteId),
   });
 
   const { data: workers } = useQuery<{ id: number; company: string; roleName: string | null }[]>({
@@ -257,7 +310,7 @@ export default function SiteDetailPage() {
   const filtered = statusFilter === "ALL"
     ? validCompliance
     : validCompliance.filter(r => r.status === statusFilter);
-  const sorted = [...filtered].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  const sorted = [...filtered].sort((a, b) => a.workerName.localeCompare(b.workerName));
 
   const ready = validCompliance.filter(r => r.status === "READY").length;
   const expiring = validCompliance.filter(r => r.status === "EXPIRING_SOON").length;
@@ -385,6 +438,29 @@ export default function SiteDetailPage() {
                   </Button>
                 )}
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Role required certifications */}
+      <div className="border rounded-xl bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center gap-2">
+          <Briefcase className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">
+            Role Required Certifications {roleReqLoading ? "" : `(${roleRequirements?.length ?? 0})`}
+          </h2>
+        </div>
+        {roleReqLoading ? (
+          <div className="p-4"><Skeleton className="h-10 w-full" /></div>
+        ) : !roleRequirements?.length ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No roles with certification requirements are assigned to this site.
+          </div>
+        ) : (
+          <div className="divide-y">
+            {roleRequirements.map((role) => (
+              <RoleRequirementRow key={role.roleId} role={role} />
             ))}
           </div>
         )}
