@@ -99,8 +99,6 @@ function certStatusColor(status: CertStatus) {
   }
 }
 
-const STATUS_ORDER: Record<WorkerStatus, number> = { NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3 };
-
 function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMeta }) {
   const [open, setOpen] = useState(false);
   const cfg = workerStatusConfig(result.status);
@@ -312,7 +310,7 @@ export default function SiteDetailPage() {
   const filtered = statusFilter === "ALL"
     ? validCompliance
     : validCompliance.filter(r => r.status === statusFilter);
-  const sorted = [...filtered].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  const sorted = [...filtered].sort((a, b) => a.workerName.localeCompare(b.workerName));
 
   const ready = validCompliance.filter(r => r.status === "READY").length;
   const expiring = validCompliance.filter(r => r.status === "EXPIRING_SOON").length;
