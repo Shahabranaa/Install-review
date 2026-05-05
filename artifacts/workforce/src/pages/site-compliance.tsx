@@ -6,7 +6,8 @@ import { apiFetch } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldCheck, User, ChevronRight, CheckCircle2, AlertTriangle, Clock, HelpCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+import { useSettings } from "@/contexts/SettingsContext";
 
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
@@ -61,6 +62,7 @@ function certStatusColor(status: CertStatus) {
 
 function WorkerComplianceRow({ result }: { result: WorkerComplianceResult | { workerId: number; siteId: number; error: string } }) {
   const [open, setOpen] = useState(false);
+  const { durationFormat } = useSettings();
 
   if ("error" in result) {
     return (
@@ -112,7 +114,7 @@ function WorkerComplianceRow({ result }: { result: WorkerComplianceResult | { wo
               {item.expiryDate && (
                 <span className="text-muted-foreground ml-auto">
                   Exp: {new Date(item.expiryDate).toLocaleDateString("en-GB")}
-                  {item.daysUntilExpiry !== null && ` (${item.daysUntilExpiry}d)`}
+                  {item.daysUntilExpiry !== null && ` (${durationFormat === "verbose" ? formatDuration(item.daysUntilExpiry) : `${item.daysUntilExpiry}d`})`}
                 </span>
               )}
             </div>

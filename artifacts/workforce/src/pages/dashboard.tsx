@@ -8,7 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from "recharts";
@@ -154,6 +155,7 @@ function StatCard({
 export default function DashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [expiryDays, setExpiryDays] = useState<30 | 60>(30);
+  const { durationFormat } = useSettings();
 
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ["workforce-dashboard", selectedSiteId, expiryDays],
@@ -394,7 +396,7 @@ export default function DashboardPage() {
                         item.daysUntilExpiry <= 7 ? "border-red-400 text-red-600" : "border-amber-400 text-amber-600",
                       )}
                     >
-                      {item.daysUntilExpiry}d
+                      {durationFormat === "verbose" ? formatDuration(item.daysUntilExpiry) : `${item.daysUntilExpiry}d`}
                     </Badge>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       {new Date(item.expiryDate).toLocaleDateString("en-GB")}

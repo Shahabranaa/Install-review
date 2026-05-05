@@ -17,7 +17,8 @@ import {
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
   Paperclip, X as XIcon, Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+import { useSettings } from "@/contexts/SettingsContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -116,6 +117,7 @@ export default function WorkerProfilePage() {
   const [, params] = useRoute("/workers/:id");
   const workerId = params ? parseInt(params.id) : NaN;
   const { isAdmin, user } = useAuth();
+  const { durationFormat } = useSettings();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showAddCert, setShowAddCert] = useState(false);
@@ -625,7 +627,7 @@ export default function WorkerProfilePage() {
                           {item.expiryDate && (
                             <span className="text-muted-foreground ml-auto">
                               {new Date(item.expiryDate).toLocaleDateString("en-GB")}
-                              {item.daysUntilExpiry !== null && ` (${item.daysUntilExpiry}d)`}
+                              {item.daysUntilExpiry !== null && ` (${durationFormat === "verbose" ? formatDuration(item.daysUntilExpiry) : `${item.daysUntilExpiry}d`})`}
                             </span>
                           )}
                         </div>

@@ -8,6 +8,7 @@ import {
   Briefcase,
   LogOut,
   HardHat,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { href: "/sites", label: "Sites", icon: Building2 },
   { href: "/site-compliance", label: "Site Compliance", icon: ShieldCheck },
   { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
+  { href: "/settings", label: "Settings", icon: Settings2, adminOnly: true },
 ];
 
 export function Sidebar() {

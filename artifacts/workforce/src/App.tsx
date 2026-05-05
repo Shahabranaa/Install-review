@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 import { AppLayout } from "@/components/layout";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
@@ -13,6 +14,7 @@ import SitesPage from "@/pages/sites";
 import SiteDetailPage from "@/pages/site-detail";
 import SiteCompliancePage from "@/pages/site-compliance";
 import RolesPage from "@/pages/roles";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -103,6 +105,13 @@ function Router() {
           </AuthGate>
         )}
       </Route>
+      <Route path="/settings">
+        {() => (
+          <AuthGate adminOnly>
+            <SettingsPage />
+          </AuthGate>
+        )}
+      </Route>
       <Route>
         {() => (
           <AuthGate>
@@ -120,7 +129,9 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
-            <Router />
+            <SettingsProvider>
+              <Router />
+            </SettingsProvider>
           </AuthProvider>
         </WouterRouter>
         <Toaster />

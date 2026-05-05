@@ -11,7 +11,8 @@ import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
   Clock, HelpCircle, ChevronRight, Award, Plus, Trash2, MapPin,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -93,6 +94,7 @@ const STATUS_ORDER: Record<WorkerStatus, number> = { NOT_COMPLIANT: 0, EXPIRING_
 
 function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMeta }) {
   const [open, setOpen] = useState(false);
+  const { durationFormat } = useSettings();
   const cfg = workerStatusConfig(result.status);
   const StatusIcon = cfg.icon;
 
@@ -151,7 +153,7 @@ function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMe
                   {item.expiryDate && (
                     <span className="text-muted-foreground ml-auto">
                       Exp: {new Date(item.expiryDate).toLocaleDateString("en-GB")}
-                      {item.daysUntilExpiry !== null && ` (${item.daysUntilExpiry}d)`}
+                      {item.daysUntilExpiry !== null && ` (${durationFormat === "verbose" ? formatDuration(item.daysUntilExpiry) : `${item.daysUntilExpiry}d`})`}
                     </span>
                   )}
                 </div>
@@ -168,6 +170,7 @@ export default function SiteDetailPage() {
   const [, params] = useRoute("/sites/:id");
   const siteId = params ? parseInt(params.id) : NaN;
   const { isAdmin } = useAuth();
+  const { durationFormat } = useSettings();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
