@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and, or, ilike, inArray, sql } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, sql, desc } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
@@ -15,6 +16,7 @@ import {
   roleCertRequirementsTable,
   workerCertOverridesTable,
   siteAssignmentsTable,
+  workerActivityLogsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -1606,4 +1608,86 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
   }
 });
 
+// ── Admin: worker activity log ────────────────────────────────────────────────
+
+// GET /api/workforce/worker-activity?page=1&pageSize=25&search=
+router.get("/workforce/worker-activity", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "25"), 10)));
+    const search = String(req.query.search ?? "").trim();
+    const offset = (page - 1) * pageSize;
+
+    const { rows: countRows } = await db.execute(
+      sql`
+        SELECT COUNT(*) AS total
+        FROM worker_activity_logs al
+        JOIN workers w ON w.id = al.worker_id
+        WHERE (${search} = '' OR w.name ILIKE ${'%' + search + '%'})
+      `,
+    );
+    const total = Number((countRows as Array<{ total: unknown }>)[0]?.total ?? 0);
+
+    const { rows } = await db.execute(
+      sql`
+        SELECT
+          al.id,
+          al.worker_id   AS "workerId",
+          w.name         AS "workerName",
+          al.action,
+          al.detail,
+          al.ip_address  AS "ipAddress",
+          al.created_at  AS "createdAt"
+        FROM worker_activity_logs al
+        JOIN workers w ON w.id = al.worker_id
+        WHERE (${search} = '' OR w.name ILIKE ${'%' + search + '%'})
+        ORDER BY al.created_at DESC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `,
+    );
+
+    res.json({ data: rows, total, page, pageSize });
+  } catch (err) {
+    logger.error({ err }, "workforce worker-activity error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Admin: set portal credentials ────────────────────────────────────────────
+
+// POST /api/workforce/workers/:id/set-portal-credentials
+router.post("/workforce/workers/:id/set-portal-credentials", requireAuth, async (req, res): Promise<void> => {
+  const workerId = parseInt(req.params.id ?? "");
+  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
+
+  const { portalUsername, password } = req.body as { portalUsername?: string; password?: string };
+  if (!password || password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const [worker] = await db.select({ id: workersTable.id }).from(workersTable).where(eq(workersTable.id, workerId));
+  if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+
+  const hash = await bcrypt.hash(password, 12);
+  const username = portalUsername?.trim() || null;
+
+  await db.update(workersTable).set({
+    portalPasswordHash: hash,
+    ...(username !== null ? { portalUsername: username } : {}),
+    updatedAt: new Date(),
+  }).where(eq(workersTable.id, workerId));
+
+  // Log the credential change in worker activity
+  await db.insert(workerActivityLogsTable).values({
+    workerId,
+    action: "credentials_set",
+    detail: `Admin set portal credentials${username ? ` (username: ${username})` : ""}`,
+    ipAddress: null,
+  }).catch(() => {});
+
+  res.json({ ok: true });
+});
+
 export default router;
+

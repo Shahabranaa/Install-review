@@ -9,6 +9,7 @@ import {
   Mail,
   LogOut,
   HardHat,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { href: "/site-compliance", label: "Site Compliance", icon: ShieldCheck },
   { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
   { href: "/emails", label: "Emails", icon: Mail, adminOnly: true },
+  { href: "/worker-activity", label: "Worker Activity", icon: Activity, adminOnly: true },
 ];
 
 export function Sidebar() {

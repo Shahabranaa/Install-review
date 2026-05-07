@@ -14,6 +14,7 @@ import SiteDetailPage from "@/pages/site-detail";
 import SiteCompliancePage from "@/pages/site-compliance";
 import RolesPage from "@/pages/roles";
 import EmailsPage from "@/pages/emails";
+import WorkerActivityPage from "@/pages/worker-activity";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -108,6 +109,13 @@ function Router() {
         {() => (
           <AuthGate adminOnly>
             <EmailsPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/worker-activity">
+        {() => (
+          <AuthGate adminOnly>
+            <WorkerActivityPage />
           </AuthGate>
         )}
       </Route>

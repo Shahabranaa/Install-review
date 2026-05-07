@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
-  Paperclip, X as XIcon, Loader2,
+  Paperclip, X as XIcon, Loader2, KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +63,7 @@ interface WorkerDetail {
   active: boolean;
   notes: string | null;
   roleId: number | null;
+  portalUsername: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
   assignments: SiteAssignment[];
@@ -121,6 +122,8 @@ export default function WorkerProfilePage() {
   const [showAddCert, setShowAddCert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
+  const [showPortalCreds, setShowPortalCreds] = useState(false);
+  const [portalCredsForm, setPortalCredsForm] = useState({ portalUsername: "", password: "", confirm: "" });
   const [certForm, setCertForm] = useState({ certificationIds: [] as number[], dateAchieved: "", expiryDate: "", verified: false });
 
   function toggleCertFormId(id: number) {
@@ -215,6 +218,21 @@ export default function WorkerProfilePage() {
       toast({ title: "Worker deactivated" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const setPortalCredsMutation = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/workforce/workers/${workerId}/set-portal-credentials`, {
+        portalUsername: portalCredsForm.portalUsername.trim() || undefined,
+        password: portalCredsForm.password,
+      }),
+    onSuccess: () => {
+      toast({ title: "Portal access updated" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      setShowPortalCreds(false);
+      setPortalCredsForm({ portalUsername: "", password: "", confirm: "" });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -453,6 +471,37 @@ export default function WorkerProfilePage() {
           )}
         </div>
       </div>
+
+      {/* Portal Access (admin only) */}
+      {isAdmin && (
+        <div className="border rounded-xl bg-card p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <KeyRound className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Worker Portal Access</p>
+              <p className="text-xs text-muted-foreground">
+                {worker.portalUsername
+                  ? <>Username: <span className="font-mono">{worker.portalUsername}</span></>
+                  : "No portal credentials set"}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setPortalCredsForm({ portalUsername: worker.portalUsername ?? "", password: "", confirm: "" });
+              setShowPortalCreds(true);
+            }}
+            data-testid="button-set-portal-creds"
+          >
+            <KeyRound className="h-3.5 w-3.5 mr-1" />
+            {worker.portalUsername ? "Update credentials" : "Set credentials"}
+          </Button>
+        </div>
+      )}
 
       {/* Hidden file input for card-level uploads (non-admin & admin quick upload) */}
       <input
@@ -938,6 +987,64 @@ export default function WorkerProfilePage() {
               data-testid="button-save-cert-edit"
             >
               {updateCertMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Portal Credentials Dialog */}
+      <Dialog open={showPortalCreds} onOpenChange={setShowPortalCreds}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Portal Access</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label>Username <span className="text-muted-foreground font-normal">(optional — can use email to log in)</span></Label>
+              <Input
+                value={portalCredsForm.portalUsername}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, portalUsername: e.target.value }))}
+                placeholder="e.g. john.smith"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>New password</Label>
+              <Input
+                type="password"
+                value={portalCredsForm.password}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Minimum 8 characters"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Confirm password</Label>
+              <Input
+                type="password"
+                value={portalCredsForm.confirm}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, confirm: e.target.value }))}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
+              />
+            </div>
+            {portalCredsForm.password && portalCredsForm.confirm && portalCredsForm.password !== portalCredsForm.confirm && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPortalCreds(false)}>Cancel</Button>
+            <Button
+              disabled={
+                !portalCredsForm.password ||
+                portalCredsForm.password.length < 8 ||
+                portalCredsForm.password !== portalCredsForm.confirm ||
+                setPortalCredsMutation.isPending
+              }
+              onClick={() => setPortalCredsMutation.mutate()}
+              data-testid="button-save-portal-creds"
+            >
+              {setPortalCredsMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving…</> : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

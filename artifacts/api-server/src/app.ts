@@ -76,9 +76,11 @@ app.use(
   }),
 );
 
-// Strip any base-path prefix forwarded by the Vercel proxy (e.g. /workforce/api/... → /api/...)
+// Strip any base-path prefix forwarded by the proxy (e.g. /workforce/api/... → /api/...)
 app.use((req, _res, next) => {
-  req.url = req.url.replace(/^\/workforce\/api\//, "/api/");
+  req.url = req.url
+    .replace(/^\/workforce\/api\//, "/api/")
+    .replace(/^\/worker-portal\/api\//, "/api/");
   next();
 });
 

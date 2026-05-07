@@ -12,6 +12,9 @@ Installation Image Review Platform. A web app for reviewing installation photos:
 ### Workforce Compliance (`artifacts/workforce`) — served at `/workforce/`
 Workforce compliance management app: worker profiles, certifications, mob sites, site assignments, and compliance reporting.
 
+### Worker Portal (`artifacts/worker-portal`) — served at `/worker-portal/`
+Self-service portal for workers to log in with portal credentials (set by admins) and manage their own certifications (view, add, edit, delete). Admins can set per-worker portal usernames/passwords from the worker profile page and view the full activity log (logins, cert changes with IP + timestamp) in the Worker Activity page.
+
 ### API Server (`artifacts/api-server`) — served at `/api`
 Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-session), Google Sheets/Drive integration, Wasabi S3 integration, PDF generation, and comprehensive REST API.
 
@@ -47,7 +50,8 @@ Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-se
 - `decisions` — review decisions (audit trail)
 - `documents` — generated PDF documents
 - `field_reports` — field report records
-- `workers`, `certifications`, `workforce_roles`, `mob_sites`, `site_assignments` — workforce data
+- `workers`, `certifications`, `workforce_roles`, `mob_sites`, `site_assignments` — workforce data; workers also has `portal_username`, `portal_password_hash`, `last_login_at`, `last_login_ip`
+- `worker_activity_logs` — audit trail for worker portal actions (login, cert_added, cert_edited, cert_deleted, credentials_set)
 - `wasabi_mirror_tasks` — Wasabi S3 mirroring task queue
 - `app_settings` — global application settings
 
