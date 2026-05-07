@@ -176,7 +176,7 @@ export default function WorkerActivityPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-5">
       <div className="flex items-center gap-2">
         <Activity className="h-5 w-5 text-primary" />
-        <h1 className="text-lg font-semibold">Worker Portal Activity</h1>
+        <h1 className="text-lg font-semibold">Worker Activity</h1>
         {q.data && (
           <span className="text-sm text-muted-foreground ml-1">({total} records)</span>
         )}

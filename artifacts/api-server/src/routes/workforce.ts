@@ -1801,8 +1801,46 @@ router.get("/workforce/activity-feed", requireAdmin, async (req, res): Promise<v
     `);
 
     const rows = result.rows as Array<Record<string, unknown>>;
-    const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
     const data = rows.map(({ total_count: _tc, ...rest }) => rest);
+
+    // When the page is out of range, rows is empty — fall back to a separate count query
+    // so pagination metadata stays accurate (e.g. client can reset to page 1).
+    let total: number;
+    if (rows.length > 0) {
+      total = Number(rows[0].total_count);
+    } else {
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS total
+        FROM (
+          SELECT wal.id, 'portal'::text AS source, wal.worker_id,
+                 w.name AS worker_name, wal.action AS event_type
+          FROM worker_activity_logs wal
+          INNER JOIN workers w ON w.id = wal.worker_id
+
+          UNION ALL
+
+          SELECT el.id, 'email'::text AS source, el.worker_id,
+                 w.name AS worker_name, 'email_sent'::text AS event_type
+          FROM email_logs el
+          INNER JOIN workers w ON w.id = el.worker_id
+          WHERE el.worker_id IS NOT NULL AND el.status = 'sent'
+
+          UNION ALL
+
+          SELECT el.id, 'email'::text AS source, el.worker_id,
+                 w.name AS worker_name, 'email_opened'::text AS event_type
+          FROM email_logs el
+          INNER JOIN workers w ON w.id = el.worker_id
+          WHERE el.worker_id IS NOT NULL AND el.seen_at IS NOT NULL
+        ) AS feed
+        WHERE 1=1
+          ${searchFrag}
+          ${workerFrag}
+          ${sourceFrag}
+          ${eventFrag}
+      `);
+      total = Number((countResult.rows[0] as { total: number }).total ?? 0);
+    }
 
     res.json({ data, total, page, pageSize });
   } catch (err) {
