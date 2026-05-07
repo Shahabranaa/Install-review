@@ -17,6 +17,7 @@ import {
   workerCertOverridesTable,
   siteAssignmentsTable,
   workerActivityLogsTable,
+  emailLogsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -1699,6 +1700,115 @@ router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async
   }).catch(() => {});
 
   res.json({ ok: true });
+});
+
+// ── Unified activity feed (portal events + email events) ──────────────────────
+
+const ALLOWED_FEED_SOURCES = ["portal", "email"] as const;
+const ALLOWED_FEED_EVENT_TYPES = [
+  "login", "logout", "cert_added", "cert_edited", "cert_deleted", "credentials_set",
+  "email_sent", "email_opened",
+] as const;
+
+// GET /api/workforce/activity-feed
+// Unified feed: worker_activity_logs (portal) + email_logs (email_sent / email_opened)
+// Filters: ?page= ?pageSize= ?search= ?workerId= ?source=portal|email ?eventType=<type>
+router.get("/workforce/activity-feed", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "25"), 10)));
+    const search = String(req.query.search ?? "").trim();
+    const workerIdRaw = parseInt(String(req.query.workerId ?? ""), 10);
+    const workerIdFilter = isNaN(workerIdRaw) ? null : workerIdRaw;
+    const sourceRaw = String(req.query.source ?? "").trim();
+    const sourceFilter = (ALLOWED_FEED_SOURCES as readonly string[]).includes(sourceRaw) ? sourceRaw : null;
+    const eventTypeRaw = String(req.query.eventType ?? "").trim();
+    const eventTypeFilter = (ALLOWED_FEED_EVENT_TYPES as readonly string[]).includes(eventTypeRaw) ? eventTypeRaw : null;
+    const offset = (page - 1) * pageSize;
+
+    // Build outer WHERE fragments (applied after the UNION ALL)
+    const searchFrag  = search          ? sql`AND worker_name ILIKE ${'%' + search + '%'}`   : sql``;
+    const workerFrag  = workerIdFilter  !== null ? sql`AND worker_id = ${workerIdFilter}`    : sql``;
+    const sourceFrag  = sourceFilter    !== null ? sql`AND source = ${sourceFilter}`          : sql``;
+    const eventFrag   = eventTypeFilter !== null ? sql`AND event_type = ${eventTypeFilter}`   : sql``;
+
+    const result = await db.execute(sql`
+      SELECT
+        id,
+        source,
+        worker_id    AS "workerId",
+        worker_name  AS "workerName",
+        event_type   AS "eventType",
+        detail,
+        ip_address   AS "ipAddress",
+        created_at   AS "createdAt",
+        COUNT(*) OVER () AS total_count
+      FROM (
+        -- Portal activity events
+        SELECT
+          wal.id,
+          'portal'::text                AS source,
+          wal.worker_id,
+          w.name                        AS worker_name,
+          wal.action                    AS event_type,
+          wal.detail,
+          wal.ip_address,
+          wal.created_at
+        FROM worker_activity_logs wal
+        INNER JOIN workers w ON w.id = wal.worker_id
+
+        UNION ALL
+
+        -- Email sent events
+        SELECT
+          el.id,
+          'email'::text                 AS source,
+          el.worker_id,
+          w.name                        AS worker_name,
+          'email_sent'::text            AS event_type,
+          el.subject                    AS detail,
+          NULL::text                    AS ip_address,
+          el.sent_at                    AS created_at
+        FROM email_logs el
+        INNER JOIN workers w ON w.id = el.worker_id
+        WHERE el.worker_id IS NOT NULL
+          AND el.status = 'sent'
+
+        UNION ALL
+
+        -- Email opened events (one row per opened email)
+        SELECT
+          el.id,
+          'email'::text                 AS source,
+          el.worker_id,
+          w.name                        AS worker_name,
+          'email_opened'::text          AS event_type,
+          el.subject                    AS detail,
+          el.seen_ip                    AS ip_address,
+          el.seen_at                    AS created_at
+        FROM email_logs el
+        INNER JOIN workers w ON w.id = el.worker_id
+        WHERE el.worker_id IS NOT NULL
+          AND el.seen_at IS NOT NULL
+      ) AS feed
+      WHERE 1=1
+        ${searchFrag}
+        ${workerFrag}
+        ${sourceFrag}
+        ${eventFrag}
+      ORDER BY created_at DESC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const rows = result.rows as Array<Record<string, unknown>>;
+    const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+    const data = rows.map(({ total_count: _tc, ...rest }) => rest);
+
+    res.json({ data, total, page, pageSize });
+  } catch (err) {
+    logger.error({ err }, "workforce activity-feed error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 export default router;
