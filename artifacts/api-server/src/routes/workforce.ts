@@ -225,6 +225,7 @@ async function computeCompliance(workerId: number, siteId: number): Promise<Work
 // GET /workforce/workers
 // Filters: ?search= (name ilike), ?roleId=, ?siteId= (workers assigned to that site),
 //          ?status=inactive (default: active workers only — worker active flag, not compliance status)
+//          ?status=all — include both active and inactive workers
 // All filters are composable and ANDed together.
 router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> => {
   try {
@@ -242,7 +243,7 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
 
     const workers = await db.select().from(workersTable)
       .where(and(
-        status === "inactive" ? eq(workersTable.active, false) : eq(workersTable.active, true),
+        status === "all" ? undefined : status === "inactive" ? eq(workersTable.active, false) : eq(workersTable.active, true),
         roleId ? eq(workersTable.roleId, parseInt(roleId)) : undefined,
         search ? ilike(workersTable.name, `%${search}%`) : undefined,
         siteWorkerIds ? inArray(workersTable.id, siteWorkerIds) : undefined,

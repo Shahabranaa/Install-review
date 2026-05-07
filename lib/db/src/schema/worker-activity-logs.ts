@@ -6,7 +6,7 @@ import { workersTable } from "./workers";
 export const workerActivityLogsTable = pgTable("worker_activity_logs", {
   id: serial("id").primaryKey(),
   workerId: integer("worker_id").notNull().references(() => workersTable.id, { onDelete: "cascade" }),
-  action: text("action").notNull(), // login | cert_added | cert_edited | cert_deleted
+  action: text("action").notNull(), // DB CHECK: login | logout | cert_added | cert_edited | cert_deleted | credentials_set
   detail: text("detail"),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

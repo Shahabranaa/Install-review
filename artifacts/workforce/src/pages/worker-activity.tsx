@@ -84,8 +84,8 @@ export default function WorkerActivityPage() {
   const pageSize = 25;
 
   const workersQ = useQuery<Worker[]>({
-    queryKey: ["workers-list-minimal"],
-    queryFn: () => apiFetch("/api/workforce/workers?pageSize=500").then((r: { data?: Worker[] }) => r.data ?? r),
+    queryKey: ["workers-list-for-activity-filter"],
+    queryFn: () => apiFetch("/api/workforce/workers?status=all&pageSize=500").then((r: { data?: Worker[] }) => r.data ?? r),
     staleTime: 60_000,
   });
 
