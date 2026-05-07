@@ -6,7 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Activity, Search, ChevronLeft, ChevronRight, LogIn, Award, Pencil, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Activity, Search, ChevronLeft, ChevronRight, LogIn, Award, Pencil, Trash2, Key } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ActivityLog {
@@ -26,11 +33,27 @@ interface ActivityPage {
   pageSize: number;
 }
 
+interface Worker {
+  id: number;
+  name: string;
+}
+
+const ACTION_OPTIONS = [
+  { value: "login", label: "Login" },
+  { value: "logout", label: "Logout" },
+  { value: "cert_added", label: "Cert Added" },
+  { value: "cert_edited", label: "Cert Edited" },
+  { value: "cert_deleted", label: "Cert Deleted" },
+  { value: "credentials_set", label: "Credentials Set" },
+] as const;
+
 const ACTION_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; className: string }> = {
   login: { label: "Login", icon: LogIn, className: "bg-blue-50 text-blue-700 border-blue-200" },
+  logout: { label: "Logout", icon: LogIn, className: "bg-slate-50 text-slate-700 border-slate-200" },
   cert_added: { label: "Cert Added", icon: Award, className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   cert_edited: { label: "Cert Edited", icon: Pencil, className: "bg-amber-50 text-amber-700 border-amber-200" },
   cert_deleted: { label: "Cert Deleted", icon: Trash2, className: "bg-red-50 text-red-700 border-red-200" },
+  credentials_set: { label: "Credentials Set", icon: Key, className: "bg-purple-50 text-purple-700 border-purple-200" },
 };
 
 function ActionBadge({ action }: { action: string }) {
@@ -55,17 +78,27 @@ function formatTs(ts: string) {
 export default function WorkerActivityPage() {
   const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
+  const [workerIdFilter, setWorkerIdFilter] = useState<string>("all");
+  const [actionFilter, setActionFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
+  const workersQ = useQuery<Worker[]>({
+    queryKey: ["workers-list-minimal"],
+    queryFn: () => apiFetch("/api/workforce/workers?pageSize=500").then((r: { data?: Worker[] }) => r.data ?? r),
+    staleTime: 60_000,
+  });
+
   const q = useQuery<ActivityPage>({
-    queryKey: ["worker-activity", search, page],
+    queryKey: ["worker-activity", search, workerIdFilter, actionFilter, page],
     queryFn: () => {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       });
       if (search.trim()) params.set("search", search.trim());
+      if (workerIdFilter !== "all") params.set("workerId", workerIdFilter);
+      if (actionFilter !== "all") params.set("action", actionFilter);
       return apiFetch(`/api/workforce/worker-activity?${params.toString()}`);
     },
     placeholderData: (prev) => prev,
@@ -80,6 +113,9 @@ export default function WorkerActivityPage() {
   const logs = q.data?.data ?? [];
   const total = q.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const workers = workersQ.data ?? [];
+
+  function resetPage() { setPage(1); }
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -92,16 +128,56 @@ export default function WorkerActivityPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 max-w-sm">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap gap-3">
+        <div className="relative w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-8"
             placeholder="Search worker name…"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => { setSearch(e.target.value); resetPage(); }}
           />
         </div>
+
+        <Select
+          value={workerIdFilter}
+          onValueChange={(v) => { setWorkerIdFilter(v); resetPage(); }}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="All workers" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All workers</SelectItem>
+            {workers.map((w) => (
+              <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={actionFilter}
+          onValueChange={(v) => { setActionFilter(v); resetPage(); }}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="All actions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All actions</SelectItem>
+            {ACTION_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {(search || workerIdFilter !== "all" || actionFilter !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearch(""); setWorkerIdFilter("all"); setActionFilter("all"); resetPage(); }}
+          >
+            Clear filters
+          </Button>
+        )}
       </div>
 
       {/* Table */}

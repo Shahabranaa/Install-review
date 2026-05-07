@@ -1610,41 +1610,50 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
 
 // ── Admin: worker activity log ────────────────────────────────────────────────
 
-// GET /api/workforce/worker-activity?page=1&pageSize=25&search=
-router.get("/workforce/worker-activity", requireAuth, async (req, res): Promise<void> => {
+const ALLOWED_ACTIVITY_ACTIONS = ["login", "logout", "cert_added", "cert_edited", "cert_deleted", "credentials_set"] as const;
+
+// GET /api/workforce/worker-activity?page=1&pageSize=25&search=&workerId=&action=
+router.get("/workforce/worker-activity", requireAdmin, async (req, res): Promise<void> => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "25"), 10)));
     const search = String(req.query.search ?? "").trim();
+    const workerIdRaw = parseInt(String(req.query.workerId ?? ""), 10);
+    const workerIdFilter = isNaN(workerIdRaw) ? null : workerIdRaw;
+    const actionRaw = String(req.query.action ?? "").trim();
+    const actionFilter = (ALLOWED_ACTIVITY_ACTIONS as readonly string[]).includes(actionRaw) ? actionRaw : null;
     const offset = (page - 1) * pageSize;
 
-    const { rows: countRows } = await db.execute(
-      sql`
-        SELECT COUNT(*) AS total
-        FROM worker_activity_logs al
-        JOIN workers w ON w.id = al.worker_id
-        WHERE (${search} = '' OR w.name ILIKE ${'%' + search + '%'})
-      `,
-    );
-    const total = Number((countRows as Array<{ total: unknown }>)[0]?.total ?? 0);
+    // Build conditions array for Drizzle query builder
+    const conditions = [];
+    if (search) conditions.push(ilike(workersTable.name, `%${search}%`));
+    if (workerIdFilter !== null) conditions.push(eq(workerActivityLogsTable.workerId, workerIdFilter));
+    if (actionFilter !== null) conditions.push(eq(workerActivityLogsTable.action, actionFilter));
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const { rows } = await db.execute(
-      sql`
-        SELECT
-          al.id,
-          al.worker_id   AS "workerId",
-          w.name         AS "workerName",
-          al.action,
-          al.detail,
-          al.ip_address  AS "ipAddress",
-          al.created_at  AS "createdAt"
-        FROM worker_activity_logs al
-        JOIN workers w ON w.id = al.worker_id
-        WHERE (${search} = '' OR w.name ILIKE ${'%' + search + '%'})
-        ORDER BY al.created_at DESC
-        LIMIT ${pageSize} OFFSET ${offset}
-      `,
-    );
+    const [countResult] = await db
+      .select({ total: sql<number>`COUNT(*)::int` })
+      .from(workerActivityLogsTable)
+      .innerJoin(workersTable, eq(workersTable.id, workerActivityLogsTable.workerId))
+      .where(whereClause);
+    const total = countResult?.total ?? 0;
+
+    const rows = await db
+      .select({
+        id: workerActivityLogsTable.id,
+        workerId: workerActivityLogsTable.workerId,
+        workerName: workersTable.name,
+        action: workerActivityLogsTable.action,
+        detail: workerActivityLogsTable.detail,
+        ipAddress: workerActivityLogsTable.ipAddress,
+        createdAt: workerActivityLogsTable.createdAt,
+      })
+      .from(workerActivityLogsTable)
+      .innerJoin(workersTable, eq(workersTable.id, workerActivityLogsTable.workerId))
+      .where(whereClause)
+      .orderBy(desc(workerActivityLogsTable.createdAt))
+      .limit(pageSize)
+      .offset(offset);
 
     res.json({ data: rows, total, page, pageSize });
   } catch (err) {
@@ -1656,7 +1665,7 @@ router.get("/workforce/worker-activity", requireAuth, async (req, res): Promise<
 // ── Admin: set portal credentials ────────────────────────────────────────────
 
 // POST /api/workforce/workers/:id/set-portal-credentials
-router.post("/workforce/workers/:id/set-portal-credentials", requireAuth, async (req, res): Promise<void> => {
+router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async (req, res): Promise<void> => {
   const workerId = parseInt(req.params.id ?? "");
   if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
 
