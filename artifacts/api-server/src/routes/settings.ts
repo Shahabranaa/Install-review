@@ -12,7 +12,7 @@ const KEY_REGION            = "wasabi_region";
 const ALL_KEYS              = [KEY_ACCESS_KEY_ID, KEY_SECRET_ACCESS_KEY, KEY_BUCKET, KEY_REGION] as const;
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (req.session?.accessLevel !== "admin") {
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
   }

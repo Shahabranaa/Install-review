@@ -30,7 +30,13 @@ function getClientIp(req: Request): string | null {
 }
 
 function requireWorkerAuth(req: Request, res: Response, next: NextFunction): void {
-  if (req.session?.sessionType !== "worker" || !req.session.workerId) {
+  // Must be explicitly a worker session — reject admin sessions attempting worker-portal access
+  if (
+    req.session?.sessionType !== "worker" ||
+    !req.session.workerId ||
+    req.session.userId !== undefined ||
+    req.session.accessLevel !== undefined
+  ) {
     res.status(401).json({ error: "Worker authentication required" });
     return;
   }
@@ -96,9 +102,18 @@ router.post("/worker-portal/login", async (req, res): Promise<void> => {
     .set({ lastLoginAt: new Date(), lastLoginIp: ip, updatedAt: new Date() })
     .where(eq(workersTable.id, worker.id));
 
+  // Regenerate session to prevent session-fixation and clear any admin-portal state
+  await new Promise<void>((resolve, reject) =>
+    req.session.regenerate((err) => (err ? reject(err) : resolve()))
+  );
   req.session.sessionType = "worker";
   req.session.workerId = worker.id;
   req.session.workerName = worker.name;
+  // Explicitly ensure no admin fields leak into this worker session
+  delete req.session.userId;
+  delete req.session.username;
+  delete req.session.displayName;
+  delete req.session.accessLevel;
 
   await logActivity(worker.id, "login", null, ip);
 

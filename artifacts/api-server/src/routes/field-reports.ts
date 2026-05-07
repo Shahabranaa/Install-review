@@ -56,7 +56,7 @@ async function resolveOspForString(stringName: string): Promise<string> {
 
 // All /api/field-reports* endpoints require an authenticated session.
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!req.session?.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (req.session?.sessionType === "worker" || !req.session?.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
   next();
 }
 router.use("/field-reports", requireAuth);

@@ -46,10 +46,18 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  // Regenerate session to prevent session-fixation and clear any worker-portal state
+  await new Promise<void>((resolve, reject) =>
+    req.session.regenerate((err) => (err ? reject(err) : resolve()))
+  );
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.displayName = user.displayName;
   req.session.accessLevel = user.accessLevel;
+  // Explicitly ensure no worker-portal fields leak into this session
+  delete req.session.sessionType;
+  delete req.session.workerId;
+  delete req.session.workerName;
 
   res.json({
     id: user.id,

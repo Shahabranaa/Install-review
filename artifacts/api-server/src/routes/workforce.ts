@@ -29,7 +29,8 @@ const certFileUpload = multer({
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!req.session?.userId) {
+  // Reject worker-portal sessions — workforce routes are admin-only
+  if (req.session?.sessionType === "worker" || !req.session?.userId) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
@@ -37,7 +38,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (req.session?.accessLevel !== "admin") {
+  // Reject worker-portal sessions — admin routes require explicit admin accessLevel
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
   }

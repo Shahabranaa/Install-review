@@ -9,7 +9,7 @@ import { logger } from "../lib/logger.js";
 const router: IRouter = Router();
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (req.session?.accessLevel !== "admin") {
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
   }

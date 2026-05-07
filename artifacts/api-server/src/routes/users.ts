@@ -7,7 +7,7 @@ import { serialize } from "../lib/serialize";
 const router: IRouter = Router();
 
 function requireAdmin(req: any, res: any, next: any) {
-  if (req.session?.accessLevel !== "admin") {
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
   }
