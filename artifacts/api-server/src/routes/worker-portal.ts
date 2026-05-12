@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, inArray } from "drizzle-orm";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
@@ -10,6 +10,11 @@ import {
   workerCertificationsTable,
   certificationsTable,
   workerActivityLogsTable,
+  siteAssignmentsTable,
+  mobSitesTable,
+  siteCertRequirementsTable,
+  roleCertRequirementsTable,
+  workerCertOverridesTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -405,6 +410,197 @@ router.delete(
     }
   },
 );
+
+// GET /api/worker-portal/compliance
+router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in30Days = new Date(today);
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    const [worker] = await db
+      .select()
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+    if (!worker) {
+      res.status(401).json({ error: "Worker not found" });
+      return;
+    }
+
+    const assignments = await db
+      .select({ sa: siteAssignmentsTable, site: mobSitesTable })
+      .from(siteAssignmentsTable)
+      .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
+      .where(
+        and(
+          eq(siteAssignmentsTable.workerId, workerId),
+          or(
+            eq(siteAssignmentsTable.status, "active"),
+            eq(siteAssignmentsTable.status, "pending"),
+          ),
+        ),
+      );
+
+    if (assignments.length === 0) {
+      res.json({ sites: [] });
+      return;
+    }
+
+    const overrides = await db
+      .select()
+      .from(workerCertOverridesTable)
+      .where(eq(workerCertOverridesTable.workerId, workerId));
+
+    const roleReqs = worker.roleId
+      ? await db
+          .select()
+          .from(roleCertRequirementsTable)
+          .where(
+            and(
+              eq(roleCertRequirementsTable.roleId, worker.roleId),
+              eq(roleCertRequirementsTable.required, true),
+            ),
+          )
+      : [];
+
+    const allHeld = await db
+      .select({ wc: workerCertificationsTable })
+      .from(workerCertificationsTable)
+      .where(eq(workerCertificationsTable.workerId, workerId));
+    const heldMap = new Map(allHeld.map((r) => [r.wc.certificationId, r.wc]));
+
+    const results = [];
+
+    for (const { sa, site } of assignments) {
+      const siteReqs = await db
+        .select()
+        .from(siteCertRequirementsTable)
+        .where(
+          and(
+            eq(siteCertRequirementsTable.siteId, sa.siteId),
+            eq(siteCertRequirementsTable.required, true),
+          ),
+        );
+
+      const requiredSet = new Set<number>();
+      for (const r of siteReqs) requiredSet.add(r.certificationId);
+      for (const r of roleReqs) requiredSet.add(r.certificationId);
+      for (const o of overrides) {
+        if (o.required) requiredSet.add(o.certificationId);
+        else requiredSet.delete(o.certificationId);
+      }
+
+      if (requiredSet.size === 0) {
+        results.push({
+          siteId: sa.siteId,
+          siteName: site.name,
+          overallStatus: "NO_REQUIREMENTS",
+          requiredCount: 0,
+          validCount: 0,
+          expiringCount: 0,
+          missingCount: 0,
+          items: [],
+        });
+        continue;
+      }
+
+      const certIds = [...requiredSet];
+      const certs = await db
+        .select()
+        .from(certificationsTable)
+        .where(inArray(certificationsTable.id, certIds));
+      const certMap = new Map(certs.map((c) => [c.id, c]));
+
+      const items: {
+        certId: number;
+        certName: string;
+        category: string | null;
+        status: string;
+        expiryDate: string | null;
+        daysUntilExpiry: number | null;
+        verified: boolean;
+      }[] = [];
+
+      for (const certId of certIds) {
+        const cert = certMap.get(certId);
+        if (!cert) continue;
+        const held = heldMap.get(certId);
+
+        let status: string;
+        let daysUntilExpiry: number | null = null;
+
+        if (!held) {
+          status = "MISSING";
+        } else if (held.expiryDate) {
+          const expiry = new Date(held.expiryDate);
+          expiry.setHours(0, 0, 0, 0);
+          daysUntilExpiry = Math.ceil(
+            (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          if (expiry < today) {
+            status = "EXPIRED";
+          } else if (expiry <= in30Days) {
+            status = held.verified ? "EXPIRING_SOON" : "NOT_VERIFIED";
+          } else {
+            status = held.verified ? "VALID" : "NOT_VERIFIED";
+          }
+        } else {
+          status = held.verified ? "VALID" : "NOT_VERIFIED";
+        }
+
+        items.push({
+          certId,
+          certName: cert.name,
+          category: cert.category ?? null,
+          status,
+          expiryDate: held?.expiryDate ?? null,
+          daysUntilExpiry,
+          verified: held?.verified ?? false,
+        });
+      }
+
+      items.sort((a, b) => {
+        const order: Record<string, number> = {
+          MISSING: 0,
+          EXPIRED: 1,
+          NOT_VERIFIED: 2,
+          EXPIRING_SOON: 3,
+          VALID: 4,
+        };
+        return (order[a.status] ?? 5) - (order[b.status] ?? 5);
+      });
+
+      const validCount = items.filter((i) => i.status === "VALID").length;
+      const expiringCount = items.filter((i) => i.status === "EXPIRING_SOON").length;
+      const missingCount = items.filter(
+        (i) => i.status === "MISSING" || i.status === "EXPIRED" || i.status === "NOT_VERIFIED",
+      ).length;
+
+      let overallStatus: string;
+      if (missingCount > 0) overallStatus = "NOT_COMPLIANT";
+      else if (expiringCount > 0) overallStatus = "EXPIRING_SOON";
+      else overallStatus = "READY";
+
+      results.push({
+        siteId: sa.siteId,
+        siteName: site.name,
+        overallStatus,
+        requiredCount: certIds.length,
+        validCount,
+        expiringCount,
+        missingCount,
+        items,
+      });
+    }
+
+    res.json({ sites: results });
+  } catch (err) {
+    logger.error({ err }, "worker-portal compliance GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 // GET /api/worker-portal/certifications/:certId/file
 router.get(

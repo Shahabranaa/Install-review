@@ -34,6 +34,11 @@ import {
   HelpCircle,
   HardHat,
   Loader2,
+  AlertTriangle,
+  CheckCheck,
+  Building2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +64,32 @@ interface WorkerCert {
 }
 
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
+type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
+
+interface ComplianceItem {
+  certId: number;
+  certName: string;
+  category: string | null;
+  status: CertStatus;
+  expiryDate: string | null;
+  daysUntilExpiry: number | null;
+  verified: boolean;
+}
+
+interface SiteCompliance {
+  siteId: number;
+  siteName: string;
+  overallStatus: SiteOverallStatus;
+  requiredCount: number;
+  validCount: number;
+  expiringCount: number;
+  missingCount: number;
+  items: ComplianceItem[];
+}
+
+interface ComplianceResponse {
+  sites: SiteCompliance[];
+}
 
 function certStatusInfo(wc: WorkerCert): {
   status: CertStatus;
@@ -84,6 +115,16 @@ function certStatusInfo(wc: WorkerCert): {
   if (exp <= in30)
     return { status: "EXPIRING_SOON", label: "Expiring soon", icon: Clock, color: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" };
   return { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+}
+
+function complianceItemBadge(status: CertStatus): { label: string; cls: string } {
+  switch (status) {
+    case "MISSING":    return { label: "Missing",          cls: "bg-red-50 text-red-700 border-red-200" };
+    case "EXPIRED":    return { label: "Expired",          cls: "bg-red-50 text-red-700 border-red-200" };
+    case "NOT_VERIFIED": return { label: "Awaiting review", cls: "bg-orange-50 text-orange-700 border-orange-200" };
+    case "EXPIRING_SOON": return { label: "Expiring soon", cls: "bg-amber-50 text-amber-700 border-amber-200" };
+    case "VALID":      return { label: "Valid",            cls: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+  }
 }
 
 function formatDate(d: string | null) {
@@ -119,6 +160,7 @@ export default function CertificationsPage() {
   const [form, setForm] = useState<CertFormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
+  const [expandedSites, setExpandedSites] = useState<Set<number>>(new Set());
 
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
@@ -129,6 +171,12 @@ export default function CertificationsPage() {
     queryKey: ["cert-types"],
     queryFn: () => apiFetch("/api/worker-portal/cert-types"),
     staleTime: 5 * 60 * 1000,
+  });
+
+  const complianceQ = useQuery<ComplianceResponse>({
+    queryKey: ["worker-compliance"],
+    queryFn: () => apiFetch("/api/worker-portal/compliance"),
+    staleTime: 60 * 1000,
   });
 
   function buildFormData(f: CertFormState) {
@@ -145,6 +193,7 @@ export default function CertificationsPage() {
     mutationFn: (f: CertFormState) => apiUpload("/api/worker-portal/certifications", buildFormData(f)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["worker-certs"] });
+      qc.invalidateQueries({ queryKey: ["worker-compliance"] });
       setAddOpen(false);
       setForm(EMPTY_FORM);
       toast({ title: "Certification added" });
@@ -157,6 +206,7 @@ export default function CertificationsPage() {
       apiUploadPatch(`/api/worker-portal/certifications/${id}`, buildFormData(f)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["worker-certs"] });
+      qc.invalidateQueries({ queryKey: ["worker-compliance"] });
       setEditOpen(false);
       setEditTarget(null);
       setForm(EMPTY_FORM);
@@ -169,6 +219,7 @@ export default function CertificationsPage() {
     mutationFn: (certId: number) => apiDelete(`/api/worker-portal/certifications/${certId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["worker-certs"] });
+      qc.invalidateQueries({ queryKey: ["worker-compliance"] });
       setDeleteOpen(false);
       setDeleteTarget(null);
       toast({ title: "Certification removed" });
@@ -193,15 +244,38 @@ export default function CertificationsPage() {
     setDeleteOpen(true);
   }
 
+  function openAddForCert(certId: number) {
+    setForm({ ...EMPTY_FORM, certificationId: String(certId) });
+    setAddOpen(true);
+  }
+
+  function toggleSite(siteId: number) {
+    setExpandedSites((prev) => {
+      const next = new Set(prev);
+      if (next.has(siteId)) next.delete(siteId);
+      else next.add(siteId);
+      return next;
+    });
+  }
+
   const certs = certsQ.data ?? [];
   const certTypes = typesQ.data ?? [];
+  const complianceSites = complianceQ.data?.sites ?? [];
 
-  // Group cert types by category for the select
   const grouped = certTypes.reduce<Record<string, CertType[]>>((acc, ct) => {
     const cat = ct.category ?? "Other";
     (acc[cat] ??= []).push(ct);
     return acc;
   }, {});
+
+  const sitesWithIssues = complianceSites.filter(
+    (s) => s.overallStatus === "NOT_COMPLIANT" || s.overallStatus === "EXPIRING_SOON",
+  );
+  const allReady =
+    complianceSites.length > 0 &&
+    complianceSites.every(
+      (s) => s.overallStatus === "READY" || s.overallStatus === "NO_REQUIREMENTS",
+    );
 
   return (
     <div className="min-h-screen bg-background">
@@ -229,113 +303,277 @@ export default function CertificationsPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6">
-        {/* Page title + add button */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Award className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold">My Certifications</h1>
-            {certsQ.data && (
-              <span className="text-sm text-muted-foreground">({certs.length})</span>
-            )}
+      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+
+        {/* ── Compliance requirements section ── */}
+        {complianceQ.isLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-          <Button size="sm" className="gap-1.5" onClick={() => { setForm(EMPTY_FORM); setAddOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            Add certification
-          </Button>
-        </div>
+        ) : complianceSites.length > 0 ? (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Site Requirements
+              </h2>
+            </div>
 
-        {/* Cert list */}
-        {certsQ.isLoading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : certs.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Award className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No certifications yet</p>
-            <p className="text-sm mt-1">Add your first certification to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {certs.map((wc) => {
-              const { label, icon: Icon, color, badgeClass } = certStatusInfo(wc);
-              return (
-                <div
-                  key={wc.certificationId}
-                  className="rounded-xl border bg-card p-4 flex items-start justify-between gap-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{wc.certification.name}</span>
-                      {wc.certification.category && (
-                        <span className="text-[11px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                          {wc.certification.category}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
-                      {wc.dateAchieved && (
-                        <span>Achieved: {formatDate(wc.dateAchieved)}</span>
-                      )}
-                      {wc.expiryDate && (
-                        <span>Expires: {formatDate(wc.expiryDate)}</span>
-                      )}
-                    </div>
-
-                    {wc.notes && (
-                      <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
-                    )}
-
-                    <div className="flex items-center gap-2 mt-2">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border",
-                          badgeClass,
-                        )}
-                      >
-                        <Icon className={cn("h-3 w-3", color)} />
-                        {label}
-                      </span>
-
-                      {wc.fileUrl && (
-                        <a
-                          href={`${BASE}/api/worker-portal/certifications/${wc.certificationId}/file`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          <Paperclip className="h-3 w-3" />
-                          View document
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      onClick={() => openEdit(wc)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => openDelete(wc)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+            {allReady ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-3">
+                <CheckCheck className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-800">All certifications up to date</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    You meet all requirements for your current site assignment{complianceSites.length > 1 ? "s" : ""}.
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sitesWithIssues.map((site) => {
+                  const isExpanded = expandedSites.has(site.siteId);
+                  const isNotCompliant = site.overallStatus === "NOT_COMPLIANT";
+
+                  return (
+                    <div
+                      key={site.siteId}
+                      className={cn(
+                        "rounded-xl border overflow-hidden",
+                        isNotCompliant
+                          ? "border-red-200 bg-red-50/40"
+                          : "border-amber-200 bg-amber-50/40",
+                      )}
+                    >
+                      {/* Site header */}
+                      <button
+                        type="button"
+                        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-black/[0.02] transition-colors"
+                        onClick={() => toggleSite(site.siteId)}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <AlertTriangle
+                            className={cn(
+                              "h-4 w-4 flex-shrink-0",
+                              isNotCompliant ? "text-red-500" : "text-amber-500",
+                            )}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{site.siteName}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {site.missingCount > 0 && (
+                                <span className="text-red-600 font-medium">
+                                  {site.missingCount} action{site.missingCount !== 1 ? "s" : ""} required
+                                  {site.expiringCount > 0 ? " · " : ""}
+                                </span>
+                              )}
+                              {site.expiringCount > 0 && (
+                                <span className="text-amber-600 font-medium">
+                                  {site.expiringCount} expiring soon
+                                </span>
+                              )}
+                              {" · "}
+                              {site.validCount}/{site.requiredCount} complete
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0 text-muted-foreground">
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Cert item list */}
+                      {isExpanded && (
+                        <div className="border-t border-inherit divide-y divide-inherit">
+                          {site.items.map((item) => {
+                            const badge = complianceItemBadge(item.status);
+                            const needsAction =
+                              item.status === "MISSING" || item.status === "EXPIRED";
+                            return (
+                              <div
+                                key={item.certId}
+                                className="px-4 py-2.5 flex items-center justify-between gap-3 bg-white/60"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-medium">{item.certName}</span>
+                                    {item.category && (
+                                      <span className="text-[10px] text-muted-foreground bg-muted/70 rounded px-1.5 py-0.5">
+                                        {item.category}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.expiryDate && item.status !== "MISSING" && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {item.status === "EXPIRED"
+                                        ? `Expired ${formatDate(item.expiryDate)}`
+                                        : item.daysUntilExpiry !== null
+                                        ? `Expires in ${item.daysUntilExpiry} day${item.daysUntilExpiry !== 1 ? "s" : ""}`
+                                        : `Expires ${formatDate(item.expiryDate)}`}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span
+                                    className={cn(
+                                      "text-xs font-medium px-2 py-0.5 rounded-full border",
+                                      badge.cls,
+                                    )}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                  {needsAction && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs px-2.5 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
+                                      onClick={() => openAddForCert(item.certId)}
+                                    >
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      Add
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Sites that are READY (collapsed summary) */}
+                {complianceSites
+                  .filter((s) => s.overallStatus === "READY")
+                  .map((site) => (
+                    <div
+                      key={site.siteId}
+                      className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-2.5 flex items-center gap-3"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{site.siteName}</p>
+                        <p className="text-xs text-emerald-600">All {site.requiredCount} certifications valid</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* ── My Certifications ── */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-semibold">My Certifications</h1>
+              {certsQ.data && (
+                <span className="text-sm text-muted-foreground">({certs.length})</span>
+              )}
+            </div>
+            <Button size="sm" className="gap-1.5" onClick={() => { setForm(EMPTY_FORM); setAddOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              Add certification
+            </Button>
           </div>
-        )}
+
+          {certsQ.isLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : certs.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Award className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No certifications yet</p>
+              <p className="text-sm mt-1">Add your first certification to get started.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {certs.map((wc) => {
+                const { label, icon: Icon, color, badgeClass } = certStatusInfo(wc);
+                return (
+                  <div
+                    key={wc.certificationId}
+                    className="rounded-xl border bg-card p-4 flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{wc.certification.name}</span>
+                        {wc.certification.category && (
+                          <span className="text-[11px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                            {wc.certification.category}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
+                        {wc.dateAchieved && (
+                          <span>Achieved: {formatDate(wc.dateAchieved)}</span>
+                        )}
+                        {wc.expiryDate && (
+                          <span>Expires: {formatDate(wc.expiryDate)}</span>
+                        )}
+                      </div>
+
+                      {wc.notes && (
+                        <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
+                      )}
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border",
+                            badgeClass,
+                          )}
+                        >
+                          <Icon className={cn("h-3 w-3", color)} />
+                          {label}
+                        </span>
+
+                        {wc.fileUrl && (
+                          <a
+                            href={`${BASE}/api/worker-portal/certifications/${wc.certificationId}/file`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Paperclip className="h-3 w-3" />
+                            View document
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEdit(wc)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => openDelete(wc)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </main>
 
       {/* Add Dialog */}
