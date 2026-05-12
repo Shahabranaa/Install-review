@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiUpload, apiUploadPatch, apiDelete } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -160,7 +160,7 @@ export default function CertificationsPage() {
   const [form, setForm] = useState<CertFormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
-  const [expandedSites, setExpandedSites] = useState<Set<number>>(new Set());
+  const [expandedSites, setExpandedSites] = useState<Set<number>>(new Set<number>());
 
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
@@ -178,6 +178,16 @@ export default function CertificationsPage() {
     queryFn: () => apiFetch("/api/worker-portal/compliance"),
     staleTime: 60 * 1000,
   });
+
+  useEffect(() => {
+    if (!complianceQ.data) return;
+    const issueIds = complianceQ.data.sites
+      .filter((s) => s.overallStatus === "NOT_COMPLIANT" || s.overallStatus === "EXPIRING_SOON")
+      .map((s) => s.siteId);
+    if (issueIds.length > 0) {
+      setExpandedSites(new Set(issueIds));
+    }
+  }, [complianceQ.data]);
 
   function buildFormData(f: CertFormState) {
     const fd = new FormData();
@@ -313,10 +323,24 @@ export default function CertificationsPage() {
         ) : complianceSites.length > 0 ? (
           <section>
             <div className="flex items-center gap-2 mb-3">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Site Requirements
+              {sitesWithIssues.length > 0 ? (
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+              ) : (
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+              )}
+              <h2 className={cn(
+                "text-sm font-semibold uppercase tracking-wide",
+                sitesWithIssues.length > 0
+                  ? "text-red-600"
+                  : "text-muted-foreground",
+              )}>
+                {sitesWithIssues.length > 0 ? "Action Required" : "Site Requirements"}
               </h2>
+              {sitesWithIssues.length > 0 && (
+                <span className="text-xs font-medium text-red-500">
+                  — upload the certifications below to become compliant
+                </span>
+              )}
             </div>
 
             {allReady ? (
