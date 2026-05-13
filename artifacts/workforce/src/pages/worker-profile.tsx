@@ -136,16 +136,6 @@ export default function WorkerProfilePage() {
     }));
   }
 
-  useEffect(() => {
-    if (certForm.certificationIds.length !== 1) return;
-    const certId = certForm.certificationIds[0];
-    const cert = (allCerts ?? []).find(c => c.id === certId);
-    if (!cert?.autoCalculateExpiry || !cert.validityMonths || !certForm.dateAchieved) return;
-    const achieved = new Date(certForm.dateAchieved);
-    if (isNaN(achieved.getTime())) return;
-    achieved.setMonth(achieved.getMonth() + cert.validityMonths);
-    setCertForm(prev => ({ ...prev, expiryDate: achieved.toISOString().split("T")[0] }));
-  }, [certForm.certificationIds, certForm.dateAchieved, allCerts]);
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
@@ -171,6 +161,17 @@ export default function WorkerProfilePage() {
     queryKey: ["workforce-certifications-list"],
     queryFn: () => apiFetch<Certification[]>("/api/workforce/certifications"),
   });
+
+  useEffect(() => {
+    if (certForm.certificationIds.length !== 1) return;
+    const certId = certForm.certificationIds[0];
+    const cert = (allCerts ?? []).find(c => c.id === certId);
+    if (!cert?.autoCalculateExpiry || !cert.validityMonths || !certForm.dateAchieved) return;
+    const achieved = new Date(certForm.dateAchieved);
+    if (isNaN(achieved.getTime())) return;
+    achieved.setMonth(achieved.getMonth() + cert.validityMonths);
+    setCertForm(prev => ({ ...prev, expiryDate: achieved.toISOString().split("T")[0] }));
+  }, [certForm.certificationIds, certForm.dateAchieved, allCerts]);
 
   const { data: roles } = useQuery<Role[]>({
     queryKey: ["workforce-roles"],
