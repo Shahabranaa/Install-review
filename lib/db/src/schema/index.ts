@@ -27,3 +27,4 @@ export * from "./cert-requirements";
 export * from "./site-assignments";
 export * from "./email-logs";
 export * from "./worker-activity-logs";
+export * from "./clients";

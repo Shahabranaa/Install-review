@@ -49,6 +49,7 @@ interface CertType {
   name: string;
   category: string | null;
   validityMonths: number | null;
+  autoCalculateExpiry: boolean;
 }
 
 interface WorkerCert {
@@ -695,6 +696,19 @@ interface CertFormProps {
 }
 
 function CertForm({ form, setForm, grouped, fileRef, lockType }: CertFormProps) {
+  const allCertTypes = Object.values(grouped).flat();
+  const selectedCert = allCertTypes.find(ct => String(ct.id) === form.certificationId);
+  const isAutoExpiry = selectedCert?.autoCalculateExpiry && !!selectedCert.validityMonths && !!form.dateAchieved;
+
+  useEffect(() => {
+    if (!isAutoExpiry || !selectedCert?.validityMonths || !form.dateAchieved) return;
+    const achieved = new Date(form.dateAchieved);
+    if (isNaN(achieved.getTime())) return;
+    achieved.setMonth(achieved.getMonth() + selectedCert.validityMonths);
+    const newExpiry = achieved.toISOString().split("T")[0];
+    setForm(f => ({ ...f, expiryDate: newExpiry }));
+  }, [form.certificationId, form.dateAchieved]);
+
   return (
     <div className="space-y-3 py-1">
       <div className="space-y-1.5">
@@ -744,11 +758,16 @@ function CertForm({ form, setForm, grouped, fileRef, lockType }: CertFormProps) 
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Expiry date</Label>
+          <Label className="flex items-center gap-1">
+            Expiry date
+            {isAutoExpiry && <span className="text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">auto</span>}
+          </Label>
           <Input
             type="date"
             value={form.expiryDate}
             onChange={(e) => setForm((f) => ({ ...f, expiryDate: e.target.value }))}
+            readOnly={!!isAutoExpiry}
+            className={isAutoExpiry ? "bg-muted/40" : ""}
           />
         </div>
       </div>

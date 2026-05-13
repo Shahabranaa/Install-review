@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
@@ -29,6 +29,7 @@ interface Certification {
   name: string;
   category: string | null;
   validityMonths: number | null;
+  autoCalculateExpiry: boolean;
 }
 
 interface WorkerCert {
@@ -134,6 +135,17 @@ export default function WorkerProfilePage() {
         : [...prev.certificationIds, id],
     }));
   }
+
+  useEffect(() => {
+    if (certForm.certificationIds.length !== 1) return;
+    const certId = certForm.certificationIds[0];
+    const cert = (allCerts ?? []).find(c => c.id === certId);
+    if (!cert?.autoCalculateExpiry || !cert.validityMonths || !certForm.dateAchieved) return;
+    const achieved = new Date(certForm.dateAchieved);
+    if (isNaN(achieved.getTime())) return;
+    achieved.setMonth(achieved.getMonth() + cert.validityMonths);
+    setCertForm(prev => ({ ...prev, expiryDate: achieved.toISOString().split("T")[0] }));
+  }, [certForm.certificationIds, certForm.dateAchieved, allCerts]);
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
@@ -844,8 +856,21 @@ export default function WorkerProfilePage() {
                 <Input type="date" value={certForm.dateAchieved} onChange={(e) => setCertForm({ ...certForm, dateAchieved: e.target.value })} />
               </div>
               <div>
-                <Label>Expiry Date</Label>
-                <Input type="date" value={certForm.expiryDate} onChange={(e) => setCertForm({ ...certForm, expiryDate: e.target.value })} />
+                {(() => {
+                  const singleCert = certForm.certificationIds.length === 1
+                    ? (allCerts ?? []).find(c => c.id === certForm.certificationIds[0])
+                    : undefined;
+                  const isAuto = singleCert?.autoCalculateExpiry && !!singleCert.validityMonths && !!certForm.dateAchieved;
+                  return (
+                    <>
+                      <Label className="flex items-center gap-1">
+                        Expiry Date
+                        {isAuto && <span className="text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">auto</span>}
+                      </Label>
+                      <Input type="date" value={certForm.expiryDate} onChange={(e) => setCertForm({ ...certForm, expiryDate: e.target.value })} readOnly={!!isAuto} className={isAuto ? "bg-muted/40" : ""} />
+                    </>
+                  );
+                })()}
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">

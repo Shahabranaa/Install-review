@@ -18,6 +18,8 @@ import {
   siteAssignmentsTable,
   workerActivityLogsTable,
   emailLogsTable,
+  clientsTable,
+  clientCertRequirementsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -476,10 +478,10 @@ router.get("/workforce/certifications", requireAuth, async (_req, res): Promise<
 
 router.post("/workforce/certifications", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { name, description, validityMonths, category } = req.body;
+    const { name, description, validityMonths, category, autoCalculateExpiry } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
     const [cert] = await db.insert(certificationsTable)
-      .values({ name: name.trim(), description, validityMonths, category }).returning();
+      .values({ name: name.trim(), description, validityMonths, category, autoCalculateExpiry: autoCalculateExpiry ?? false }).returning();
     res.status(201).json(cert);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -490,9 +492,9 @@ router.patch("/workforce/certifications/:id", requireAdmin, async (req, res): Pr
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { name, description, validityMonths, category } = req.body;
+    const { name, description, validityMonths, category, autoCalculateExpiry } = req.body;
     const [updated] = await db.update(certificationsTable)
-      .set({ name, description, validityMonths, category, updatedAt: new Date() })
+      .set({ name, description, validityMonths, category, autoCalculateExpiry: autoCalculateExpiry ?? false, updatedAt: new Date() })
       .where(eq(certificationsTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Certification not found" }); return; }
     res.json(updated);
@@ -507,6 +509,121 @@ router.delete("/workforce/certifications/:id", requireAdmin, async (req, res): P
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     await db.delete(certificationsTable).where(eq(certificationsTable.id, id));
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Clients ──────────────────────────────────────────────────────────────────
+
+router.get("/workforce/clients", requireAuth, async (_req, res): Promise<void> => {
+  try {
+    const clients = await db.select().from(clientsTable).orderBy(clientsTable.name);
+    res.json(clients);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/workforce/clients", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const { name, notes } = req.body;
+    if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+    const [client] = await db.insert(clientsTable).values({ name: name.trim(), notes: notes || null }).returning();
+    res.status(201).json(client);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.patch("/workforce/clients/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { name, notes } = req.body;
+    const [updated] = await db.update(clientsTable)
+      .set({ name, notes: notes ?? null, updatedAt: new Date() })
+      .where(eq(clientsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Client not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete("/workforce/clients/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(clientsTable).where(eq(clientsTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get("/workforce/clients/:id/cert-requirements", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const reqs = await db.select({ req: clientCertRequirementsTable, cert: certificationsTable })
+      .from(clientCertRequirementsTable)
+      .innerJoin(certificationsTable, eq(clientCertRequirementsTable.certificationId, certificationsTable.id))
+      .where(eq(clientCertRequirementsTable.clientId, id));
+    res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PUT /workforce/clients/:id/cert-requirements — replace-set: send full desired list
+router.put("/workforce/clients/:id/cert-requirements", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const certIds = req.body as number[];
+    if (!Array.isArray(certIds)) { res.status(400).json({ error: "Body must be an array of certificationId numbers" }); return; }
+    await db.transaction(async (tx) => {
+      await tx.delete(clientCertRequirementsTable).where(eq(clientCertRequirementsTable.clientId, id));
+      if (certIds.length > 0) {
+        await tx.insert(clientCertRequirementsTable)
+          .values(certIds.map(certificationId => ({ clientId: id, certificationId })));
+      }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /workforce/sites/:id/apply-client-template — stamp client cert requirements onto a site (additive, not replacing)
+router.post("/workforce/sites/:id/apply-client-template", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.id ?? "");
+    const { clientId } = req.body as { clientId: number };
+    if (isNaN(siteId) || !clientId) { res.status(400).json({ error: "siteId and clientId are required" }); return; }
+
+    const [site] = await db.select({ id: mobSitesTable.id }).from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+
+    const [client] = await db.select({ id: clientsTable.id }).from(clientsTable).where(eq(clientsTable.id, clientId));
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+
+    const clientReqs = await db.select().from(clientCertRequirementsTable)
+      .where(eq(clientCertRequirementsTable.clientId, clientId));
+
+    const existingReqs = await db.select({ certificationId: siteCertRequirementsTable.certificationId })
+      .from(siteCertRequirementsTable).where(eq(siteCertRequirementsTable.siteId, siteId));
+
+    const existingIds = new Set(existingReqs.map(r => r.certificationId));
+    const toAdd = clientReqs.filter(r => !existingIds.has(r.certificationId));
+
+    if (toAdd.length > 0) {
+      await db.insert(siteCertRequirementsTable)
+        .values(toAdd.map(r => ({ siteId, certificationId: r.certificationId, required: true })));
+    }
+
+    res.json({ added: toAdd.length });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

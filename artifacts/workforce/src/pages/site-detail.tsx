@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { apiFetch, apiPut } from "@/lib/api";
+import { apiFetch, apiPut, apiPost } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,16 +9,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
-  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase,
+  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
 type StatusFilter = "ALL" | WorkerStatus;
+
+interface Client { id: number; name: string; notes: string | null; }
 
 interface ComplianceItem {
   certId: number;
@@ -220,6 +225,8 @@ export default function SiteDetailPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [showAddReq, setShowAddReq] = useState(false);
   const [selectedCertIds, setSelectedCertIds] = useState<Set<number>>(new Set());
+  const [showApplyTemplate, setShowApplyTemplate] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
 
   function toggleSelectedCertId(id: number) {
     setSelectedCertIds((prev) => {
@@ -265,6 +272,26 @@ export default function SiteDetailPage() {
     queryFn: () => apiFetch<{ id: number; company: string; roleName: string | null }[]>("/api/workforce/workers"),
     enabled: !isNaN(siteId),
     staleTime: 5 * 60_000,
+  });
+
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["workforce-clients"],
+    queryFn: () => apiFetch<Client[]>("/api/workforce/clients"),
+    enabled: isAdmin,
+  });
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: (clientId: number) =>
+      apiPost<{ added: number }>(`/api/workforce/sites/${siteId}/apply-client-template`, { clientId }),
+    onSuccess: (data) => {
+      const added = (data as unknown as { added: number }).added;
+      toast({ title: added > 0 ? `Applied — ${added} cert${added !== 1 ? "s" : ""} added` : "No new certs to add (already up to date)" });
+      void qc.invalidateQueries({ queryKey: ["site-requirements", siteId] });
+      void qc.invalidateQueries({ queryKey: ["site-compliance", siteId] });
+      setShowApplyTemplate(false);
+      setSelectedClientId("");
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   const workerMetaMap = new Map<number, WorkerMeta>(
@@ -399,9 +426,16 @@ export default function SiteDetailPage() {
             </h2>
           </div>
           {isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => setShowAddReq(true)} data-testid="button-add-requirement">
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {clients && clients.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setShowApplyTemplate(true)} data-testid="button-apply-template">
+                  <Handshake className="h-3.5 w-3.5 mr-1" /> Apply Template
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setShowAddReq(true)} data-testid="button-add-requirement">
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add
+              </Button>
+            </div>
           )}
         </div>
         {reqLoading ? (
@@ -521,6 +555,40 @@ export default function SiteDetailPage() {
           </table>
         )}
       </div>
+
+      {/* Apply client template dialog */}
+      <Dialog open={showApplyTemplate} onOpenChange={(open) => { setShowApplyTemplate(open); if (!open) setSelectedClientId(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Client Cert Template</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Select a client to stamp their cert requirement template onto this site. Existing requirements are kept — only new ones are added.
+            </p>
+            <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+              <SelectTrigger data-testid="select-client-template">
+                <SelectValue placeholder="Choose a client…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(clients ?? []).map(c => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowApplyTemplate(false); setSelectedClientId(""); }}>Cancel</Button>
+            <Button
+              onClick={() => { if (selectedClientId) applyTemplateMutation.mutate(parseInt(selectedClientId)); }}
+              disabled={!selectedClientId || applyTemplateMutation.isPending}
+              data-testid="button-confirm-apply-template"
+            >
+              {applyTemplateMutation.isPending ? "Applying…" : "Apply Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add requirement dialog */}
       <Dialog open={showAddReq} onOpenChange={(open) => { setShowAddReq(open); if (!open) setSelectedCertIds(new Set()); }}>
