@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
-  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake, Users,
+  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake, Users, Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -85,6 +85,14 @@ interface Certification {
 interface WorkerMeta {
   company: string;
   roleName: string | null;
+}
+
+interface PPESiteSummary {
+  ppeTypeId: number;
+  ppeTypeName: string;
+  issuedCount: number;
+  returnedCount: number;
+  activeCount: number;
 }
 
 function workerStatusConfig(status: WorkerStatus) {
@@ -280,6 +288,12 @@ export default function SiteDetailPage() {
     queryKey: ["workforce-clients"],
     queryFn: () => apiFetch<Client[]>("/api/workforce/clients"),
     enabled: isAdmin,
+  });
+
+  const { data: ppeSummary } = useQuery<PPESiteSummary[]>({
+    queryKey: ["site-ppe-summary", siteId],
+    queryFn: () => apiFetch<PPESiteSummary[]>(`/api/workforce/sites/${siteId}/ppe-summary`),
+    enabled: !isNaN(siteId),
   });
 
   const applyTemplateMutation = useMutation({
@@ -562,6 +576,37 @@ export default function SiteDetailPage() {
           </table>
         )}
       </div>
+
+      {/* PPE Site Summary */}
+      {ppeSummary && ppeSummary.length > 0 && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <Package className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">PPE Summary</h2>
+            <span className="text-xs text-muted-foreground ml-1">
+              — items issued to workers assigned to this site
+            </span>
+          </div>
+          <div className="divide-y">
+            {ppeSummary.map((row) => (
+              <div key={row.ppeTypeId} className="flex items-center gap-4 px-4 py-3">
+                <span className="flex-1 text-sm font-medium">{row.ppeTypeName}</span>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                    {row.activeCount} active
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-muted-foreground inline-block" />
+                    {row.returnedCount} returned
+                  </span>
+                  <span className="text-muted-foreground/60">{row.issuedCount} total</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Apply client template dialog */}
       <Dialog open={showApplyTemplate} onOpenChange={(open) => { setShowApplyTemplate(open); if (!open) setSelectedClientId(""); }}>

@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
-  Paperclip, X as XIcon, Loader2, KeyRound,
+  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +85,22 @@ interface SiteComplianceResult {
 
 interface Role { id: number; name: string }
 
+interface PPEType { id: number; name: string; description: string | null }
+interface PPEAllocation {
+  id: number;
+  workerId: number;
+  ppeTypeId: number;
+  ppeType: { id: number; name: string; description: string | null };
+  siteId: number | null;
+  site: { id: number; name: string } | null;
+  issuedAt: string;
+  issuedByUserId: number | null;
+  issuedByUser: { displayName: string } | null;
+  sizeSpec: string | null;
+  returnedAt: string | null;
+  notes: string | null;
+}
+
 function certStatusInfo(wc: WorkerCert): { status: CertStatus; label: string; icon: React.ComponentType<{ className?: string }>; color: string } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -142,6 +158,9 @@ export default function WorkerProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
   const [verifyingCertIds, setVerifyingCertIds] = useState<Set<number>>(new Set());
+  const [showIssuePPE, setShowIssuePPE] = useState(false);
+  const today = new Date().toISOString().split("T")[0];
+  const [issueForm, setIssueForm] = useState({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
   const cardFileInputRef = useRef<HTMLInputElement>(null);
   const cardUploadTargetRef = useRef<WorkerCert | null>(null);
 
@@ -181,6 +200,18 @@ export default function WorkerProfilePage() {
   const { data: allSites } = useQuery<{ id: number; name: string }[]>({
     queryKey: ["workforce-sites"],
     queryFn: () => apiFetch<{ id: number; name: string }[]>("/api/workforce/sites"),
+  });
+
+  const { data: ppeAllocations } = useQuery<PPEAllocation[]>({
+    queryKey: ["worker-ppe", workerId],
+    queryFn: () => apiFetch<PPEAllocation[]>(`/api/workforce/workers/${workerId}/ppe`),
+    enabled: !isNaN(workerId),
+  });
+
+  const { data: ppeTypes } = useQuery<PPEType[]>({
+    queryKey: ["workforce-ppe-types"],
+    queryFn: () => apiFetch<PPEType[]>("/api/workforce/ppe-types"),
+    enabled: isAdmin,
   });
 
   function openEdit() {
@@ -310,6 +341,35 @@ export default function WorkerProfilePage() {
       toast({ title: newVerified ? "Certification verified" : "Verification removed" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const issuePPEMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/workers/${workerId}/ppe`, {
+      ppeTypeId: parseInt(issueForm.ppeTypeId),
+      siteId: issueForm.siteId ? parseInt(issueForm.siteId) : null,
+      issuedAt: issueForm.issuedAt,
+      sizeSpec: issueForm.sizeSpec || null,
+      notes: issueForm.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "PPE issued" });
+      void qc.invalidateQueries({ queryKey: ["worker-ppe", workerId] });
+      setShowIssuePPE(false);
+      setIssueForm({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const returnPPEMutation = useMutation({
+    mutationFn: (allocationId: number) =>
+      apiPatch(`/api/workforce/ppe-allocations/${allocationId}`, {
+        returnedAt: today,
+      }),
+    onSuccess: () => {
+      toast({ title: "PPE marked as returned" });
+      void qc.invalidateQueries({ queryKey: ["worker-ppe", workerId] });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -735,6 +795,88 @@ export default function WorkerProfilePage() {
         </div>
       )}
 
+      {/* PPE Allocations */}
+      {(isAdmin || (ppeAllocations && ppeAllocations.length > 0)) && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-primary" />
+              <h2 className="font-semibold text-sm">
+                PPE Allocation ({(ppeAllocations ?? []).filter(a => !a.returnedAt).length} active)
+              </h2>
+            </div>
+            {isAdmin && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => { setIssueForm({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" }); setShowIssuePPE(true); }}
+                data-testid="button-issue-ppe"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Issue PPE
+              </Button>
+            )}
+          </div>
+
+          {!ppeAllocations || ppeAllocations.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No PPE issued to this worker yet.</div>
+          ) : (
+            <div className="divide-y">
+              {/* Active items first */}
+              {ppeAllocations.filter(a => !a.returnedAt).map((a) => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{a.ppeType.name}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> Issued {new Date(`${a.issuedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                      </span>
+                      {a.site && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{a.site.name}</span>}
+                      {a.sizeSpec && <span>Size/Spec: {a.sizeSpec}</span>}
+                      {a.issuedByUser && <span>By {a.issuedByUser.displayName}</span>}
+                      {a.notes && <span className="italic">{a.notes}</span>}
+                    </div>
+                  </div>
+                  <span className="text-[10px] border border-emerald-400 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">Active</span>
+                  {isAdmin && (
+                    <Button
+                      size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
+                      title="Mark as returned"
+                      onClick={() => returnPPEMutation.mutate(a.id)}
+                      disabled={returnPPEMutation.isPending}
+                      data-testid={`button-return-ppe-${a.id}`}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" /> Return
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {/* Returned items */}
+              {ppeAllocations.filter(a => !!a.returnedAt).map((a) => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3 opacity-60">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm line-through">{a.ppeType.name}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> Issued {new Date(`${a.issuedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                      </span>
+                      {a.returnedAt && (
+                        <span className="flex items-center gap-1">
+                          <RotateCcw className="h-3 w-3" /> Returned {new Date(`${a.returnedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                        </span>
+                      )}
+                      {a.site && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{a.site.name}</span>}
+                      {a.sizeSpec && <span>Size/Spec: {a.sizeSpec}</span>}
+                    </div>
+                  </div>
+                  <span className="text-[10px] border text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">Returned</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Edit worker dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>
         <DialogContent>
@@ -896,6 +1038,88 @@ export default function WorkerProfilePage() {
                 : certForm.certificationIds.length > 0
                   ? `Add ${certForm.certificationIds.length} Cert${certForm.certificationIds.length !== 1 ? "s" : ""}`
                   : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Issue PPE dialog */}
+      <Dialog open={showIssuePPE} onOpenChange={(open) => { if (!open) setShowIssuePPE(false); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Issue PPE — {worker.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>PPE Type *</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.ppeTypeId}
+                onChange={(e) => setIssueForm({ ...issueForm, ppeTypeId: e.target.value })}
+                data-testid="select-ppe-type"
+              >
+                <option value="">Choose a PPE type…</option>
+                {(ppeTypes ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              {!ppeTypes?.length && (
+                <p className="text-xs text-amber-600 mt-1">No PPE types defined. Add them in the PPE Types settings page first.</p>
+              )}
+            </div>
+            <div>
+              <Label>Issue Date *</Label>
+              <input
+                type="date"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.issuedAt}
+                onChange={(e) => setIssueForm({ ...issueForm, issuedAt: e.target.value })}
+                data-testid="input-ppe-issued-at"
+              />
+            </div>
+            <div>
+              <Label>Site (optional)</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.siteId}
+                onChange={(e) => setIssueForm({ ...issueForm, siteId: e.target.value })}
+              >
+                <option value="">No site linked</option>
+                {(worker.assignments ?? [])
+                  .filter(a => a.status === "active" || a.status === "pending")
+                  .map((a) => (
+                    <option key={a.site.id} value={a.site.id}>{a.site.name}</option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <Label>Size / Spec</Label>
+              <input
+                type="text"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.sizeSpec}
+                onChange={(e) => setIssueForm({ ...issueForm, sizeSpec: e.target.value })}
+                placeholder="e.g. Large, Size 10, 42cm"
+                data-testid="input-ppe-size-spec"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <input
+                type="text"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.notes}
+                onChange={(e) => setIssueForm({ ...issueForm, notes: e.target.value })}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowIssuePPE(false)}>Cancel</Button>
+            <Button
+              onClick={() => issuePPEMutation.mutate()}
+              disabled={!issueForm.ppeTypeId || !issueForm.issuedAt || issuePPEMutation.isPending}
+              data-testid="button-confirm-issue-ppe"
+            >
+              {issuePPEMutation.isPending ? "Issuing…" : "Issue PPE"}
             </Button>
           </DialogFooter>
         </DialogContent>

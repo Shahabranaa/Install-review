@@ -20,6 +20,8 @@ import {
   emailLogsTable,
   clientsTable,
   clientCertRequirementsTable,
+  ppeTypesTable,
+  ppeAllocationsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -2209,7 +2211,7 @@ router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async
 const ALLOWED_FEED_SOURCES = ["portal", "email"] as const;
 const ALLOWED_FEED_EVENT_TYPES = [
   "login", "logout", "cert_added", "cert_edited", "cert_deleted", "credentials_set",
-  "email_sent", "email_opened",
+  "email_sent", "email_opened", "ppe_issued", "ppe_returned",
 ] as const;
 
 // GET /api/workforce/activity-feed
@@ -2347,6 +2349,198 @@ router.get("/workforce/activity-feed", requireAdmin, async (req, res): Promise<v
     res.json({ data, total, page, pageSize });
   } catch (err) {
     logger.error({ err }, "workforce activity-feed error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── PPE Types ─────────────────────────────────────────────────────────────────
+
+router.get("/workforce/ppe-types", requireAuth, async (_req, res): Promise<void> => {
+  try {
+    const types = await db.select().from(ppeTypesTable).orderBy(ppeTypesTable.name);
+    res.json(types);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/workforce/ppe-types", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const { name, description } = req.body;
+    if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+    const [type] = await db.insert(ppeTypesTable)
+      .values({ name: name.trim(), description: description || null })
+      .returning();
+    res.status(201).json(type);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.patch("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { name, description } = req.body;
+    const [updated] = await db.update(ppeTypesTable)
+      .set({
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description: description || null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(ppeTypesTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "PPE type not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(ppeTypesTable).where(eq(ppeTypesTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── PPE Allocations ───────────────────────────────────────────────────────────
+
+// GET /workforce/workers/:id/ppe — all allocations for a worker, newest first
+router.get("/workforce/workers/:id/ppe", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = parseInt(req.params.id ?? "");
+    if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const rows = await db.execute(sql`
+      SELECT pa.id, pa.worker_id, pa.ppe_type_id, pa.site_id, pa.issued_at,
+             pa.issued_by_user_id, pa.size_spec, pa.returned_at, pa.notes,
+             pt.name AS ppe_type_name, pt.description AS ppe_type_description,
+             ms.name AS site_name,
+             u.display_name AS issued_by_name
+      FROM ppe_allocations pa
+      JOIN ppe_types pt ON pt.id = pa.ppe_type_id
+      LEFT JOIN mob_sites ms ON ms.id = pa.site_id
+      LEFT JOIN users u ON u.id = pa.issued_by_user_id
+      WHERE pa.worker_id = ${workerId}
+      ORDER BY pa.issued_at DESC, pa.id DESC
+    `);
+    res.json((rows.rows as Record<string, unknown>[]).map(r => ({
+      id: r.id,
+      workerId: r.worker_id,
+      ppeTypeId: r.ppe_type_id,
+      ppeType: { id: r.ppe_type_id, name: r.ppe_type_name, description: r.ppe_type_description },
+      siteId: r.site_id ?? null,
+      site: r.site_id ? { id: r.site_id, name: r.site_name } : null,
+      issuedAt: r.issued_at,
+      issuedByUserId: r.issued_by_user_id ?? null,
+      issuedByUser: r.issued_by_name ? { displayName: r.issued_by_name } : null,
+      sizeSpec: r.size_spec ?? null,
+      returnedAt: r.returned_at ?? null,
+      notes: r.notes ?? null,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /workforce/workers/:id/ppe — issue PPE to a worker
+router.post("/workforce/workers/:id/ppe", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const workerId = parseInt(req.params.id ?? "");
+    if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { ppeTypeId, siteId, issuedAt, sizeSpec, notes } = req.body;
+    if (!ppeTypeId || !issuedAt) { res.status(400).json({ error: "ppeTypeId and issuedAt are required" }); return; }
+
+    const [allocation] = await db.insert(ppeAllocationsTable).values({
+      workerId,
+      ppeTypeId: parseInt(String(ppeTypeId)),
+      siteId: siteId ? parseInt(String(siteId)) : null,
+      issuedAt,
+      issuedByUserId: req.session?.userId ?? null,
+      sizeSpec: sizeSpec || null,
+      notes: notes || null,
+    }).returning();
+
+    // Log to activity feed
+    const [ppeType] = await db.select().from(ppeTypesTable).where(eq(ppeTypesTable.id, parseInt(String(ppeTypeId))));
+    const siteRow = siteId ? await db.select({ name: mobSitesTable.name }).from(mobSitesTable).where(eq(mobSitesTable.id, parseInt(String(siteId)))) : [];
+    await db.insert(workerActivityLogsTable).values({
+      workerId,
+      action: "ppe_issued",
+      detail: `PPE issued: ${ppeType?.name ?? "item"}${sizeSpec ? ` (${sizeSpec})` : ""}${siteRow[0] ? ` at ${siteRow[0].name}` : ""}`,
+      ipAddress: null,
+    }).catch(() => {});
+
+    res.status(201).json(allocation);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PATCH /workforce/ppe-allocations/:id — update allocation (mark returned, edit notes/size)
+router.patch("/workforce/ppe-allocations/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { returnedAt, sizeSpec, notes } = req.body;
+
+    const [existing] = await db.select().from(ppeAllocationsTable).where(eq(ppeAllocationsTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Allocation not found" }); return; }
+
+    const [updated] = await db.update(ppeAllocationsTable)
+      .set({
+        ...(returnedAt !== undefined ? { returnedAt: returnedAt || null } : {}),
+        ...(sizeSpec !== undefined ? { sizeSpec: sizeSpec || null } : {}),
+        ...(notes !== undefined ? { notes: notes || null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(ppeAllocationsTable.id, id))
+      .returning();
+
+    // Log return event only when returnedAt is newly set
+    if (returnedAt && !existing.returnedAt) {
+      const [ppeType] = await db.select().from(ppeTypesTable).where(eq(ppeTypesTable.id, existing.ppeTypeId));
+      await db.insert(workerActivityLogsTable).values({
+        workerId: existing.workerId,
+        action: "ppe_returned",
+        detail: `PPE returned: ${ppeType?.name ?? "item"}`,
+        ipAddress: null,
+      }).catch(() => {});
+    }
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /workforce/sites/:id/ppe-summary — totals per PPE type for a site
+router.get("/workforce/sites/:id/ppe-summary", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.id ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const rows = await db.execute(sql`
+      SELECT pt.id AS ppe_type_id, pt.name AS ppe_type_name,
+             COUNT(*)::int             AS issued_count,
+             COUNT(pa.returned_at)::int AS returned_count,
+             (COUNT(*) - COUNT(pa.returned_at))::int AS active_count
+      FROM ppe_allocations pa
+      JOIN ppe_types pt ON pt.id = pa.ppe_type_id
+      WHERE pa.site_id = ${siteId}
+      GROUP BY pt.id, pt.name
+      ORDER BY pt.name
+    `);
+    res.json((rows.rows as Record<string, unknown>[]).map(r => ({
+      ppeTypeId: Number(r.ppe_type_id),
+      ppeTypeName: r.ppe_type_name,
+      issuedCount: Number(r.issued_count),
+      returnedCount: Number(r.returned_count),
+      activeCount: Number(r.active_count),
+    })));
+  } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
