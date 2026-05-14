@@ -320,16 +320,14 @@ export default function SitesPage() {
                           >
                             <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
                           </Button>
-                          {s.mobilisationDate && (
-                            <Button
-                              size="icon" variant="ghost" className="h-7 w-7"
-                              title="Mob-day readiness check"
-                              onClick={() => setMobCheckSite(s)}
-                              data-testid={`button-mob-check-${s.id}`}
-                            >
-                              <Rocket className="h-3.5 w-3.5 text-violet-500" />
-                            </Button>
-                          )}
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            title={s.mobilisationDate ? "Mob-day readiness check" : "Mob-day readiness check (no mob date set)"}
+                            onClick={() => setMobCheckSite(s)}
+                            data-testid={`button-mob-check-${s.id}`}
+                          >
+                            <Rocket className={cn("h-3.5 w-3.5", s.mobilisationDate ? "text-violet-500" : "text-muted-foreground")} />
+                          </Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Assign worker" onClick={() => { setAssignSite(s); setAssignWorkerId(""); }} data-testid={`button-assign-worker-${s.id}`}>
                             <UserPlus className="h-3.5 w-3.5" />
                           </Button>
@@ -355,16 +353,14 @@ export default function SitesPage() {
                           >
                             <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
                           </Button>
-                          {s.mobilisationDate && (
-                            <Button
-                              size="icon" variant="ghost" className="h-7 w-7"
-                              title="Mob-day readiness check"
-                              onClick={() => setMobCheckSite(s)}
-                              data-testid={`button-mob-check-${s.id}`}
-                            >
-                              <Rocket className="h-3.5 w-3.5 text-violet-500" />
-                            </Button>
-                          )}
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            title={s.mobilisationDate ? "Mob-day readiness check" : "Mob-day readiness check (no mob date set)"}
+                            onClick={() => setMobCheckSite(s)}
+                            data-testid={`button-mob-check-${s.id}`}
+                          >
+                            <Rocket className={cn("h-3.5 w-3.5", s.mobilisationDate ? "text-violet-500" : "text-muted-foreground")} />
+                          </Button>
                           <Link href={`/sites/${s.id}`}>
                             <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
                           </Link>
