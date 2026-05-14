@@ -434,20 +434,28 @@ router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> =>
   try {
     const { name, location, description, expectedCompletionDate, clientId } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
-    const parsedClientId = clientId ? parseInt(clientId) : null;
-    const [site] = await db.insert(mobSitesTable)
-      .values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null, clientId: parsedClientId })
-      .returning();
-
-    // If a client was linked, stamp its cert requirements onto the new site
-    if (parsedClientId) {
-      const clientReqs = await db.select().from(clientCertRequirementsTable)
-        .where(eq(clientCertRequirementsTable.clientId, parsedClientId));
-      if (clientReqs.length > 0) {
-        await db.insert(siteCertRequirementsTable)
-          .values(clientReqs.map(r => ({ siteId: site.id, certificationId: r.certificationId, required: true })));
-      }
+    const parsedClientId = clientId != null && clientId !== "" ? parseInt(clientId) : null;
+    if (parsedClientId !== null && isNaN(parsedClientId)) {
+      res.status(400).json({ error: "clientId must be a valid integer" }); return;
     }
+
+    const site = await db.transaction(async (tx) => {
+      const [newSite] = await tx.insert(mobSitesTable)
+        .values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null, clientId: parsedClientId })
+        .returning();
+
+      // If a client was linked, stamp its cert requirements onto the new site
+      if (parsedClientId) {
+        const clientReqs = await tx.select().from(clientCertRequirementsTable)
+          .where(eq(clientCertRequirementsTable.clientId, parsedClientId));
+        if (clientReqs.length > 0) {
+          await tx.insert(siteCertRequirementsTable)
+            .values(clientReqs.map(r => ({ siteId: newSite.id, certificationId: r.certificationId, required: true })));
+        }
+      }
+
+      return newSite;
+    });
 
     res.status(201).json(site);
   } catch (err) {
@@ -460,11 +468,15 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { name, location, description, active, expectedCompletionDate, clientId } = req.body;
+    const parsedClientId = clientId != null && clientId !== "" ? parseInt(clientId) : null;
+    if (clientId !== undefined && parsedClientId !== null && isNaN(parsedClientId)) {
+      res.status(400).json({ error: "clientId must be a valid integer" }); return;
+    }
     const [updated] = await db.update(mobSitesTable)
       .set({
         name, location, description, active,
         ...(expectedCompletionDate !== undefined ? { expectedCompletionDate: expectedCompletionDate || null } : {}),
-        ...(clientId !== undefined ? { clientId: clientId ? parseInt(clientId) : null } : {}),
+        ...(clientId !== undefined ? { clientId: parsedClientId } : {}),
         updatedAt: new Date(),
       })
       .where(eq(mobSitesTable.id, id)).returning();
