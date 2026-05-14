@@ -53,7 +53,7 @@ function formatMonth(monthKey: string) {
 function statusLabel(status: string) {
   switch (status) {
     case "EXPIRED": return "Expired";
-    case "EXPIRING": return "Expires this month";
+    case "EXPIRING": return "Expires soon";
     case "MISSING": return "Missing";
     case "NOT_VERIFIED": return "Not verified";
     default: return status;
@@ -292,9 +292,19 @@ export default function SitesPage() {
                     )}
                     {!isAdmin && (
                       <td className="px-2 py-3">
-                        <Link href={`/sites/${s.id}`}>
-                          <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            title="Readiness forecast"
+                            onClick={() => { setForecastSite(s); setExpandedMonth(null); }}
+                            data-testid={`button-forecast-${s.id}`}
+                          >
+                            <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
+                          </Button>
+                          <Link href={`/sites/${s.id}`}>
+                            <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
+                          </Link>
+                        </div>
                       </td>
                     )}
                   </tr>
