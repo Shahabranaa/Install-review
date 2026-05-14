@@ -32,14 +32,14 @@ interface SiteWithStats {
 interface Worker { id: number; name: string; company: string | null }
 
 interface ForecastIssue { certName: string; status: string; expiryDate: string | null }
-interface ForecastWorker { id: number; name: string; status: string; issues: ForecastIssue[] }
+interface ForecastWorker { workerId: number; name: string; issues: ForecastIssue[] }
 interface ForecastMonth {
   month: string;
   readyCount: number;
   expiringCount: number;
   nonCompliantCount: number;
   noReqCount: number;
-  workers: ForecastWorker[];
+  details: ForecastWorker[];
 }
 
 const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "" };
@@ -469,15 +469,16 @@ export default function SitesPage() {
                               {hasIssues && (isExpanded ? <ChevronUp className="h-3.5 w-3.5 inline" /> : <ChevronDown className="h-3.5 w-3.5 inline" />)}
                             </td>
                           </tr>
-                          {isExpanded && m.workers.length > 0 && (
+                          {isExpanded && m.details.length > 0 && (
                             <tr key={`${m.month}-detail`} className="bg-muted/10">
                               <td colSpan={5} className="px-4 py-3">
                                 <div className="space-y-2">
-                                  {m.workers.map((w) => (
-                                    <div key={w.id} className="flex items-start gap-2">
+                                  {m.details.map((w) => (
+                                    <div key={w.workerId} className="flex items-start gap-2">
                                       <span className={cn(
                                         "mt-0.5 h-2 w-2 rounded-full shrink-0",
-                                        w.status === "non_compliant" ? "bg-red-500" : "bg-amber-400"
+                                        w.issues.some(i => i.status === "EXPIRED" || i.status === "MISSING" || i.status === "NOT_VERIFIED")
+                                          ? "bg-red-500" : "bg-amber-400"
                                       )} />
                                       <div>
                                         <p className="font-medium text-sm">{w.name}</p>

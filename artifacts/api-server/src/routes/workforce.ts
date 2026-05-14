@@ -1031,30 +1031,35 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
     const today = new Date();
     const completionDate = new Date(site.expectedCompletionDate);
 
+    type ForecastIssue = { certName: string; status: string; expiryDate: string | null };
+    type ForecastDetail = { workerId: number; name: string; issues: ForecastIssue[] };
     type ForecastMonth = {
       month: string;
       readyCount: number;
       expiringCount: number;
       nonCompliantCount: number;
       noReqCount: number;
-      workers: { id: number; name: string; status: string; issues: { certName: string; status: string; expiryDate: string | null }[] }[];
+      details: ForecastDetail[];
     };
 
     const forecast: ForecastMonth[] = [];
     const current = new Date(today.getFullYear(), today.getMonth(), 1);
 
     while (current <= completionDate) {
-      const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
+      // Last day of month (evaluated "as of month-end")
       const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+      // 30-day lookahead window after month-end (certs expiring "soon" after month end)
+      const expiryWindow = new Date(monthEnd);
+      expiryWindow.setDate(expiryWindow.getDate() + 30);
       const monthKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
 
       let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
-      const workerDetails: ForecastMonth["workers"] = [];
+      const details: ForecastDetail[] = [];
 
       for (const [wId, { name, certs }] of workerMap) {
         if (certs.length === 0) { noReqCount++; continue; }
 
-        const issues: ForecastMonth["workers"][0]["issues"] = [];
+        const issues: ForecastIssue[] = [];
         let workerStatus = "ready";
 
         for (const cert of certs) {
@@ -1069,13 +1074,15 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
             workerStatus = "non_compliant";
             continue;
           }
-          // verified = true
+          // verified = true — evaluate as of month-end
           if (!cert.expiry_date) continue; // no expiry → valid indefinitely
           const expiry = new Date(cert.expiry_date);
-          if (expiry < monthStart) {
+          if (expiry <= monthEnd) {
+            // Cert is expired by the last day of this month (includes certs expiring mid-month)
             issues.push({ certName: cert.cert_name, status: "EXPIRED", expiryDate: cert.expiry_date });
             workerStatus = "non_compliant";
-          } else if (expiry <= monthEnd) {
+          } else if (expiry <= expiryWindow) {
+            // Cert expires within 30 days after month-end — flag as expiring soon
             issues.push({ certName: cert.cert_name, status: "EXPIRING", expiryDate: cert.expiry_date });
             if (workerStatus !== "non_compliant") workerStatus = "expiring";
           }
@@ -1086,11 +1093,11 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
         else nonCompliantCount++;
 
         if (issues.length > 0) {
-          workerDetails.push({ id: wId, name, status: workerStatus, issues });
+          details.push({ workerId: wId, name, issues });
         }
       }
 
-      forecast.push({ month: monthKey, readyCount, expiringCount, nonCompliantCount, noReqCount, workers: workerDetails });
+      forecast.push({ month: monthKey, readyCount, expiringCount, nonCompliantCount, noReqCount, details });
       current.setMonth(current.getMonth() + 1);
     }
 
