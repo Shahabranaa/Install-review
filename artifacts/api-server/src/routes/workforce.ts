@@ -415,6 +415,7 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
         description: mobSitesTable.description,
         active: mobSitesTable.active,
         expectedCompletionDate: mobSitesTable.expectedCompletionDate,
+        mobilisationDate: mobSitesTable.mobilisationDate,
         clientId: mobSitesTable.clientId,
         clientName: clientsTable.name,
         createdAt: mobSitesTable.createdAt,
@@ -432,7 +433,7 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
 
 router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { name, location, description, expectedCompletionDate, clientId } = req.body;
+    const { name, location, description, expectedCompletionDate, mobilisationDate, clientId } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
     const parsedClientId = clientId != null && clientId !== "" ? parseInt(clientId) : null;
     if (parsedClientId !== null && isNaN(parsedClientId)) {
@@ -441,7 +442,7 @@ router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> =>
 
     const site = await db.transaction(async (tx) => {
       const [newSite] = await tx.insert(mobSitesTable)
-        .values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null, clientId: parsedClientId })
+        .values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null, mobilisationDate: mobilisationDate || null, clientId: parsedClientId })
         .returning();
 
       // If a client was linked, stamp its cert requirements onto the new site
@@ -467,7 +468,7 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { name, location, description, active, expectedCompletionDate, clientId } = req.body;
+    const { name, location, description, active, expectedCompletionDate, mobilisationDate, clientId } = req.body;
     const parsedClientId = clientId != null && clientId !== "" ? parseInt(clientId) : null;
     if (clientId !== undefined && parsedClientId !== null && isNaN(parsedClientId)) {
       res.status(400).json({ error: "clientId must be a valid integer" }); return;
@@ -476,6 +477,7 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
       .set({
         name, location, description, active,
         ...(expectedCompletionDate !== undefined ? { expectedCompletionDate: expectedCompletionDate || null } : {}),
+        ...(mobilisationDate !== undefined ? { mobilisationDate: mobilisationDate || null } : {}),
         ...(clientId !== undefined ? { clientId: parsedClientId } : {}),
         updatedAt: new Date(),
       })
@@ -1166,6 +1168,148 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
     }
 
     res.json(forecast);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /workforce/sites/:id/mob-readiness
+// Returns per-worker cert compliance status as it will stand on the site's mobilisation date.
+router.get("/workforce/sites/:id/mob-readiness", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.id ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+    if (!site.mobilisationDate) { res.status(400).json({ error: "No mobilisation date set for this site" }); return; }
+
+    const parseUTCDate = (s: string) => new Date(`${s}T00:00:00Z`);
+    const mobDate = parseUTCDate(site.mobilisationDate);
+    const expiryWindow = new Date(mobDate);
+    expiryWindow.setUTCDate(expiryWindow.getUTCDate() + 30);
+
+    // Fetch required cert data per assigned worker (same CTE as readiness-forecast)
+    const certRows = await db.execute(sql`
+      WITH active_workers AS (
+        SELECT DISTINCT sa.worker_id
+        FROM site_assignments sa
+        JOIN workers w ON w.id = sa.worker_id AND w.active = true
+        WHERE sa.site_id = ${siteId} AND sa.status IN ('active', 'pending')
+      ),
+      required_certs AS (
+        SELECT aw.worker_id, scr.certification_id
+        FROM active_workers aw
+        CROSS JOIN site_cert_requirements scr
+        WHERE scr.site_id = ${siteId} AND scr.required = true
+        UNION
+        SELECT aw.worker_id, rcr.certification_id
+        FROM active_workers aw
+        JOIN workers w ON w.id = aw.worker_id AND w.role_id IS NOT NULL
+        JOIN role_cert_requirements rcr ON rcr.role_id = w.role_id AND rcr.required = true
+        UNION
+        SELECT aw.worker_id, wco.certification_id
+        FROM active_workers aw
+        JOIN worker_cert_overrides wco ON wco.worker_id = aw.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT rc.worker_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      )
+      SELECT
+        w.id        AS worker_id,
+        w.name      AS worker_name,
+        c.id        AS cert_id,
+        c.name      AS cert_name,
+        wc.expiry_date,
+        wc.verified
+      FROM final_required fr
+      JOIN workers w ON w.id = fr.worker_id
+      JOIN certifications c ON c.id = fr.certification_id
+      LEFT JOIN worker_certifications wc
+        ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+      ORDER BY w.name, c.name
+    `);
+
+    const allWorkersRows = await db.execute(sql`
+      SELECT DISTINCT w.id AS worker_id, w.name AS worker_name
+      FROM site_assignments sa
+      JOIN workers w ON w.id = sa.worker_id AND w.active = true
+      WHERE sa.site_id = ${siteId} AND sa.status IN ('active', 'pending')
+    `);
+
+    type CertRow = { worker_id: unknown; worker_name: string; cert_id: unknown; cert_name: string; expiry_date: string | null; verified: boolean | null };
+    type WorkerRow = { worker_id: unknown; worker_name: string };
+
+    const rawCertRows = certRows.rows as CertRow[];
+    const allWorkers = allWorkersRows.rows as WorkerRow[];
+
+    const workerMap = new Map<number, { name: string; certs: CertRow[] }>();
+    for (const w of allWorkers) {
+      workerMap.set(Number(w.worker_id), { name: w.worker_name, certs: [] });
+    }
+    for (const row of rawCertRows) {
+      const wId = Number(row.worker_id);
+      if (!workerMap.has(wId)) workerMap.set(wId, { name: row.worker_name, certs: [] });
+      workerMap.get(wId)!.certs.push(row);
+    }
+
+    type ReadinessIssue = { certName: string; status: string; expiryDate: string | null };
+    type WorkerReadiness = { workerId: number; name: string; status: "ready" | "expiring" | "non_compliant" | "no_req"; issues: ReadinessIssue[] };
+
+    let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
+    const workers: WorkerReadiness[] = [];
+
+    for (const [wId, { name, certs }] of workerMap) {
+      if (certs.length === 0) {
+        noReqCount++;
+        workers.push({ workerId: wId, name, status: "no_req", issues: [] });
+        continue;
+      }
+
+      const issues: ReadinessIssue[] = [];
+      let workerStatus: "ready" | "expiring" | "non_compliant" = "ready";
+
+      for (const cert of certs) {
+        if (cert.verified === null) {
+          issues.push({ certName: cert.cert_name, status: "MISSING", expiryDate: null });
+          workerStatus = "non_compliant";
+          continue;
+        }
+        if (!cert.verified) {
+          issues.push({ certName: cert.cert_name, status: "NOT_VERIFIED", expiryDate: null });
+          workerStatus = "non_compliant";
+          continue;
+        }
+        if (!cert.expiry_date) continue; // no expiry → valid indefinitely
+        const expiry = parseUTCDate(cert.expiry_date);
+        if (expiry <= mobDate) {
+          issues.push({ certName: cert.cert_name, status: "EXPIRED", expiryDate: cert.expiry_date });
+          workerStatus = "non_compliant";
+        } else if (expiry <= expiryWindow) {
+          issues.push({ certName: cert.cert_name, status: "EXPIRING", expiryDate: cert.expiry_date });
+          if (workerStatus !== "non_compliant") workerStatus = "expiring";
+        }
+      }
+
+      if (workerStatus === "ready") readyCount++;
+      else if (workerStatus === "expiring") expiringCount++;
+      else nonCompliantCount++;
+
+      workers.push({ workerId: wId, name, status: workerStatus, issues });
+    }
+
+    // Sort: non_compliant first, then expiring, then ready, then no_req; within group alphabetical
+    const statusOrder = { non_compliant: 0, expiring: 1, ready: 2, no_req: 3 };
+    workers.sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || a.name.localeCompare(b.name));
+
+    res.json({ mobilisationDate: site.mobilisationDate, readyCount, expiringCount, nonCompliantCount, noReqCount, workers });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -1926,6 +2070,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
         ms.description,
         ms.active,
         ms.expected_completion_date AS "expectedCompletionDate",
+        ms.mobilisation_date        AS "mobilisationDate",
         ms.client_id                AS "clientId",
         c.name                      AS "clientName",
         ms.created_at  AS "createdAt",
@@ -1938,7 +2083,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
       FROM mob_sites ms
       LEFT JOIN clients c ON c.id = ms.client_id
       LEFT JOIN worker_compliance wc ON wc.site_id = ms.id
-      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.expected_completion_date, ms.client_id, c.name, ms.created_at, ms.updated_at
+      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.expected_completion_date, ms.mobilisation_date, ms.client_id, c.name, ms.created_at, ms.updated_at
       ORDER BY ms.name
     `);
 
@@ -1950,6 +2095,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
       description: r.description,
       active: r.active,
       expectedCompletionDate: r.expectedCompletionDate ?? null,
+      mobilisationDate: r.mobilisationDate ?? null,
       clientId: r.clientId ?? null,
       clientName: r.clientName ?? null,
       createdAt: r.createdAt,

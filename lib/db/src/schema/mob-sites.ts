@@ -10,6 +10,7 @@ export const mobSitesTable = pgTable("mob_sites", {
   description: text("description"),
   active: boolean("active").notNull().default(true),
   expectedCompletionDate: date("expected_completion_date"),
+  mobilisationDate: date("mobilisation_date"),
   clientId: integer("client_id").references(() => clientsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

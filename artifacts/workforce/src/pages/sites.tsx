@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus, CalendarDays, ChevronDown, ChevronUp, AlertTriangle, Handshake } from "lucide-react";
+import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus, CalendarDays, ChevronDown, ChevronUp, AlertTriangle, Handshake, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SiteWithStats {
@@ -22,6 +22,7 @@ interface SiteWithStats {
   description: string | null;
   active: boolean;
   expectedCompletionDate: string | null;
+  mobilisationDate: string | null;
   clientId: number | null;
   clientName: string | null;
   workerCount: number;
@@ -29,6 +30,17 @@ interface SiteWithStats {
   expiringCount: number;
   nonCompliantCount: number;
   noReqCount: number;
+}
+
+interface MobReadinessIssue { certName: string; status: string; expiryDate: string | null }
+interface MobReadinessWorker { workerId: number; name: string; status: "ready" | "expiring" | "non_compliant" | "no_req"; issues: MobReadinessIssue[] }
+interface MobReadinessResult {
+  mobilisationDate: string;
+  readyCount: number;
+  expiringCount: number;
+  nonCompliantCount: number;
+  noReqCount: number;
+  workers: MobReadinessWorker[];
 }
 
 interface Worker { id: number; name: string; company: string | null }
@@ -45,7 +57,7 @@ interface ForecastMonth {
   details: ForecastWorker[];
 }
 
-const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "", clientId: "" };
+const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "", mobilisationDate: "", clientId: "" };
 
 function formatMonth(monthKey: string) {
   const [year, month] = monthKey.split("-");
@@ -77,6 +89,8 @@ export default function SitesPage() {
   const [forecastSite, setForecastSite] = useState<SiteWithStats | null>(null);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
 
+  const [mobCheckSite, setMobCheckSite] = useState<SiteWithStats | null>(null);
+
   const { data: sites, isLoading } = useQuery<SiteWithStats[]>({
     queryKey: ["workforce-sites-stats"],
     queryFn: () => apiFetch<SiteWithStats[]>("/api/workforce/sites-with-stats"),
@@ -99,6 +113,12 @@ export default function SitesPage() {
     queryKey: ["site-forecast", forecastSite?.id],
     queryFn: () => apiFetch<ForecastMonth[]>(`/api/workforce/sites/${forecastSite!.id}/readiness-forecast`),
     enabled: !!forecastSite,
+  });
+
+  const { data: mobReadiness, isLoading: mobReadinessLoading } = useQuery<MobReadinessResult>({
+    queryKey: ["site-mob-readiness", mobCheckSite?.id],
+    queryFn: () => apiFetch<MobReadinessResult>(`/api/workforce/sites/${mobCheckSite!.id}/mob-readiness`),
+    enabled: !!mobCheckSite && !!mobCheckSite.mobilisationDate,
   });
 
   const assignMutation = useMutation({
@@ -124,6 +144,7 @@ export default function SitesPage() {
       location: s.location ?? "",
       description: s.description ?? "",
       expectedCompletionDate: s.expectedCompletionDate ?? "",
+      mobilisationDate: s.mobilisationDate ?? "",
       clientId: s.clientId ? String(s.clientId) : "",
     });
     setShowDialog(true);
@@ -136,6 +157,7 @@ export default function SitesPage() {
         location: form.location || null,
         description: form.description || null,
         expectedCompletionDate: form.expectedCompletionDate || null,
+        mobilisationDate: form.mobilisationDate || null,
         clientId: form.clientId || null,
       };
       return editing
@@ -228,6 +250,12 @@ export default function SitesPage() {
                           Ends {new Date(`${s.expectedCompletionDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                         </p>
                       )}
+                      {s.mobilisationDate && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Rocket className="h-3 w-3 text-violet-500" />
+                          Mob {new Date(`${s.mobilisationDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        </p>
+                      )}
                       {s.clientName && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Handshake className="h-3 w-3" /> {s.clientName}
@@ -292,6 +320,16 @@ export default function SitesPage() {
                           >
                             <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
                           </Button>
+                          {s.mobilisationDate && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="Mob-day readiness check"
+                              onClick={() => setMobCheckSite(s)}
+                              data-testid={`button-mob-check-${s.id}`}
+                            >
+                              <Rocket className="h-3.5 w-3.5 text-violet-500" />
+                            </Button>
+                          )}
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Assign worker" onClick={() => { setAssignSite(s); setAssignWorkerId(""); }} data-testid={`button-assign-worker-${s.id}`}>
                             <UserPlus className="h-3.5 w-3.5" />
                           </Button>
@@ -317,6 +355,16 @@ export default function SitesPage() {
                           >
                             <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
                           </Button>
+                          {s.mobilisationDate && (
+                            <Button
+                              size="icon" variant="ghost" className="h-7 w-7"
+                              title="Mob-day readiness check"
+                              onClick={() => setMobCheckSite(s)}
+                              data-testid={`button-mob-check-${s.id}`}
+                            >
+                              <Rocket className="h-3.5 w-3.5 text-violet-500" />
+                            </Button>
+                          )}
                           <Link href={`/sites/${s.id}`}>
                             <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
                           </Link>
@@ -359,6 +407,16 @@ export default function SitesPage() {
                 data-testid="input-site-completion-date"
               />
               <p className="text-xs text-muted-foreground mt-1">Used to generate the readiness forecast across the project lifecycle.</p>
+            </div>
+            <div>
+              <Label>Mobilisation date</Label>
+              <Input
+                type="date"
+                value={form.mobilisationDate}
+                onChange={(e) => setForm({ ...form, mobilisationDate: e.target.value })}
+                data-testid="input-site-mob-date"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Used for the mob-day readiness check — shows each worker's cert compliance status on this date.</p>
             </div>
             {clients && clients.length > 0 && (
               <div>
@@ -424,6 +482,143 @@ export default function SitesPage() {
             >
               {assignMutation.isPending ? "Assigning…" : "Assign"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mob-Day Readiness Check dialog */}
+      <Dialog open={!!mobCheckSite} onOpenChange={(open) => { if (!open) setMobCheckSite(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-5 w-5 text-violet-500" />
+              Mob-Day Check — {mobCheckSite?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          {!mobCheckSite?.mobilisationDate ? (
+            <div className="py-8 text-center text-muted-foreground space-y-2">
+              <Rocket className="h-10 w-10 mx-auto opacity-20" />
+              <p className="font-medium">No mobilisation date set</p>
+              <p className="text-sm">Edit this site and add a mobilisation date to run the mob-day readiness check.</p>
+            </div>
+          ) : mobReadinessLoading ? (
+            <div className="space-y-2 py-4">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+            </div>
+          ) : !mobReadiness ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <p className="font-medium">No data available</p>
+              <p className="text-sm mt-1">No workers assigned or mob-readiness data could not be loaded.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Date banner */}
+              <p className="text-sm text-muted-foreground">
+                Compliance status as of{" "}
+                <span className="font-semibold text-foreground">
+                  {new Date(`${mobReadiness.mobilisationDate}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </span>
+              </p>
+
+              {/* Summary banner */}
+              {(() => {
+                const colour = mobReadiness.nonCompliantCount > 0 ? "red" : mobReadiness.expiringCount > 0 ? "amber" : "green";
+                return (
+                  <div className={cn(
+                    "flex items-center gap-2 rounded-lg px-3 py-2 text-sm",
+                    colour === "red" ? "bg-red-50 text-red-700 border border-red-200" :
+                    colour === "amber" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                    "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  )}>
+                    {colour !== "green" && <AlertTriangle className="h-4 w-4 shrink-0" />}
+                    {colour === "red" && `${mobReadiness.nonCompliantCount} worker${mobReadiness.nonCompliantCount !== 1 ? "s" : ""} will be non-compliant on mob day — action required.`}
+                    {colour === "amber" && `${mobReadiness.expiringCount} worker${mobReadiness.expiringCount !== 1 ? "s" : ""} have certs expiring within 30 days of mob day.`}
+                    {colour === "green" && "All workers are compliant on mob day."}
+                  </div>
+                );
+              })()}
+
+              {/* Summary counts */}
+              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="rounded-lg border p-2">
+                  <p className="text-emerald-600 font-bold text-lg">{mobReadiness.readyCount}</p>
+                  <p className="text-muted-foreground">Ready</p>
+                </div>
+                <div className="rounded-lg border p-2">
+                  <p className={cn("font-bold text-lg", mobReadiness.expiringCount > 0 ? "text-amber-600" : "text-muted-foreground")}>{mobReadiness.expiringCount}</p>
+                  <p className="text-muted-foreground">Expiring</p>
+                </div>
+                <div className="rounded-lg border p-2">
+                  <p className={cn("font-bold text-lg", mobReadiness.nonCompliantCount > 0 ? "text-red-600" : "text-muted-foreground")}>{mobReadiness.nonCompliantCount}</p>
+                  <p className="text-muted-foreground">Non-Compliant</p>
+                </div>
+                <div className="rounded-lg border p-2">
+                  <p className="text-muted-foreground font-bold text-lg">{mobReadiness.noReqCount}</p>
+                  <p className="text-muted-foreground">No Reqs</p>
+                </div>
+              </div>
+
+              {/* Worker table */}
+              {mobReadiness.workers.length > 0 && (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50 border-b">
+                        <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Worker</th>
+                        <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Status</th>
+                        <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Issues on Mob Day</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {mobReadiness.workers.map((w) => (
+                        <tr key={w.workerId} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-3 py-2.5 font-medium">{w.name}</td>
+                          <td className="px-3 py-2.5">
+                            {w.status === "ready" && <Badge className="bg-emerald-500 hover:bg-emerald-500 text-[10px]">Ready</Badge>}
+                            {w.status === "expiring" && <Badge className="bg-amber-500 hover:bg-amber-500 text-[10px]">Expiring</Badge>}
+                            {w.status === "non_compliant" && <Badge variant="destructive" className="text-[10px]">Non-Compliant</Badge>}
+                            {w.status === "no_req" && <Badge variant="outline" className="text-[10px]">No Reqs</Badge>}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {w.issues.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : (
+                              <ul className="space-y-0.5">
+                                {w.issues.map((issue, idx) => (
+                                  <li key={idx} className="text-xs">
+                                    <span className={cn(
+                                      "font-medium",
+                                      issue.status === "EXPIRED" || issue.status === "MISSING" || issue.status === "NOT_VERIFIED"
+                                        ? "text-red-600" : "text-amber-600"
+                                    )}>
+                                      {statusLabel(issue.status)}
+                                    </span>
+                                    {" — "}{issue.certName}
+                                    {issue.expiryDate && (
+                                      <span className="text-muted-foreground"> ({new Date(`${issue.expiryDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMobCheckSite(null)}>Close</Button>
+            {mobCheckSite && isAdmin && (
+              <Button variant="outline" onClick={() => { openEdit(mobCheckSite); setMobCheckSite(null); }}>
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Site
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
