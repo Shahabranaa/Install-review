@@ -2403,6 +2403,11 @@ router.delete("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promis
     await db.delete(ppeTypesTable).where(eq(ppeTypesTable.id, id));
     res.json({ ok: true });
   } catch (err) {
+    // FK violation — existing allocations reference this type
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23503") {
+      res.status(409).json({ error: "Cannot delete: this PPE type has existing allocation records. Remove all allocations first." });
+      return;
+    }
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
@@ -2453,10 +2458,13 @@ router.post("/workforce/workers/:id/ppe", requireAdmin, async (req, res): Promis
     if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { ppeTypeId, siteId, issuedAt, sizeSpec, notes } = req.body;
     if (!ppeTypeId || !issuedAt) { res.status(400).json({ error: "ppeTypeId and issuedAt are required" }); return; }
+    const parsedTypeId = parseInt(String(ppeTypeId));
+    if (isNaN(parsedTypeId) || parsedTypeId < 1) { res.status(400).json({ error: "Invalid ppeTypeId" }); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(issuedAt))) { res.status(400).json({ error: "issuedAt must be a date in YYYY-MM-DD format" }); return; }
 
     const [allocation] = await db.insert(ppeAllocationsTable).values({
       workerId,
-      ppeTypeId: parseInt(String(ppeTypeId)),
+      ppeTypeId: parsedTypeId,
       siteId: siteId ? parseInt(String(siteId)) : null,
       issuedAt,
       issuedByUserId: req.session?.userId ?? null,
@@ -2465,7 +2473,7 @@ router.post("/workforce/workers/:id/ppe", requireAdmin, async (req, res): Promis
     }).returning();
 
     // Log to activity feed
-    const [ppeType] = await db.select().from(ppeTypesTable).where(eq(ppeTypesTable.id, parseInt(String(ppeTypeId))));
+    const [ppeType] = await db.select().from(ppeTypesTable).where(eq(ppeTypesTable.id, parsedTypeId));
     const siteRow = siteId ? await db.select({ name: mobSitesTable.name }).from(mobSitesTable).where(eq(mobSitesTable.id, parseInt(String(siteId)))) : [];
     await db.insert(workerActivityLogsTable).values({
       workerId,
@@ -2486,6 +2494,9 @@ router.patch("/workforce/ppe-allocations/:id", requireAdmin, async (req, res): P
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { returnedAt, sizeSpec, notes } = req.body;
+    if (returnedAt && !/^\d{4}-\d{2}-\d{2}$/.test(String(returnedAt))) {
+      res.status(400).json({ error: "returnedAt must be a date in YYYY-MM-DD format" }); return;
+    }
 
     const [existing] = await db.select().from(ppeAllocationsTable).where(eq(ppeAllocationsTable.id, id));
     if (!existing) { res.status(404).json({ error: "Allocation not found" }); return; }
