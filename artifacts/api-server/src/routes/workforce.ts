@@ -417,9 +417,23 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
 
 router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { name, location, description, expectedCompletionDate } = req.body;
+    const { name, location, description, expectedCompletionDate, clientId } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
-    const [site] = await db.insert(mobSitesTable).values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null }).returning();
+    const parsedClientId = clientId ? parseInt(clientId) : null;
+    const [site] = await db.insert(mobSitesTable)
+      .values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null, clientId: parsedClientId })
+      .returning();
+
+    // If a client was linked, stamp its cert requirements onto the new site
+    if (parsedClientId) {
+      const clientReqs = await db.select().from(clientCertRequirementsTable)
+        .where(eq(clientCertRequirementsTable.clientId, parsedClientId));
+      if (clientReqs.length > 0) {
+        await db.insert(siteCertRequirementsTable)
+          .values(clientReqs.map(r => ({ siteId: site.id, certificationId: r.certificationId, required: true })));
+      }
+    }
+
     res.status(201).json(site);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -430,15 +444,34 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { name, location, description, active, expectedCompletionDate } = req.body;
+    const { name, location, description, active, expectedCompletionDate, clientId } = req.body;
     const [updated] = await db.update(mobSitesTable)
       .set({
         name, location, description, active,
         ...(expectedCompletionDate !== undefined ? { expectedCompletionDate: expectedCompletionDate || null } : {}),
+        ...(clientId !== undefined ? { clientId: clientId ? parseInt(clientId) : null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(mobSitesTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Site not found" }); return; }
+
+    // If a new client was linked, additively stamp its cert requirements
+    if (clientId) {
+      const parsedClientId = parseInt(clientId);
+      const clientReqs = await db.select().from(clientCertRequirementsTable)
+        .where(eq(clientCertRequirementsTable.clientId, parsedClientId));
+      if (clientReqs.length > 0) {
+        const existingReqs = await db.select({ certificationId: siteCertRequirementsTable.certificationId })
+          .from(siteCertRequirementsTable).where(eq(siteCertRequirementsTable.siteId, id));
+        const existingIds = new Set(existingReqs.map(r => r.certificationId));
+        const toAdd = clientReqs.filter(r => !existingIds.has(r.certificationId));
+        if (toAdd.length > 0) {
+          await db.insert(siteCertRequirementsTable)
+            .values(toAdd.map(r => ({ siteId: id, certificationId: r.certificationId, required: true })));
+        }
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1866,6 +1899,8 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
         ms.description,
         ms.active,
         ms.expected_completion_date AS "expectedCompletionDate",
+        ms.client_id                AS "clientId",
+        c.name                      AS "clientName",
         ms.created_at  AS "createdAt",
         ms.updated_at  AS "updatedAt",
         COUNT(wc.worker_id)                                          AS "workerCount",
@@ -1874,8 +1909,9 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
         COUNT(CASE WHEN wc.compliance_status = 'non_compliant' THEN 1 END) AS "nonCompliantCount",
         COUNT(CASE WHEN wc.compliance_status = 'no_req'       THEN 1 END) AS "noReqCount"
       FROM mob_sites ms
+      LEFT JOIN clients c ON c.id = ms.client_id
       LEFT JOIN worker_compliance wc ON wc.site_id = ms.id
-      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.expected_completion_date, ms.created_at, ms.updated_at
+      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.expected_completion_date, ms.client_id, c.name, ms.created_at, ms.updated_at
       ORDER BY ms.name
     `);
 
@@ -1887,6 +1923,8 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
       description: r.description,
       active: r.active,
       expectedCompletionDate: r.expectedCompletionDate ?? null,
+      clientId: r.clientId ?? null,
+      clientName: r.clientName ?? null,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       workerCount: Number(r.workerCount),

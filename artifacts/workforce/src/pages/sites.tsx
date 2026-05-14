@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus, CalendarDays, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus, CalendarDays, ChevronDown, ChevronUp, AlertTriangle, Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SiteWithStats {
@@ -22,6 +22,8 @@ interface SiteWithStats {
   description: string | null;
   active: boolean;
   expectedCompletionDate: string | null;
+  clientId: number | null;
+  clientName: string | null;
   workerCount: number;
   readyCount: number;
   expiringCount: number;
@@ -30,6 +32,7 @@ interface SiteWithStats {
 }
 
 interface Worker { id: number; name: string; company: string | null }
+interface Client { id: number; name: string }
 
 interface ForecastIssue { certName: string; status: string; expiryDate: string | null }
 interface ForecastWorker { workerId: number; name: string; issues: ForecastIssue[] }
@@ -42,7 +45,7 @@ interface ForecastMonth {
   details: ForecastWorker[];
 }
 
-const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "" };
+const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "", clientId: "" };
 
 function formatMonth(monthKey: string) {
   const [year, month] = monthKey.split("-");
@@ -86,6 +89,12 @@ export default function SitesPage() {
     enabled: !!assignSite,
   });
 
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["workforce-clients"],
+    queryFn: () => apiFetch<Client[]>("/api/workforce/clients"),
+    enabled: isAdmin,
+  });
+
   const { data: forecast, isLoading: forecastLoading } = useQuery<ForecastMonth[]>({
     queryKey: ["site-forecast", forecastSite?.id],
     queryFn: () => apiFetch<ForecastMonth[]>(`/api/workforce/sites/${forecastSite!.id}/readiness-forecast`),
@@ -115,6 +124,7 @@ export default function SitesPage() {
       location: s.location ?? "",
       description: s.description ?? "",
       expectedCompletionDate: s.expectedCompletionDate ?? "",
+      clientId: s.clientId ? String(s.clientId) : "",
     });
     setShowDialog(true);
   }
@@ -126,6 +136,7 @@ export default function SitesPage() {
         location: form.location || null,
         description: form.description || null,
         expectedCompletionDate: form.expectedCompletionDate || null,
+        clientId: form.clientId || null,
       };
       return editing
         ? apiPatch(`/api/workforce/sites/${editing.id}`, body)
@@ -215,6 +226,11 @@ export default function SitesPage() {
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                           <CalendarDays className="h-3 w-3" />
                           Ends {new Date(`${s.expectedCompletionDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        </p>
+                      )}
+                      {s.clientName && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Handshake className="h-3 w-3" /> {s.clientName}
                         </p>
                       )}
                     </td>
@@ -344,6 +360,29 @@ export default function SitesPage() {
               />
               <p className="text-xs text-muted-foreground mt-1">Used to generate the readiness forecast across the project lifecycle.</p>
             </div>
+            {clients && clients.length > 0 && (
+              <div>
+                <Label>Client</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                  value={form.clientId}
+                  onChange={(e) => setForm({ ...form, clientId: e.target.value })}
+                  data-testid="select-site-client"
+                >
+                  <option value="">No client linked</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.clientId
+                    ? editing
+                      ? "Changing the client will additively apply its cert template to this site."
+                      : "The selected client's cert requirements will be automatically applied."
+                    : "Optionally link a client to auto-apply its cert requirement template."}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
