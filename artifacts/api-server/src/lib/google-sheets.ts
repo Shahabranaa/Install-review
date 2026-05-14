@@ -35,7 +35,16 @@ function getSheetsAuth(): GoogleAuth {
 
 export async function sheetsRequest(path: string, params?: URLSearchParams): Promise<Response> {
   const auth = getSheetsAuth();
-  const token = await auth.getAccessToken();
+  let token: string | null | undefined;
+  try {
+    token = await auth.getAccessToken();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("invalid_grant")) {
+      _auth = null;
+    }
+    throw err;
+  }
   if (!token) throw new Error("Failed to obtain Google access token for Sheets");
   const url = params ? `${SHEETS_API}${path}?${params.toString()}` : `${SHEETS_API}${path}`;
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } });

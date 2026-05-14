@@ -65,7 +65,16 @@ export async function driveRequest(
   params?: URLSearchParams,
 ): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.getAccessToken();
+  let token: string | null | undefined;
+  try {
+    token = await auth.getAccessToken();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("invalid_grant")) {
+      _auth = null;
+    }
+    throw err;
+  }
 
   if (!token) {
     throw new Error("Failed to obtain Google access token");
