@@ -407,9 +407,24 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, id));
-    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
-    res.json(site);
+    const [row] = await db
+      .select({
+        id: mobSitesTable.id,
+        name: mobSitesTable.name,
+        location: mobSitesTable.location,
+        description: mobSitesTable.description,
+        active: mobSitesTable.active,
+        expectedCompletionDate: mobSitesTable.expectedCompletionDate,
+        clientId: mobSitesTable.clientId,
+        clientName: clientsTable.name,
+        createdAt: mobSitesTable.createdAt,
+        updatedAt: mobSitesTable.updatedAt,
+      })
+      .from(mobSitesTable)
+      .leftJoin(clientsTable, eq(clientsTable.id, mobSitesTable.clientId))
+      .where(eq(mobSitesTable.id, id));
+    if (!row) { res.status(404).json({ error: "Site not found" }); return; }
+    res.json(row);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

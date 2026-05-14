@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
-  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake,
+  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -72,6 +72,8 @@ interface Site {
   location: string | null;
   description: string | null;
   active: boolean;
+  clientId: number | null;
+  clientName: string | null;
 }
 
 interface Certification {
@@ -385,6 +387,11 @@ export default function SiteDetailPage() {
               {site?.location && (
                 <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
                   <MapPin className="h-3.5 w-3.5" /> {site.location}
+                </p>
+              )}
+              {site?.clientName && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <Handshake className="h-3.5 w-3.5" /> {site.clientName}
                 </p>
               )}
               <Badge
