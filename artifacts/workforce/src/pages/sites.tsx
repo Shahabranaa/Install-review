@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiFetch, apiPost, apiPatch } from "@/lib/api";
@@ -214,7 +214,7 @@ export default function SitesPage() {
                       {s.expectedCompletionDate && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                           <CalendarDays className="h-3 w-3" />
-                          Ends {new Date(s.expectedCompletionDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                          Ends {new Date(`${s.expectedCompletionDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                         </p>
                       )}
                     </td>
@@ -451,9 +451,8 @@ export default function SitesPage() {
                       const isExpanded = expandedMonth === m.month;
                       const hasIssues = m.expiringCount > 0 || m.nonCompliantCount > 0;
                       return (
-                        <>
+                        <Fragment key={m.month}>
                           <tr
-                            key={m.month}
                             className={cn(
                               "transition-colors",
                               hasIssues ? "cursor-pointer hover:bg-muted/30" : "",
@@ -516,7 +515,7 @@ export default function SitesPage() {
                               </td>
                             </tr>
                           )}
-                        </>
+                        </Fragment>
                       );
                     })}
                   </tbody>

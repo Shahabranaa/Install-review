@@ -1028,8 +1028,10 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
     }
 
     // Generate month range: current month → expectedCompletionDate
+    // Parse date-only strings (YYYY-MM-DD) in UTC to avoid timezone day-shift
+    const parseUTCDate = (s: string) => new Date(`${s}T00:00:00Z`);
     const today = new Date();
-    const completionDate = new Date(site.expectedCompletionDate);
+    const completionDate = parseUTCDate(site.expectedCompletionDate);
 
     type ForecastIssue = { certName: string; status: string; expiryDate: string | null };
     type ForecastDetail = { workerId: number; name: string; issues: ForecastIssue[] };
@@ -1043,15 +1045,17 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
     };
 
     const forecast: ForecastMonth[] = [];
-    const current = new Date(today.getFullYear(), today.getMonth(), 1);
+    // Start from UTC first day of the current month
+    const current = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 
     while (current <= completionDate) {
-      // Last day of month (evaluated "as of month-end")
-      const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
-      // 30-day lookahead window after month-end (certs expiring "soon" after month end)
-      const expiryWindow = new Date(monthEnd);
-      expiryWindow.setDate(expiryWindow.getDate() + 30);
-      const monthKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
+      const yr = current.getUTCFullYear();
+      const mo = current.getUTCMonth();
+      // Last day of month in UTC (evaluated "as of month-end")
+      const monthEnd = new Date(Date.UTC(yr, mo + 1, 0));
+      // 30-day lookahead window after month-end
+      const expiryWindow = new Date(Date.UTC(yr, mo + 1, 30));
+      const monthKey = `${yr}-${String(mo + 1).padStart(2, "0")}`;
 
       let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
       const details: ForecastDetail[] = [];
@@ -1076,7 +1080,7 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
           }
           // verified = true — evaluate as of month-end
           if (!cert.expiry_date) continue; // no expiry → valid indefinitely
-          const expiry = new Date(cert.expiry_date);
+          const expiry = parseUTCDate(cert.expiry_date);
           if (expiry <= monthEnd) {
             // Cert is expired by the last day of this month (includes certs expiring mid-month)
             issues.push({ certName: cert.cert_name, status: "EXPIRED", expiryDate: cert.expiry_date });
@@ -1098,7 +1102,7 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
       }
 
       forecast.push({ month: monthKey, readyCount, expiringCount, nonCompliantCount, noReqCount, details });
-      current.setMonth(current.getMonth() + 1);
+      current.setUTCMonth(current.getUTCMonth() + 1);
     }
 
     res.json(forecast);
