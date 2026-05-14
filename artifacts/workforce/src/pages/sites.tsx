@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus } from "lucide-react";
+import { Building2, Plus, Pencil, ShieldCheck, MapPin, Users, ChevronRight, UserPlus, CalendarDays, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SiteWithStats {
@@ -21,6 +21,7 @@ interface SiteWithStats {
   location: string | null;
   description: string | null;
   active: boolean;
+  expectedCompletionDate: string | null;
   workerCount: number;
   readyCount: number;
   expiringCount: number;
@@ -30,7 +31,34 @@ interface SiteWithStats {
 
 interface Worker { id: number; name: string; company: string | null }
 
-const emptyForm = { name: "", location: "", description: "" };
+interface ForecastIssue { certName: string; status: string; expiryDate: string | null }
+interface ForecastWorker { id: number; name: string; status: string; issues: ForecastIssue[] }
+interface ForecastMonth {
+  month: string;
+  readyCount: number;
+  expiringCount: number;
+  nonCompliantCount: number;
+  noReqCount: number;
+  workers: ForecastWorker[];
+}
+
+const emptyForm = { name: "", location: "", description: "", expectedCompletionDate: "" };
+
+function formatMonth(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  const d = new Date(Number(year), Number(month) - 1, 1);
+  return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "EXPIRED": return "Expired";
+    case "EXPIRING": return "Expires this month";
+    case "MISSING": return "Missing";
+    case "NOT_VERIFIED": return "Not verified";
+    default: return status;
+  }
+}
 
 export default function SitesPage() {
   const { isAdmin } = useAuth();
@@ -43,6 +71,9 @@ export default function SitesPage() {
   const [assignSite, setAssignSite] = useState<SiteWithStats | null>(null);
   const [assignWorkerId, setAssignWorkerId] = useState("");
 
+  const [forecastSite, setForecastSite] = useState<SiteWithStats | null>(null);
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
+
   const { data: sites, isLoading } = useQuery<SiteWithStats[]>({
     queryKey: ["workforce-sites-stats"],
     queryFn: () => apiFetch<SiteWithStats[]>("/api/workforce/sites-with-stats"),
@@ -53,6 +84,12 @@ export default function SitesPage() {
     queryKey: ["workforce-workers-raw"],
     queryFn: () => apiFetch<Worker[]>("/api/workforce/workers"),
     enabled: !!assignSite,
+  });
+
+  const { data: forecast, isLoading: forecastLoading } = useQuery<ForecastMonth[]>({
+    queryKey: ["site-forecast", forecastSite?.id],
+    queryFn: () => apiFetch<ForecastMonth[]>(`/api/workforce/sites/${forecastSite!.id}/readiness-forecast`),
+    enabled: !!forecastSite,
   });
 
   const assignMutation = useMutation({
@@ -73,13 +110,23 @@ export default function SitesPage() {
   function openNew() { setEditing(null); setForm(emptyForm); setShowDialog(true); }
   function openEdit(s: SiteWithStats) {
     setEditing(s);
-    setForm({ name: s.name, location: s.location ?? "", description: s.description ?? "" });
+    setForm({
+      name: s.name,
+      location: s.location ?? "",
+      description: s.description ?? "",
+      expectedCompletionDate: s.expectedCompletionDate ?? "",
+    });
     setShowDialog(true);
   }
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const body = { name: form.name, location: form.location || null, description: form.description || null };
+      const body = {
+        name: form.name,
+        location: form.location || null,
+        description: form.description || null,
+        expectedCompletionDate: form.expectedCompletionDate || null,
+      };
       return editing
         ? apiPatch(`/api/workforce/sites/${editing.id}`, body)
         : apiPost("/api/workforce/sites", body);
@@ -102,6 +149,12 @@ export default function SitesPage() {
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
+
+  const worstForecastStatus = (f: ForecastMonth[]) => {
+    if (f.some(m => m.nonCompliantCount > 0)) return "red";
+    if (f.some(m => m.expiringCount > 0)) return "amber";
+    return "green";
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -141,7 +194,7 @@ export default function SitesPage() {
                 <th className="text-center px-3 py-2.5 font-medium text-xs text-muted-foreground hidden sm:table-cell">Not Compliant</th>
                 <th className="text-left px-3 py-2.5 font-medium text-xs text-muted-foreground hidden md:table-cell">% Ready</th>
                 <th className="text-left px-3 py-2.5 font-medium text-xs text-muted-foreground">Status</th>
-                {isAdmin && <th className="w-20 px-2" />}
+                {isAdmin && <th className="w-28 px-2" />}
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -156,6 +209,12 @@ export default function SitesPage() {
                       {s.location && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                           <MapPin className="h-3 w-3" /> {s.location}
+                        </p>
+                      )}
+                      {s.expectedCompletionDate && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <CalendarDays className="h-3 w-3" />
+                          Ends {new Date(s.expectedCompletionDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                         </p>
                       )}
                     </td>
@@ -209,6 +268,14 @@ export default function SitesPage() {
                               </Button>
                             </a>
                           </Link>
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            title="Readiness forecast"
+                            onClick={() => { setForecastSite(s); setExpandedMonth(null); }}
+                            data-testid={`button-forecast-${s.id}`}
+                          >
+                            <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
+                          </Button>
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Assign worker" onClick={() => { setAssignSite(s); setAssignWorkerId(""); }} data-testid={`button-assign-worker-${s.id}`}>
                             <UserPlus className="h-3.5 w-3.5" />
                           </Button>
@@ -238,6 +305,7 @@ export default function SitesPage() {
         </div>
       )}
 
+      {/* Create / Edit Site dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
@@ -255,6 +323,16 @@ export default function SitesPage() {
             <div>
               <Label>Description</Label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional description" />
+            </div>
+            <div>
+              <Label>Expected completion date</Label>
+              <Input
+                type="date"
+                value={form.expectedCompletionDate}
+                onChange={(e) => setForm({ ...form, expectedCompletionDate: e.target.value })}
+                data-testid="input-site-completion-date"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Used to generate the readiness forecast across the project lifecycle.</p>
             </div>
           </div>
           <DialogFooter>
@@ -297,6 +375,152 @@ export default function SitesPage() {
             >
               {assignMutation.isPending ? "Assigning…" : "Assign"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Readiness Forecast dialog */}
+      <Dialog open={!!forecastSite} onOpenChange={(open) => { if (!open) setForecastSite(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-blue-500" />
+              Readiness Forecast — {forecastSite?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          {!forecastSite?.expectedCompletionDate ? (
+            <div className="py-8 text-center text-muted-foreground space-y-2">
+              <CalendarDays className="h-10 w-10 mx-auto opacity-20" />
+              <p className="font-medium">No completion date set</p>
+              <p className="text-sm">Edit this site and add an expected completion date to enable the lifecycle forecast.</p>
+            </div>
+          ) : forecastLoading ? (
+            <div className="space-y-2 py-4">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+            </div>
+          ) : !forecast?.length ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <p className="font-medium">No forecast data</p>
+              <p className="text-sm mt-1">The completion date may be in the past, or no workers are assigned.</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {/* Summary badge */}
+              {(() => {
+                const colour = worstForecastStatus(forecast);
+                return (
+                  <div className={cn(
+                    "flex items-center gap-2 rounded-lg px-3 py-2 text-sm mb-3",
+                    colour === "red" ? "bg-red-50 text-red-700 border border-red-200" :
+                    colour === "amber" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                    "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  )}>
+                    {colour !== "green" && <AlertTriangle className="h-4 w-4 shrink-0" />}
+                    {colour === "red" && "Workers will become non-compliant during this project — action required."}
+                    {colour === "amber" && "Some certifications will expire during this project — plan renewals ahead of time."}
+                    {colour === "green" && "All workers remain compliant through the project completion date."}
+                  </div>
+                );
+              })()}
+
+              {/* Month-by-month table */}
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-muted/50 border-b">
+                      <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Month</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs text-emerald-600">Ready</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs text-amber-600">Expiring</th>
+                      <th className="text-center px-3 py-2 font-medium text-xs text-red-600">Non-Compliant</th>
+                      <th className="w-8" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {forecast.map((m) => {
+                      const isExpanded = expandedMonth === m.month;
+                      const hasIssues = m.expiringCount > 0 || m.nonCompliantCount > 0;
+                      return (
+                        <>
+                          <tr
+                            key={m.month}
+                            className={cn(
+                              "transition-colors",
+                              hasIssues ? "cursor-pointer hover:bg-muted/30" : "",
+                              isExpanded ? "bg-muted/20" : "",
+                            )}
+                            onClick={() => hasIssues && setExpandedMonth(isExpanded ? null : m.month)}
+                          >
+                            <td className="px-3 py-2.5 font-medium">{formatMonth(m.month)}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className="text-emerald-600 font-medium">{m.readyCount}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={cn("font-medium", m.expiringCount > 0 ? "text-amber-600" : "text-muted-foreground")}>
+                                {m.expiringCount}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className={cn("font-medium", m.nonCompliantCount > 0 ? "text-red-600" : "text-muted-foreground")}>
+                                {m.nonCompliantCount}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2.5 text-center text-muted-foreground">
+                              {hasIssues && (isExpanded ? <ChevronUp className="h-3.5 w-3.5 inline" /> : <ChevronDown className="h-3.5 w-3.5 inline" />)}
+                            </td>
+                          </tr>
+                          {isExpanded && m.workers.length > 0 && (
+                            <tr key={`${m.month}-detail`} className="bg-muted/10">
+                              <td colSpan={5} className="px-4 py-3">
+                                <div className="space-y-2">
+                                  {m.workers.map((w) => (
+                                    <div key={w.id} className="flex items-start gap-2">
+                                      <span className={cn(
+                                        "mt-0.5 h-2 w-2 rounded-full shrink-0",
+                                        w.status === "non_compliant" ? "bg-red-500" : "bg-amber-400"
+                                      )} />
+                                      <div>
+                                        <p className="font-medium text-sm">{w.name}</p>
+                                        <ul className="text-xs text-muted-foreground space-y-0.5 mt-0.5">
+                                          {w.issues.map((issue, idx) => (
+                                            <li key={idx}>
+                                              <span className={cn(
+                                                "font-medium",
+                                                issue.status === "EXPIRED" || issue.status === "MISSING" || issue.status === "NOT_VERIFIED"
+                                                  ? "text-red-600" : "text-amber-600"
+                                              )}>
+                                                {statusLabel(issue.status)}
+                                              </span>
+                                              {" — "}{issue.certName}
+                                              {issue.expiryDate && (
+                                                <span> ({new Date(issue.expiryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})</span>
+                                              )}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setForecastSite(null)}>Close</Button>
+            {forecastSite && isAdmin && (
+              <Button variant="outline" onClick={() => { openEdit(forecastSite); setForecastSite(null); }}>
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Site
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

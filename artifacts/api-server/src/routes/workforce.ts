@@ -417,9 +417,9 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
 
 router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { name, location, description } = req.body;
+    const { name, location, description, expectedCompletionDate } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
-    const [site] = await db.insert(mobSitesTable).values({ name: name.trim(), location, description }).returning();
+    const [site] = await db.insert(mobSitesTable).values({ name: name.trim(), location, description, expectedCompletionDate: expectedCompletionDate || null }).returning();
     res.status(201).json(site);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -430,9 +430,13 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const { name, location, description, active } = req.body;
+    const { name, location, description, active, expectedCompletionDate } = req.body;
     const [updated] = await db.update(mobSitesTable)
-      .set({ name, location, description, active, updatedAt: new Date() })
+      .set({
+        name, location, description, active,
+        ...(expectedCompletionDate !== undefined ? { expectedCompletionDate: expectedCompletionDate || null } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(mobSitesTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Site not found" }); return; }
     res.json(updated);
@@ -934,6 +938,163 @@ router.get("/workforce/sites/:id/role-requirements", requireAuth, async (req, re
     }
 
     res.json([...grouped.values()]);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /workforce/sites/:id/readiness-forecast
+// Returns a per-month compliance snapshot from the current month to the site's expectedCompletionDate.
+router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.id ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [site] = await db.select().from(mobSitesTable).where(eq(mobSitesTable.id, siteId));
+    if (!site) { res.status(404).json({ error: "Site not found" }); return; }
+    if (!site.expectedCompletionDate) { res.json([]); return; }
+
+    // Fetch all workers at this site and their required cert data in a single query
+    const certRows = await db.execute(sql`
+      WITH active_workers AS (
+        SELECT DISTINCT sa.worker_id
+        FROM site_assignments sa
+        JOIN workers w ON w.id = sa.worker_id AND w.active = true
+        WHERE sa.site_id = ${siteId} AND sa.status IN ('active', 'pending')
+      ),
+      required_certs AS (
+        SELECT aw.worker_id, scr.certification_id
+        FROM active_workers aw
+        CROSS JOIN site_cert_requirements scr
+        WHERE scr.site_id = ${siteId} AND scr.required = true
+        UNION
+        SELECT aw.worker_id, rcr.certification_id
+        FROM active_workers aw
+        JOIN workers w ON w.id = aw.worker_id AND w.role_id IS NOT NULL
+        JOIN role_cert_requirements rcr ON rcr.role_id = w.role_id AND rcr.required = true
+        UNION
+        SELECT aw.worker_id, wco.certification_id
+        FROM active_workers aw
+        JOIN worker_cert_overrides wco ON wco.worker_id = aw.worker_id AND wco.required = true
+      ),
+      final_required AS (
+        SELECT rc.worker_id, rc.certification_id
+        FROM required_certs rc
+        WHERE NOT EXISTS (
+          SELECT 1 FROM worker_cert_overrides wco2
+          WHERE wco2.worker_id = rc.worker_id
+            AND wco2.certification_id = rc.certification_id
+            AND wco2.required = false
+        )
+      )
+      SELECT
+        w.id        AS worker_id,
+        w.name      AS worker_name,
+        c.id        AS cert_id,
+        c.name      AS cert_name,
+        wc.expiry_date,
+        wc.verified
+      FROM final_required fr
+      JOIN workers w ON w.id = fr.worker_id
+      JOIN certifications c ON c.id = fr.certification_id
+      LEFT JOIN worker_certifications wc
+        ON wc.worker_id = fr.worker_id AND wc.certification_id = fr.certification_id
+      ORDER BY w.name, c.name
+    `);
+
+    // Also get all assigned workers (including those with no requirements)
+    const allWorkersRows = await db.execute(sql`
+      SELECT DISTINCT w.id AS worker_id, w.name AS worker_name
+      FROM site_assignments sa
+      JOIN workers w ON w.id = sa.worker_id AND w.active = true
+      WHERE sa.site_id = ${siteId} AND sa.status IN ('active', 'pending')
+    `);
+
+    type CertRow = { worker_id: unknown; worker_name: string; cert_id: unknown; cert_name: string; expiry_date: string | null; verified: boolean | null };
+    type WorkerRow = { worker_id: unknown; worker_name: string };
+
+    const rawCertRows = certRows.rows as CertRow[];
+    const allWorkers = allWorkersRows.rows as WorkerRow[];
+
+    // Build a map: workerId → { name, certs[] }
+    const workerMap = new Map<number, { name: string; certs: CertRow[] }>();
+    for (const w of allWorkers) {
+      workerMap.set(Number(w.worker_id), { name: w.worker_name, certs: [] });
+    }
+    for (const row of rawCertRows) {
+      const wId = Number(row.worker_id);
+      if (!workerMap.has(wId)) workerMap.set(wId, { name: row.worker_name, certs: [] });
+      workerMap.get(wId)!.certs.push(row);
+    }
+
+    // Generate month range: current month → expectedCompletionDate
+    const today = new Date();
+    const completionDate = new Date(site.expectedCompletionDate);
+
+    type ForecastMonth = {
+      month: string;
+      readyCount: number;
+      expiringCount: number;
+      nonCompliantCount: number;
+      noReqCount: number;
+      workers: { id: number; name: string; status: string; issues: { certName: string; status: string; expiryDate: string | null }[] }[];
+    };
+
+    const forecast: ForecastMonth[] = [];
+    const current = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    while (current <= completionDate) {
+      const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
+      const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+      const monthKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
+
+      let readyCount = 0, expiringCount = 0, nonCompliantCount = 0, noReqCount = 0;
+      const workerDetails: ForecastMonth["workers"] = [];
+
+      for (const [wId, { name, certs }] of workerMap) {
+        if (certs.length === 0) { noReqCount++; continue; }
+
+        const issues: ForecastMonth["workers"][0]["issues"] = [];
+        let workerStatus = "ready";
+
+        for (const cert of certs) {
+          // verified===null means LEFT JOIN found no held cert (MISSING)
+          if (cert.verified === null) {
+            issues.push({ certName: cert.cert_name, status: "MISSING", expiryDate: null });
+            workerStatus = "non_compliant";
+            continue;
+          }
+          if (!cert.verified) {
+            issues.push({ certName: cert.cert_name, status: "NOT_VERIFIED", expiryDate: null });
+            workerStatus = "non_compliant";
+            continue;
+          }
+          // verified = true
+          if (!cert.expiry_date) continue; // no expiry → valid indefinitely
+          const expiry = new Date(cert.expiry_date);
+          if (expiry < monthStart) {
+            issues.push({ certName: cert.cert_name, status: "EXPIRED", expiryDate: cert.expiry_date });
+            workerStatus = "non_compliant";
+          } else if (expiry <= monthEnd) {
+            issues.push({ certName: cert.cert_name, status: "EXPIRING", expiryDate: cert.expiry_date });
+            if (workerStatus !== "non_compliant") workerStatus = "expiring";
+          }
+        }
+
+        if (workerStatus === "ready") readyCount++;
+        else if (workerStatus === "expiring") expiringCount++;
+        else nonCompliantCount++;
+
+        if (issues.length > 0) {
+          workerDetails.push({ id: wId, name, status: workerStatus, issues });
+        }
+      }
+
+      forecast.push({ month: monthKey, readyCount, expiringCount, nonCompliantCount, noReqCount, workers: workerDetails });
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    res.json(forecast);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -1693,6 +1854,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
         ms.location,
         ms.description,
         ms.active,
+        ms.expected_completion_date AS "expectedCompletionDate",
         ms.created_at  AS "createdAt",
         ms.updated_at  AS "updatedAt",
         COUNT(wc.worker_id)                                          AS "workerCount",
@@ -1702,7 +1864,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
         COUNT(CASE WHEN wc.compliance_status = 'no_req'       THEN 1 END) AS "noReqCount"
       FROM mob_sites ms
       LEFT JOIN worker_compliance wc ON wc.site_id = ms.id
-      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.created_at, ms.updated_at
+      GROUP BY ms.id, ms.name, ms.location, ms.description, ms.active, ms.expected_completion_date, ms.created_at, ms.updated_at
       ORDER BY ms.name
     `);
 
@@ -1713,6 +1875,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
       location: r.location,
       description: r.description,
       active: r.active,
+      expectedCompletionDate: r.expectedCompletionDate ?? null,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       workerCount: Number(r.workerCount),
