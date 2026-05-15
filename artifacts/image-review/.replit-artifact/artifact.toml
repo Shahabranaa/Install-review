@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Installation Image Review"
+version = "1.0.0"
+id = "artifacts/image-review"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25230
+
+[services.development]
+run = "pnpm --filter @workspace/image-review run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/image-review", "run", "build" ]
+publicDir = "artifacts/image-review/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25230"
+BASE_PATH = "/"
