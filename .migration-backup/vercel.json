@@ -1,14 +1,17 @@
 {
   "buildCommand": "bash scripts/build.sh",
   "outputDirectory": "artifacts/image-review/dist/public",
-  "env": {
-    "BASE_PATH": "/"
+  "functions": {
+    "api/index.mjs": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/workforce/api/(.*)", "destination": "/api" },
+    { "source": "/worker-portal/api/(.*)", "destination": "/api" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/workforce", "destination": "/workforce/index.html" },
     { "source": "/workforce/(.*)", "destination": "/workforce/index.html" },
-    { "source": "/((?!api|workforce).*)", "destination": "/index.html" }
+    { "source": "/worker-portal", "destination": "/worker-portal/index.html" },
+    { "source": "/worker-portal/(.*)", "destination": "/worker-portal/index.html" },
+    { "source": "/((?!api|workforce|worker-portal).*)", "destination": "/index.html" }
   ]
 }

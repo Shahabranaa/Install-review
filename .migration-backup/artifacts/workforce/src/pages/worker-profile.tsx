@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
@@ -15,8 +15,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
+  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
 type WorkerSiteStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
@@ -26,6 +29,7 @@ interface Certification {
   name: string;
   category: string | null;
   validityMonths: number | null;
+  autoCalculateExpiry: boolean;
 }
 
 interface WorkerCert {
@@ -60,6 +64,7 @@ interface WorkerDetail {
   active: boolean;
   notes: string | null;
   roleId: number | null;
+  portalUsername: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
   assignments: SiteAssignment[];
@@ -79,6 +84,22 @@ interface SiteComplianceResult {
 }
 
 interface Role { id: number; name: string }
+
+interface PPEType { id: number; name: string; description: string | null }
+interface PPEAllocation {
+  id: number;
+  workerId: number;
+  ppeTypeId: number;
+  ppeType: { id: number; name: string; description: string | null };
+  siteId: number | null;
+  site: { id: number; name: string } | null;
+  issuedAt: string;
+  issuedByUserId: number | null;
+  issuedByUser: { displayName: string } | null;
+  sizeSpec: string | null;
+  returnedAt: string | null;
+  notes: string | null;
+}
 
 function certStatusInfo(wc: WorkerCert): { status: CertStatus; label: string; icon: React.ComponentType<{ className?: string }>; color: string } {
   const today = new Date();
@@ -112,15 +133,36 @@ function siteStatusConfig(status: WorkerSiteStatus) {
 export default function WorkerProfilePage() {
   const [, params] = useRoute("/workers/:id");
   const workerId = params ? parseInt(params.id) : NaN;
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [showAddCert, setShowAddCert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
-  const [certForm, setCertForm] = useState({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
+  const [showPortalCreds, setShowPortalCreds] = useState(false);
+  const [portalCredsForm, setPortalCredsForm] = useState({ portalUsername: "", password: "", confirm: "" });
+  const [certForm, setCertForm] = useState({ certificationIds: [] as number[], dateAchieved: "", expiryDate: "", verified: false });
+
+  function toggleCertFormId(id: number) {
+    setCertForm((prev) => ({
+      ...prev,
+      certificationIds: prev.certificationIds.includes(id)
+        ? prev.certificationIds.filter((x) => x !== id)
+        : [...prev.certificationIds, id],
+    }));
+  }
+
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
-  const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "" });
+  const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
+  const [fileUploading, setFileUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
+  const [verifyingCertIds, setVerifyingCertIds] = useState<Set<number>>(new Set());
+  const [showIssuePPE, setShowIssuePPE] = useState(false);
+  const today = new Date().toISOString().split("T")[0];
+  const [issueForm, setIssueForm] = useState({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
+  const cardFileInputRef = useRef<HTMLInputElement>(null);
+  const cardUploadTargetRef = useRef<WorkerCert | null>(null);
 
   const { data: worker, isLoading } = useQuery<WorkerDetail>({
     queryKey: ["worker", workerId],
@@ -139,9 +181,37 @@ export default function WorkerProfilePage() {
     queryFn: () => apiFetch<Certification[]>("/api/workforce/certifications"),
   });
 
+  useEffect(() => {
+    if (certForm.certificationIds.length !== 1) return;
+    const certId = certForm.certificationIds[0];
+    const cert = (allCerts ?? []).find(c => c.id === certId);
+    if (!cert?.autoCalculateExpiry || !cert.validityMonths || !certForm.dateAchieved) return;
+    const achieved = new Date(certForm.dateAchieved);
+    if (isNaN(achieved.getTime())) return;
+    achieved.setMonth(achieved.getMonth() + cert.validityMonths);
+    setCertForm(prev => ({ ...prev, expiryDate: achieved.toISOString().split("T")[0] }));
+  }, [certForm.certificationIds, certForm.dateAchieved, allCerts]);
+
   const { data: roles } = useQuery<Role[]>({
     queryKey: ["workforce-roles"],
     queryFn: () => apiFetch<Role[]>("/api/workforce/roles"),
+  });
+
+  const { data: allSites } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["workforce-sites"],
+    queryFn: () => apiFetch<{ id: number; name: string }[]>("/api/workforce/sites"),
+  });
+
+  const { data: ppeAllocations } = useQuery<PPEAllocation[]>({
+    queryKey: ["worker-ppe", workerId],
+    queryFn: () => apiFetch<PPEAllocation[]>(`/api/workforce/workers/${workerId}/ppe`),
+    enabled: !isNaN(workerId),
+  });
+
+  const { data: ppeTypes } = useQuery<PPEType[]>({
+    queryKey: ["workforce-ppe-types"],
+    queryFn: () => apiFetch<PPEType[]>("/api/workforce/ppe-types"),
+    enabled: isAdmin,
   });
 
   function openEdit() {
@@ -153,19 +223,29 @@ export default function WorkerProfilePage() {
       windaId: worker.windaId ?? "",
       notes: worker.notes ?? "",
       roleId: worker.roleId ? String(worker.roleId) : "",
+      newSiteId: "",
     });
     setShowEdit(true);
   }
 
   const updateMutation = useMutation({
-    mutationFn: () => apiPatch(`/api/workforce/workers/${workerId}`, {
-      name: editForm.name,
-      email: editForm.email || null,
-      company: editForm.company || null,
-      windaId: editForm.windaId || null,
-      notes: editForm.notes || null,
-      roleId: editForm.roleId ? parseInt(editForm.roleId) : null,
-    }),
+    mutationFn: async () => {
+      await apiPatch(`/api/workforce/workers/${workerId}`, {
+        name: editForm.name,
+        email: editForm.email || null,
+        company: editForm.company || null,
+        windaId: editForm.windaId || null,
+        notes: editForm.notes || null,
+        roleId: editForm.roleId ? parseInt(editForm.roleId) : null,
+      });
+      if (editForm.newSiteId) {
+        await apiPost("/api/workforce/assignments", {
+          workerId,
+          siteId: parseInt(editForm.newSiteId),
+          status: "active",
+        });
+      }
+    },
     onSuccess: () => {
       toast({ title: "Worker updated" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
@@ -186,19 +266,38 @@ export default function WorkerProfilePage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
-  const addCertMutation = useMutation({
-    mutationFn: () => apiPost(`/api/workforce/workers/${workerId}/certifications`, {
-      certificationId: parseInt(certForm.certificationId),
-      dateAchieved: certForm.dateAchieved || null,
-      expiryDate: certForm.expiryDate || null,
-      verified: certForm.verified,
-    }),
+  const setPortalCredsMutation = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/workforce/workers/${workerId}/set-portal-credentials`, {
+        portalUsername: portalCredsForm.portalUsername.trim() || undefined,
+        password: portalCredsForm.password,
+      }),
     onSuccess: () => {
-      toast({ title: "Certification added" });
+      toast({ title: "Portal access updated" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      setShowPortalCreds(false);
+      setPortalCredsForm({ portalUsername: "", password: "", confirm: "" });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const addCertMutation = useMutation({
+    mutationFn: () => Promise.all(
+      certForm.certificationIds.map((certificationId) =>
+        apiPost(`/api/workforce/workers/${workerId}/certifications`, {
+          certificationId,
+          dateAchieved: certForm.dateAchieved || null,
+          expiryDate: certForm.expiryDate || null,
+          verified: certForm.verified,
+        }),
+      ),
+    ),
+    onSuccess: (results) => {
+      toast({ title: results.length === 1 ? "Certification added" : `${results.length} certifications added` });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
       setShowAddCert(false);
-      setCertForm({ certificationId: "", dateAchieved: "", expiryDate: "", verified: false });
+      setCertForm({ certificationIds: [], dateAchieved: "", expiryDate: "", verified: false });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -233,6 +332,48 @@ export default function WorkerProfilePage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
+  const toggleVerifyMutation = useMutation({
+    mutationFn: ({ certId, newVerified }: { certId: number; newVerified: boolean }) =>
+      apiPatch(`/api/workforce/workers/${workerId}/certifications/${certId}`, { verified: newVerified }),
+    onMutate: ({ certId }) => setVerifyingCertIds((prev) => new Set(prev).add(certId)),
+    onSettled: (_, __, { certId }) => setVerifyingCertIds((prev) => { const next = new Set(prev); next.delete(certId); return next; }),
+    onSuccess: (_, { newVerified }) => {
+      toast({ title: newVerified ? "Certification verified" : "Verification removed" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const issuePPEMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/workers/${workerId}/ppe`, {
+      ppeTypeId: parseInt(issueForm.ppeTypeId),
+      siteId: issueForm.siteId ? parseInt(issueForm.siteId) : null,
+      issuedAt: issueForm.issuedAt,
+      sizeSpec: issueForm.sizeSpec || null,
+      notes: issueForm.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "PPE issued" });
+      void qc.invalidateQueries({ queryKey: ["worker-ppe", workerId] });
+      setShowIssuePPE(false);
+      setIssueForm({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const returnPPEMutation = useMutation({
+    mutationFn: (allocationId: number) =>
+      apiPatch(`/api/workforce/ppe-allocations/${allocationId}`, {
+        returnedAt: today,
+      }),
+    onSuccess: () => {
+      toast({ title: "PPE marked as returned" });
+      void qc.invalidateQueries({ queryKey: ["worker-ppe", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
   function openEditCert(wc: WorkerCert) {
     setCertEditForm({
       dateAchieved: wc.dateAchieved ?? "",
@@ -242,6 +383,62 @@ export default function WorkerProfilePage() {
       notes: wc.notes ?? "",
     });
     setEditingCert(wc);
+  }
+
+  async function handleCertFileUpload(file: File) {
+    if (!editingCert) return;
+    setFileUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `${BASE}/api/workforce/workers/${workerId}/certifications/${editingCert.certificationId}/file`,
+        { method: "POST", credentials: "include", body: form },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `Upload failed: ${res.status}`);
+      }
+      const data = (await res.json()) as { fileUrl: string };
+      setCertEditForm((f) => ({ ...f, fileUrl: data.fileUrl }));
+      toast({ title: "File uploaded" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setFileUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function certFileHref(wc: WorkerCert): string {
+    if (!wc.fileUrl) return "#";
+    if (wc.fileUrl.startsWith("http")) return wc.fileUrl;
+    return `${BASE}/api/workforce/workers/${wc.workerId}/certifications/${wc.certificationId}/file`;
+  }
+
+  async function handleCardFileUpload(wc: WorkerCert, file: File) {
+    setCardUploadingCertId(wc.certificationId);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `${BASE}/api/workforce/workers/${workerId}/certifications/${wc.certificationId}/file`,
+        { method: "POST", credentials: "include", body: form },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? `Upload failed: ${res.status}`);
+      }
+      toast({ title: "File attached" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setCardUploadingCertId(null);
+      cardUploadTargetRef.current = null;
+      if (cardFileInputRef.current) cardFileInputRef.current.value = "";
+    }
   }
 
   if (isLoading) {
@@ -265,6 +462,12 @@ export default function WorkerProfilePage() {
   const validSiteCompliance = (siteCompliance ?? []).filter(
     (r): r is SiteComplianceResult => "status" in r,
   );
+
+  const isSelf =
+    !isAdmin &&
+    !!user?.email &&
+    !!worker?.email &&
+    user.email.toLowerCase() === worker.email.toLowerCase();
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -342,6 +545,50 @@ export default function WorkerProfilePage() {
         </div>
       </div>
 
+      {/* Portal Access (admin only) */}
+      {isAdmin && (
+        <div className="border rounded-xl bg-card p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <KeyRound className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Worker Portal Access</p>
+              <p className="text-xs text-muted-foreground">
+                {worker.portalUsername
+                  ? <>Username: <span className="font-mono">{worker.portalUsername}</span></>
+                  : "No portal credentials set"}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setPortalCredsForm({ portalUsername: worker.portalUsername ?? "", password: "", confirm: "" });
+              setShowPortalCreds(true);
+            }}
+            data-testid="button-set-portal-creds"
+          >
+            <KeyRound className="h-3.5 w-3.5 mr-1" />
+            {worker.portalUsername ? "Update credentials" : "Set credentials"}
+          </Button>
+        </div>
+      )}
+
+      {/* Hidden file input for card-level uploads (non-admin & admin quick upload) */}
+      <input
+        ref={cardFileInputRef}
+        type="file"
+        accept="application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          const target = cardUploadTargetRef.current;
+          if (file && target) void handleCardFileUpload(target, file);
+        }}
+      />
+
       {/* Certifications */}
       <div className="border rounded-xl bg-card overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
@@ -379,8 +626,13 @@ export default function WorkerProfilePage() {
                         </span>
                       )}
                       {wc.fileUrl && (
-                        <a href={wc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-0.5">
-                          View file
+                        <a
+                          href={certFileHref(wc)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-0.5"
+                        >
+                          <Paperclip className="h-3 w-3" /> View file
                         </a>
                       )}
                     </div>
@@ -388,28 +640,66 @@ export default function WorkerProfilePage() {
                   <Badge variant="outline" className={cn("text-[10px] flex-shrink-0", color.replace("text-", "border-").replace("-500", "-400"))}>
                     {label}
                   </Badge>
-                  {isAdmin && (
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isSelf && (
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-muted-foreground hover:text-primary"
-                        onClick={() => openEditCert(wc)}
-                        data-testid={`button-edit-cert-${wc.certificationId}`}
+                        title="Attach file"
+                        disabled={cardUploadingCertId === wc.certificationId}
+                        onClick={() => {
+                          cardUploadTargetRef.current = wc;
+                          cardFileInputRef.current?.click();
+                        }}
+                        data-testid={`button-upload-cert-${wc.certificationId}`}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        {cardUploadingCertId === wc.certificationId
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Paperclip className="h-3.5 w-3.5" />}
                       </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeCertMutation.mutate(wc.certificationId)}
-                        data-testid={`button-remove-cert-${wc.certificationId}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
+                    )}
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={cn(
+                            "h-7 w-7 transition-colors",
+                            wc.verified
+                              ? "text-emerald-500 hover:text-emerald-600"
+                              : "text-muted-foreground hover:text-emerald-500",
+                          )}
+                          title={wc.verified ? "Mark as unverified" : "Mark as verified"}
+                          disabled={verifyingCertIds.has(wc.certificationId)}
+                          onClick={() => toggleVerifyMutation.mutate({ certId: wc.certificationId, newVerified: !wc.verified })}
+                          data-testid={`button-verify-cert-${wc.certificationId}`}
+                        >
+                          {verifyingCertIds.has(wc.certificationId)
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          onClick={() => openEditCert(wc)}
+                          data-testid={`button-edit-cert-${wc.certificationId}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeCertMutation.mutate(wc.certificationId)}
+                          data-testid={`button-remove-cert-${wc.certificationId}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -485,6 +775,11 @@ export default function WorkerProfilePage() {
                   <p className="font-medium text-sm">{a.site.name}</p>
                   {a.site.location && <p className="text-xs text-muted-foreground">{a.site.location}</p>}
                 </div>
+                {worker.role && (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    {worker.role.name}
+                  </Badge>
+                )}
                 <Badge
                   variant="outline"
                   className={cn("text-[10px]",
@@ -497,6 +792,88 @@ export default function WorkerProfilePage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* PPE Allocations */}
+      {(isAdmin || (ppeAllocations && ppeAllocations.length > 0)) && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-primary" />
+              <h2 className="font-semibold text-sm">
+                PPE Allocation ({(ppeAllocations ?? []).filter(a => !a.returnedAt).length} active)
+              </h2>
+            </div>
+            {isAdmin && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => { setIssueForm({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" }); setShowIssuePPE(true); }}
+                data-testid="button-issue-ppe"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Issue PPE
+              </Button>
+            )}
+          </div>
+
+          {!ppeAllocations || ppeAllocations.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No PPE issued to this worker yet.</div>
+          ) : (
+            <div className="divide-y">
+              {/* Active items first */}
+              {ppeAllocations.filter(a => !a.returnedAt).map((a) => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{a.ppeType.name}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> Issued {new Date(`${a.issuedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                      </span>
+                      {a.site && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{a.site.name}</span>}
+                      {a.sizeSpec && <span>Size/Spec: {a.sizeSpec}</span>}
+                      {a.issuedByUser && <span>By {a.issuedByUser.displayName}</span>}
+                      {a.notes && <span className="italic">{a.notes}</span>}
+                    </div>
+                  </div>
+                  <span className="text-[10px] border border-emerald-400 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">Active</span>
+                  {isAdmin && (
+                    <Button
+                      size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
+                      title="Mark as returned"
+                      onClick={() => returnPPEMutation.mutate(a.id)}
+                      disabled={returnPPEMutation.isPending}
+                      data-testid={`button-return-ppe-${a.id}`}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" /> Return
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {/* Returned items */}
+              {ppeAllocations.filter(a => !!a.returnedAt).map((a) => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3 opacity-60">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm line-through">{a.ppeType.name}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" /> Issued {new Date(`${a.issuedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                      </span>
+                      {a.returnedAt && (
+                        <span className="flex items-center gap-1">
+                          <RotateCcw className="h-3 w-3" /> Returned {new Date(`${a.returnedAt}T00:00:00`).toLocaleDateString("en-GB")}
+                        </span>
+                      )}
+                      {a.site && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{a.site.name}</span>}
+                      {a.sizeSpec && <span>Size/Spec: {a.sizeSpec}</span>}
+                    </div>
+                  </div>
+                  <span className="text-[10px] border text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">Returned</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -541,6 +918,31 @@ export default function WorkerProfilePage() {
               <Label>Notes</Label>
               <Input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Optional notes" />
             </div>
+            <div>
+              <Label>Site Assignments</Label>
+              {worker?.assignments && worker.assignments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-1 mb-2">
+                  {worker.assignments.filter(a => a.status === "active" || a.status === "pending").map((a) => (
+                    <span key={a.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                      <Building2 className="h-3 w-3" /> {a.site.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1 mb-2">No site assignments yet.</p>
+              )}
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={editForm.newSiteId}
+                onChange={(e) => setEditForm({ ...editForm, newSiteId: e.target.value })}
+                data-testid="select-edit-site"
+              >
+                <option value="">Add to a site… (optional)</option>
+                {allSites
+                  ?.filter(s => !worker?.assignments.some(a => a.site.id === s.id && (a.status === "active" || a.status === "pending")))
+                  .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
@@ -556,30 +958,62 @@ export default function WorkerProfilePage() {
       </Dialog>
 
       {/* Add cert dialog */}
-      <Dialog open={showAddCert} onOpenChange={setShowAddCert}>
+      <Dialog open={showAddCert} onOpenChange={(open) => { setShowAddCert(open); if (!open) setCertForm({ certificationIds: [], dateAchieved: "", expiryDate: "", verified: false }); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Certification</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Add Certifications</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Certification *</Label>
-              <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
-                value={certForm.certificationId}
-                onChange={(e) => setCertForm({ ...certForm, certificationId: e.target.value })}
-                data-testid="select-certification"
-              >
-                <option value="">Select…</option>
-                {allCerts?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <Label className="mb-1 block">Certifications *</Label>
+              {(() => {
+                const existingIds = new Set((worker?.certifications ?? []).map((wc) => wc.certificationId));
+                const available = (allCerts ?? []).filter((c) => !existingIds.has(c.id));
+                return available.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">All certifications have already been added.</p>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto border rounded-md divide-y">
+                    {available.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 select-none"
+                        data-testid={`checkbox-add-cert-worker-${c.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={certForm.certificationIds.includes(c.id)}
+                          onChange={() => toggleCertFormId(c.id)}
+                          data-testid={`select-certification`}
+                        />
+                        <span className="flex-1 text-sm font-medium">{c.name}</span>
+                        {c.category && <span className="text-xs text-muted-foreground">{c.category}</span>}
+                      </label>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
+            <p className="text-xs text-muted-foreground -mt-1">These dates and status apply to all selected certifications.</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Date Achieved</Label>
                 <Input type="date" value={certForm.dateAchieved} onChange={(e) => setCertForm({ ...certForm, dateAchieved: e.target.value })} />
               </div>
               <div>
-                <Label>Expiry Date</Label>
-                <Input type="date" value={certForm.expiryDate} onChange={(e) => setCertForm({ ...certForm, expiryDate: e.target.value })} />
+                {(() => {
+                  const singleCert = certForm.certificationIds.length === 1
+                    ? (allCerts ?? []).find(c => c.id === certForm.certificationIds[0])
+                    : undefined;
+                  const isAuto = singleCert?.autoCalculateExpiry && !!singleCert.validityMonths && !!certForm.dateAchieved;
+                  return (
+                    <>
+                      <Label className="flex items-center gap-1">
+                        Expiry Date
+                        {isAuto && <span className="text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">auto</span>}
+                      </Label>
+                      <Input type="date" value={certForm.expiryDate} onChange={(e) => setCertForm({ ...certForm, expiryDate: e.target.value })} readOnly={!!isAuto} className={isAuto ? "bg-muted/40" : ""} />
+                    </>
+                  );
+                })()}
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -596,10 +1030,96 @@ export default function WorkerProfilePage() {
             <Button variant="outline" onClick={() => setShowAddCert(false)}>Cancel</Button>
             <Button
               onClick={() => addCertMutation.mutate()}
-              disabled={!certForm.certificationId || addCertMutation.isPending}
+              disabled={certForm.certificationIds.length === 0 || addCertMutation.isPending}
               data-testid="button-save-cert"
             >
-              {addCertMutation.isPending ? "Saving…" : "Add"}
+              {addCertMutation.isPending
+                ? "Saving…"
+                : certForm.certificationIds.length > 0
+                  ? `Add ${certForm.certificationIds.length} Cert${certForm.certificationIds.length !== 1 ? "s" : ""}`
+                  : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Issue PPE dialog */}
+      <Dialog open={showIssuePPE} onOpenChange={(open) => { if (!open) setShowIssuePPE(false); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Issue PPE — {worker.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>PPE Type *</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.ppeTypeId}
+                onChange={(e) => setIssueForm({ ...issueForm, ppeTypeId: e.target.value })}
+                data-testid="select-ppe-type"
+              >
+                <option value="">Choose a PPE type…</option>
+                {(ppeTypes ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              {!ppeTypes?.length && (
+                <p className="text-xs text-amber-600 mt-1">No PPE types defined. Add them in the PPE Types settings page first.</p>
+              )}
+            </div>
+            <div>
+              <Label>Issue Date *</Label>
+              <input
+                type="date"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.issuedAt}
+                onChange={(e) => setIssueForm({ ...issueForm, issuedAt: e.target.value })}
+                data-testid="input-ppe-issued-at"
+              />
+            </div>
+            <div>
+              <Label>Site (optional)</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.siteId}
+                onChange={(e) => setIssueForm({ ...issueForm, siteId: e.target.value })}
+              >
+                <option value="">No site linked</option>
+                {(worker.assignments ?? [])
+                  .filter(a => a.status === "active" || a.status === "pending")
+                  .map((a) => (
+                    <option key={a.site.id} value={a.site.id}>{a.site.name}</option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <Label>Size / Spec</Label>
+              <input
+                type="text"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.sizeSpec}
+                onChange={(e) => setIssueForm({ ...issueForm, sizeSpec: e.target.value })}
+                placeholder="e.g. Large, Size 10, 42cm"
+                data-testid="input-ppe-size-spec"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <input
+                type="text"
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={issueForm.notes}
+                onChange={(e) => setIssueForm({ ...issueForm, notes: e.target.value })}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowIssuePPE(false)}>Cancel</Button>
+            <Button
+              onClick={() => issuePPEMutation.mutate()}
+              disabled={!issueForm.ppeTypeId || !issueForm.issuedAt || issuePPEMutation.isPending}
+              data-testid="button-confirm-issue-ppe"
+            >
+              {issuePPEMutation.isPending ? "Issuing…" : "Issue PPE"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -631,12 +1151,66 @@ export default function WorkerProfilePage() {
               </div>
             </div>
             <div>
-              <Label>File URL</Label>
-              <Input
-                value={certEditForm.fileUrl}
-                onChange={(e) => setCertEditForm({ ...certEditForm, fileUrl: e.target.value })}
-                placeholder="https://…"
-              />
+              <Label>Certificate File</Label>
+              {certEditForm.fileUrl ? (
+                <div className="mt-1 flex items-center gap-2 rounded-md border px-3 py-2 text-sm bg-muted/40">
+                  <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="flex-1 truncate text-muted-foreground">
+                    {certEditForm.fileUrl.startsWith("http")
+                      ? certEditForm.fileUrl
+                      : certEditForm.fileUrl.split("/").pop()}
+                  </span>
+                  <a
+                    href={
+                      certEditForm.fileUrl.startsWith("http")
+                        ? certEditForm.fileUrl
+                        : editingCert
+                          ? `${BASE}/api/workforce/workers/${workerId}/certifications/${editingCert.certificationId}/file`
+                          : "#"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary text-xs hover:underline flex-shrink-0"
+                  >
+                    View
+                  </a>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive flex-shrink-0"
+                    onClick={() => setCertEditForm((f) => ({ ...f, fileUrl: "" }))}
+                    title="Remove file"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleCertFileUpload(file);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={fileUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {fileUploading ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading…</>
+                    ) : (
+                      <><Paperclip className="h-4 w-4 mr-2" /> Attach file</>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
             <div>
               <Label>Notes</Label>
@@ -663,6 +1237,64 @@ export default function WorkerProfilePage() {
               data-testid="button-save-cert-edit"
             >
               {updateCertMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Portal Credentials Dialog */}
+      <Dialog open={showPortalCreds} onOpenChange={setShowPortalCreds}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Portal Access</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label>Username <span className="text-muted-foreground font-normal">(optional — can use email to log in)</span></Label>
+              <Input
+                value={portalCredsForm.portalUsername}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, portalUsername: e.target.value }))}
+                placeholder="e.g. john.smith"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>New password</Label>
+              <Input
+                type="password"
+                value={portalCredsForm.password}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Minimum 8 characters"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Confirm password</Label>
+              <Input
+                type="password"
+                value={portalCredsForm.confirm}
+                onChange={(e) => setPortalCredsForm((f) => ({ ...f, confirm: e.target.value }))}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
+              />
+            </div>
+            {portalCredsForm.password && portalCredsForm.confirm && portalCredsForm.password !== portalCredsForm.confirm && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPortalCreds(false)}>Cancel</Button>
+            <Button
+              disabled={
+                !portalCredsForm.password ||
+                portalCredsForm.password.length < 8 ||
+                portalCredsForm.password !== portalCredsForm.confirm ||
+                setPortalCredsMutation.isPending
+              }
+              onClick={() => setPortalCredsMutation.mutate()}
+              data-testid="button-save-portal-creds"
+            >
+              {setPortalCredsMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving…</> : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

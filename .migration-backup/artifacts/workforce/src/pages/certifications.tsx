@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Award, Plus, Pencil, Trash2, Users } from "lucide-react";
+import { Award, Plus, Pencil, Trash2, Users, Zap } from "lucide-react";
 
 interface Cert {
   id: number;
@@ -19,10 +19,11 @@ interface Cert {
   description: string | null;
   validityMonths: number | null;
   category: string | null;
+  autoCalculateExpiry: boolean;
   holderCount: number;
 }
 
-const emptyForm = { name: "", description: "", validityMonths: "", category: "" };
+const emptyForm = { name: "", description: "", validityMonths: "", category: "", autoCalculateExpiry: false };
 
 export default function CertificationsPage() {
   const { isAdmin } = useAuth();
@@ -45,6 +46,7 @@ export default function CertificationsPage() {
       description: c.description ?? "",
       validityMonths: c.validityMonths != null ? String(c.validityMonths) : "",
       category: c.category ?? "",
+      autoCalculateExpiry: c.autoCalculateExpiry,
     });
     setShowDialog(true);
   }
@@ -56,6 +58,7 @@ export default function CertificationsPage() {
         description: form.description || null,
         validityMonths: form.validityMonths ? parseInt(form.validityMonths) : null,
         category: form.category || null,
+        autoCalculateExpiry: form.autoCalculateExpiry && !!form.validityMonths,
       };
       return editing
         ? apiPatch(`/api/workforce/certifications/${editing.id}`, body)
@@ -129,7 +132,12 @@ export default function CertificationsPage() {
                     {c.category ? <Badge variant="outline" className="text-xs">{c.category}</Badge> : "—"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                    {c.validityMonths ? `${c.validityMonths} months` : "No expiry"}
+                    <span className="flex items-center gap-1">
+                      {c.validityMonths ? `${c.validityMonths} months` : "No expiry"}
+                      {c.autoCalculateExpiry && c.validityMonths && (
+                        <Zap className="h-3 w-3 text-amber-500" title="Auto-calculates expiry date" />
+                      )}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-1.5 text-sm">
@@ -195,6 +203,20 @@ export default function CertificationsPage() {
               <Label>Description</Label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional description" />
             </div>
+            {form.validityMonths && (
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  checked={form.autoCalculateExpiry}
+                  onChange={(e) => setForm({ ...form, autoCalculateExpiry: e.target.checked })}
+                />
+                <span>
+                  Auto-calculate expiry date from achievement date
+                  <span className="text-muted-foreground ml-1 text-xs">(fills in expiry = achieved + {form.validityMonths} months)</span>
+                </span>
+              </label>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>

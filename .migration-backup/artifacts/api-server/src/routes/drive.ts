@@ -76,7 +76,7 @@ router.get("/drive/status", async (_req, res): Promise<void> => {
     const reason = msg.includes("account not found")
       ? "Service account not found — ensure the Google Drive API is enabled in your Google Cloud project"
       : msg.includes("invalid_grant")
-      ? `Google auth error: ${msg}`
+      ? "Google service account credentials are invalid or expired — generate a new key in Google Cloud Console and update GOOGLE_DRIVE_PRIVATE_KEY and GOOGLE_DRIVE_CLIENT_EMAIL in Secrets"
       : "Failed to reach Drive API";
     res.json({ connected: false, reason });
   }

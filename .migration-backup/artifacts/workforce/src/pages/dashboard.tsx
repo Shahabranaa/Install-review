@@ -4,13 +4,90 @@ import { Link } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from "recharts";
+
+interface CertIssueWorker {
+  workerId: number;
+  workerName: string;
+  expiryDate: string | null;
+}
+
+function CertWorkerPopover({
+  certName, status, count, siteId, expiryDays, className,
+}: {
+  certName: string;
+  status: "expired" | "expiring" | "missing";
+  count: number;
+  siteId: number | null;
+  expiryDays: number;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const params = new URLSearchParams({ certName, status, expiryDays: String(expiryDays) });
+  if (siteId) params.set("siteId", String(siteId));
+
+  const { data, isLoading } = useQuery<CertIssueWorker[]>({
+    queryKey: ["cert-issue-workers", certName, status, siteId, expiryDays],
+    queryFn: () => apiFetch<CertIssueWorker[]>(`/api/workforce/cert-issue-workers?${params}`),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className={cn("cursor-pointer", className)}>
+          <Badge variant="outline" className={cn(
+            "text-[10px] hover:opacity-80 transition-opacity",
+            status === "expiring"
+              ? "border-amber-400 text-amber-600"
+              : "border-red-400 text-red-600",
+          )}>
+            {count} {status}
+          </Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="end">
+        <div className="px-3 py-2 border-b">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{certName}</p>
+          <p className="text-xs text-muted-foreground capitalize">{status}</p>
+        </div>
+        <div className="max-h-56 overflow-y-auto divide-y">
+          {isLoading ? (
+            <div className="p-3 space-y-1.5">
+              {Array.from({ length: Math.min(count, 4) }).map((_, i) => (
+                <Skeleton key={i} className="h-4 w-full" />
+              ))}
+            </div>
+          ) : !data?.length ? (
+            <p className="text-xs text-muted-foreground p-3">No workers found.</p>
+          ) : (
+            data.map((w) => (
+              <div key={w.workerId} className="flex items-center justify-between px-3 py-1.5 hover:bg-muted/40">
+                <Link href={`/workers/${w.workerId}`}>
+                  <a className="text-xs font-medium hover:underline truncate max-w-[140px] block">{w.workerName}</a>
+                </Link>
+                {w.expiryDate && (
+                  <span className="text-[10px] text-muted-foreground flex-shrink-0 ml-2">
+                    {new Date(w.expiryDate).toLocaleDateString("en-GB")}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface DashboardData {
   totalWorkers: number;
@@ -76,10 +153,15 @@ function StatCard({
 
 export default function DashboardPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [expiryDays, setExpiryDays] = useState<30 | 60>(30);
 
   const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: ["workforce-dashboard"],
-    queryFn: () => apiFetch<DashboardData>("/api/workforce/dashboard"),
+    queryKey: ["workforce-dashboard", selectedSiteId, expiryDays],
+    queryFn: () => {
+      const params = new URLSearchParams({ expiryDays: String(expiryDays) });
+      if (selectedSiteId) params.set("siteId", String(selectedSiteId));
+      return apiFetch<DashboardData>(`/api/workforce/dashboard?${params}`);
+    },
     refetchInterval: 60_000,
   });
 
@@ -90,33 +172,7 @@ export default function DashboardPage() {
 
   const selectedSite = sites?.find(s => s.id === selectedSiteId) ?? null;
 
-  const { data: siteCompliance } = useQuery<{
-    workerId: number;
-    workerName: string;
-    items: { certId: number; name: string; status: string; expiryDate: string | null; daysUntilExpiry: number | null }[];
-  }[]>({
-    queryKey: ["site-compliance", selectedSiteId],
-    queryFn: () =>
-      apiFetch(`/api/workforce/compliance/site/${selectedSiteId}`),
-    enabled: selectedSiteId !== null,
-    staleTime: 60_000,
-  });
-
-  const siteExpiringItems = selectedSiteId && siteCompliance
-    ? siteCompliance.flatMap((wc) =>
-        wc.items
-          .filter((i) => i.status === "EXPIRING_SOON" && i.expiryDate !== null)
-          .map((i) => ({
-            workerId: wc.workerId,
-            workerName: wc.workerName,
-            certName: i.name,
-            expiryDate: i.expiryDate!,
-            daysUntilExpiry: i.daysUntilExpiry ?? 0,
-          })),
-      ).sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
-    : null;
-
-  const expiringItems = siteExpiringItems ?? (data?.expiringInNext30Days ?? []);
+  const expiringItems = data?.expiringInNext30Days ?? [];
 
   const displayCounts = selectedSite
     ? {
@@ -141,7 +197,8 @@ export default function DashboardPage() {
     { name: "Expiring Soon", value: displayCounts.expiringCount, color: CHART_COLORS.EXPIRING_SOON },
     { name: "Not Compliant", value: displayCounts.nonCompliantCount, color: CHART_COLORS.NOT_COMPLIANT },
     { name: selectedSite ? "No Requirements" : "Unassigned", value: displayCounts.unassignedCount, color: CHART_COLORS.UNASSIGNED },
-  ].filter(d => d.value > 0) : [];
+  ] : [];
+  const compliancePieData = complianceChartData.filter(d => d.value > 0);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -215,34 +272,44 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Compliance donut chart */}
-        <div className="border rounded-xl bg-card overflow-hidden">
+        <div className="border rounded-xl bg-card overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
             <h2 className="font-semibold text-sm">Compliance Breakdown</h2>
             {selectedSite && <span className="text-xs text-muted-foreground">· {selectedSite.name}</span>}
           </div>
           {isLoading ? (
-            <div className="flex items-center justify-center h-48">
+            <div className="flex-1 flex items-center justify-center h-48">
               <Skeleton className="h-36 w-36 rounded-full" />
             </div>
-          ) : complianceChartData.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+          ) : !displayCounts ? (
+            <div className="flex-1 flex items-center justify-center h-48 text-sm text-muted-foreground">
               No assigned workers.
             </div>
           ) : (
-            <div className="p-4">
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
+            <div className="flex-1 p-4 flex flex-col items-center justify-center gap-4">
+              <div className="relative" style={{ width: 200, height: 200 }}>
+                <PieChart width={200} height={200}>
                   <Pie
-                    data={complianceChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={2}
+                    data={[{ value: 1 }]}
+                    cx={100} cy={100}
+                    innerRadius={56} outerRadius={84}
                     dataKey="value"
+                    stroke="none"
+                    isAnimationActive={false}
                   >
-                    {complianceChartData.map((entry, index) => (
+                    <Cell fill="#f1f5f9" />
+                  </Pie>
+                  <Pie
+                    data={compliancePieData}
+                    cx={100} cy={100}
+                    innerRadius={56} outerRadius={84}
+                    paddingAngle={compliancePieData.length > 1 ? 2 : 0}
+                    dataKey="value"
+                    startAngle={90}
+                    endAngle={-270}
+                  >
+                    {compliancePieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -250,13 +317,23 @@ export default function DashboardPage() {
                     formatter={(value: number, name: string) => [`${value} workers`, name]}
                     contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
                   />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    formatter={(value) => <span className="text-xs text-foreground">{value}</span>}
-                  />
                 </PieChart>
-              </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-2xl font-bold tabular-nums">{displayCounts.totalWorkers}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">workers</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-2 w-full max-w-[280px]">
+                {complianceChartData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                    <span className="text-xs text-muted-foreground truncate">{item.name}</span>
+                    <span className={cn("text-xs font-semibold ml-auto tabular-nums", item.value === 0 && "text-muted-foreground/50")}>
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -265,18 +342,34 @@ export default function DashboardPage() {
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-500" />
-            <h2 className="font-semibold text-sm">Expiring in Next 30 Days</h2>
-            {selectedSite && (
-              <span className="ml-auto text-xs text-muted-foreground">{selectedSite.name}</span>
-            )}
+            <h2 className="font-semibold text-sm">Expiring in Next {expiryDays} Days</h2>
+            <div className="ml-auto flex items-center gap-1">
+              {selectedSite && (
+                <span className="text-xs text-muted-foreground mr-2">{selectedSite.name}</span>
+              )}
+              {([30, 60] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setExpiryDays(d)}
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors",
+                    expiryDays === d
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : "text-muted-foreground border-border hover:border-amber-400 hover:text-amber-600",
+                  )}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
           </div>
-          {isLoading || (selectedSiteId !== null && !siteCompliance) ? (
+          {isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
             </div>
           ) : !expiringItems.length ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No certifications expiring in the next 30 days.
+              No certifications expiring in the next {expiryDays} days.
             </div>
           ) : (
             <div className="divide-y">
@@ -366,8 +459,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Certification issues (global only when no site selected) */}
-      {!selectedSite && data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
+      {/* Certification issues */}
+      {data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Award className="h-4 w-4 text-primary" />
@@ -382,19 +475,13 @@ export default function DashboardPage() {
                   <p className="flex-1 text-sm font-medium truncate">{cert.name}</p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {cert.missing > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                        {cert.missing} missing
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="missing" count={cert.missing} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                     {cert.expired > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">
-                        {cert.expired} expired
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="expired" count={cert.expired} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                     {cert.expiring > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600">
-                        {cert.expiring} expiring
-                      </Badge>
+                      <CertWorkerPopover certName={cert.name} status="expiring" count={cert.expiring} siteId={selectedSiteId} expiryDays={expiryDays} />
                     )}
                   </div>
                 </div>

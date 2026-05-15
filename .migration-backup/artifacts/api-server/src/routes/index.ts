@@ -27,6 +27,8 @@ import fieldReportImagesRouter from "./field-report-images";
 import progressRouter from "./progress";
 import phaseTemplatesRouter from "./phase-templates";
 import workforceRouter from "./workforce";
+import workforceEmailsRouter from "./workforce-emails";
+import workerPortalRouter from "./worker-portal";
 
 const router: IRouter = Router();
 
@@ -58,5 +60,7 @@ router.use(fieldReportImagesRouter);
 router.use(progressRouter);
 router.use(phaseTemplatesRouter);
 router.use(workforceRouter);
+router.use(workforceEmailsRouter);
+router.use(workerPortalRouter);
 
 export default router;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { apiFetch, apiPut } from "@/lib/api";
+import { apiFetch, apiPut, apiPost } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,16 +9,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, Building2, ShieldCheck, CheckCircle2, AlertTriangle,
-  Clock, HelpCircle, ChevronRight, Award, Plus, Trash2, MapPin,
+  Clock, HelpCircle, ChevronRight, ChevronDown, Award, Plus, Trash2, MapPin, Briefcase, Handshake, Users, Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 type WorkerStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
 type StatusFilter = "ALL" | WorkerStatus;
+
+interface Client { id: number; name: string; notes: string | null; }
 
 interface ComplianceItem {
   certId: number;
@@ -51,12 +56,24 @@ interface SiteCertRequirement {
   certification: { id: number; name: string; category: string | null };
 }
 
+interface RoleRequirement {
+  roleId: number;
+  roleName: string;
+  certifications: {
+    certificationId: number;
+    required: boolean;
+    certification: { id: number; name: string; category: string | null };
+  }[];
+}
+
 interface Site {
   id: number;
   name: string;
   location: string | null;
   description: string | null;
   active: boolean;
+  clientId: number | null;
+  clientName: string | null;
 }
 
 interface Certification {
@@ -68,6 +85,14 @@ interface Certification {
 interface WorkerMeta {
   company: string;
   roleName: string | null;
+}
+
+interface PPESiteSummary {
+  ppeTypeId: number;
+  ppeTypeName: string;
+  issuedCount: number;
+  returnedCount: number;
+  activeCount: number;
 }
 
 function workerStatusConfig(status: WorkerStatus) {
@@ -88,8 +113,6 @@ function certStatusColor(status: CertStatus) {
     case "MISSING": return "text-red-600";
   }
 }
-
-const STATUS_ORDER: Record<WorkerStatus, number> = { NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3 };
 
 function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMeta }) {
   const [open, setOpen] = useState(false);
@@ -164,6 +187,45 @@ function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMe
   );
 }
 
+function RoleRequirementRow({ role }: { role: RoleRequirement }) {
+  const [open, setOpen] = useState(false);
+  const ChevronIcon = open ? ChevronDown : ChevronRight;
+  return (
+    <div className="border-b last:border-b-0">
+      <button
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left"
+        onClick={() => setOpen((o) => !o)}
+        data-testid={`row-role-req-${role.roleId}`}
+      >
+        <ChevronIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <span className="flex-1 text-sm font-medium">{role.roleName}</span>
+        <span className="text-xs text-muted-foreground">{role.certifications.length} cert{role.certifications.length !== 1 ? "s" : ""}</span>
+      </button>
+      {open && (
+        <div className="bg-muted/10 px-10 py-2 pb-3 border-t space-y-1.5">
+          {role.certifications.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No certifications required for this role.</p>
+          ) : (
+            role.certifications.map((c) => (
+              <div key={c.certificationId} className="flex items-center gap-2 text-sm">
+                <Award className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="flex-1">{c.certification.name}</span>
+                {c.certification.category && (
+                  <span className="text-xs text-muted-foreground">{c.certification.category}</span>
+                )}
+                <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600">
+                  {c.required ? "Required" : "Optional"}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SiteDetailPage() {
   const [, params] = useRoute("/sites/:id");
   const siteId = params ? parseInt(params.id) : NaN;
@@ -172,7 +234,17 @@ export default function SiteDetailPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [showAddReq, setShowAddReq] = useState(false);
-  const [selectedCertId, setSelectedCertId] = useState("");
+  const [selectedCertIds, setSelectedCertIds] = useState<Set<number>>(new Set());
+  const [showApplyTemplate, setShowApplyTemplate] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+
+  function toggleSelectedCertId(id: number) {
+    setSelectedCertIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const { data: site, isLoading: siteLoading } = useQuery<Site>({
     queryKey: ["site", siteId],
@@ -199,11 +271,43 @@ export default function SiteDetailPage() {
     enabled: isAdmin,
   });
 
+  const { data: roleRequirements, isLoading: roleReqLoading } = useQuery<RoleRequirement[]>({
+    queryKey: ["site-role-requirements", siteId],
+    queryFn: () => apiFetch<RoleRequirement[]>(`/api/workforce/sites/${siteId}/role-requirements`),
+    enabled: !isNaN(siteId),
+  });
+
   const { data: workers } = useQuery<{ id: number; company: string; roleName: string | null }[]>({
     queryKey: ["workforce-workers-meta"],
     queryFn: () => apiFetch<{ id: number; company: string; roleName: string | null }[]>("/api/workforce/workers"),
     enabled: !isNaN(siteId),
     staleTime: 5 * 60_000,
+  });
+
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["workforce-clients"],
+    queryFn: () => apiFetch<Client[]>("/api/workforce/clients"),
+    enabled: isAdmin,
+  });
+
+  const { data: ppeSummary } = useQuery<PPESiteSummary[]>({
+    queryKey: ["site-ppe-summary", siteId],
+    queryFn: () => apiFetch<PPESiteSummary[]>(`/api/workforce/sites/${siteId}/ppe-summary`),
+    enabled: !isNaN(siteId),
+  });
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: (clientId: number) =>
+      apiPost<{ added: number }>(`/api/workforce/sites/${siteId}/apply-client-template`, { clientId }),
+    onSuccess: (data) => {
+      const added = (data as unknown as { added: number }).added;
+      toast({ title: added > 0 ? `Applied — ${added} cert${added !== 1 ? "s" : ""} added` : "No new certs to add (already up to date)" });
+      void qc.invalidateQueries({ queryKey: ["site-requirements", siteId] });
+      void qc.invalidateQueries({ queryKey: ["site-compliance", siteId] });
+      setShowApplyTemplate(false);
+      setSelectedClientId("");
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   const workerMetaMap = new Map<number, WorkerMeta>(
@@ -218,22 +322,22 @@ export default function SiteDetailPage() {
       void qc.invalidateQueries({ queryKey: ["site-requirements", siteId] });
       void qc.invalidateQueries({ queryKey: ["site-compliance", siteId] });
       setShowAddReq(false);
-      setSelectedCertId("");
+      setSelectedCertIds(new Set());
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function addRequirement() {
-    if (!selectedCertId) return;
+    if (selectedCertIds.size === 0) return;
     const existing = (requirements ?? []).map(r => ({
       certificationId: r.certificationId, required: r.required,
     }));
-    const certId = parseInt(selectedCertId);
-    if (existing.find(e => e.certificationId === certId)) {
-      toast({ title: "Already added" });
-      return;
-    }
-    updateReqsMutation.mutate([...existing, { certificationId: certId, required: true }]);
+    const toAdd = [...selectedCertIds].filter(id => !existing.find(e => e.certificationId === id));
+    if (toAdd.length === 0) { toast({ title: "Already added" }); return; }
+    updateReqsMutation.mutate([
+      ...existing,
+      ...toAdd.map(id => ({ certificationId: id, required: true })),
+    ]);
   }
 
   function removeRequirement(certId: number) {
@@ -249,7 +353,7 @@ export default function SiteDetailPage() {
   const filtered = statusFilter === "ALL"
     ? validCompliance
     : validCompliance.filter(r => r.status === statusFilter);
-  const sorted = [...filtered].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  const sorted = [...filtered].sort((a, b) => a.workerName.localeCompare(b.workerName));
 
   const ready = validCompliance.filter(r => r.status === "READY").length;
   const expiring = validCompliance.filter(r => r.status === "EXPIRING_SOON").length;
@@ -299,6 +403,11 @@ export default function SiteDetailPage() {
                   <MapPin className="h-3.5 w-3.5" /> {site.location}
                 </p>
               )}
+              {site?.clientName && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <Handshake className="h-3.5 w-3.5" /> {site.clientName}
+                </p>
+              )}
               <Badge
                 className={cn("mt-1 text-xs", site?.active ? "bg-emerald-500 hover:bg-emerald-500" : "")}
                 variant={site?.active ? "default" : "outline"}
@@ -338,9 +447,16 @@ export default function SiteDetailPage() {
             </h2>
           </div>
           {isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => setShowAddReq(true)} data-testid="button-add-requirement">
-              <Plus className="h-3.5 w-3.5 mr-1" /> Add
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {clients && clients.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setShowApplyTemplate(true)} data-testid="button-apply-template">
+                  <Handshake className="h-3.5 w-3.5 mr-1" /> Apply Template
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setShowAddReq(true)} data-testid="button-add-requirement">
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add
+              </Button>
+            </div>
           )}
         </div>
         {reqLoading ? (
@@ -377,6 +493,29 @@ export default function SiteDetailPage() {
                   </Button>
                 )}
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Role required certifications */}
+      <div className="border rounded-xl bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center gap-2">
+          <Briefcase className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">
+            Role Required Certifications {roleReqLoading ? "" : `(${roleRequirements?.length ?? 0})`}
+          </h2>
+        </div>
+        {roleReqLoading ? (
+          <div className="p-4"><Skeleton className="h-10 w-full" /></div>
+        ) : !roleRequirements?.length ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No roles with certification requirements are assigned to this site.
+          </div>
+        ) : (
+          <div className="divide-y">
+            {roleRequirements.map((role) => (
+              <RoleRequirementRow key={role.roleId} role={role} />
             ))}
           </div>
         )}
@@ -438,34 +577,118 @@ export default function SiteDetailPage() {
         )}
       </div>
 
-      {/* Add requirement dialog */}
-      <Dialog open={showAddReq} onOpenChange={setShowAddReq}>
+      {/* PPE Site Summary */}
+      {ppeSummary && ppeSummary.length > 0 && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <Package className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">PPE Summary</h2>
+            <span className="text-xs text-muted-foreground ml-1">
+              — items issued to workers assigned to this site
+            </span>
+          </div>
+          <div className="divide-y">
+            {ppeSummary.map((row) => (
+              <div key={row.ppeTypeId} className="flex items-center gap-4 px-4 py-3">
+                <span className="flex-1 text-sm font-medium">{row.ppeTypeName}</span>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                    {row.activeCount} active
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-muted-foreground inline-block" />
+                    {row.returnedCount} returned
+                  </span>
+                  <span className="text-muted-foreground/60">{row.issuedCount} total</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Apply client template dialog */}
+      <Dialog open={showApplyTemplate} onOpenChange={(open) => { setShowApplyTemplate(open); if (!open) setSelectedClientId(""); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Required Certification</DialogTitle></DialogHeader>
-          <div className="py-3">
-            <select
-              className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-              value={selectedCertId}
-              onChange={(e) => setSelectedCertId(e.target.value)}
-              data-testid="select-add-requirement"
+          <DialogHeader>
+            <DialogTitle>Apply Client Cert Template</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Select a client to stamp their cert requirement template onto this site. Existing requirements are kept — only new ones are added.
+            </p>
+            <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+              <SelectTrigger data-testid="select-client-template">
+                <SelectValue placeholder="Choose a client…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(clients ?? []).map(c => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowApplyTemplate(false); setSelectedClientId(""); }}>Cancel</Button>
+            <Button
+              onClick={() => { if (selectedClientId) applyTemplateMutation.mutate(parseInt(selectedClientId)); }}
+              disabled={!selectedClientId || applyTemplateMutation.isPending}
+              data-testid="button-confirm-apply-template"
             >
-              <option value="">Select certification…</option>
-              {availableCerts.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {availableCerts.length === 0 && (
-              <p className="text-xs text-muted-foreground mt-2">All certifications are already required for this site.</p>
+              {applyTemplateMutation.isPending ? "Applying…" : "Apply Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add requirement dialog */}
+      <Dialog open={showAddReq} onOpenChange={(open) => { setShowAddReq(open); if (!open) setSelectedCertIds(new Set()); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Required Certifications</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {availableCerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">All certifications are already required for this site.</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select one or more certifications to add as requirements.
+                </p>
+                <div className="max-h-72 overflow-y-auto border rounded-md divide-y">
+                  {availableCerts.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 select-none"
+                      data-testid={`checkbox-req-cert-${c.id}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={selectedCertIds.has(c.id)}
+                        onChange={() => toggleSelectedCertId(c.id)}
+                      />
+                      <span className="flex-1 text-sm font-medium">{c.name}</span>
+                      {c.category && <span className="text-xs text-muted-foreground">{c.category}</span>}
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddReq(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowAddReq(false); setSelectedCertIds(new Set()); }}>Cancel</Button>
             <Button
               onClick={addRequirement}
-              disabled={!selectedCertId || updateReqsMutation.isPending}
+              disabled={selectedCertIds.size === 0 || updateReqsMutation.isPending}
               data-testid="button-confirm-add-requirement"
             >
-              {updateReqsMutation.isPending ? "Saving…" : "Add Requirement"}
+              {updateReqsMutation.isPending
+                ? "Saving…"
+                : selectedCertIds.size > 0
+                  ? `Add ${selectedCertIds.size} Requirement${selectedCertIds.size !== 1 ? "s" : ""}`
+                  : "Add Requirements"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -13,6 +13,12 @@ if (!connectionString) {
 }
 
 export const pool = new Pool({ connectionString });
+
+// Neon sets search_path='' by default for security — restore public schema
+pool.on("connect", (client) => {
+  client.query("SET search_path TO public").catch(() => {});
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

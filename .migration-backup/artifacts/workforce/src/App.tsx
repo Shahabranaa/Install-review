@@ -13,6 +13,10 @@ import SitesPage from "@/pages/sites";
 import SiteDetailPage from "@/pages/site-detail";
 import SiteCompliancePage from "@/pages/site-compliance";
 import RolesPage from "@/pages/roles";
+import EmailsPage from "@/pages/emails";
+import WorkerActivityPage from "@/pages/worker-activity";
+import ClientsPage from "@/pages/clients";
+import PPETypesPage from "@/pages/ppe-types";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -100,6 +104,34 @@ function Router() {
         {() => (
           <AuthGate adminOnly>
             <RolesPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/emails">
+        {() => (
+          <AuthGate adminOnly>
+            <EmailsPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/worker-activity">
+        {() => (
+          <AuthGate adminOnly>
+            <WorkerActivityPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/clients">
+        {() => (
+          <AuthGate adminOnly>
+            <ClientsPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/ppe-types">
+        {() => (
+          <AuthGate adminOnly>
+            <PPETypesPage />
           </AuthGate>
         )}
       </Route>

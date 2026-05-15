@@ -1326,12 +1326,15 @@ export default function DrivePhotos() {
     setReviewOverrides(prev => new Map([...prev, [photoId, approval]]));
   }, []);
 
+  const [photosErrorCode, setPhotosErrorCode] = useState<string | null>(null);
   const { data, isLoading, error, refetch, isFetching } = useQuery<SheetResponse>({
     queryKey: ["photos-sheet"],
     queryFn: async () => {
+      setPhotosErrorCode(null);
       const r = await fetch(`${BASE_URL}api/photos/sheet`);
       if (!r.ok) {
-        const body = await r.json().catch(() => ({})) as { error?: string };
+        const body = await r.json().catch(() => ({})) as { error?: string; code?: string };
+        if (body.code) setPhotosErrorCode(body.code);
         throw new Error(body.error ?? `HTTP ${r.status}`);
       }
       return r.json() as Promise<SheetResponse>;
@@ -1597,11 +1600,35 @@ export default function DrivePhotos() {
 
         {error && (
           <Card className="border-destructive bg-destructive/5">
-            <CardContent className="pt-6 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
-              <div>
+            <CardContent className="pt-6 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
                 <p className="font-semibold text-destructive">Failed to load photos</p>
-                <p className="text-sm text-muted-foreground mt-0.5">{String(error)}</p>
+                {photosErrorCode === "google_auth_invalid" ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      The Google service account credentials have expired or been revoked.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      To fix this: generate a new service account key in{" "}
+                      <a
+                        href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline text-foreground hover:text-primary"
+                      >
+                        Google Cloud Console
+                      </a>
+                      , then update{" "}
+                      <code className="text-xs bg-muted px-1 py-0.5 rounded">GOOGLE_DRIVE_PRIVATE_KEY</code>{" "}
+                      and{" "}
+                      <code className="text-xs bg-muted px-1 py-0.5 rounded">GOOGLE_DRIVE_CLIENT_EMAIL</code>{" "}
+                      in your Replit Secrets and restart the server.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{String(error)}</p>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -25,3 +25,8 @@ export * from "./workers";
 export * from "./worker-certifications";
 export * from "./cert-requirements";
 export * from "./site-assignments";
+export * from "./email-logs";
+export * from "./worker-activity-logs";
+export * from "./clients";
+export * from "./ppe-types";
+export * from "./ppe-allocations";

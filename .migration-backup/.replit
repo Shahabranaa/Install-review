@@ -1,10 +1,4 @@
-modules = ["nodejs-24", "postgresql-16"]
-
-[[artifacts]]
-id = "artifacts/api-server"
-
-[[artifacts]]
-id = "artifacts/mockup-sandbox"
+modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -20,11 +14,38 @@ runButton = "Project"
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
-integrations = ["google-drive:1.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 90000
+timeoutMs = 20000
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3001
+
+[[ports]]
+localPort = 20171
+externalPort = 4200
+
+[[ports]]
+localPort = 21728
+externalPort = 3002
+
+[[ports]]
+localPort = 25230
+externalPort = 3000
+
+[[ports]]
+localPort = 25231
+externalPort = 3003
 
 [nix]
 channel = "stable-25_05"
@@ -32,4 +53,3 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-NEON_DATABASE_URL = "postgresql://neondb_owner:npg_ACOS9rB2bZjL@ep-misty-dust-abx99wzf-pooler.eu-west-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require"

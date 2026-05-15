@@ -47,7 +47,15 @@ function RoleRow({
   const { toast } = useToast();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [addCertId, setAddCertId] = useState("");
+  const [addCertIds, setAddCertIds] = useState<Set<number>>(new Set());
+
+  function toggleAddCertId(id: number) {
+    setAddCertIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const { data: requirements, isLoading: reqLoading } = useQuery<RoleCertRequirement[]>({
     queryKey: ["role-requirements", role.id],
@@ -61,17 +69,17 @@ function RoleRow({
     onSuccess: () => {
       toast({ title: "Requirements updated" });
       void qc.invalidateQueries({ queryKey: ["role-requirements", role.id] });
-      setAddCertId("");
+      setAddCertIds(new Set());
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function addRequirement() {
-    if (!addCertId) return;
+    if (addCertIds.size === 0) return;
     const existing = (requirements ?? []).map(r => ({ certificationId: r.certificationId, required: r.required }));
-    const certId = parseInt(addCertId);
-    if (existing.find(e => e.certificationId === certId)) { toast({ title: "Already added" }); return; }
-    updateReqsMutation.mutate([...existing, { certificationId: certId, required: true }]);
+    const toAdd = [...addCertIds].filter(id => !existing.find(e => e.certificationId === id));
+    if (toAdd.length === 0) { toast({ title: "Already added" }); return; }
+    updateReqsMutation.mutate([...existing, ...toAdd.map(id => ({ certificationId: id, required: true }))]);
   }
 
   function removeRequirement(certId: number) {
@@ -157,28 +165,40 @@ function RoleRow({
             </ul>
           )}
 
-          {isAdmin && (
-            <div className="flex items-center gap-2 mt-2">
-              <select
-                className="flex-1 border rounded-md px-2.5 py-1.5 text-xs bg-background"
-                value={addCertId}
-                onChange={(e) => setAddCertId(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                data-testid={`select-add-cert-role-${role.id}`}
-              >
-                <option value="">Add certification…</option>
-                {availableCerts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={!addCertId || updateReqsMutation.isPending}
-                onClick={(e) => { e.stopPropagation(); addRequirement(); }}
-                data-testid={`button-add-cert-role-${role.id}`}
-              >
-                <Plus className="h-3 w-3 mr-1" /> Add
-              </Button>
+          {isAdmin && availableCerts.length > 0 && (
+            <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Add Certifications</p>
+              <div className="max-h-40 overflow-y-auto border rounded-md divide-y">
+                {availableCerts.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/30 select-none"
+                    data-testid={`checkbox-add-cert-role-${role.id}-${c.id}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-primary"
+                      checked={addCertIds.has(c.id)}
+                      onChange={() => toggleAddCertId(c.id)}
+                    />
+                    <span className="flex-1 text-xs">{c.name}</span>
+                    {c.category && <span className="text-[10px] text-muted-foreground">{c.category}</span>}
+                  </label>
+                ))}
+              </div>
+              <div className="flex justify-end mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={addCertIds.size === 0 || updateReqsMutation.isPending}
+                  onClick={(e) => { e.stopPropagation(); addRequirement(); }}
+                  data-testid={`button-add-cert-role-${role.id}`}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  {addCertIds.size > 0 ? `Add (${addCertIds.size})` : "Add Selected"}
+                </Button>
+              </div>
             </div>
           )}
         </div>

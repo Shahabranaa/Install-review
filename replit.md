@@ -1,81 +1,45 @@
-# Workspace
+# [Project name]
 
-## Overview
+_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
 
-pnpm workspace monorepo using TypeScript. This project contains two frontend web apps + a shared API server + database.
+## Run & Operate
 
-## Apps
-
-### Image Review (`artifacts/image-review`) — served at `/`
-Installation Image Review Platform. A web app for reviewing installation photos: project/site/location/phase management, image approval/rejection, issue flagging, field reports, and compliance tracking. Uses auth (session-based) with username/password login.
-
-### Workforce Compliance (`artifacts/workforce`) — served at `/workforce/`
-Workforce compliance management app: worker profiles, certifications, mob sites, site assignments, and compliance reporting.
-
-### Worker Portal (`artifacts/worker-portal`) — served at `/worker-portal/`
-Self-service portal for workers to log in with portal credentials (set by admins) and manage their own certifications (view, add, edit, delete). Admins can set per-worker portal usernames/passwords from the worker profile page and view the full activity log (logins, cert changes with IP + timestamp) in the Worker Activity page.
-
-### API Server (`artifacts/api-server`) — served at `/api`
-Express 5 backend serving both frontend apps. Includes auth (bcrypt + express-session), Google Sheets/Drive integration, Wasabi S3 integration, PDF generation, and comprehensive REST API.
-
-**Default admin credentials**: username=`admin`, password=`admin123`
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **Frontend**: React + Vite + Tailwind CSS v4 + shadcn/ui + wouter (routing)
-- **Backend**: Express 5 + pino logging
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (API server), Vite (frontend)
+- pnpm workspaces, Node.js 24, TypeScript 5.9
+- API: Express 5
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
 
-## Key Commands
+## Where things live
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
 
-## Database Schema (Key Tables)
+## Architecture decisions
 
-- `users` — auth users with access levels (admin/reviewer/viewer)
-- `projects`, `sites`, `locations`, `towers`, `strings` — project hierarchy
-- `phases` — installation phases per location
-- `images`, `sheet_photos` — image records and Google Sheets photo sync
-- `issues` — image issue flags
-- `decisions` — review decisions (audit trail)
-- `documents` — generated PDF documents
-- `field_reports` — field report records
-- `workers`, `certifications`, `workforce_roles`, `mob_sites`, `site_assignments` — workforce data; workers also has `portal_username`, `portal_password_hash`, `last_login_at`, `last_login_ip`
-- `worker_activity_logs` — audit trail for worker portal actions (login, cert_added, cert_edited, cert_deleted, credentials_set)
-- `wasabi_mirror_tasks` — Wasabi S3 mirroring task queue
-- `app_settings` — global application settings
+_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
 
-## Environment Variables Required
+## Product
 
-- `NEON_DATABASE_URL` — Neon PostgreSQL connection string (EU West 2 / London, ep-sparkling-field). GDPR-compliant EU data residency. Falls back to `DATABASE_URL` if not set.
-- `SESSION_SECRET` — express-session secret
-- `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY` — Google Sheets/Drive API
-- `WASABI_ACCESS_KEY_ID`, `WASABI_SECRET_ACCESS_KEY`, `WASABI_BUCKET`, `WASABI_ENDPOINT` — Wasabi S3
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` — (optional) Google OAuth login
+_Describe the high-level user-facing capabilities of this app once they exist._
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+## User preferences
 
-## Vercel Deployment
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
-Vercel is the production hosting target. Key files:
+## Gotchas
 
-- `vercel.json` — build command, output directory, rewrite rules, function config
-- `scripts/build.sh` — full production build (API server + both frontends; copies workforce into image-review dist)
-- `api/index.mjs` — Vercel serverless function entry point (re-exports Express app from `artifacts/api-server/dist/app.mjs`)
+_Populate as you build — sharp edges, "always run X before Y" rules._
 
-Build output structure (all under `artifacts/image-review/dist/public/`):
-- `/` → image-review SPA
-- `/workforce/` → workforce SPA (built with `BASE_PATH=/workforce/`, then copied in)
-- `/api` → Vercel serverless function (served from `api/index.mjs`)
+## Pointers
 
-To deploy: push to the connected Git branch; Vercel auto-builds using `scripts/build.sh`.
+- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

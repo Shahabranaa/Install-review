@@ -44,6 +44,7 @@ interface WorkerCompliance {
 }
 
 interface Role { id: number; name: string }
+interface Site { id: number; name: string }
 
 function complianceConfig(status: ComplianceStatus) {
   switch (status) {
@@ -136,7 +137,7 @@ export default function WorkersPage() {
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "" });
+  const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "", siteId: "" });
 
   const { data: complianceSummary, isLoading: compLoading } = useQuery<WorkerCompliance[]>({
     queryKey: ["workforce-compliance-summary"],
@@ -147,6 +148,11 @@ export default function WorkersPage() {
   const { data: roles } = useQuery<Role[]>({
     queryKey: ["workforce-roles"],
     queryFn: () => apiFetch<Role[]>("/api/workforce/roles"),
+  });
+
+  const { data: sites } = useQuery<Site[]>({
+    queryKey: ["workforce-sites"],
+    queryFn: () => apiFetch<Site[]>("/api/workforce/sites"),
   });
 
   const { data: rawWorkers, isLoading: workersLoading } = useQuery<Worker[]>({
@@ -191,19 +197,28 @@ export default function WorkersPage() {
   }, [rawWorkers, complianceSummary, search, roleFilter, statusFilter, sort]);
 
   const createMutation = useMutation({
-    mutationFn: () => apiPost("/api/workforce/workers", {
-      name: form.name,
-      email: form.email || null,
-      company: form.company || null,
-      windaId: form.windaId || null,
-      roleId: form.roleId ? parseInt(form.roleId) : null,
-    }),
+    mutationFn: async () => {
+      const worker = await apiPost<{ id: number }>("/api/workforce/workers", {
+        name: form.name,
+        email: form.email || null,
+        company: form.company || null,
+        windaId: form.windaId || null,
+        roleId: form.roleId ? parseInt(form.roleId) : null,
+      });
+      if (form.siteId) {
+        await apiPost("/api/workforce/assignments", {
+          workerId: worker.id,
+          siteId: parseInt(form.siteId),
+          status: "active",
+        });
+      }
+    },
     onSuccess: () => {
       toast({ title: "Worker added" });
       void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
       void qc.invalidateQueries({ queryKey: ["workforce-compliance-summary"] });
       setShowNew(false);
-      setForm({ name: "", email: "", company: "", windaId: "", roleId: "" });
+      setForm({ name: "", email: "", company: "", windaId: "", roleId: "", siteId: "" });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -315,7 +330,7 @@ export default function WorkersPage() {
                 return (
                   <tr key={w.id} className="hover:bg-muted/20 transition-colors">
                     <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                      {w.uniqueId ?? "—"}
+                      {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
                     </td>
                     <td className={cn(cell, "min-w-[160px]")}>
                       <Link href={`/workers/${w.id}`}>
@@ -427,6 +442,18 @@ export default function WorkersPage() {
                   {roles?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
+            </div>
+            <div>
+              <Label>Assign to Site</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={form.siteId}
+                onChange={(e) => setForm({ ...form, siteId: e.target.value })}
+                data-testid="select-worker-site"
+              >
+                <option value="">No site (assign later)</option>
+                {sites?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
           </div>
           <DialogFooter>

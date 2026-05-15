@@ -8,7 +8,7 @@ import { PHOTO_IMAGES_FOLDER_ID, PHOTO_IMAGES_2_STAMPED_FOLDER_ID } from "../lib
 const router: IRouter = Router();
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (req.session?.accessLevel !== "admin") {
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
   }
@@ -524,7 +524,15 @@ router.get("/photos/sheet", async (req, res): Promise<void> => {
     res.json({ photos, meta: { total: photos.length, towers, strings, phases } });
   } catch (err: unknown) {
     console.error("Photos sheet error:", err);
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("invalid_grant")) {
+      res.status(503).json({
+        code: "google_auth_invalid",
+        error: "Google service account credentials are invalid or expired. Generate a new service account key in Google Cloud Console and update GOOGLE_DRIVE_PRIVATE_KEY and GOOGLE_DRIVE_CLIENT_EMAIL in Secrets.",
+      });
+      return;
+    }
+    res.status(500).json({ error: msg });
   }
 });
 
