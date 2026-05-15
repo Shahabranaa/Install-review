@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
@@ -6,7 +6,7 @@ import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
 
-function requireAdmin(req: any, res: any, next: any) {
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
     return;
@@ -114,7 +114,7 @@ router.delete("/users/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid user id" }); return; }
 
-  if (id === (req as any).session?.userId) {
+  if (id === req.session?.userId) {
     res.status(400).json({ error: "Cannot deactivate your own account" });
     return;
   }
