@@ -28,6 +28,45 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
+const UNIQUE_CONSTRAINT_MESSAGES: Record<string, string> = {
+  workers_email_unique: "A worker with this email already exists",
+  workers_winda_id_unique: "A worker with this WINDA ID already exists",
+  workers_portal_username_key: "A worker with this portal username already exists",
+  workers_portal_username_unique: "A worker with this portal username already exists",
+  worker_cert_unique: "This certification is already recorded for this worker",
+  roles_name_unique: "A role with this name already exists",
+  certifications_name_unique: "A certification type with this name already exists",
+  clients_name_unique: "A client with this name already exists",
+  ppe_types_name_unique: "A PPE type with this name already exists",
+  site_assignment_unique: "This worker is already assigned to this site",
+  role_cert_req_unique: "This certification requirement already exists for this role",
+  site_cert_req_unique: "This certification requirement already exists for this site",
+  client_cert_req_unique: "This certification requirement already exists for this client",
+  worker_cert_override_unique: "An override already exists for this worker and certification",
+};
+
+function extractPgError(err: unknown): { code?: string; constraint?: string } | null {
+  // Drizzle wraps the original pg error in err.cause
+  for (const candidate of [err, (err as { cause?: unknown })?.cause]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      return candidate as { code?: string; constraint?: string };
+    }
+  }
+  return null;
+}
+
+function handleDbError(res: Response, err: unknown): void {
+  const pgErr = extractPgError(err);
+  if (pgErr?.code === "23505") {
+    const constraint = pgErr.constraint ?? "";
+    const message = UNIQUE_CONSTRAINT_MESSAGES[constraint] ?? "A record with these details already exists";
+    res.status(409).json({ error: message });
+    return;
+  }
+  logger.error({ err }, "Unexpected database error");
+  res.status(500).json({ error: "An unexpected error occurred" });
+}
+
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
@@ -264,7 +303,7 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
     res.json(workers.map(w => ({ ...w, roleName: w.roleId ? (roleMap.get(w.roleId) ?? null) : null })));
   } catch (err) {
     logger.error({ err }, "workforce workers GET error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -275,7 +314,7 @@ router.post("/workforce/workers", requireAuth, async (req, res): Promise<void> =
     const [worker] = await db.insert(workersTable).values({ name: name.trim(), email, company, windaId, roleId, notes }).returning();
     res.status(201).json(worker);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -313,7 +352,7 @@ router.get("/workforce/workers/:id", requireAuth, async (req, res): Promise<void
       assignments: assignments.map(r => ({ ...r.sa, site: r.site })),
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -328,7 +367,7 @@ router.patch("/workforce/workers/:id", requireAuth, async (req, res): Promise<vo
     if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -342,7 +381,7 @@ router.delete("/workforce/workers/:id", requireAdmin, async (req, res): Promise<
     if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -353,7 +392,7 @@ router.get("/workforce/roles", requireAuth, async (_req, res): Promise<void> => 
     const roles = await db.select().from(workforceRolesTable).orderBy(workforceRolesTable.name);
     res.json(roles);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -364,7 +403,7 @@ router.post("/workforce/roles", requireAdmin, async (req, res): Promise<void> =>
     const [role] = await db.insert(workforceRolesTable).values({ name: name.trim(), description }).returning();
     res.status(201).json(role);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -379,7 +418,7 @@ router.patch("/workforce/roles/:id", requireAdmin, async (req, res): Promise<voi
     if (!updated) { res.status(404).json({ error: "Role not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -390,7 +429,7 @@ router.delete("/workforce/roles/:id", requireAdmin, async (req, res): Promise<vo
     await db.delete(workforceRolesTable).where(eq(workforceRolesTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -401,7 +440,7 @@ router.get("/workforce/sites", requireAuth, async (_req, res): Promise<void> => 
     const sites = await db.select().from(mobSitesTable).orderBy(mobSitesTable.name);
     res.json(sites);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -429,7 +468,7 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
     if (!row) { res.status(404).json({ error: "Site not found" }); return; }
     res.json(row);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -462,7 +501,7 @@ router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> =>
 
     res.status(201).json(site);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -505,7 +544,7 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -519,7 +558,7 @@ router.delete("/workforce/sites/:id", requireAdmin, async (req, res): Promise<vo
     if (!updated) { res.status(404).json({ error: "Site not found" }); return; }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -540,7 +579,7 @@ router.get("/workforce/certifications", requireAuth, async (_req, res): Promise<
 
     res.json(certs.map(c => ({ ...c, holderCount: countMap.get(c.id) ?? 0 })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -552,7 +591,7 @@ router.post("/workforce/certifications", requireAdmin, async (req, res): Promise
       .values({ name: name.trim(), description, validityMonths, category, autoCalculateExpiry: autoCalculateExpiry ?? false }).returning();
     res.status(201).json(cert);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -567,7 +606,7 @@ router.patch("/workforce/certifications/:id", requireAdmin, async (req, res): Pr
     if (!updated) { res.status(404).json({ error: "Certification not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -578,7 +617,7 @@ router.delete("/workforce/certifications/:id", requireAdmin, async (req, res): P
     await db.delete(certificationsTable).where(eq(certificationsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -589,7 +628,7 @@ router.get("/workforce/clients", requireAuth, async (_req, res): Promise<void> =
     const clients = await db.select().from(clientsTable).orderBy(clientsTable.name);
     res.json(clients);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -600,7 +639,7 @@ router.post("/workforce/clients", requireAdmin, async (req, res): Promise<void> 
     const [client] = await db.insert(clientsTable).values({ name: name.trim(), notes: notes || null }).returning();
     res.status(201).json(client);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -615,7 +654,7 @@ router.patch("/workforce/clients/:id", requireAdmin, async (req, res): Promise<v
     if (!updated) { res.status(404).json({ error: "Client not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -626,7 +665,7 @@ router.delete("/workforce/clients/:id", requireAdmin, async (req, res): Promise<
     await db.delete(clientsTable).where(eq(clientsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -640,7 +679,7 @@ router.get("/workforce/clients/:id/cert-requirements", requireAuth, async (req, 
       .where(eq(clientCertRequirementsTable.clientId, id));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -660,7 +699,7 @@ router.put("/workforce/clients/:id/cert-requirements", requireAdmin, async (req,
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -693,7 +732,7 @@ router.post("/workforce/sites/:id/apply-client-template", requireAdmin, async (r
 
     res.json({ added: toAdd.length });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -714,7 +753,7 @@ router.get("/workforce/workers/:id/certifications", requireAuth, async (req, res
       .where(eq(workerCertificationsTable.workerId, workerId));
     res.json(certs.map(r => ({ ...r.wc, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -733,7 +772,7 @@ router.post("/workforce/workers/:id/certifications", requireAuth, async (req, re
       .returning();
     res.status(201).json(wc);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -752,7 +791,7 @@ router.patch("/workforce/workers/:id/certifications/:certId", requireAuth, async
     if (!updated) { res.status(404).json({ error: "Worker certification not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -768,7 +807,7 @@ router.delete("/workforce/workers/:id/certifications/:certId", requireAdmin, asy
       ));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -835,7 +874,7 @@ router.post(
       res.status(201).json({ fileUrl: key, workerCertification: updated });
     } catch (err) {
       logger.error({ err }, "Failed to upload cert file");
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      handleDbError(res, err);
     }
   },
 );
@@ -891,7 +930,7 @@ router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, as
     await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -910,7 +949,7 @@ router.get("/workforce/certifications/:id/file", requireAuth, async (req, res): 
     await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file (alias)");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -931,7 +970,7 @@ router.get("/workforce/sites/:id/requirements", requireAuth, async (req, res): P
       .where(eq(siteCertRequirementsTable.siteId, siteId));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -953,7 +992,7 @@ router.put("/workforce/sites/:id/requirements", requireAdmin, async (req, res): 
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1003,7 +1042,7 @@ router.get("/workforce/sites/:id/role-requirements", requireAuth, async (req, re
 
     res.json([...grouped.values()]);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1171,7 +1210,7 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
 
     res.json(forecast);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1313,7 +1352,7 @@ router.get("/workforce/sites/:id/mob-readiness", requireAuth, async (req, res): 
 
     res.json({ mobilisationDate: site.mobilisationDate, readyCount, expiringCount, nonCompliantCount, noReqCount, workers });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1332,7 +1371,7 @@ router.get("/workforce/roles/:id/requirements", requireAuth, async (req, res): P
       .where(eq(roleCertRequirementsTable.roleId, roleId));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1352,7 +1391,7 @@ router.put("/workforce/roles/:id/requirements", requireAdmin, async (req, res): 
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1371,7 +1410,7 @@ router.get("/workforce/workers/:id/overrides", requireAuth, async (req, res): Pr
       .where(eq(workerCertOverridesTable.workerId, workerId));
     res.json(overrides.map(r => ({ ...r.override, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1397,7 +1436,7 @@ router.put("/workforce/workers/:id/overrides", requireAdmin, async (req, res): P
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1426,7 +1465,7 @@ router.get("/workforce/assignments", requireAuth, async (req, res): Promise<void
 
     res.json(assignments.map(r => ({ ...r.sa, worker: r.worker, site: r.site })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1443,7 +1482,7 @@ router.post("/workforce/assignments", requireAuth, async (req, res): Promise<voi
       .returning();
     res.status(201).json(assignment);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1458,7 +1497,7 @@ router.patch("/workforce/assignments/:id", requireAuth, async (req, res): Promis
     if (!updated) { res.status(404).json({ error: "Assignment not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1469,7 +1508,7 @@ router.delete("/workforce/assignments/:id", requireAdmin, async (req, res): Prom
     await db.delete(siteAssignmentsTable).where(eq(siteAssignmentsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1511,7 +1550,7 @@ router.get("/workforce/compliance/site/:siteId", requireAuth, async (req, res): 
     );
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1535,7 +1574,7 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
     );
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1777,7 +1816,7 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
     });
   } catch (err) {
     logger.error({ err }, "workforce dashboard error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1857,7 +1896,7 @@ router.get("/workforce/cert-issue-workers", requireAuth, async (req, res): Promi
     })));
   } catch (err) {
     logger.error({ err }, "cert-issue-workers error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -1976,7 +2015,7 @@ router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, re
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce workers-compliance-summary error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2112,7 +2151,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce sites-with-stats error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2166,7 +2205,7 @@ router.get("/workforce/worker-activity", requireAdmin, async (req, res): Promise
     res.json({ data: rows, total, page, pageSize });
   } catch (err) {
     logger.error({ err }, "workforce worker-activity error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2349,7 +2388,7 @@ router.get("/workforce/activity-feed", requireAdmin, async (req, res): Promise<v
     res.json({ data, total, page, pageSize });
   } catch (err) {
     logger.error({ err }, "workforce activity-feed error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2360,7 +2399,7 @@ router.get("/workforce/ppe-types", requireAuth, async (_req, res): Promise<void>
     const types = await db.select().from(ppeTypesTable).orderBy(ppeTypesTable.name);
     res.json(types);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2373,7 +2412,7 @@ router.post("/workforce/ppe-types", requireAdmin, async (req, res): Promise<void
       .returning();
     res.status(201).json(type);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2392,7 +2431,7 @@ router.patch("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promise
     if (!updated) { res.status(404).json({ error: "PPE type not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2408,7 +2447,7 @@ router.delete("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promis
       res.status(409).json({ error: "Cannot delete: this PPE type has existing allocation records. Remove all allocations first." });
       return;
     }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2447,7 +2486,7 @@ router.get("/workforce/workers/:id/ppe", requireAuth, async (req, res): Promise<
       notes: r.notes ?? null,
     })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2484,7 +2523,7 @@ router.post("/workforce/workers/:id/ppe", requireAdmin, async (req, res): Promis
 
     res.status(201).json(allocation);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2524,7 +2563,7 @@ router.patch("/workforce/ppe-allocations/:id", requireAdmin, async (req, res): P
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
@@ -2552,7 +2591,7 @@ router.get("/workforce/sites/:id/ppe-summary", requireAuth, async (req, res): Pr
       activeCount: Number(r.active_count),
     })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleDbError(res, err);
   }
 });
 
