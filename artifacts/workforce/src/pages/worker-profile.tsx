@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
-  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw,
+  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +128,252 @@ function siteStatusConfig(status: WorkerSiteStatus) {
     case "NOT_COMPLIANT": return { label: "Not Compliant", icon: AlertTriangle, color: "text-red-500", badge: "border-red-400 text-red-600" };
     case "NO_REQUIREMENTS": return { label: "No Requirements", icon: HelpCircle, color: "text-muted-foreground", badge: "text-muted-foreground" };
   }
+}
+
+interface RotationPeriod {
+  id: number;
+  assignmentId: number;
+  plannedStart: string;
+  plannedEnd: string | null;
+  status: string;
+  notes: string | null;
+}
+
+const ROTATION_STATUSES = ["planned", "on-site", "completed", "cancelled"] as const;
+
+function rotationStatusBadge(status: string) {
+  switch (status) {
+    case "on-site": return "border-emerald-400 text-emerald-600";
+    case "completed": return "text-muted-foreground";
+    case "cancelled": return "border-red-300 text-red-500";
+    default: return "border-amber-400 text-amber-600";
+  }
+}
+
+function AssignmentWithRotations({
+  assignment,
+  workerRole,
+  isAdmin,
+}: {
+  assignment: SiteAssignment;
+  workerRole: { id: number; name: string } | null;
+  isAdmin: boolean;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingRotation, setEditingRotation] = useState<RotationPeriod | null>(null);
+  const blankForm = { plannedStart: "", plannedEnd: "", status: "planned", notes: "" };
+  const [form, setForm] = useState(blankForm);
+
+  const { data: rotations, isLoading } = useQuery<RotationPeriod[]>({
+    queryKey: ["rotations", assignment.id],
+    queryFn: () => apiFetch<RotationPeriod[]>(`/api/workforce/assignments/${assignment.id}/rotations`),
+    enabled: open,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/assignments/${assignment.id}/rotations`, {
+      plannedStart: form.plannedStart,
+      plannedEnd: form.plannedEnd || null,
+      status: form.status,
+      notes: form.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "Rotation added" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setShowAdd(false);
+      setForm(blankForm);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (id: number) => apiPatch(`/api/workforce/rotations/${id}`, {
+      plannedStart: form.plannedStart,
+      plannedEnd: form.plannedEnd || null,
+      status: form.status,
+      notes: form.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "Rotation updated" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setEditingRotation(null);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiDelete(`/api/workforce/rotations/${id}`),
+    onSuccess: () => {
+      toast({ title: "Rotation deleted" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  function openAdd() {
+    setForm(blankForm);
+    setShowAdd(true);
+  }
+
+  function openEdit(r: RotationPeriod) {
+    setForm({ plannedStart: r.plannedStart, plannedEnd: r.plannedEnd ?? "", status: r.status, notes: r.notes ?? "" });
+    setEditingRotation(r);
+  }
+
+  const upcomingCount = (rotations ?? []).filter(
+    r => r.plannedStart >= new Date().toISOString().split("T")[0] && r.status !== "cancelled" && r.status !== "completed"
+  ).length;
+
+  const RotationFormFields = (
+    <div className="space-y-3 py-2">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Start Date *</Label>
+          <Input type="date" value={form.plannedStart} onChange={e => setForm(f => ({ ...f, plannedStart: e.target.value }))} />
+        </div>
+        <div>
+          <Label>End Date</Label>
+          <Input type="date" value={form.plannedEnd} onChange={e => setForm(f => ({ ...f, plannedEnd: e.target.value }))} />
+        </div>
+      </div>
+      <div>
+        <Label>Status</Label>
+        <select
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+          value={form.status}
+          onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+        >
+          {ROTATION_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+        </select>
+      </div>
+      <div>
+        <Label>Notes</Label>
+        <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="px-4 py-3">
+        <button
+          className="w-full text-left flex items-center gap-3"
+          onClick={() => setOpen(o => !o)}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">{assignment.site.name}</p>
+            {assignment.site.location && <p className="text-xs text-muted-foreground">{assignment.site.location}</p>}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {upcomingCount > 0 && open && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <CalendarRange className="h-3 w-3" /> {upcomingCount} upcoming
+              </span>
+            )}
+            {workerRole && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">{workerRole.name}</Badge>
+            )}
+            <Badge
+              variant="outline"
+              className={cn("text-[10px]",
+                assignment.status === "active" ? "border-emerald-400 text-emerald-600" :
+                assignment.status === "pending" ? "border-amber-400 text-amber-600" : "text-muted-foreground",
+              )}
+            >
+              {assignment.status}
+            </Badge>
+            <CalendarRange className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "text-primary")} />
+          </div>
+        </button>
+
+        {open && (
+          <div className="mt-3 ml-0 border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <CalendarRange className="h-3 w-3" /> Rotation Periods
+              </span>
+              {isAdmin && (
+                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={openAdd} data-testid={`button-add-rotation-${assignment.id}`}>
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
+              )}
+            </div>
+            {isLoading ? (
+              <div className="px-3 py-4 text-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto" />
+              </div>
+            ) : !rotations?.length ? (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                No rotation periods recorded.{isAdmin && " Click Add to create one."}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {rotations.map(r => (
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="font-medium">{new Date(`${r.plannedStart}T00:00:00`).toLocaleDateString("en-GB")}</span>
+                        {r.plannedEnd && (
+                          <>
+                            <span className="text-muted-foreground">→</span>
+                            <span>{new Date(`${r.plannedEnd}T00:00:00`).toLocaleDateString("en-GB")}</span>
+                          </>
+                        )}
+                      </div>
+                      {r.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{r.notes}</p>}
+                    </div>
+                    <Badge variant="outline" className={cn("text-[10px] flex-shrink-0", rotationStatusBadge(r.status))}>
+                      {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                    </Badge>
+                    {isAdmin && (
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEdit(r)} data-testid={`button-edit-rotation-${r.id}`}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteMutation.mutate(r.id)} disabled={deleteMutation.isPending} data-testid={`button-delete-rotation-${r.id}`}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={showAdd} onOpenChange={o => { setShowAdd(o); if (!o) setForm(blankForm); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Rotation Period — {assignment.site.name}</DialogTitle></DialogHeader>
+          {RotationFormFields}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={() => addMutation.mutate()} disabled={!form.plannedStart || addMutation.isPending} data-testid="button-save-rotation">
+              {addMutation.isPending ? "Saving…" : "Add Rotation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingRotation} onOpenChange={o => { if (!o) setEditingRotation(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Rotation — {assignment.site.name}</DialogTitle></DialogHeader>
+          {RotationFormFields}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRotation(null)}>Cancel</Button>
+            <Button onClick={() => editingRotation && editMutation.mutate(editingRotation.id)} disabled={!form.plannedStart || editMutation.isPending} data-testid="button-save-rotation-edit">
+              {editMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 export default function WorkerProfilePage() {
@@ -761,7 +1007,7 @@ export default function WorkerProfilePage() {
         </div>
       )}
 
-      {/* Site Assignments */}
+      {/* Site Assignments with Rotation Periods */}
       {worker.assignments.length > 0 && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
@@ -770,26 +1016,7 @@ export default function WorkerProfilePage() {
           </div>
           <div className="divide-y">
             {worker.assignments.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">{a.site.name}</p>
-                  {a.site.location && <p className="text-xs text-muted-foreground">{a.site.location}</p>}
-                </div>
-                {worker.role && (
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                    {worker.role.name}
-                  </Badge>
-                )}
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px]",
-                    a.status === "active" ? "border-emerald-400 text-emerald-600" :
-                    a.status === "pending" ? "border-amber-400 text-amber-600" : "text-muted-foreground",
-                  )}
-                >
-                  {a.status}
-                </Badge>
-              </div>
+              <AssignmentWithRotations key={a.id} assignment={a} workerRole={worker.role} isAdmin={isAdmin} />
             ))}
           </div>
         </div>

@@ -85,6 +85,7 @@ interface Certification {
 interface WorkerMeta {
   company: string;
   roleName: string | null;
+  nextRotation?: string | null;
 }
 
 interface PPESiteSummary {
@@ -148,11 +149,16 @@ function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMe
         <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
           {meta?.company ?? "—"}
         </td>
-        <td className="px-4 py-3 text-sm text-muted-foreground">
+        <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">
           {result.validCount}/{result.requiredCount} valid
           {result.missingCount > 0 && (
             <span className="text-red-500 ml-1">· {result.missingCount} issue{result.missingCount > 1 ? "s" : ""}</span>
           )}
+        </td>
+        <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">
+          {meta?.nextRotation
+            ? new Date(`${meta.nextRotation}T00:00:00`).toLocaleDateString("en-GB")
+            : <span className="text-muted-foreground/40">—</span>}
         </td>
         <td className="px-4 py-3">
           <Badge variant="outline" className={cn("text-[10px]", cfg.badge)}>
@@ -165,7 +171,7 @@ function WorkerRow({ result, meta }: { result: WorkerCompliance; meta?: WorkerMe
       </tr>
       {open && result.items.length > 0 && (
         <tr>
-          <td colSpan={5} className="bg-muted/10 px-8 py-3 border-b">
+          <td colSpan={6} className="bg-muted/10 px-8 py-3 border-b">
             <div className="space-y-1">
               {result.items.map((item) => (
                 <div key={item.certId} className="flex items-center gap-2 text-xs">
@@ -296,6 +302,13 @@ export default function SiteDetailPage() {
     enabled: !isNaN(siteId),
   });
 
+  const { data: nextRotations } = useQuery<{ worker_id: number; planned_start: string }[]>({
+    queryKey: ["site-next-rotations", siteId],
+    queryFn: () => apiFetch(`/api/workforce/sites/${siteId}/next-rotations`),
+    enabled: !isNaN(siteId),
+    staleTime: 5 * 60_000,
+  });
+
   const applyTemplateMutation = useMutation({
     mutationFn: (clientId: number) =>
       apiPost<{ added: number }>(`/api/workforce/sites/${siteId}/apply-client-template`, { clientId }),
@@ -310,8 +323,12 @@ export default function SiteDetailPage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
+  const nextRotationMap = new Map<number, string>(
+    (nextRotations ?? []).map((r) => [r.worker_id, r.planned_start]),
+  );
+
   const workerMetaMap = new Map<number, WorkerMeta>(
-    (workers ?? []).map((w) => [w.id, { company: w.company, roleName: w.roleName }]),
+    (workers ?? []).map((w) => [w.id, { company: w.company, roleName: w.roleName, nextRotation: nextRotationMap.get(w.id) }]),
   );
 
   const updateReqsMutation = useMutation({
@@ -564,6 +581,7 @@ export default function SiteDetailPage() {
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Worker</th>
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground hidden md:table-cell">Company</th>
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground hidden sm:table-cell">Certs</th>
+                <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground hidden lg:table-cell">Next Rotation</th>
                 <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Status</th>
                 <th className="w-8" />
               </tr>

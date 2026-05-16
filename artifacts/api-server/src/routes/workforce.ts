@@ -22,6 +22,7 @@ import {
   clientCertRequirementsTable,
   ppeTypesTable,
   ppeAllocationsTable,
+  workerRotationPeriodsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -1507,6 +1508,92 @@ router.delete("/workforce/assignments/:id", requireAdmin, async (req, res): Prom
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     await db.delete(siteAssignmentsTable).where(eq(siteAssignmentsTable.id, id));
     res.json({ ok: true });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// ── Rotation Periods ──────────────────────────────────────────────────────────
+
+router.get("/workforce/assignments/:id/rotations", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const rows = await db.select().from(workerRotationPeriodsTable)
+      .where(eq(workerRotationPeriodsTable.assignmentId, assignmentId))
+      .orderBy(workerRotationPeriodsTable.plannedStart);
+    res.json(rows);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.post("/workforce/assignments/:id/rotations", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { plannedStart, plannedEnd, status, notes } = req.body;
+    if (!plannedStart) { res.status(400).json({ error: "plannedStart is required" }); return; }
+    const [row] = await db.insert(workerRotationPeriodsTable).values({
+      assignmentId,
+      plannedStart,
+      plannedEnd: plannedEnd || null,
+      status: status || "planned",
+      notes: notes || null,
+    }).returning();
+    res.status(201).json(row);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.patch("/workforce/rotations/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { plannedStart, plannedEnd, status, notes } = req.body;
+    const [updated] = await db.update(workerRotationPeriodsTable)
+      .set({
+        ...(plannedStart !== undefined && { plannedStart }),
+        ...(plannedEnd !== undefined && { plannedEnd: plannedEnd || null }),
+        ...(status !== undefined && { status }),
+        ...(notes !== undefined && { notes: notes || null }),
+        updatedAt: new Date(),
+      })
+      .where(eq(workerRotationPeriodsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Rotation not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.delete("/workforce/rotations/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(workerRotationPeriodsTable).where(eq(workerRotationPeriodsTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// Returns the next upcoming rotation (planned_start >= today) per assignment for a given site
+router.get("/workforce/sites/:siteId/next-rotations", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.siteId ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid siteId" }); return; }
+    const rows = await db.execute<{ worker_id: number; assignment_id: number; planned_start: string }>(sql`
+      SELECT sa.worker_id, wrp.assignment_id, MIN(wrp.planned_start) AS planned_start
+      FROM site_assignments sa
+      JOIN worker_rotation_periods wrp ON wrp.assignment_id = sa.id
+      WHERE sa.site_id = ${siteId}
+        AND wrp.planned_start >= CURRENT_DATE
+        AND wrp.status NOT IN ('completed', 'cancelled')
+      GROUP BY sa.worker_id, wrp.assignment_id
+    `);
+    res.json(rows.rows ?? rows);
   } catch (err) {
     handleRouteError(res, err);
   }
