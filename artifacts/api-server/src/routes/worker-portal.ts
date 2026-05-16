@@ -501,6 +501,7 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
           validCount: 0,
           expiringCount: 0,
           missingCount: 0,
+          awaitingReviewCount: 0,
           items: [],
         });
         continue;
