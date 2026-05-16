@@ -1528,12 +1528,50 @@ router.get("/workforce/assignments/:id/rotations", requireAuth, async (req, res)
   }
 });
 
+const VALID_ROTATION_STATUSES = ["planned", "on-site", "completed", "cancelled"] as const;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateRotationFields(
+  res: Response,
+  fields: { plannedStart?: unknown; plannedEnd?: unknown; status?: unknown },
+  requireStart = false,
+): fields is { plannedStart: string; plannedEnd?: string | null; status?: string } {
+  const { plannedStart, plannedEnd, status } = fields;
+  if (requireStart) {
+    if (!plannedStart || typeof plannedStart !== "string" || !ISO_DATE_RE.test(plannedStart)) {
+      res.status(400).json({ error: "plannedStart must be a valid date (YYYY-MM-DD)" });
+      return false;
+    }
+  } else if (plannedStart !== undefined) {
+    if (typeof plannedStart !== "string" || !ISO_DATE_RE.test(plannedStart)) {
+      res.status(400).json({ error: "plannedStart must be a valid date (YYYY-MM-DD)" });
+      return false;
+    }
+  }
+  if (plannedEnd !== undefined && plannedEnd !== null && plannedEnd !== "") {
+    if (typeof plannedEnd !== "string" || !ISO_DATE_RE.test(plannedEnd)) {
+      res.status(400).json({ error: "plannedEnd must be a valid date (YYYY-MM-DD) or null" });
+      return false;
+    }
+    const start = (plannedStart as string | undefined) ?? "";
+    if (start && plannedEnd < start) {
+      res.status(400).json({ error: "plannedEnd must not be before plannedStart" });
+      return false;
+    }
+  }
+  if (status !== undefined && !VALID_ROTATION_STATUSES.includes(status as typeof VALID_ROTATION_STATUSES[number])) {
+    res.status(400).json({ error: `status must be one of: ${VALID_ROTATION_STATUSES.join(", ")}` });
+    return false;
+  }
+  return true;
+}
+
 router.post("/workforce/assignments/:id/rotations", requireAdmin, async (req, res): Promise<void> => {
   try {
     const assignmentId = parseInt(req.params.id ?? "");
     if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { plannedStart, plannedEnd, status, notes } = req.body;
-    if (!plannedStart) { res.status(400).json({ error: "plannedStart is required" }); return; }
+    if (!validateRotationFields(res, { plannedStart, plannedEnd, status }, true)) return;
     const [row] = await db.insert(workerRotationPeriodsTable).values({
       assignmentId,
       plannedStart,
@@ -1552,6 +1590,7 @@ router.patch("/workforce/rotations/:id", requireAdmin, async (req, res): Promise
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { plannedStart, plannedEnd, status, notes } = req.body;
+    if (!validateRotationFields(res, { plannedStart, plannedEnd, status }, false)) return;
     const [updated] = await db.update(workerRotationPeriodsTable)
       .set({
         ...(plannedStart !== undefined && { plannedStart }),
