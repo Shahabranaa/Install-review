@@ -585,8 +585,8 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
 
       let overallStatus: string;
       if (missingCount > 0) overallStatus = "NOT_COMPLIANT";
-      else if (awaitingReviewCount > 0) overallStatus = "AWAITING_REVIEW";
       else if (expiringCount > 0) overallStatus = "EXPIRING_SOON";
+      else if (awaitingReviewCount > 0) overallStatus = "AWAITING_REVIEW";
       else overallStatus = "READY";
 
       results.push({
