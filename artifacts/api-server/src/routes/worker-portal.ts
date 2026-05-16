@@ -572,14 +572,20 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
         return (order[a.status] ?? 5) - (order[b.status] ?? 5);
       });
 
-      const validCount = items.filter((i) => i.status === "VALID").length;
-      const expiringCount = items.filter((i) => i.status === "EXPIRING_SOON").length;
-      const missingCount = items.filter(
-        (i) => i.status === "MISSING" || i.status === "EXPIRED" || i.status === "NOT_VERIFIED",
+      // From the worker's perspective: submitted = VALID + EXPIRING_SOON + NOT_VERIFIED
+      const validCount = items.filter(
+        (i) => i.status === "VALID" || i.status === "EXPIRING_SOON" || i.status === "NOT_VERIFIED",
       ).length;
+      const expiringCount = items.filter((i) => i.status === "EXPIRING_SOON").length;
+      // Only what the worker still needs to action (not certs already submitted for review)
+      const missingCount = items.filter(
+        (i) => i.status === "MISSING" || i.status === "EXPIRED",
+      ).length;
+      const awaitingReviewCount = items.filter((i) => i.status === "NOT_VERIFIED").length;
 
       let overallStatus: string;
       if (missingCount > 0) overallStatus = "NOT_COMPLIANT";
+      else if (awaitingReviewCount > 0) overallStatus = "AWAITING_REVIEW";
       else if (expiringCount > 0) overallStatus = "EXPIRING_SOON";
       else overallStatus = "READY";
 
@@ -591,6 +597,7 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
         validCount,
         expiringCount,
         missingCount,
+        awaitingReviewCount,
         items,
       });
     }

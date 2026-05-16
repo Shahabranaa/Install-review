@@ -65,7 +65,7 @@ interface WorkerCert {
 }
 
 type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
-type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
+type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS" | "AWAITING_REVIEW";
 
 interface ComplianceItem {
   certId: number;
@@ -85,6 +85,7 @@ interface SiteCompliance {
   validCount: number;
   expiringCount: number;
   missingCount: number;
+  awaitingReviewCount: number;
   items: ComplianceItem[];
 }
 
@@ -287,6 +288,16 @@ export default function CertificationsPage() {
     complianceSites.every(
       (s) => s.overallStatus === "READY" || s.overallStatus === "NO_REQUIREMENTS",
     );
+  // Worker has submitted everything but some certs are awaiting admin review
+  const allSubmitted =
+    !allReady &&
+    complianceSites.length > 0 &&
+    complianceSites.every(
+      (s) =>
+        s.overallStatus === "READY" ||
+        s.overallStatus === "NO_REQUIREMENTS" ||
+        s.overallStatus === "AWAITING_REVIEW",
+    );
 
   return (
     <div className="min-h-screen bg-background">
@@ -354,6 +365,16 @@ export default function CertificationsPage() {
                   </p>
                 </div>
               </div>
+            ) : allSubmitted ? (
+              <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-center gap-3">
+                <Clock className="h-5 w-5 text-orange-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-800">All certifications submitted</p>
+                  <p className="text-xs text-orange-600 mt-0.5">
+                    Your documents are awaiting review by an administrator.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
                 {sitesWithIssues.map((site) => {
@@ -389,12 +410,18 @@ export default function CertificationsPage() {
                               {site.missingCount > 0 && (
                                 <span className="text-red-600 font-medium">
                                   {site.missingCount} action{site.missingCount !== 1 ? "s" : ""} required
-                                  {site.expiringCount > 0 ? " · " : ""}
+                                  {(site.expiringCount > 0 || site.awaitingReviewCount > 0) ? " · " : ""}
                                 </span>
                               )}
                               {site.expiringCount > 0 && (
                                 <span className="text-amber-600 font-medium">
                                   {site.expiringCount} expiring soon
+                                  {site.awaitingReviewCount > 0 ? " · " : ""}
+                                </span>
+                              )}
+                              {site.awaitingReviewCount > 0 && (
+                                <span className="text-orange-600 font-medium">
+                                  {site.awaitingReviewCount} awaiting review
                                 </span>
                               )}
                               {" · "}
@@ -484,6 +511,24 @@ export default function CertificationsPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{site.siteName}</p>
                         <p className="text-xs text-emerald-600">All {site.requiredCount} certifications valid</p>
+                      </div>
+                    </div>
+                  ))}
+                {/* Sites where all certs submitted but awaiting admin review */}
+                {complianceSites
+                  .filter((s) => s.overallStatus === "AWAITING_REVIEW")
+                  .map((site) => (
+                    <div
+                      key={site.siteId}
+                      className="rounded-xl border border-orange-200 bg-orange-50/50 px-4 py-2.5 flex items-center gap-3"
+                    >
+                      <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{site.siteName}</p>
+                        <p className="text-xs text-orange-600">
+                          {site.awaitingReviewCount} cert{site.awaitingReviewCount !== 1 ? "s" : ""} awaiting admin review
+                          {" · "}{site.validCount}/{site.requiredCount} complete
+                        </p>
                       </div>
                     </div>
                   ))}
