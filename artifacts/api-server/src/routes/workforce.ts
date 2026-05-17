@@ -1585,6 +1585,46 @@ router.post("/workforce/assignments/:id/rotations", requireAdmin, async (req, re
   }
 });
 
+function addDaysISO(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+router.post("/workforce/assignments/:id/rotations/generate", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { startDate, onDays, offDays, count } = req.body;
+    if (!startDate || typeof startDate !== "string" || !ISO_DATE_RE.test(startDate)) {
+      res.status(400).json({ error: "startDate must be a valid date (YYYY-MM-DD)" }); return;
+    }
+    const onDaysNum = parseInt(onDays);
+    const offDaysNum = parseInt(offDays);
+    const countNum = parseInt(count);
+    if (!Number.isInteger(onDaysNum) || onDaysNum < 1 || onDaysNum > 365) {
+      res.status(400).json({ error: "onDays must be between 1 and 365" }); return;
+    }
+    if (!Number.isInteger(offDaysNum) || offDaysNum < 0 || offDaysNum > 365) {
+      res.status(400).json({ error: "offDays must be between 0 and 365" }); return;
+    }
+    if (!Number.isInteger(countNum) || countNum < 1 || countNum > 52) {
+      res.status(400).json({ error: "count must be between 1 and 52" }); return;
+    }
+    const periods: { assignmentId: number; plannedStart: string; plannedEnd: string; status: "planned" }[] = [];
+    let currentStart = startDate;
+    for (let i = 0; i < countNum; i++) {
+      const currentEnd = addDaysISO(currentStart, onDaysNum - 1);
+      periods.push({ assignmentId, plannedStart: currentStart, plannedEnd: currentEnd, status: "planned" });
+      currentStart = addDaysISO(currentEnd, offDaysNum + 1);
+    }
+    const rows = await db.insert(workerRotationPeriodsTable).values(periods).returning();
+    res.status(201).json(rows);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
 router.patch("/workforce/rotations/:id", requireAdmin, async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.id ?? "");

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
@@ -167,6 +167,29 @@ function AssignmentWithRotations({
   const blankForm = { plannedStart: "", plannedEnd: "", status: "planned", notes: "" };
   const [form, setForm] = useState(blankForm);
 
+  const blankGenForm = { startDate: "", onDays: "21", offDays: "21", count: "6" };
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [genForm, setGenForm] = useState(blankGenForm);
+
+  const genPreview = useMemo(() => {
+    const { startDate, onDays, offDays, count } = genForm;
+    if (!startDate) return [];
+    const on = parseInt(onDays), off = parseInt(offDays), n = parseInt(count);
+    if (isNaN(on) || isNaN(off) || isNaN(n) || on < 1 || off < 0 || n < 1 || n > 52) return [];
+    const result: { start: string; end: string }[] = [];
+    let cur = startDate;
+    for (let i = 0; i < n; i++) {
+      const d = new Date(`${cur}T00:00:00`);
+      const endD = new Date(d);
+      endD.setDate(endD.getDate() + on - 1);
+      const fmt = (dt: Date) => dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      result.push({ start: fmt(d), end: fmt(endD) });
+      endD.setDate(endD.getDate() + off + 1);
+      cur = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, "0")}-${String(endD.getDate()).padStart(2, "0")}`;
+    }
+    return result;
+  }, [genForm]);
+
   const { data: rotations, isLoading } = useQuery<RotationPeriod[]>({
     queryKey: ["rotations", assignment.id],
     queryFn: () => apiFetch<RotationPeriod[]>(`/api/workforce/assignments/${assignment.id}/rotations`),
@@ -209,6 +232,22 @@ function AssignmentWithRotations({
     onSuccess: () => {
       toast({ title: "Rotation deleted" });
       void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/assignments/${assignment.id}/rotations/generate`, {
+      startDate: genForm.startDate,
+      onDays: parseInt(genForm.onDays),
+      offDays: parseInt(genForm.offDays),
+      count: parseInt(genForm.count),
+    }),
+    onSuccess: () => {
+      toast({ title: `${genPreview.length} rotation periods generated` });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setShowGenerate(false);
+      setGenForm(blankGenForm);
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -296,9 +335,14 @@ function AssignmentWithRotations({
                 <CalendarRange className="h-3 w-3" /> Rotation Periods
               </span>
               {isAdmin && (
-                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={openAdd} data-testid={`button-add-rotation-${assignment.id}`}>
-                  <Plus className="h-3 w-3 mr-1" /> Add
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => { setGenForm(blankGenForm); setShowGenerate(true); }} data-testid={`button-generate-rotations-${assignment.id}`}>
+                    <RotateCcw className="h-3 w-3 mr-1" /> Generate
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={openAdd} data-testid={`button-add-rotation-${assignment.id}`}>
+                    <Plus className="h-3 w-3 mr-1" /> Add
+                  </Button>
+                </div>
               )}
             </div>
             {isLoading ? (
@@ -368,6 +412,64 @@ function AssignmentWithRotations({
             <Button variant="outline" onClick={() => setEditingRotation(null)}>Cancel</Button>
             <Button onClick={() => editingRotation && editMutation.mutate(editingRotation.id)} disabled={!form.plannedStart || editMutation.isPending} data-testid="button-save-rotation-edit">
               {editMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showGenerate} onOpenChange={o => { setShowGenerate(o); if (!o) setGenForm(blankGenForm); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Generate Rotation Schedule — {assignment.site.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-1">
+            <div>
+              <Label>First on-site start date *</Label>
+              <Input type="date" className="mt-1" value={genForm.startDate} onChange={e => setGenForm(f => ({ ...f, startDate: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Days on site</Label>
+                <Input type="number" min="1" max="365" className="mt-1" value={genForm.onDays} onChange={e => setGenForm(f => ({ ...f, onDays: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Days off</Label>
+                <Input type="number" min="0" max="365" className="mt-1" value={genForm.offDays} onChange={e => setGenForm(f => ({ ...f, offDays: e.target.value }))} />
+              </div>
+              <div>
+                <Label>No. of rotations</Label>
+                <Input type="number" min="1" max="52" className="mt-1" value={genForm.count} onChange={e => setGenForm(f => ({ ...f, count: e.target.value }))} />
+              </div>
+            </div>
+            {genPreview.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <div className="px-3 py-1.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
+                  Preview — {genPreview.length} rotation{genPreview.length !== 1 ? "s" : ""}
+                </div>
+                <div className="divide-y max-h-52 overflow-y-auto">
+                  {genPreview.slice(0, 8).map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                      <span className="text-muted-foreground w-5 flex-shrink-0">{i + 1}.</span>
+                      <span className="font-medium">{p.start}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span>{p.end}</span>
+                    </div>
+                  ))}
+                  {genPreview.length > 8 && (
+                    <div className="px-3 py-1.5 text-xs text-muted-foreground">
+                      …and {genPreview.length - 8} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerate(false)}>Cancel</Button>
+            <Button
+              onClick={() => generateMutation.mutate()}
+              disabled={!genForm.startDate || genPreview.length === 0 || generateMutation.isPending}
+              data-testid="button-confirm-generate-rotations"
+            >
+              {generateMutation.isPending ? "Generating…" : `Generate ${genPreview.length > 0 ? genPreview.length : ""} Rotations`}
             </Button>
           </DialogFooter>
         </DialogContent>
