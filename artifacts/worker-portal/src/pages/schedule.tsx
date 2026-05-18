@@ -246,35 +246,34 @@ export default function SchedulePage() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // A rotation is "past" only if it has a defined end date that is before today.
+  // Open-ended rotations (null plannedEnd) that started in the past are still ongoing
+  // and belong in the upcoming/current section.
   const upcomingRotations = rotations.filter((r) => {
-    const end = r.plannedEnd ? new Date(r.plannedEnd) : null;
-    if (end) { end.setHours(0, 0, 0, 0); return end >= today; }
-    const start = new Date(r.plannedStart);
-    start.setHours(0, 0, 0, 0);
-    return start >= today;
+    if (!r.plannedEnd) return true; // open-ended = still running
+    const end = new Date(r.plannedEnd);
+    end.setHours(0, 0, 0, 0);
+    return end >= today;
   });
 
   const pastRotations = rotations.filter((r) => {
-    const end = r.plannedEnd ? new Date(r.plannedEnd) : null;
-    if (end) { end.setHours(0, 0, 0, 0); return end < today; }
-    const start = new Date(r.plannedStart);
-    start.setHours(0, 0, 0, 0);
-    return start < today;
+    if (!r.plannedEnd) return false; // open-ended never goes to past
+    const end = new Date(r.plannedEnd);
+    end.setHours(0, 0, 0, 0);
+    return end < today;
   });
 
   // Determine which rotation to highlight as "current or next":
-  // 1. Any rotation whose period spans today (start <= today <= end) or has status "active"
-  // 2. If none is active, the first upcoming rotation (earliest plannedStart)
+  // 1. status "active", OR period spans today (start <= today <= end), OR open-ended started <= today
+  // 2. If none qualifies, fall back to the first upcoming (earliest plannedStart)
   const activeOrCurrent = upcomingRotations.find((r) => {
     if (r.status === "active") return true;
     const start = new Date(r.plannedStart);
     start.setHours(0, 0, 0, 0);
-    if (r.plannedEnd) {
-      const end = new Date(r.plannedEnd);
-      end.setHours(0, 0, 0, 0);
-      return start <= today && end >= today;
-    }
-    return start.getTime() === today.getTime();
+    if (!r.plannedEnd) return start <= today; // open-ended: current if started
+    const end = new Date(r.plannedEnd);
+    end.setHours(0, 0, 0, 0);
+    return start <= today && end >= today;
   });
   const nextUpcomingId = activeOrCurrent?.id ?? upcomingRotations[0]?.id ?? null;
 
