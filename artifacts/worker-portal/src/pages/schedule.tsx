@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiPost, apiDelete } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -94,15 +93,6 @@ function changeRequestStatusBadge(status: string) {
     default:
       return { label: "Pending review", cls: "bg-amber-50 text-amber-700 border-amber-200" };
   }
-}
-
-function isPast(dateStr: string | null) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  d.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return d < today;
 }
 
 
