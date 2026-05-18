@@ -23,6 +23,7 @@ import {
   ppeTypesTable,
   ppeAllocationsTable,
   workerRotationPeriodsTable,
+  workerScheduleChangeRequestsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -2760,6 +2761,116 @@ router.get("/workforce/sites/:id/ppe-summary", requireAuth, async (req, res): Pr
     handleRouteError(res, err);
   }
 });
+
+// ── Schedule Change Requests (admin) ─────────────────────────────────────────
+
+// GET /workforce/schedule-change-requests?status=pending|approved|rejected|withdrawn|all
+router.get("/workforce/schedule-change-requests", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { status } = req.query as Record<string, string>;
+
+    const rows = await db
+      .select({
+        cr: workerScheduleChangeRequestsTable,
+        worker: { id: workersTable.id, name: workersTable.name },
+        period: workerRotationPeriodsTable,
+        site: mobSitesTable,
+      })
+      .from(workerScheduleChangeRequestsTable)
+      .innerJoin(workersTable, eq(workerScheduleChangeRequestsTable.workerId, workersTable.id))
+      .innerJoin(
+        workerRotationPeriodsTable,
+        eq(workerScheduleChangeRequestsTable.rotationPeriodId, workerRotationPeriodsTable.id),
+      )
+      .innerJoin(
+        siteAssignmentsTable,
+        eq(workerRotationPeriodsTable.assignmentId, siteAssignmentsTable.id),
+      )
+      .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
+      .where(
+        status && status !== "all"
+          ? eq(workerScheduleChangeRequestsTable.status, status)
+          : undefined,
+      )
+      .orderBy(desc(workerScheduleChangeRequestsTable.createdAt));
+
+    res.json({
+      requests: rows.map((r) => ({
+        id: r.cr.id,
+        workerId: r.worker.id,
+        workerName: r.worker.name,
+        rotationPeriodId: r.cr.rotationPeriodId,
+        requestedStart: r.cr.requestedStart,
+        requestedEnd: r.cr.requestedEnd,
+        reason: r.cr.reason,
+        status: r.cr.status,
+        adminNotes: r.cr.adminNotes,
+        createdAt: r.cr.createdAt,
+        siteId: r.site.id,
+        siteName: r.site.name,
+        originalStart: r.period.plannedStart,
+        originalEnd: r.period.plannedEnd,
+      })),
+    });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// PATCH /workforce/schedule-change-requests/:id
+router.patch(
+  "/workforce/schedule-change-requests/:id",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id ?? "");
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const { status, adminNotes } = req.body as {
+        status?: string;
+        adminNotes?: string | null;
+      };
+
+      const VALID_STATUSES = ["approved", "rejected"];
+      if (!status || !VALID_STATUSES.includes(status)) {
+        res.status(400).json({ error: "status must be 'approved' or 'rejected'" });
+        return;
+      }
+
+      const [row] = await db
+        .select()
+        .from(workerScheduleChangeRequestsTable)
+        .where(eq(workerScheduleChangeRequestsTable.id, id));
+
+      if (!row) {
+        res.status(404).json({ error: "Change request not found" });
+        return;
+      }
+
+      if (row.status !== "pending") {
+        res.status(409).json({ error: "Only pending requests can be approved or rejected" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(workerScheduleChangeRequestsTable)
+        .set({
+          status,
+          adminNotes: adminNotes !== undefined ? adminNotes : row.adminNotes,
+          updatedAt: new Date(),
+        })
+        .where(eq(workerScheduleChangeRequestsTable.id, id))
+        .returning();
+
+      res.json(updated);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
 
 export default router;
 

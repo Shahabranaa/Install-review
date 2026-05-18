@@ -639,7 +639,7 @@ router.get("/worker-portal/schedule", requireWorkerAuth, async (req, res): Promi
     }
 
     const assignmentIds = assignments.map((a) => a.sa.id);
-    const siteMap = new Map(assignments.map((a) => [a.sa.id, a.site]));
+    const assignmentSiteMap = new Map(assignments.map((a) => [a.sa.id, { site: a.site, assignment: a.sa }]));
 
     const periods = await db
       .select()
@@ -648,7 +648,7 @@ router.get("/worker-portal/schedule", requireWorkerAuth, async (req, res): Promi
       .orderBy(workerRotationPeriodsTable.plannedStart);
 
     const rotations = periods.map((p) => {
-      const site = siteMap.get(p.assignmentId);
+      const entry = assignmentSiteMap.get(p.assignmentId);
       return {
         id: p.id,
         assignmentId: p.assignmentId,
@@ -656,8 +656,9 @@ router.get("/worker-portal/schedule", requireWorkerAuth, async (req, res): Promi
         plannedEnd: p.plannedEnd,
         status: p.status,
         notes: p.notes,
-        siteName: site?.name ?? "Unknown site",
-        siteLocation: site?.location ?? null,
+        siteId: entry?.site?.id ?? null,
+        siteName: entry?.site?.name ?? "Unknown site",
+        siteLocation: entry?.site?.location ?? null,
       };
     });
 

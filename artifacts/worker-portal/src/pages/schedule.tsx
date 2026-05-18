@@ -105,16 +105,6 @@ function isPast(dateStr: string | null) {
   return d < today;
 }
 
-function isToday(dateStr: string | null) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const today = new Date();
-  return (
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  );
-}
 
 interface RequestChangeDialogProps {
   rotation: RotationPeriod;
@@ -272,6 +262,22 @@ export default function SchedulePage() {
     return start < today;
   });
 
+  // Determine which rotation to highlight as "current or next":
+  // 1. Any rotation whose period spans today (start <= today <= end) or has status "active"
+  // 2. If none is active, the first upcoming rotation (earliest plannedStart)
+  const activeOrCurrent = upcomingRotations.find((r) => {
+    if (r.status === "active") return true;
+    const start = new Date(r.plannedStart);
+    start.setHours(0, 0, 0, 0);
+    if (r.plannedEnd) {
+      const end = new Date(r.plannedEnd);
+      end.setHours(0, 0, 0, 0);
+      return start <= today && end >= today;
+    }
+    return start.getTime() === today.getTime();
+  });
+  const nextUpcomingId = activeOrCurrent?.id ?? upcomingRotations[0]?.id ?? null;
+
   const pendingRequests = requests.filter((r) => r.status === "pending");
   const otherRequests = requests.filter((r) => r.status !== "pending");
 
@@ -361,14 +367,14 @@ export default function SchedulePage() {
           <div className="space-y-2">
             {upcomingRotations.map((r) => {
               const badge = rotationStatusBadge(r.status);
-              const active = isToday(r.plannedStart) || r.status === "active";
+              const isNext = r.id === nextUpcomingId;
               const pendingForThis = pendingRequests.some((req) => req.rotationPeriodId === r.id);
               return (
                 <div
                   key={r.id}
                   className={cn(
                     "rounded-xl border bg-card px-4 py-3 flex items-start justify-between gap-3",
-                    active && "border-emerald-200 bg-emerald-50/30",
+                    isNext && "border-emerald-200 bg-emerald-50/30",
                   )}
                 >
                   <div className="min-w-0 flex-1">
