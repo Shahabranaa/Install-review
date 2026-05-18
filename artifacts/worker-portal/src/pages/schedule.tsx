@@ -124,7 +124,7 @@ function RequestChangeDialog({ rotation, onClose }: RequestChangeDialogProps) {
         rotationPeriodId: rotation.id,
         requestedStart: requestedStart || null,
         requestedEnd: requestedEnd || null,
-        reason: reason.trim() || null,
+        reason: reason.trim(),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["worker-change-requests"] });
@@ -177,7 +177,7 @@ function RequestChangeDialog({ rotation, onClose }: RequestChangeDialogProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="reason" className="text-xs">
-              Reason <span className="text-muted-foreground">(optional)</span>
+              Reason <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="reason"
@@ -196,7 +196,7 @@ function RequestChangeDialog({ rotation, onClose }: RequestChangeDialogProps) {
           <Button
             size="sm"
             onClick={() => mut.mutate()}
-            disabled={mut.isPending}
+            disabled={mut.isPending || !reason.trim()}
             className="gap-1.5"
           >
             {mut.isPending ? (

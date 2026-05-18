@@ -724,6 +724,17 @@ router.post("/worker-portal/change-requests", requireWorkerAuth, async (req, res
       return;
     }
 
+    const reasonTrimmed = typeof reason === "string" ? reason.trim() : "";
+    if (!reasonTrimmed) {
+      res.status(400).json({ error: "reason is required" });
+      return;
+    }
+
+    if (requestedStart && requestedEnd && requestedEnd < requestedStart) {
+      res.status(400).json({ error: "requestedEnd must be on or after requestedStart" });
+      return;
+    }
+
     // Verify the rotation period belongs to this worker
     const [period] = await db
       .select({ p: workerRotationPeriodsTable, sa: siteAssignmentsTable })
@@ -773,7 +784,7 @@ router.post("/worker-portal/change-requests", requireWorkerAuth, async (req, res
         rotationPeriodId,
         requestedStart: requestedStart || null,
         requestedEnd: requestedEnd || null,
-        reason: reason || null,
+        reason: reasonTrimmed,
         status: "pending",
       })
       .returning();
