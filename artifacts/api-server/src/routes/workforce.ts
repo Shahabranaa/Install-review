@@ -2764,8 +2764,8 @@ router.get("/workforce/sites/:id/ppe-summary", requireAuth, async (req, res): Pr
 
 // ── Schedule Change Requests (admin) ─────────────────────────────────────────
 
-// GET /workforce/schedule-change-requests?status=pending|approved|rejected|withdrawn|all
-router.get("/workforce/schedule-change-requests", requireAuth, async (req, res): Promise<void> => {
+// GET /workforce/change-requests?status=pending|approved|rejected|withdrawn|all
+router.get("/workforce/change-requests", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { status } = req.query as Record<string, string>;
 
@@ -2817,9 +2817,9 @@ router.get("/workforce/schedule-change-requests", requireAuth, async (req, res):
   }
 });
 
-// PATCH /workforce/schedule-change-requests/:id
+// PATCH /workforce/change-requests/:id
 router.patch(
-  "/workforce/schedule-change-requests/:id",
+  "/workforce/change-requests/:id",
   requireAdmin,
   async (req, res): Promise<void> => {
     try {

@@ -81,7 +81,7 @@ function ReviewDialog({ request, action, onClose }: ReviewDialogProps) {
 
   const mut = useMutation({
     mutationFn: () =>
-      apiPatch(`/api/workforce/schedule-change-requests/${request.id}`, {
+      apiPatch(`/api/workforce/change-requests/${request.id}`, {
         status: action === "approve" ? "approved" : "rejected",
         adminNotes: adminNotes.trim() || null,
       }),
@@ -175,7 +175,7 @@ export default function ScheduleRequestsPage() {
     queryKey: ["workforce-schedule-change-requests", statusFilter],
     queryFn: () => {
       const params = statusFilter !== "all" ? `?status=${statusFilter}` : "";
-      return apiFetch<ChangeRequestsResponse>(`/api/workforce/schedule-change-requests${params}`);
+      return apiFetch<ChangeRequestsResponse>(`/api/workforce/change-requests${params}`);
     },
     staleTime: 30_000,
   });

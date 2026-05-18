@@ -623,15 +623,7 @@ router.get("/worker-portal/schedule", requireWorkerAuth, async (req, res): Promi
       .select({ sa: siteAssignmentsTable, site: mobSitesTable })
       .from(siteAssignmentsTable)
       .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
-      .where(
-        and(
-          eq(siteAssignmentsTable.workerId, workerId),
-          or(
-            eq(siteAssignmentsTable.status, "active"),
-            eq(siteAssignmentsTable.status, "pending"),
-          ),
-        ),
-      );
+      .where(eq(siteAssignmentsTable.workerId, workerId));
 
     if (assignments.length === 0) {
       res.json({ rotations: [] });
