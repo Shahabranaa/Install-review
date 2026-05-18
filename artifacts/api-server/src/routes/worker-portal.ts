@@ -15,6 +15,8 @@ import {
   siteCertRequirementsTable,
   roleCertRequirementsTable,
   workerCertOverridesTable,
+  workerRotationPeriodsTable,
+  workerScheduleChangeRequestsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -609,6 +611,230 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// ── Schedule ──────────────────────────────────────────────────────────────────
+
+// GET /api/worker-portal/schedule
+router.get("/worker-portal/schedule", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const assignments = await db
+      .select({ sa: siteAssignmentsTable, site: mobSitesTable })
+      .from(siteAssignmentsTable)
+      .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
+      .where(
+        and(
+          eq(siteAssignmentsTable.workerId, workerId),
+          or(
+            eq(siteAssignmentsTable.status, "active"),
+            eq(siteAssignmentsTable.status, "pending"),
+          ),
+        ),
+      );
+
+    if (assignments.length === 0) {
+      res.json({ rotations: [] });
+      return;
+    }
+
+    const assignmentIds = assignments.map((a) => a.sa.id);
+    const siteMap = new Map(assignments.map((a) => [a.sa.id, a.site]));
+
+    const periods = await db
+      .select()
+      .from(workerRotationPeriodsTable)
+      .where(inArray(workerRotationPeriodsTable.assignmentId, assignmentIds))
+      .orderBy(workerRotationPeriodsTable.plannedStart);
+
+    const rotations = periods.map((p) => {
+      const site = siteMap.get(p.assignmentId);
+      return {
+        id: p.id,
+        assignmentId: p.assignmentId,
+        plannedStart: p.plannedStart,
+        plannedEnd: p.plannedEnd,
+        status: p.status,
+        notes: p.notes,
+        siteName: site?.name ?? "Unknown site",
+        siteLocation: site?.location ?? null,
+      };
+    });
+
+    res.json({ rotations });
+  } catch (err) {
+    logger.error({ err }, "worker-portal schedule GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Schedule change requests ──────────────────────────────────────────────────
+
+// GET /api/worker-portal/change-requests
+router.get("/worker-portal/change-requests", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const rows = await db
+      .select({
+        cr: workerScheduleChangeRequestsTable,
+        period: workerRotationPeriodsTable,
+        site: mobSitesTable,
+      })
+      .from(workerScheduleChangeRequestsTable)
+      .innerJoin(
+        workerRotationPeriodsTable,
+        eq(workerScheduleChangeRequestsTable.rotationPeriodId, workerRotationPeriodsTable.id),
+      )
+      .innerJoin(
+        siteAssignmentsTable,
+        eq(workerRotationPeriodsTable.assignmentId, siteAssignmentsTable.id),
+      )
+      .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
+      .where(eq(workerScheduleChangeRequestsTable.workerId, workerId))
+      .orderBy(workerScheduleChangeRequestsTable.createdAt);
+
+    const requests = rows.map((r) => ({
+      id: r.cr.id,
+      rotationPeriodId: r.cr.rotationPeriodId,
+      requestedStart: r.cr.requestedStart,
+      requestedEnd: r.cr.requestedEnd,
+      reason: r.cr.reason,
+      status: r.cr.status,
+      adminNotes: r.cr.adminNotes,
+      createdAt: r.cr.createdAt,
+      siteName: r.site.name,
+      originalStart: r.period.plannedStart,
+      originalEnd: r.period.plannedEnd,
+    }));
+
+    res.json({ requests });
+  } catch (err) {
+    logger.error({ err }, "worker-portal change-requests GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/change-requests
+router.post("/worker-portal/change-requests", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { rotationPeriodId, requestedStart, requestedEnd, reason } = req.body as {
+      rotationPeriodId?: number;
+      requestedStart?: string | null;
+      requestedEnd?: string | null;
+      reason?: string | null;
+    };
+
+    if (!rotationPeriodId) {
+      res.status(400).json({ error: "rotationPeriodId is required" });
+      return;
+    }
+
+    // Verify the rotation period belongs to this worker
+    const [period] = await db
+      .select({ p: workerRotationPeriodsTable, sa: siteAssignmentsTable })
+      .from(workerRotationPeriodsTable)
+      .innerJoin(
+        siteAssignmentsTable,
+        eq(workerRotationPeriodsTable.assignmentId, siteAssignmentsTable.id),
+      )
+      .where(
+        and(
+          eq(workerRotationPeriodsTable.id, rotationPeriodId),
+          eq(siteAssignmentsTable.workerId, workerId),
+        ),
+      );
+
+    if (!period) {
+      res.status(404).json({ error: "Rotation period not found" });
+      return;
+    }
+
+    // Check no pending request already exists for this period
+    const [existing] = await db
+      .select()
+      .from(workerScheduleChangeRequestsTable)
+      .where(
+        and(
+          eq(workerScheduleChangeRequestsTable.workerId, workerId),
+          eq(workerScheduleChangeRequestsTable.rotationPeriodId, rotationPeriodId),
+          eq(workerScheduleChangeRequestsTable.status, "pending"),
+        ),
+      );
+    if (existing) {
+      res.status(409).json({ error: "A pending change request already exists for this rotation" });
+      return;
+    }
+
+    const [cr] = await db
+      .insert(workerScheduleChangeRequestsTable)
+      .values({
+        workerId,
+        rotationPeriodId,
+        requestedStart: requestedStart || null,
+        requestedEnd: requestedEnd || null,
+        reason: reason || null,
+        status: "pending",
+      })
+      .returning();
+
+    await logActivity(workerId, "schedule_change_request", `period:${rotationPeriodId}`, getClientIp(req));
+
+    res.status(201).json(cr);
+  } catch (err) {
+    logger.error({ err }, "worker-portal change-requests POST error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/change-requests/:id (withdraw)
+router.delete(
+  "/worker-portal/change-requests/:id",
+  requireWorkerAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = req.session.workerId!;
+      const id = parseInt(req.params.id ?? "");
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const [row] = await db
+        .select()
+        .from(workerScheduleChangeRequestsTable)
+        .where(
+          and(
+            eq(workerScheduleChangeRequestsTable.id, id),
+            eq(workerScheduleChangeRequestsTable.workerId, workerId),
+          ),
+        );
+
+      if (!row) {
+        res.status(404).json({ error: "Change request not found" });
+        return;
+      }
+
+      if (row.status !== "pending") {
+        res.status(409).json({ error: "Only pending requests can be withdrawn" });
+        return;
+      }
+
+      await db
+        .update(workerScheduleChangeRequestsTable)
+        .set({ status: "withdrawn", updatedAt: new Date() })
+        .where(eq(workerScheduleChangeRequestsTable.id, id));
+
+      await logActivity(workerId, "change_request_withdrawn", `request:${id}`, getClientIp(req));
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "worker-portal change-requests DELETE error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
 
 // GET /api/worker-portal/certifications/:certId/file
 router.get(

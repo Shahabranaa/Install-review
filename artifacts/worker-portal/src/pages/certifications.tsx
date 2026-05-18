@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiUpload, apiUploadPatch, apiDelete } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -27,12 +26,10 @@ import {
   Pencil,
   Trash2,
   Paperclip,
-  LogOut,
   CheckCircle2,
   XCircle,
   Clock,
   HelpCircle,
-  HardHat,
   Loader2,
   AlertTriangle,
   CheckCheck,
@@ -151,7 +148,6 @@ const EMPTY_FORM: CertFormState = {
 };
 
 export default function CertificationsPage() {
-  const { worker, logout } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -300,32 +296,7 @@ export default function CertificationsPage() {
     );
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <HardHat className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm leading-none">Worker Portal</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{worker?.name}</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-muted-foreground"
-            onClick={() => void logout()}
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
 
         {/* ── Compliance requirements section ── */}
         {complianceQ.isLoading ? (
@@ -644,7 +615,6 @@ export default function CertificationsPage() {
             </div>
           )}
         </section>
-      </main>
 
       {/* Add Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
