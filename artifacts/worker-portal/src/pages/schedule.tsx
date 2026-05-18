@@ -411,7 +411,7 @@ export default function SchedulePage() {
                       <p className="text-xs text-muted-foreground mt-1 italic">{r.notes}</p>
                     )}
                   </div>
-                  {!pendingForThis && r.status !== "cancelled" && (
+                  {!pendingForThis && r.status !== "cancelled" && r.status !== "completed" && (
                     <Button
                       size="sm"
                       variant="outline"

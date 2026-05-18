@@ -744,6 +744,12 @@ router.post("/worker-portal/change-requests", requireWorkerAuth, async (req, res
       return;
     }
 
+    // Reject requests for completed or cancelled rotations
+    if (period.p.status === "completed" || period.p.status === "cancelled") {
+      res.status(409).json({ error: "Cannot request a change for a completed or cancelled rotation" });
+      return;
+    }
+
     // Check no pending request already exists for this period
     const [existing] = await db
       .select()
