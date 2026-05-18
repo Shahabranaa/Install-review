@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { eq, or } from "drizzle-orm";
+import { db, usersTable, workersTable } from "@workspace/db";
 import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
@@ -24,7 +24,91 @@ export async function seedAdminUser() {
   }
 }
 
-// POST /api/auth/login
+// POST /api/auth/unified-login
+// Accepts email or username + password. Checks admin users first, then workers.
+// Returns { type: "admin", user: {...} } or { type: "worker", worker: {...} }.
+router.post("/auth/unified-login", async (req, res): Promise<void> => {
+  const { identifier, password } = req.body as { identifier?: string; password?: string };
+
+  if (!identifier?.trim() || !password) {
+    res.status(400).json({ error: "Email/username and password are required" });
+    return;
+  }
+
+  const trimmed = identifier.trim();
+
+  // 1. Check admin/staff users table (match by username — usernames are not emails)
+  const [adminUser] = await db.select().from(usersTable).where(eq(usersTable.username, trimmed));
+
+  if (adminUser && adminUser.active) {
+    const valid = await bcrypt.compare(password, adminUser.passwordHash);
+    if (valid) {
+      await new Promise<void>((resolve, reject) =>
+        req.session.regenerate((err) => (err ? reject(err) : resolve()))
+      );
+      req.session.userId = adminUser.id;
+      req.session.username = adminUser.username;
+      req.session.displayName = adminUser.displayName;
+      req.session.accessLevel = adminUser.accessLevel;
+      delete req.session.sessionType;
+      delete req.session.workerId;
+      delete req.session.workerName;
+
+      res.json({
+        type: "admin" as const,
+        user: {
+          id: adminUser.id,
+          username: adminUser.username,
+          displayName: adminUser.displayName,
+          email: adminUser.email,
+          title: adminUser.title,
+          accessLevel: adminUser.accessLevel,
+          active: adminUser.active,
+        },
+      });
+      return;
+    }
+  }
+
+  // 2. Check workers table (match by email or portalUsername)
+  const lower = trimmed.toLowerCase();
+  const [worker] = await db
+    .select()
+    .from(workersTable)
+    .where(or(eq(workersTable.email, lower), eq(workersTable.portalUsername, trimmed)));
+
+  if (worker && worker.active && worker.portalPasswordHash) {
+    const valid = await bcrypt.compare(password, worker.portalPasswordHash);
+    if (valid) {
+      await new Promise<void>((resolve, reject) =>
+        req.session.regenerate((err) => (err ? reject(err) : resolve()))
+      );
+      req.session.sessionType = "worker";
+      req.session.workerId = worker.id;
+      req.session.workerName = worker.name;
+      delete req.session.userId;
+      delete req.session.username;
+      delete req.session.displayName;
+      delete req.session.accessLevel;
+
+      res.json({
+        type: "worker" as const,
+        worker: {
+          id: worker.id,
+          name: worker.name,
+          email: worker.email,
+          company: worker.company,
+          portalUsername: worker.portalUsername,
+        },
+      });
+      return;
+    }
+  }
+
+  res.status(401).json({ error: "Invalid credentials" });
+});
+
+// POST /api/auth/login (kept for backward compatibility)
 router.post("/auth/login", async (req, res): Promise<void> => {
   const { username, password } = req.body as { username?: string; password?: string };
 
@@ -46,7 +130,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  // Regenerate session to prevent session-fixation and clear any worker-portal state
   await new Promise<void>((resolve, reject) =>
     req.session.regenerate((err) => (err ? reject(err) : resolve()))
   );
@@ -54,7 +137,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   req.session.username = user.username;
   req.session.displayName = user.displayName;
   req.session.accessLevel = user.accessLevel;
-  // Explicitly ensure no worker-portal fields leak into this session
   delete req.session.sessionType;
   delete req.session.workerId;
   delete req.session.workerName;

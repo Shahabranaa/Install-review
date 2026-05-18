@@ -16,7 +16,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
   isAdmin: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<"admin" | "worker">;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -44,18 +44,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh().finally(() => setIsLoading(false));
   }, []);
 
-  async function login(username: string, password: string) {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+  async function login(identifier: string, password: string): Promise<"admin" | "worker"> {
+    const res = await fetch(`${API_BASE}/api/auth/unified-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ identifier, password }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Login failed" }));
       throw new Error(err.error ?? "Login failed");
     }
-    setUser(await res.json());
+    const data = await res.json() as { type: "admin" | "worker"; user?: AuthUser };
+    if (data.type === "admin" && data.user) {
+      setUser(data.user);
+    }
+    return data.type;
   }
 
   async function logout() {

@@ -9,19 +9,25 @@ import { HardHat, Eye, EyeOff } from "lucide-react";
 export default function LoginPage() {
   const { login } = useAuth();
   const [, navigate] = useLocation();
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(username, password);
-      navigate("/");
+      const type = await login(identifier, password);
+      if (type === "worker") {
+        setRedirecting(true);
+        window.location.href = "/worker-portal/";
+      } else {
+        navigate("/");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -37,18 +43,18 @@ export default function LoginPage() {
             <HardHat className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-xl font-bold">Workforce Compliance</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to manage worker certifications</p>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-6 bg-card shadow-sm">
           <div className="space-y-1.5">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="identifier">Email or Username</Label>
             <Input
-              id="username"
+              id="identifier"
               data-testid="input-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="your.username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="name@example.com or username"
               autoComplete="username"
               required
             />
@@ -82,10 +88,14 @@ export default function LoginPage() {
             <p className="text-sm text-destructive" data-testid="text-login-error">{error}</p>
           )}
 
+          {redirecting && (
+            <p className="text-sm text-muted-foreground text-center">Taking you to the Worker Portal…</p>
+          )}
+
           <Button
             type="submit"
             className="w-full"
-            disabled={loading}
+            disabled={loading || redirecting}
             data-testid="button-login"
           >
             {loading ? "Signing in…" : "Sign in"}
