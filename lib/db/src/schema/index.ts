@@ -32,3 +32,4 @@ export * from "./ppe-types";
 export * from "./ppe-allocations";
 export * from "./worker-rotation-periods";
 export * from "./worker-schedule-change-requests";
+export * from "./worker-unavailability-periods";

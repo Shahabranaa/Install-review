@@ -17,6 +17,7 @@ import {
   workerCertOverridesTable,
   workerRotationPeriodsTable,
   workerScheduleChangeRequestsTable,
+  workerUnavailabilityPeriodsTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -841,6 +842,87 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       logger.error({ err }, "worker-portal change-requests DELETE error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// ── Unavailability periods ──────────────────────────────────────────────────
+
+// GET /api/worker-portal/unavailability
+router.get("/worker-portal/unavailability", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const rows = await db
+      .select()
+      .from(workerUnavailabilityPeriodsTable)
+      .where(eq(workerUnavailabilityPeriodsTable.workerId, workerId))
+      .orderBy(workerUnavailabilityPeriodsTable.startDate);
+    res.json({ periods: rows });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/unavailability
+router.post("/worker-portal/unavailability", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { label, startDate, endDate } = req.body as {
+      label?: string | null;
+      startDate?: string;
+      endDate?: string;
+    };
+    if (!startDate || !endDate) {
+      res.status(400).json({ error: "startDate and endDate are required" });
+      return;
+    }
+    if (endDate < startDate) {
+      res.status(400).json({ error: "endDate must be on or after startDate" });
+      return;
+    }
+    const [row] = await db
+      .insert(workerUnavailabilityPeriodsTable)
+      .values({ workerId, label: label?.trim() || null, startDate, endDate })
+      .returning();
+    await logActivity(workerId, "unavailability_added", `${startDate}→${endDate}`, getClientIp(req));
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/unavailability/:id
+router.delete(
+  "/worker-portal/unavailability/:id",
+  requireWorkerAuth,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = req.session.workerId!;
+      const id = parseInt(req.params.id ?? "");
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+      const [row] = await db
+        .select()
+        .from(workerUnavailabilityPeriodsTable)
+        .where(
+          and(
+            eq(workerUnavailabilityPeriodsTable.id, id),
+            eq(workerUnavailabilityPeriodsTable.workerId, workerId),
+          ),
+        );
+      if (!row) {
+        res.status(404).json({ error: "Period not found" });
+        return;
+      }
+      await db
+        .delete(workerUnavailabilityPeriodsTable)
+        .where(eq(workerUnavailabilityPeriodsTable.id, id));
+      await logActivity(workerId, "unavailability_removed", `${row.startDate}→${row.endDate}`, getClientIp(req));
+      res.json({ ok: true });
+    } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   },
