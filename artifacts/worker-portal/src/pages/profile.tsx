@@ -19,6 +19,7 @@ interface WorkerProfile {
   qualifications: string | null;
   portalUsername: string | null;
   windaId: string | null;
+  roleName: string | null;
 }
 
 export default function ProfilePage() {
@@ -196,6 +197,10 @@ export default function ProfilePage() {
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">Portal username</Label>
               <Input value={profile?.portalUsername ?? "—"} disabled className="bg-muted/40 text-muted-foreground" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground text-xs">Role</Label>
+              <Input value={profile?.roleName ?? "—"} disabled className="bg-muted/40 text-muted-foreground" />
             </div>
             {profile?.windaId && (
               <div className="space-y-1.5">

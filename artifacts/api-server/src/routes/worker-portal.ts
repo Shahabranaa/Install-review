@@ -18,6 +18,7 @@ import {
   workerRotationPeriodsTable,
   workerScheduleChangeRequestsTable,
   workerUnavailabilityPeriodsTable,
+  workforceRolesTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -934,7 +935,7 @@ router.delete(
 router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const [worker] = await db
+    const [row] = await db
       .select({
         id: workersTable.id,
         name: workersTable.name,
@@ -945,16 +946,18 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         qualifications: workersTable.qualifications,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
+        roleName: workforceRolesTable.name,
       })
       .from(workersTable)
+      .leftJoin(workforceRolesTable, eq(workersTable.roleId, workforceRolesTable.id))
       .where(eq(workersTable.id, workerId));
 
-    if (!worker) {
+    if (!row) {
       res.status(404).json({ error: "Worker not found" });
       return;
     }
 
-    res.json(worker);
+    res.json(row);
   } catch (err) {
     logger.error({ err }, "worker-portal profile GET error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
