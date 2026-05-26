@@ -6,8 +6,9 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import LoginPage from "@/pages/login";
 import CertificationsPage from "@/pages/certifications";
 import SchedulePage from "@/pages/schedule";
+import ProfilePage from "@/pages/profile";
 import { Button } from "@/components/ui/button";
-import { HardHat, LogOut, Award, CalendarDays } from "lucide-react";
+import { HardHat, LogOut, Award, CalendarDays, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const queryClient = new QueryClient({
@@ -16,7 +17,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type Tab = "certifications" | "schedule";
+type Tab = "certifications" | "schedule" | "profile";
 
 function AppShell() {
   const { worker, logout } = useAuth();
@@ -77,11 +78,30 @@ function AppShell() {
             <CalendarDays className="h-3.5 w-3.5" />
             Schedule
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("profile")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors",
+              tab === "profile"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <UserCircle className="h-3.5 w-3.5" />
+            Profile
+          </button>
         </div>
       </header>
 
       <main>
-        {tab === "certifications" ? <CertificationsPage /> : <SchedulePage />}
+        {tab === "certifications" ? (
+          <CertificationsPage />
+        ) : tab === "schedule" ? (
+          <SchedulePage />
+        ) : (
+          <ProfilePage />
+        )}
       </main>
     </div>
   );

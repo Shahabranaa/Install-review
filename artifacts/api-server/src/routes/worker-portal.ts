@@ -928,6 +928,153 @@ router.delete(
   },
 );
 
+// ── Profile ───────────────────────────────────────────────────────────────────
+
+// GET /api/worker-portal/profile
+router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const [worker] = await db
+      .select({
+        id: workersTable.id,
+        name: workersTable.name,
+        email: workersTable.email,
+        phone: workersTable.phone,
+        company: workersTable.company,
+        preferredAirport: workersTable.preferredAirport,
+        qualifications: workersTable.qualifications,
+        portalUsername: workersTable.portalUsername,
+        windaId: workersTable.windaId,
+      })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!worker) {
+      res.status(404).json({ error: "Worker not found" });
+      return;
+    }
+
+    res.json(worker);
+  } catch (err) {
+    logger.error({ err }, "worker-portal profile GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PATCH /api/worker-portal/profile
+router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { name, email, phone, company, preferredAirport, qualifications } = req.body as {
+      name?: string;
+      email?: string;
+      phone?: string;
+      company?: string;
+      preferredAirport?: string;
+      qualifications?: string;
+    };
+
+    const nameTrimmed = typeof name === "string" ? name.trim() : undefined;
+    if (nameTrimmed !== undefined && !nameTrimmed) {
+      res.status(400).json({ error: "Name cannot be empty" });
+      return;
+    }
+
+    const emailTrimmed = typeof email === "string" ? email.trim().toLowerCase() : undefined;
+
+    const updateSet: Record<string, unknown> = { updatedAt: new Date() };
+    if (nameTrimmed !== undefined) updateSet.name = nameTrimmed;
+    if (emailTrimmed !== undefined) updateSet.email = emailTrimmed || null;
+    if (typeof phone === "string") updateSet.phone = phone.trim() || null;
+    if (typeof company === "string") updateSet.company = company.trim() || null;
+    if (typeof preferredAirport === "string") updateSet.preferredAirport = preferredAirport.trim() || null;
+    if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
+
+    const [updated] = await db
+      .update(workersTable)
+      .set(updateSet)
+      .where(eq(workersTable.id, workerId))
+      .returning({
+        id: workersTable.id,
+        name: workersTable.name,
+        email: workersTable.email,
+        phone: workersTable.phone,
+        company: workersTable.company,
+        preferredAirport: workersTable.preferredAirport,
+        qualifications: workersTable.qualifications,
+        portalUsername: workersTable.portalUsername,
+        windaId: workersTable.windaId,
+      });
+
+    if (!updated) {
+      res.status(404).json({ error: "Worker not found" });
+      return;
+    }
+
+    // Keep session name in sync
+    if (nameTrimmed) {
+      req.session.workerName = nameTrimmed;
+    }
+
+    await logActivity(workerId, "profile_updated", null, getClientIp(req));
+
+    res.json(updated);
+  } catch (err) {
+    logger.error({ err }, "worker-portal profile PATCH error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/change-password
+router.post("/worker-portal/change-password", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { currentPassword, newPassword } = req.body as {
+      currentPassword?: string;
+      newPassword?: string;
+    };
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: "currentPassword and newPassword are required" });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: "New password must be at least 8 characters" });
+      return;
+    }
+
+    const [worker] = await db
+      .select({ portalPasswordHash: workersTable.portalPasswordHash })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!worker?.portalPasswordHash) {
+      res.status(400).json({ error: "No password configured for this account" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, worker.portalPasswordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Current password is incorrect" });
+      return;
+    }
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await db
+      .update(workersTable)
+      .set({ portalPasswordHash: hash, updatedAt: new Date() })
+      .where(eq(workersTable.id, workerId));
+
+    await logActivity(workerId, "password_changed", null, getClientIp(req));
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal change-password POST error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // GET /api/worker-portal/certifications/:certId/file
 router.get(
   "/worker-portal/certifications/:certId/file",
