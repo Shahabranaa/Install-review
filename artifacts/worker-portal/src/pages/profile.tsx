@@ -48,6 +48,9 @@ interface WorkerProfile {
   passportExpiryDate: string | null;
   passportPlaceOfBirth: string | null;
   passportWasabiKey: string | null;
+  nokName: string | null;
+  nokRelationship: string | null;
+  nokPhone: string | null;
   portalUsername: string | null;
   windaId: string | null;
   roleName: string | null;
@@ -207,6 +210,9 @@ export default function ProfilePage() {
     passportIssueDate: "",
     passportExpiryDate: "",
     passportPlaceOfBirth: "",
+    nokName: "",
+    nokRelationship: "",
+    nokPhone: "",
     qualifications: "",
   });
 
@@ -234,6 +240,9 @@ export default function ProfilePage() {
         passportIssueDate: profileQ.data.passportIssueDate ?? "",
         passportExpiryDate: profileQ.data.passportExpiryDate ?? "",
         passportPlaceOfBirth: profileQ.data.passportPlaceOfBirth ?? "",
+        nokName: profileQ.data.nokName ?? "",
+        nokRelationship: profileQ.data.nokRelationship ?? "",
+        nokPhone: profileQ.data.nokPhone ?? "",
         qualifications: profileQ.data.qualifications ?? "",
       });
     }
@@ -459,6 +468,37 @@ export default function ProfilePage() {
                 type="date"
                 value={form.passportExpiryDate}
                 onChange={(e) => setForm((f) => ({ ...f, passportExpiryDate: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-name">Next of kin — full name</Label>
+              <Input
+                id="prof-nok-name"
+                value={form.nokName}
+                onChange={(e) => setForm((f) => ({ ...f, nokName: e.target.value }))}
+                placeholder="e.g. Jane Smith"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-rel">Relationship</Label>
+              <Input
+                id="prof-nok-rel"
+                value={form.nokRelationship}
+                onChange={(e) => setForm((f) => ({ ...f, nokRelationship: e.target.value }))}
+                placeholder="e.g. Spouse, Parent"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-phone">NOK phone</Label>
+              <Input
+                id="prof-nok-phone"
+                type="tel"
+                value={form.nokPhone}
+                onChange={(e) => setForm((f) => ({ ...f, nokPhone: e.target.value }))}
+                placeholder="+44 7700 000000"
               />
             </div>
           </div>

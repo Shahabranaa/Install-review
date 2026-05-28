@@ -1006,6 +1006,9 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         passportExpiryDate: workersTable.passportExpiryDate,
         passportPlaceOfBirth: workersTable.passportPlaceOfBirth,
         passportWasabiKey: workersTable.passportWasabiKey,
+        nokName: workersTable.nokName,
+        nokRelationship: workersTable.nokRelationship,
+        nokPhone: workersTable.nokPhone,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
         cvWasabiKey: workersTable.cvWasabiKey,
@@ -1031,7 +1034,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
 router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const { name, email, phone, company, preferredAirport, qualifications, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth } = req.body as {
+    const { name, email, phone, company, preferredAirport, qualifications, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth, nokName, nokRelationship, nokPhone } = req.body as {
       name?: string;
       email?: string;
       phone?: string;
@@ -1042,6 +1045,9 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
       passportIssueDate?: string;
       passportExpiryDate?: string;
       passportPlaceOfBirth?: string;
+      nokName?: string;
+      nokRelationship?: string;
+      nokPhone?: string;
     };
 
     const nameTrimmed = typeof name === "string" ? name.trim() : undefined;
@@ -1063,6 +1069,9 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (typeof passportIssueDate === "string") updateSet.passportIssueDate = passportIssueDate.trim() || null;
     if (typeof passportExpiryDate === "string") updateSet.passportExpiryDate = passportExpiryDate.trim() || null;
     if (typeof passportPlaceOfBirth === "string") updateSet.passportPlaceOfBirth = passportPlaceOfBirth.trim() || null;
+    if (typeof nokName === "string") updateSet.nokName = nokName.trim() || null;
+    if (typeof nokRelationship === "string") updateSet.nokRelationship = nokRelationship.trim() || null;
+    if (typeof nokPhone === "string") updateSet.nokPhone = nokPhone.trim() || null;
 
     const [updated] = await db
       .update(workersTable)
@@ -1081,6 +1090,9 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
         passportExpiryDate: workersTable.passportExpiryDate,
         passportPlaceOfBirth: workersTable.passportPlaceOfBirth,
         passportWasabiKey: workersTable.passportWasabiKey,
+        nokName: workersTable.nokName,
+        nokRelationship: workersTable.nokRelationship,
+        nokPhone: workersTable.nokPhone,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
       });

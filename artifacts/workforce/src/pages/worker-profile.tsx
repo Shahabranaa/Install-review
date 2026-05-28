@@ -70,6 +70,9 @@ interface WorkerDetail {
   passportExpiryDate: string | null;
   passportPlaceOfBirth: string | null;
   passportWasabiKey: string | null;
+  nokName: string | null;
+  nokRelationship: string | null;
+  nokPhone: string | null;
   cvWasabiKey: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
@@ -931,6 +934,18 @@ export default function WorkerProfilePage() {
               >
                 Download
               </a>
+            </div>
+          )}
+          {worker.nokName && (
+            <div>
+              <p className="text-xs text-muted-foreground">Next of kin</p>
+              <p className="font-medium">{worker.nokName}</p>
+              {worker.nokRelationship && (
+                <p className="text-xs text-muted-foreground">{worker.nokRelationship}</p>
+              )}
+              {worker.nokPhone && (
+                <p className="text-xs font-mono">{worker.nokPhone}</p>
+              )}
             </div>
           )}
           <div>
