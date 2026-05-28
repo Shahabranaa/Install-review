@@ -400,6 +400,58 @@ router.get("/workforce/workers/:id/cv", requireAuth, async (req, res): Promise<v
   }
 });
 
+// GET /api/workforce/workers/:id/passport — admin proxy to stream worker passport from Wasabi
+router.get("/workforce/workers/:id/passport", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [worker] = await db
+      .select({ passportWasabiKey: workersTable.passportWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, id));
+
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+    if (!worker.passportWasabiKey) { res.status(404).json({ error: "No passport on file" }); return; }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Storage not configured" }); return; }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: worker.passportWasabiKey }),
+    );
+
+    const filename = worker.passportWasabiKey.split("/").pop() ?? "passport";
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      pdf: "application/pdf",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+    };
+    const contentType = mimeMap[ext] ?? "application/octet-stream";
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
 router.patch("/workforce/workers/:id", requireAuth, async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.id ?? "");

@@ -66,6 +66,10 @@ interface WorkerDetail {
   roleId: number | null;
   portalUsername: string | null;
   passportNo: string | null;
+  passportIssueDate: string | null;
+  passportExpiryDate: string | null;
+  passportPlaceOfBirth: string | null;
+  passportWasabiKey: string | null;
   cvWasabiKey: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
@@ -894,8 +898,39 @@ export default function WorkerProfilePage() {
           )}
           {worker.passportNo && (
             <div>
-              <p className="text-xs text-muted-foreground">Passport</p>
+              <p className="text-xs text-muted-foreground">Passport no.</p>
               <p className="font-medium font-mono">{worker.passportNo}</p>
+            </div>
+          )}
+          {worker.passportPlaceOfBirth && (
+            <div>
+              <p className="text-xs text-muted-foreground">Place of birth</p>
+              <p className="font-medium">{worker.passportPlaceOfBirth}</p>
+            </div>
+          )}
+          {worker.passportIssueDate && (
+            <div>
+              <p className="text-xs text-muted-foreground">Passport issued</p>
+              <p className="font-medium">{worker.passportIssueDate}</p>
+            </div>
+          )}
+          {worker.passportExpiryDate && (
+            <div>
+              <p className="text-xs text-muted-foreground">Passport expires</p>
+              <p className="font-medium">{worker.passportExpiryDate}</p>
+            </div>
+          )}
+          {worker.passportWasabiKey && (
+            <div>
+              <p className="text-xs text-muted-foreground">Passport scan</p>
+              <a
+                href={`${BASE}/api/workforce/workers/${worker.id}/passport`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                Download
+              </a>
             </div>
           )}
           <div>

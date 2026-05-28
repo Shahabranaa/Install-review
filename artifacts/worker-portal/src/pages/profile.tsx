@@ -44,6 +44,10 @@ interface WorkerProfile {
   preferredAirport: string[] | null;
   qualifications: string | null;
   passportNo: string | null;
+  passportIssueDate: string | null;
+  passportExpiryDate: string | null;
+  passportPlaceOfBirth: string | null;
+  passportWasabiKey: string | null;
   portalUsername: string | null;
   windaId: string | null;
   roleName: string | null;
@@ -200,6 +204,9 @@ export default function ProfilePage() {
     company: "",
     preferredAirport: [] as string[],
     passportNo: "",
+    passportIssueDate: "",
+    passportExpiryDate: "",
+    passportPlaceOfBirth: "",
     qualifications: "",
   });
 
@@ -212,6 +219,9 @@ export default function ProfilePage() {
   const cvInputRef = useRef<HTMLInputElement>(null);
   const [cvUploading, setCvUploading] = useState(false);
 
+  const passportInputRef = useRef<HTMLInputElement>(null);
+  const [passportUploading, setPassportUploading] = useState(false);
+
   useEffect(() => {
     if (profileQ.data) {
       setForm({
@@ -221,6 +231,9 @@ export default function ProfilePage() {
         company: profileQ.data.company ?? "",
         preferredAirport: profileQ.data.preferredAirport ?? [],
         passportNo: profileQ.data.passportNo ?? "",
+        passportIssueDate: profileQ.data.passportIssueDate ?? "",
+        passportExpiryDate: profileQ.data.passportExpiryDate ?? "",
+        passportPlaceOfBirth: profileQ.data.passportPlaceOfBirth ?? "",
         qualifications: profileQ.data.qualifications ?? "",
       });
     }
@@ -252,6 +265,39 @@ export default function ProfilePage() {
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     saveMut.mutate(form);
+  }
+
+  async function handlePassportUpload(file: File) {
+    const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Accepted: PDF, JPEG, PNG, WebP.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Passport scan must be under 10 MB.", variant: "destructive" });
+      return;
+    }
+    setPassportUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${BASE}/api/worker-portal/passport-upload`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? `Upload failed: ${res.status}`);
+      }
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      toast({ title: "Passport uploaded successfully" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setPassportUploading(false);
+      if (passportInputRef.current) passportInputRef.current.value = "";
+    }
   }
 
   async function handleCvUpload(file: File) {
@@ -378,14 +424,43 @@ export default function ProfilePage() {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="prof-passport">Passport number</Label>
-            <Input
-              id="prof-passport"
-              value={form.passportNo}
-              onChange={(e) => setForm((f) => ({ ...f, passportNo: e.target.value }))}
-              placeholder="e.g. 123456789"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport">Passport number</Label>
+              <Input
+                id="prof-passport"
+                value={form.passportNo}
+                onChange={(e) => setForm((f) => ({ ...f, passportNo: e.target.value }))}
+                placeholder="e.g. 123456789"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-pob">Place of birth</Label>
+              <Input
+                id="prof-passport-pob"
+                value={form.passportPlaceOfBirth}
+                onChange={(e) => setForm((f) => ({ ...f, passportPlaceOfBirth: e.target.value }))}
+                placeholder="e.g. Dublin"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-issue">Issue date</Label>
+              <Input
+                id="prof-passport-issue"
+                type="date"
+                value={form.passportIssueDate}
+                onChange={(e) => setForm((f) => ({ ...f, passportIssueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-expiry">Expiry date</Label>
+              <Input
+                id="prof-passport-expiry"
+                type="date"
+                value={form.passportExpiryDate}
+                onChange={(e) => setForm((f) => ({ ...f, passportExpiryDate: e.target.value }))}
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -428,6 +503,87 @@ export default function ProfilePage() {
             </Button>
           </div>
         </form>
+      </section>
+
+      {/* ── Passport document ── */}
+      <section className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-5 py-4 border-b flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Passport document</h2>
+        </div>
+
+        <div className="px-5 py-5">
+          {profile?.passportWasabiKey ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <FileText className="h-8 w-8 text-primary/60 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {profile.passportWasabiKey.split("/").pop()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Passport scan on file</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button size="sm" variant="outline" className="gap-1.5" asChild>
+                  <a
+                    href={`${BASE}/api/worker-portal/passport`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View passport
+                  </a>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={passportUploading}
+                  onClick={() => passportInputRef.current?.click()}
+                >
+                  {passportUploading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Replace
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <p className="text-sm text-muted-foreground flex-1">
+                No passport scan uploaded yet. Upload a scan so administrators can verify your travel documents.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 flex-shrink-0"
+                disabled={passportUploading}
+                onClick={() => passportInputRef.current?.click()}
+              >
+                {passportUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                Upload passport
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">PDF, JPEG, PNG or WebP · max 10 MB</p>
+          <input
+            ref={passportInputRef}
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handlePassportUpload(file);
+            }}
+          />
+        </div>
       </section>
 
       {/* ── CV / Résumé ── */}

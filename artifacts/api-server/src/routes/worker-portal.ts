@@ -42,6 +42,35 @@ const cvFileUpload = multer({
   },
 });
 
+const passportFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter(_req, file, cb) {
+    const allowed = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF or image files (JPEG, PNG, WebP) are accepted"));
+    }
+  },
+});
+
+function passportUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  passportFileUpload.single("file")(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "File exceeds the 10 MB limit"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
+
 function cvUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
   cvFileUpload.single("file")(req, res, (err) => {
     if (err) {
@@ -973,6 +1002,10 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
         passportNo: workersTable.passportNo,
+        passportIssueDate: workersTable.passportIssueDate,
+        passportExpiryDate: workersTable.passportExpiryDate,
+        passportPlaceOfBirth: workersTable.passportPlaceOfBirth,
+        passportWasabiKey: workersTable.passportWasabiKey,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
         cvWasabiKey: workersTable.cvWasabiKey,
@@ -998,7 +1031,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
 router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const { name, email, phone, company, preferredAirport, qualifications, passportNo } = req.body as {
+    const { name, email, phone, company, preferredAirport, qualifications, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth } = req.body as {
       name?: string;
       email?: string;
       phone?: string;
@@ -1006,6 +1039,9 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
       preferredAirport?: string[];
       qualifications?: string;
       passportNo?: string;
+      passportIssueDate?: string;
+      passportExpiryDate?: string;
+      passportPlaceOfBirth?: string;
     };
 
     const nameTrimmed = typeof name === "string" ? name.trim() : undefined;
@@ -1024,6 +1060,9 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
     if (typeof passportNo === "string") updateSet.passportNo = passportNo.trim() || null;
+    if (typeof passportIssueDate === "string") updateSet.passportIssueDate = passportIssueDate.trim() || null;
+    if (typeof passportExpiryDate === "string") updateSet.passportExpiryDate = passportExpiryDate.trim() || null;
+    if (typeof passportPlaceOfBirth === "string") updateSet.passportPlaceOfBirth = passportPlaceOfBirth.trim() || null;
 
     const [updated] = await db
       .update(workersTable)
@@ -1038,6 +1077,10 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
         passportNo: workersTable.passportNo,
+        passportIssueDate: workersTable.passportIssueDate,
+        passportExpiryDate: workersTable.passportExpiryDate,
+        passportPlaceOfBirth: workersTable.passportPlaceOfBirth,
+        passportWasabiKey: workersTable.passportWasabiKey,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
       });
@@ -1154,6 +1197,126 @@ router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Pro
     }
   } catch (err) {
     logger.error({ err }, "worker-portal cv GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/passport-upload
+router.post(
+  "/worker-portal/passport-upload",
+  requireWorkerAuth,
+  passportUploadMiddleware,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = req.session.workerId!;
+
+      if (!req.file) {
+        res.status(400).json({ error: "A file is required" });
+        return;
+      }
+
+      const wasabi = await getWasabiClientAndCreds();
+      if (!wasabi) {
+        res.status(503).json({ error: "Storage not configured" });
+        return;
+      }
+
+      const [existing] = await db
+        .select({ passportWasabiKey: workersTable.passportWasabiKey })
+        .from(workersTable)
+        .where(eq(workersTable.id, workerId));
+
+      if (existing?.passportWasabiKey) {
+        try {
+          await wasabi.client.send(
+            new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: existing.passportWasabiKey }),
+          );
+        } catch { /* ignore stale-key errors */ }
+      }
+
+      const safeName = req.file.originalname
+        .replace(/[\\/\r\n\t]+/g, "_")
+        .replace(/\.\.+/g, "_")
+        .slice(0, 120);
+      const key = `workers/${workerId}/passport/${safeName}`;
+
+      await wasabi.client.send(
+        new PutObjectCommand({
+          Bucket: wasabi.creds.bucket,
+          Key: key,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype,
+        }),
+      );
+
+      await db
+        .update(workersTable)
+        .set({ passportWasabiKey: key, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
+
+      await logActivity(workerId, "passport_uploaded", safeName, getClientIp(req));
+
+      res.json({ passportWasabiKey: key, filename: safeName });
+    } catch (err) {
+      logger.error({ err }, "worker-portal passport upload POST error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// GET /api/worker-portal/passport
+router.get("/worker-portal/passport", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ passportWasabiKey: workersTable.passportWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.passportWasabiKey) {
+      res.status(404).json({ error: "No passport on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) {
+      res.status(503).json({ error: "Storage not configured" });
+      return;
+    }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.passportWasabiKey }),
+    );
+
+    const filename = row.passportWasabiKey.split("/").pop() ?? "passport";
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      pdf: "application/pdf",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+    };
+    const contentType = mimeMap[ext] ?? "application/octet-stream";
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    logger.error({ err }, "worker-portal passport GET error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

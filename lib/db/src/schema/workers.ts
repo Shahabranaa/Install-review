@@ -16,6 +16,10 @@ export const workersTable = pgTable("workers", {
   phone: text("phone"),
   dob: text("dob"),
   passportNo: text("passport_no"),
+  passportIssueDate: text("passport_issue_date"),
+  passportExpiryDate: text("passport_expiry_date"),
+  passportPlaceOfBirth: text("passport_place_of_birth"),
+  passportWasabiKey: text("passport_wasabi_key"),
   preferredAirport: text("preferred_airport").array(),
   qualifications: text("qualifications"),
   // CV file (Wasabi key)
