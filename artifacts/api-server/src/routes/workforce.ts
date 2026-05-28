@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and, or, ilike, inArray, sql, desc } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, sql, desc, asc } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -24,6 +24,7 @@ import {
   ppeAllocationsTable,
   workerRotationPeriodsTable,
   workerScheduleChangeRequestsTable,
+  workerRoleHistoryTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -2960,6 +2961,220 @@ router.patch(
         .returning();
 
       res.json(updated);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// ── Worker Role History ────────────────────────────────────────────────────────
+
+// GET /api/workforce/workers/:id/role-history
+router.get(
+  "/workforce/workers/:id/role-history",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      if (isNaN(workerId)) {
+        res.status(400).json({ error: "Invalid worker id" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(eq(workerRoleHistoryTable.workerId, workerId))
+        .orderBy(desc(workerRoleHistoryTable.startDate));
+      res.json(rows);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// POST /api/workforce/workers/:id/role-history
+router.post(
+  "/workforce/workers/:id/role-history",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      if (isNaN(workerId)) {
+        res.status(400).json({ error: "Invalid worker id" });
+        return;
+      }
+      const { roleId, startDate, endDate, notes, closeOpenEntry } = req.body as {
+        roleId?: number | null;
+        startDate?: string;
+        endDate?: string | null;
+        notes?: string | null;
+        closeOpenEntry?: boolean;
+      };
+      if (!startDate) {
+        res.status(400).json({ error: "startDate is required" });
+        return;
+      }
+
+      let roleNameSnapshot = "Unknown";
+      if (roleId) {
+        const [role] = await db
+          .select({ name: workforceRolesTable.name })
+          .from(workforceRolesTable)
+          .where(eq(workforceRolesTable.id, roleId));
+        if (!role) {
+          res.status(400).json({ error: "Role not found" });
+          return;
+        }
+        roleNameSnapshot = role.name;
+      }
+
+      // Optionally close the current open entry
+      if (closeOpenEntry) {
+        const openEntries = await db
+          .select()
+          .from(workerRoleHistoryTable)
+          .where(
+            and(
+              eq(workerRoleHistoryTable.workerId, workerId),
+              sql`${workerRoleHistoryTable.endDate} IS NULL`,
+            ),
+          );
+        for (const entry of openEntries) {
+          await db
+            .update(workerRoleHistoryTable)
+            .set({ endDate: startDate, updatedAt: new Date() })
+            .where(eq(workerRoleHistoryTable.id, entry.id));
+        }
+      }
+
+      const [row] = await db
+        .insert(workerRoleHistoryTable)
+        .values({
+          workerId,
+          roleId: roleId ?? null,
+          roleNameSnapshot,
+          startDate,
+          endDate: endDate ?? null,
+          notes: notes ?? null,
+        })
+        .returning();
+
+      // Sync workers.role_id if this is a current (open-ended) entry
+      if (!endDate && roleId) {
+        await db
+          .update(workersTable)
+          .set({ roleId, updatedAt: new Date() })
+          .where(eq(workersTable.id, workerId));
+      }
+
+      res.status(201).json(row);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// PATCH /api/workforce/workers/:id/role-history/:entryId
+router.patch(
+  "/workforce/workers/:id/role-history/:entryId",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      const entryId = parseInt(req.params.entryId ?? "");
+      if (isNaN(workerId) || isNaN(entryId)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const { startDate, endDate, notes } = req.body as {
+        startDate?: string;
+        endDate?: string | null;
+        notes?: string | null;
+      };
+
+      const [existing] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.id, entryId),
+            eq(workerRoleHistoryTable.workerId, workerId),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Entry not found" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(workerRoleHistoryTable)
+        .set({
+          startDate: startDate ?? existing.startDate,
+          endDate: endDate !== undefined ? (endDate ?? null) : existing.endDate,
+          notes: notes !== undefined ? (notes ?? null) : existing.notes,
+          updatedAt: new Date(),
+        })
+        .where(eq(workerRoleHistoryTable.id, entryId))
+        .returning();
+
+      res.json(updated);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// DELETE /api/workforce/workers/:id/role-history/:entryId
+router.delete(
+  "/workforce/workers/:id/role-history/:entryId",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      const entryId = parseInt(req.params.entryId ?? "");
+      if (isNaN(workerId) || isNaN(entryId)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.id, entryId),
+            eq(workerRoleHistoryTable.workerId, workerId),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Entry not found" });
+        return;
+      }
+
+      await db
+        .delete(workerRoleHistoryTable)
+        .where(eq(workerRoleHistoryTable.id, entryId));
+
+      // Recalculate and sync workers.role_id
+      const [latestOpen] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.workerId, workerId),
+            sql`${workerRoleHistoryTable.endDate} IS NULL`,
+          ),
+        )
+        .orderBy(desc(workerRoleHistoryTable.startDate))
+        .limit(1);
+
+      await db
+        .update(workersTable)
+        .set({ roleId: latestOpen?.roleId ?? null, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
+
+      res.json({ ok: true });
     } catch (err) {
       handleRouteError(res, err);
     }

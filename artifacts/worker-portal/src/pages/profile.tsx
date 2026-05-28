@@ -29,6 +29,8 @@ import {
   ChevronsUpDown,
   Check,
   X,
+  Briefcase,
+  Calendar,
 } from "lucide-react";
 import { AIRPORTS, type Airport } from "@/data/airports";
 import { cn } from "@/lib/utils";
@@ -55,6 +57,14 @@ interface WorkerProfile {
   windaId: string | null;
   roleName: string | null;
   cvWasabiKey: string | null;
+}
+
+interface RoleHistoryEntry {
+  id: number;
+  roleNameSnapshot: string;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
 }
 
 // ── Airport multi-select ──────────────────────────────────────────────────────
@@ -198,6 +208,11 @@ export default function ProfilePage() {
   const profileQ = useQuery<WorkerProfile>({
     queryKey: ["worker-profile"],
     queryFn: () => apiFetch("/api/worker-portal/profile"),
+  });
+
+  const roleHistoryQ = useQuery<RoleHistoryEntry[]>({
+    queryKey: ["worker-portal-role-history"],
+    queryFn: () => apiFetch<RoleHistoryEntry[]>("/api/worker-portal/role-history"),
   });
 
   const [form, setForm] = useState({
@@ -711,6 +726,39 @@ export default function ProfilePage() {
           />
         </div>
       </section>
+
+      {/* ── Role history ── */}
+      {roleHistoryQ.data && roleHistoryQ.data.length > 0 && (
+        <section className="rounded-xl border bg-card overflow-hidden">
+          <div className="px-5 py-4 border-b flex items-center gap-2">
+            <Briefcase className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">Role history</h2>
+          </div>
+          <div className="divide-y">
+            {roleHistoryQ.data.map((entry) => (
+              <div key={entry.id} className="px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{entry.roleNameSnapshot}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
+                    {entry.endDate
+                      ? <> — {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
+                      : <> — <span className="text-emerald-600 font-medium">Current</span></>
+                    }
+                  </p>
+                  {entry.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>}
+                </div>
+                {!entry.endDate && (
+                  <span className="text-[10px] border border-emerald-400 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
+                    Current
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Change password ── */}
       <section className="rounded-xl border bg-card overflow-hidden">

@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { eq, or, and, inArray } from "drizzle-orm";
+import { eq, or, and, inArray, desc } from "drizzle-orm";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
@@ -19,6 +19,7 @@ import {
   workerScheduleChangeRequestsTable,
   workerUnavailabilityPeriodsTable,
   workforceRolesTable,
+  workerRoleHistoryTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -1446,5 +1447,20 @@ router.get(
     }
   },
 );
+
+// GET /api/worker-portal/role-history
+router.get("/worker-portal/role-history", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const rows = await db
+      .select()
+      .from(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.workerId, workerId))
+      .orderBy(desc(workerRoleHistoryTable.startDate));
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 export default router;

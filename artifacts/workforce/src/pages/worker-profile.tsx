@@ -16,6 +16,7 @@ import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
   Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
+  Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +94,16 @@ interface SiteComplianceResult {
 }
 
 interface Role { id: number; name: string }
+
+interface RoleHistoryEntry {
+  id: number;
+  workerId: number;
+  roleId: number | null;
+  roleNameSnapshot: string;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
+}
 
 interface PPEType { id: number; name: string; description: string | null }
 interface PPEAllocation {
@@ -516,6 +527,10 @@ export default function WorkerProfilePage() {
   const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
   const [verifyingCertIds, setVerifyingCertIds] = useState<Set<number>>(new Set());
   const [showIssuePPE, setShowIssuePPE] = useState(false);
+  const [showAddRole, setShowAddRole] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleHistoryEntry | null>(null);
+  const blankRoleForm = { roleId: "", startDate: "", endDate: "", notes: "", closeOpenEntry: true };
+  const [roleHistoryForm, setRoleHistoryForm] = useState(blankRoleForm);
   const today = new Date().toISOString().split("T")[0];
   const [issueForm, setIssueForm] = useState({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
   const cardFileInputRef = useRef<HTMLInputElement>(null);
@@ -569,6 +584,56 @@ export default function WorkerProfilePage() {
     queryKey: ["workforce-ppe-types"],
     queryFn: () => apiFetch<PPEType[]>("/api/workforce/ppe-types"),
     enabled: isAdmin,
+  });
+
+  const { data: roleHistory } = useQuery<RoleHistoryEntry[]>({
+    queryKey: ["worker-role-history", workerId],
+    queryFn: () => apiFetch<RoleHistoryEntry[]>(`/api/workforce/workers/${workerId}/role-history`),
+    enabled: !isNaN(workerId) && isAdmin,
+  });
+
+  const addRoleMutation = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/workforce/workers/${workerId}/role-history`, {
+        roleId: roleHistoryForm.roleId ? parseInt(roleHistoryForm.roleId) : null,
+        startDate: roleHistoryForm.startDate,
+        endDate: roleHistoryForm.endDate || null,
+        notes: roleHistoryForm.notes || null,
+        closeOpenEntry: roleHistoryForm.closeOpenEntry,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role entry added" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      setShowAddRole(false);
+      setRoleHistoryForm(blankRoleForm);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const editRoleMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiPatch(`/api/workforce/workers/${workerId}/role-history/${id}`, {
+        startDate: roleHistoryForm.startDate,
+        endDate: roleHistoryForm.endDate || null,
+        notes: roleHistoryForm.notes || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role entry updated" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      setEditingRole(null);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (id: number) => apiDelete(`/api/workforce/workers/${workerId}/role-history/${id}`),
+    onSuccess: () => {
+      toast({ title: "Role entry deleted" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function openEdit() {
@@ -1278,6 +1343,206 @@ export default function WorkerProfilePage() {
           )}
         </div>
       )}
+
+      {/* Role History */}
+      {isAdmin && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              <h2 className="font-semibold text-sm">Role History ({(roleHistory ?? []).length})</h2>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setRoleHistoryForm(blankRoleForm); setShowAddRole(true); }}
+              data-testid="button-add-role-history"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add role
+            </Button>
+          </div>
+
+          {!roleHistory || roleHistory.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No role history recorded. Click "Add role" to start tracking this worker's career progression.
+            </div>
+          ) : (
+            <div className="divide-y">
+              {roleHistory.map((entry) => (
+                <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{entry.roleNameSnapshot}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
+                        {entry.endDate
+                          ? <> → {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
+                          : <> → <span className="text-emerald-600 font-medium">Current</span></>
+                        }
+                      </span>
+                      {entry.notes && <span className="italic">{entry.notes}</span>}
+                    </div>
+                  </div>
+                  {!entry.endDate && (
+                    <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600 flex-shrink-0">
+                      Current
+                    </Badge>
+                  )}
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-primary"
+                      onClick={() => {
+                        setRoleHistoryForm({
+                          roleId: entry.roleId ? String(entry.roleId) : "",
+                          startDate: entry.startDate,
+                          endDate: entry.endDate ?? "",
+                          notes: entry.notes ?? "",
+                          closeOpenEntry: false,
+                        });
+                        setEditingRole(entry);
+                      }}
+                      data-testid={`button-edit-role-${entry.id}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteRoleMutation.mutate(entry.id)}
+                      disabled={deleteRoleMutation.isPending}
+                      data-testid={`button-delete-role-${entry.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Role History Dialog */}
+      <Dialog open={showAddRole} onOpenChange={(o) => { setShowAddRole(o); if (!o) setRoleHistoryForm(blankRoleForm); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Role Entry</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Role *</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={roleHistoryForm.roleId}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, roleId: e.target.value }))}
+              >
+                <option value="">— Select role —</option>
+                {(roles ?? []).map((r) => (
+                  <option key={r.id} value={String(r.id)}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start date *</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.startDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End date <span className="text-muted-foreground text-xs">(blank = current)</span></Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.endDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                className="mt-1"
+                value={roleHistoryForm.notes}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={roleHistoryForm.closeOpenEntry}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, closeOpenEntry: e.target.checked }))}
+              />
+              Automatically close current open role entry
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddRole(false)}>Cancel</Button>
+            <Button
+              onClick={() => addRoleMutation.mutate()}
+              disabled={!roleHistoryForm.roleId || !roleHistoryForm.startDate || addRoleMutation.isPending}
+              data-testid="button-save-role-history"
+            >
+              {addRoleMutation.isPending ? "Saving…" : "Add Entry"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Role History Dialog */}
+      <Dialog open={!!editingRole} onOpenChange={(o) => { if (!o) setEditingRole(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Role Entry</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start date *</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.startDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End date <span className="text-muted-foreground text-xs">(blank = current)</span></Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.endDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                className="mt-1"
+                value={roleHistoryForm.notes}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRole(null)}>Cancel</Button>
+            <Button
+              onClick={() => editingRole && editRoleMutation.mutate(editingRole.id)}
+              disabled={!roleHistoryForm.startDate || editRoleMutation.isPending}
+              data-testid="button-save-role-history-edit"
+            >
+              {editRoleMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit worker dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>
