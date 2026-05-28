@@ -3059,11 +3059,11 @@ router.post(
         })
         .returning();
 
-      // Sync workers.role_id if this is a current (open-ended) entry
-      if (!endDate && roleId) {
+      // Sync workers.role_id if this is a current (open-ended) entry — even if roleId is null
+      if (!endDate) {
         await db
           .update(workersTable)
-          .set({ roleId, updatedAt: new Date() })
+          .set({ roleId: roleId ?? null, updatedAt: new Date() })
           .where(eq(workersTable.id, workerId));
       }
 
@@ -3117,6 +3117,24 @@ router.patch(
         })
         .where(eq(workerRoleHistoryTable.id, entryId))
         .returning();
+
+      // Recalculate and sync workers.role_id after any date change
+      const [latestOpen] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.workerId, workerId),
+            sql`${workerRoleHistoryTable.endDate} IS NULL`,
+          ),
+        )
+        .orderBy(desc(workerRoleHistoryTable.startDate))
+        .limit(1);
+
+      await db
+        .update(workersTable)
+        .set({ roleId: latestOpen?.roleId ?? null, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
 
       res.json(updated);
     } catch (err) {
