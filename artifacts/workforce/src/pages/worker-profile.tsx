@@ -65,6 +65,7 @@ interface WorkerDetail {
   notes: string | null;
   roleId: number | null;
   portalUsername: string | null;
+  passportNo: string | null;
   cvWasabiKey: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
@@ -889,6 +890,12 @@ export default function WorkerProfilePage() {
             <div className="col-span-2">
               <p className="text-xs text-muted-foreground">Notes</p>
               <p className="text-sm">{worker.notes}</p>
+            </div>
+          )}
+          {worker.passportNo && (
+            <div>
+              <p className="text-xs text-muted-foreground">Passport</p>
+              <p className="font-medium font-mono">{worker.passportNo}</p>
             </div>
           )}
           <div>

@@ -972,6 +972,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        passportNo: workersTable.passportNo,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
         cvWasabiKey: workersTable.cvWasabiKey,
@@ -997,13 +998,14 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
 router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const { name, email, phone, company, preferredAirport, qualifications } = req.body as {
+    const { name, email, phone, company, preferredAirport, qualifications, passportNo } = req.body as {
       name?: string;
       email?: string;
       phone?: string;
       company?: string;
       preferredAirport?: string[];
       qualifications?: string;
+      passportNo?: string;
     };
 
     const nameTrimmed = typeof name === "string" ? name.trim() : undefined;
@@ -1021,6 +1023,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (typeof company === "string") updateSet.company = company.trim() || null;
     if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
+    if (typeof passportNo === "string") updateSet.passportNo = passportNo.trim() || null;
 
     const [updated] = await db
       .update(workersTable)
@@ -1034,6 +1037,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        passportNo: workersTable.passportNo,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
       });

@@ -43,6 +43,7 @@ interface WorkerProfile {
   company: string | null;
   preferredAirport: string[] | null;
   qualifications: string | null;
+  passportNo: string | null;
   portalUsername: string | null;
   windaId: string | null;
   roleName: string | null;
@@ -198,6 +199,7 @@ export default function ProfilePage() {
     phone: "",
     company: "",
     preferredAirport: [] as string[],
+    passportNo: "",
     qualifications: "",
   });
 
@@ -218,6 +220,7 @@ export default function ProfilePage() {
         phone: profileQ.data.phone ?? "",
         company: profileQ.data.company ?? "",
         preferredAirport: profileQ.data.preferredAirport ?? [],
+        passportNo: profileQ.data.passportNo ?? "",
         qualifications: profileQ.data.qualifications ?? "",
       });
     }
@@ -372,6 +375,16 @@ export default function ProfilePage() {
             <AirportMultiSelect
               value={form.preferredAirport}
               onChange={(val) => setForm((f) => ({ ...f, preferredAirport: val }))}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="prof-passport">Passport number</Label>
+            <Input
+              id="prof-passport"
+              value={form.passportNo}
+              onChange={(e) => setForm((f) => ({ ...f, passportNo: e.target.value }))}
+              placeholder="e.g. 123456789"
             />
           </div>
 
