@@ -1002,7 +1002,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
       email?: string;
       phone?: string;
       company?: string;
-      preferredAirport?: string;
+      preferredAirport?: string[];
       qualifications?: string;
     };
 
@@ -1019,7 +1019,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (emailTrimmed !== undefined) updateSet.email = emailTrimmed || null;
     if (typeof phone === "string") updateSet.phone = phone.trim() || null;
     if (typeof company === "string") updateSet.company = company.trim() || null;
-    if (typeof preferredAirport === "string") updateSet.preferredAirport = preferredAirport.trim() || null;
+    if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
 
     const [updated] = await db

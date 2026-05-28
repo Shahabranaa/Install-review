@@ -1,13 +1,37 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiPatch, apiPost } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Save, KeyRound, User, Lock, FileText, Upload, ExternalLink } from "lucide-react";
+import {
+  Loader2,
+  Save,
+  KeyRound,
+  User,
+  Lock,
+  FileText,
+  Upload,
+  ExternalLink,
+  ChevronsUpDown,
+  Check,
+  X,
+} from "lucide-react";
+import { AIRPORTS, type Airport } from "@/data/airports";
+import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -17,13 +41,146 @@ interface WorkerProfile {
   email: string | null;
   phone: string | null;
   company: string | null;
-  preferredAirport: string | null;
+  preferredAirport: string[] | null;
   qualifications: string | null;
   portalUsername: string | null;
   windaId: string | null;
   roleName: string | null;
   cvWasabiKey: string | null;
 }
+
+// ── Airport multi-select ──────────────────────────────────────────────────────
+
+interface AirportMultiSelectProps {
+  value: string[];
+  onChange: (val: string[]) => void;
+}
+
+function AirportMultiSelect({ value, onChange }: AirportMultiSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!query) return AIRPORTS.slice(0, 100);
+    const q = query.toLowerCase();
+    return AIRPORTS.filter(
+      (a) =>
+        a.iata.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q) ||
+        a.city.toLowerCase().includes(q) ||
+        a.country.toLowerCase().includes(q)
+    ).slice(0, 100);
+  }, [query]);
+
+  function toggle(iata: string) {
+    if (value.includes(iata)) {
+      onChange(value.filter((v) => v !== iata));
+    } else {
+      onChange([...value, iata]);
+    }
+  }
+
+  function remove(iata: string) {
+    onChange(value.filter((v) => v !== iata));
+  }
+
+  function airportLabel(iata: string): string {
+    const a = AIRPORTS.find((ap) => ap.iata === iata);
+    return a ? `${iata} – ${a.city}` : iata;
+  }
+
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between font-normal text-sm h-9 px-3"
+          >
+            <span className="text-muted-foreground">
+              {value.length === 0
+                ? "Search airports…"
+                : `${value.length} airport${value.length > 1 ? "s" : ""} selected`}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="p-0 w-[var(--radix-popover-trigger-width)]"
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Search by IATA, name, city or country…"
+              value={query}
+              onValueChange={setQuery}
+            />
+            <CommandList>
+              <CommandEmpty>No airports found.</CommandEmpty>
+              <CommandGroup>
+                {filtered.map((airport: Airport) => {
+                  const selected = value.includes(airport.iata);
+                  return (
+                    <CommandItem
+                      key={airport.iata}
+                      value={airport.iata}
+                      onSelect={() => toggle(airport.iata)}
+                      className="cursor-pointer"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4 flex-shrink-0",
+                          selected ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <span className="font-mono text-xs font-semibold w-9 flex-shrink-0 text-primary">
+                        {airport.iata}
+                      </span>
+                      <span className="truncate text-sm">
+                        {airport.city}
+                        <span className="text-muted-foreground ml-1">
+                          · {airport.country}
+                        </span>
+                      </span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((iata) => (
+            <Badge
+              key={iata}
+              variant="secondary"
+              className="gap-1 pr-1 text-xs"
+            >
+              {airportLabel(iata)}
+              <button
+                type="button"
+                className="ml-0.5 rounded-sm hover:bg-muted p-0.5"
+                onClick={() => remove(iata)}
+                aria-label={`Remove ${iata}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Profile page ──────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
   const { toast } = useToast();
@@ -40,7 +197,7 @@ export default function ProfilePage() {
     email: "",
     phone: "",
     company: "",
-    preferredAirport: "",
+    preferredAirport: [] as string[],
     qualifications: "",
   });
 
@@ -60,7 +217,7 @@ export default function ProfilePage() {
         email: profileQ.data.email ?? "",
         phone: profileQ.data.phone ?? "",
         company: profileQ.data.company ?? "",
-        preferredAirport: profileQ.data.preferredAirport ?? "",
+        preferredAirport: profileQ.data.preferredAirport ?? [],
         qualifications: profileQ.data.qualifications ?? "",
       });
     }
@@ -208,15 +365,14 @@ export default function ProfilePage() {
                 placeholder="Employer / contractor"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-airport">Preferred airport</Label>
-              <Input
-                id="prof-airport"
-                value={form.preferredAirport}
-                onChange={(e) => setForm((f) => ({ ...f, preferredAirport: e.target.value }))}
-                placeholder="e.g. LHR, AMS"
-              />
-            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Preferred airports</Label>
+            <AirportMultiSelect
+              value={form.preferredAirport}
+              onChange={(val) => setForm((f) => ({ ...f, preferredAirport: val }))}
+            />
           </div>
 
           <div className="space-y-1.5">
