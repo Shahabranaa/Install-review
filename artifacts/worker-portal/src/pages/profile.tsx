@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiPatch, apiPost } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Save, KeyRound, User, Lock } from "lucide-react";
+import { Loader2, Save, KeyRound, User, Lock, FileText, Upload, ExternalLink } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface WorkerProfile {
   id: number;
@@ -20,6 +22,7 @@ interface WorkerProfile {
   portalUsername: string | null;
   windaId: string | null;
   roleName: string | null;
+  cvWasabiKey: string | null;
 }
 
 export default function ProfilePage() {
@@ -46,6 +49,9 @@ export default function ProfilePage() {
     newPassword: "",
     confirmPassword: "",
   });
+
+  const cvInputRef = useRef<HTMLInputElement>(null);
+  const [cvUploading, setCvUploading] = useState(false);
 
   useEffect(() => {
     if (profileQ.data) {
@@ -86,6 +92,38 @@ export default function ProfilePage() {
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     saveMut.mutate(form);
+  }
+
+  async function handleCvUpload(file: File) {
+    if (file.type !== "application/pdf") {
+      toast({ title: "Invalid file type", description: "Only PDF files are accepted.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "CV must be under 10 MB.", variant: "destructive" });
+      return;
+    }
+    setCvUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${BASE}/api/worker-portal/profile/cv`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? `Upload failed: ${res.status}`);
+      }
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      toast({ title: "CV uploaded successfully" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: String(err), variant: "destructive" });
+    } finally {
+      setCvUploading(false);
+      if (cvInputRef.current) cvInputRef.current.value = "";
+    }
   }
 
   function handlePwChange(e: React.FormEvent) {
@@ -221,6 +259,92 @@ export default function ProfilePage() {
             </Button>
           </div>
         </form>
+      </section>
+
+      {/* ── CV / Résumé ── */}
+      <section className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-5 py-4 border-b flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">CV / Résumé</h2>
+        </div>
+
+        <div className="px-5 py-5">
+          {profile?.cvWasabiKey ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <FileText className="h-8 w-8 text-primary/60 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {profile.cvWasabiKey.split("/").pop()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">PDF on file</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  asChild
+                >
+                  <a
+                    href={`${BASE}/api/worker-portal/profile/cv`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View CV
+                  </a>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={cvUploading}
+                  onClick={() => cvInputRef.current?.click()}
+                >
+                  {cvUploading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Replace
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <p className="text-sm text-muted-foreground flex-1">
+                No CV uploaded yet. Upload a PDF to share with administrators.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 flex-shrink-0"
+                disabled={cvUploading}
+                onClick={() => cvInputRef.current?.click()}
+              >
+                {cvUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                Upload CV
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">PDF only · max 10 MB</p>
+          <input
+            ref={cvInputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleCvUpload(file);
+            }}
+          />
+        </div>
       </section>
 
       {/* ── Change password ── */}

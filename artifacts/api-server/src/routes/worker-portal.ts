@@ -30,6 +30,18 @@ const certFileUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
 
+const cvFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter(_req, file, cb) {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are accepted"));
+    }
+  },
+});
+
 function getClientIp(req: Request): string | null {
   return (
     (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
@@ -946,6 +958,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         qualifications: workersTable.qualifications,
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
+        cvWasabiKey: workersTable.cvWasabiKey,
         roleName: workforceRolesTable.name,
       })
       .from(workersTable)
@@ -1024,6 +1037,103 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     res.json(updated);
   } catch (err) {
     logger.error({ err }, "worker-portal profile PATCH error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/profile/cv
+router.post(
+  "/worker-portal/profile/cv",
+  requireWorkerAuth,
+  cvFileUpload.single("file"),
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = req.session.workerId!;
+
+      if (!req.file) {
+        res.status(400).json({ error: "A PDF file is required" });
+        return;
+      }
+
+      const wasabi = await getWasabiClientAndCreds();
+      if (!wasabi) {
+        res.status(503).json({ error: "Storage not configured" });
+        return;
+      }
+
+      const safeName = req.file.originalname
+        .replace(/[\\/\r\n\t]+/g, "_")
+        .replace(/\.\.+/g, "_")
+        .slice(0, 120);
+      const key = `workers/${workerId}/cv/${safeName}`;
+
+      await wasabi.client.send(
+        new PutObjectCommand({
+          Bucket: wasabi.creds.bucket,
+          Key: key,
+          Body: req.file.buffer,
+          ContentType: "application/pdf",
+        }),
+      );
+
+      await db
+        .update(workersTable)
+        .set({ cvWasabiKey: key, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
+
+      await logActivity(workerId, "cv_uploaded", safeName, getClientIp(req));
+
+      res.json({ cvWasabiKey: key, filename: safeName });
+    } catch (err) {
+      logger.error({ err }, "worker-portal cv POST error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// GET /api/worker-portal/profile/cv
+router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ cvWasabiKey: workersTable.cvWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.cvWasabiKey) {
+      res.status(404).json({ error: "No CV on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) {
+      res.status(503).json({ error: "Storage not configured" });
+      return;
+    }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
+    );
+
+    const filename = row.cvWasabiKey.split("/").pop() ?? "cv.pdf";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    logger.error({ err }, "worker-portal cv GET error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });

@@ -65,6 +65,7 @@ interface WorkerDetail {
   notes: string | null;
   roleId: number | null;
   portalUsername: string | null;
+  cvWasabiKey: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
   assignments: SiteAssignment[];
@@ -890,6 +891,21 @@ export default function WorkerProfilePage() {
               <p className="text-sm">{worker.notes}</p>
             </div>
           )}
+          <div>
+            <p className="text-xs text-muted-foreground">CV / Résumé</p>
+            {worker.cvWasabiKey ? (
+              <a
+                href={`${BASE}/api/workforce/workers/${worker.id}/cv`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                Download CV
+              </a>
+            ) : (
+              <p className="text-sm text-muted-foreground">No CV on file</p>
+            )}
+          </div>
         </div>
       </div>
 

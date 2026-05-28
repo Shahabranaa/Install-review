@@ -18,6 +18,8 @@ export const workersTable = pgTable("workers", {
   passportNo: text("passport_no"),
   preferredAirport: text("preferred_airport"),
   qualifications: text("qualifications"),
+  // CV file (Wasabi key)
+  cvWasabiKey: text("cv_wasabi_key"),
   // Worker portal credentials
   portalUsername: text("portal_username").unique(),
   portalPasswordHash: text("portal_password_hash"),

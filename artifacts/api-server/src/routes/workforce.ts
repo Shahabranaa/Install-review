@@ -358,6 +358,48 @@ router.get("/workforce/workers/:id", requireAuth, async (req, res): Promise<void
   }
 });
 
+// GET /api/workforce/workers/:id/cv — admin proxy to stream worker CV from Wasabi
+router.get("/workforce/workers/:id/cv", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [worker] = await db
+      .select({ cvWasabiKey: workersTable.cvWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, id));
+
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+    if (!worker.cvWasabiKey) { res.status(404).json({ error: "No CV on file" }); return; }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Storage not configured" }); return; }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: worker.cvWasabiKey }),
+    );
+
+    const filename = worker.cvWasabiKey.split("/").pop() ?? "cv.pdf";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
 router.patch("/workforce/workers/:id", requireAuth, async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.id ?? "");
