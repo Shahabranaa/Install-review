@@ -42,6 +42,22 @@ const cvFileUpload = multer({
   },
 });
 
+function cvUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  cvFileUpload.single("file")(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "File exceeds the 10 MB limit"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
+
 function getClientIp(req: Request): string | null {
   return (
     (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
@@ -1045,7 +1061,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
 router.post(
   "/worker-portal/profile/cv",
   requireWorkerAuth,
-  cvFileUpload.single("file"),
+  cvUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const workerId = req.session.workerId!;
