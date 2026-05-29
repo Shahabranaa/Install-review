@@ -16,13 +16,13 @@ import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
   Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
-  Briefcase,
+  Briefcase, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
+type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING" | "REQUIRES_ACTION";
 type WorkerSiteStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 
 interface Certification {
@@ -40,6 +40,8 @@ interface WorkerCert {
   dateAchieved: string | null;
   expiryDate: string | null;
   verified: boolean;
+  rejected: boolean;
+  rejectionComment: string | null;
   fileUrl: string | null;
   notes: string | null;
   certification: Certification;
@@ -122,6 +124,9 @@ interface PPEAllocation {
 }
 
 function certStatusInfo(wc: WorkerCert): { status: CertStatus; label: string; icon: React.ComponentType<{ className?: string }>; color: string } {
+  if (wc.rejected) {
+    return { status: "REQUIRES_ACTION", label: "Rejected", icon: AlertCircle, color: "text-red-500" };
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const in30 = new Date(today);
@@ -521,6 +526,8 @@ export default function WorkerProfilePage() {
   }
 
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
+  const [rejectTarget, setRejectTarget] = useState<WorkerCert | null>(null);
+  const [rejectComment, setRejectComment] = useState("");
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -763,6 +770,22 @@ export default function WorkerProfilePage() {
       toast({ title: newVerified ? "Certification verified" : "Verification removed" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const rejectCertMutation = useMutation({
+    mutationFn: ({ certId, comment }: { certId: number; comment: string }) =>
+      apiPatch(`/api/workforce/workers/${workerId}/certifications/${certId}/reject`, {
+        rejected: true,
+        rejectionComment: comment.trim() || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Certification rejected" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+      setRejectTarget(null);
+      setRejectComment("");
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -1164,6 +1187,24 @@ export default function WorkerProfilePage() {
                           {verifyingCertIds.has(wc.certificationId)
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={cn(
+                            "h-7 w-7 transition-colors",
+                            wc.rejected
+                              ? "text-red-500 hover:text-red-600"
+                              : "text-muted-foreground hover:text-red-500",
+                          )}
+                          title={wc.rejected ? "Rejection sent" : "Reject certification"}
+                          onClick={() => {
+                            setRejectTarget(wc);
+                            setRejectComment(wc.rejectionComment ?? "");
+                          }}
+                          data-testid={`button-reject-cert-${wc.certificationId}`}
+                        >
+                          <AlertCircle className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           size="icon"
@@ -1962,6 +2003,45 @@ export default function WorkerProfilePage() {
               data-testid="button-save-portal-creds"
             >
               {setPortalCredsMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving…</> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject certification dialog */}
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectComment(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reject certification</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Rejecting <span className="font-medium text-foreground">{rejectTarget?.certification.name}</span> will
+              notify the worker that action is required. You can optionally include a reason.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="reject-comment">Reason (optional)</Label>
+              <textarea
+                id="reject-comment"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                rows={3}
+                placeholder="e.g. Document is unreadable, please re-upload"
+                value={rejectComment}
+                onChange={(e) => setRejectComment(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectComment(""); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={rejectCertMutation.isPending}
+              onClick={() => rejectTarget && rejectCertMutation.mutate({ certId: rejectTarget.certificationId, comment: rejectComment })}
+            >
+              {rejectCertMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Reject
             </Button>
           </DialogFooter>
         </DialogContent>

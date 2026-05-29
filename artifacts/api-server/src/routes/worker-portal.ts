@@ -596,6 +596,8 @@ router.get("/worker-portal/compliance", requireWorkerAuth, async (req, res): Pro
 
         if (!held) {
           status = "MISSING";
+        } else if (held.rejected) {
+          status = "MISSING";
         } else if (held.expiryDate) {
           const expiry = new Date(held.expiryDate);
           expiry.setHours(0, 0, 0, 0);

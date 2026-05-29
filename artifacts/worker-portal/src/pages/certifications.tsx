@@ -54,12 +54,14 @@ interface WorkerCert {
   dateAchieved: string | null;
   expiryDate: string | null;
   verified: boolean;
+  rejected: boolean;
+  rejectionComment: string | null;
   fileUrl: string | null;
   notes: string | null;
   certification: CertType;
 }
 
-type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
+type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING" | "REQUIRES_ACTION";
 type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS" | "AWAITING_REVIEW";
 
 interface ComplianceItem {
@@ -95,16 +97,14 @@ function certStatusInfo(wc: WorkerCert): {
   color: string;
   badgeClass: string;
 } {
+  if (wc.rejected || !wc.fileUrl || !wc.dateAchieved || !wc.expiryDate) {
+    return { status: "REQUIRES_ACTION", label: "Requires action", icon: AlertTriangle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const in30 = new Date(today);
   in30.setDate(in30.getDate() + 30);
 
-  if (!wc.expiryDate) {
-    return wc.verified
-      ? { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-      : { status: "NOT_VERIFIED", label: "Pending verification", icon: HelpCircle, color: "text-orange-500", badgeClass: "bg-orange-50 text-orange-700 border-orange-200" };
-  }
   const exp = new Date(wc.expiryDate);
   exp.setHours(0, 0, 0, 0);
   if (exp < today)
@@ -118,6 +118,7 @@ function certStatusInfo(wc: WorkerCert): {
 
 function complianceItemBadge(status: CertStatus): { label: string; cls: string } {
   switch (status) {
+    case "REQUIRES_ACTION": return { label: "Requires action", cls: "bg-red-50 text-red-700 border-red-200" };
     case "MISSING":    return { label: "Missing",          cls: "bg-red-50 text-red-700 border-red-200" };
     case "EXPIRED":    return { label: "Expired",          cls: "bg-red-50 text-red-700 border-red-200" };
     case "NOT_VERIFIED": return { label: "Awaiting review", cls: "bg-orange-50 text-orange-700 border-orange-200" };
@@ -535,7 +536,7 @@ export default function CertificationsPage() {
                         <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
                       )}
 
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span
                           className={cn(
                             "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border",
@@ -558,6 +559,12 @@ export default function CertificationsPage() {
                           </a>
                         )}
                       </div>
+                      {wc.rejected && wc.rejectionComment && (
+                        <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1">
+                          <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                          {wc.rejectionComment}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 flex-shrink-0">

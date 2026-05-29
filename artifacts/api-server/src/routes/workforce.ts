@@ -880,7 +880,41 @@ router.patch("/workforce/workers/:id/certifications/:certId", requireAuth, async
     if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { dateAchieved, expiryDate, verified, verifiedAt, fileUrl, notes } = req.body;
     const [updated] = await db.update(workerCertificationsTable)
-      .set({ dateAchieved, expiryDate, verified, verifiedAt, fileUrl, notes, updatedAt: new Date() })
+      .set({
+        dateAchieved,
+        expiryDate,
+        verified,
+        verifiedAt,
+        fileUrl,
+        notes,
+        updatedAt: new Date(),
+        ...(verified === true ? { rejected: false, rejectionComment: null } : {}),
+      })
+      .where(and(
+        eq(workerCertificationsTable.workerId, workerId),
+        eq(workerCertificationsTable.certificationId, certificationId),
+      )).returning();
+    if (!updated) { res.status(404).json({ error: "Worker certification not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.patch("/workforce/workers/:id/certifications/:certId/reject", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const workerId = parseInt(req.params.id ?? "");
+    const certificationId = parseInt(req.params.certId ?? "");
+    if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { rejected, rejectionComment } = req.body;
+    const [updated] = await db.update(workerCertificationsTable)
+      .set({
+        rejected: rejected ?? true,
+        rejectionComment: rejectionComment ?? null,
+        verified: false,
+        verifiedAt: null,
+        updatedAt: new Date(),
+      })
       .where(and(
         eq(workerCertificationsTable.workerId, workerId),
         eq(workerCertificationsTable.certificationId, certificationId),
