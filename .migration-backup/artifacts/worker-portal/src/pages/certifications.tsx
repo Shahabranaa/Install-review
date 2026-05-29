@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiUpload, apiUploadPatch, apiDelete } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -27,18 +26,14 @@ import {
   Pencil,
   Trash2,
   Paperclip,
-  LogOut,
   CheckCircle2,
   XCircle,
   Clock,
   HelpCircle,
-  HardHat,
   Loader2,
   AlertTriangle,
   CheckCheck,
   Building2,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,13 +54,15 @@ interface WorkerCert {
   dateAchieved: string | null;
   expiryDate: string | null;
   verified: boolean;
+  rejected: boolean;
+  rejectionComment: string | null;
   fileUrl: string | null;
   notes: string | null;
   certification: CertType;
 }
 
-type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
-type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
+type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING" | "REQUIRES_ACTION";
+type SiteOverallStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS" | "AWAITING_REVIEW";
 
 interface ComplianceItem {
   certId: number;
@@ -85,6 +82,7 @@ interface SiteCompliance {
   validCount: number;
   expiringCount: number;
   missingCount: number;
+  awaitingReviewCount: number;
   items: ComplianceItem[];
 }
 
@@ -99,27 +97,28 @@ function certStatusInfo(wc: WorkerCert): {
   color: string;
   badgeClass: string;
 } {
+  if (wc.rejected || !wc.fileUrl || !wc.dateAchieved || !wc.expiryDate) {
+    return { status: "REQUIRES_ACTION", label: "Requires action", icon: AlertTriangle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const in30 = new Date(today);
   in30.setDate(in30.getDate() + 30);
 
-  if (!wc.expiryDate) {
-    return wc.verified
-      ? { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-      : { status: "NOT_VERIFIED", label: "Pending verification", icon: HelpCircle, color: "text-orange-500", badgeClass: "bg-orange-50 text-orange-700 border-orange-200" };
-  }
   const exp = new Date(wc.expiryDate);
   exp.setHours(0, 0, 0, 0);
   if (exp < today)
     return { status: "EXPIRED", label: "Expired", icon: XCircle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
   if (exp <= in30)
     return { status: "EXPIRING_SOON", label: "Expiring soon", icon: Clock, color: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" };
+  if (!wc.verified)
+    return { status: "NOT_VERIFIED", label: "Pending verification", icon: HelpCircle, color: "text-orange-500", badgeClass: "bg-orange-50 text-orange-700 border-orange-200" };
   return { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
 
 function complianceItemBadge(status: CertStatus): { label: string; cls: string } {
   switch (status) {
+    case "REQUIRES_ACTION": return { label: "Requires action", cls: "bg-red-50 text-red-700 border-red-200" };
     case "MISSING":    return { label: "Missing",          cls: "bg-red-50 text-red-700 border-red-200" };
     case "EXPIRED":    return { label: "Expired",          cls: "bg-red-50 text-red-700 border-red-200" };
     case "NOT_VERIFIED": return { label: "Awaiting review", cls: "bg-orange-50 text-orange-700 border-orange-200" };
@@ -150,7 +149,6 @@ const EMPTY_FORM: CertFormState = {
 };
 
 export default function CertificationsPage() {
-  const { worker, logout } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -161,7 +159,6 @@ export default function CertificationsPage() {
   const [form, setForm] = useState<CertFormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
-  const [expandedSites, setExpandedSites] = useState<Set<number>>(new Set<number>());
 
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
@@ -180,15 +177,6 @@ export default function CertificationsPage() {
     staleTime: 60 * 1000,
   });
 
-  useEffect(() => {
-    if (!complianceQ.data) return;
-    const issueIds = complianceQ.data.sites
-      .filter((s) => s.overallStatus === "NOT_COMPLIANT" || s.overallStatus === "EXPIRING_SOON")
-      .map((s) => s.siteId);
-    if (issueIds.length > 0) {
-      setExpandedSites(new Set(issueIds));
-    }
-  }, [complianceQ.data]);
 
   function buildFormData(f: CertFormState) {
     const fd = new FormData();
@@ -260,15 +248,6 @@ export default function CertificationsPage() {
     setAddOpen(true);
   }
 
-  function toggleSite(siteId: number) {
-    setExpandedSites((prev) => {
-      const next = new Set(prev);
-      if (next.has(siteId)) next.delete(siteId);
-      else next.add(siteId);
-      return next;
-    });
-  }
-
   const certs = certsQ.data ?? [];
   const certTypes = typesQ.data ?? [];
   const complianceSites = complianceQ.data?.sites ?? [];
@@ -287,34 +266,19 @@ export default function CertificationsPage() {
     complianceSites.every(
       (s) => s.overallStatus === "READY" || s.overallStatus === "NO_REQUIREMENTS",
     );
+  // Worker has submitted everything but some certs are awaiting admin review
+  const allSubmitted =
+    !allReady &&
+    complianceSites.length > 0 &&
+    complianceSites.every(
+      (s) =>
+        s.overallStatus === "READY" ||
+        s.overallStatus === "NO_REQUIREMENTS" ||
+        s.overallStatus === "AWAITING_REVIEW",
+    );
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <HardHat className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm leading-none">Worker Portal</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{worker?.name}</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-muted-foreground"
-            onClick={() => void logout()}
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
 
         {/* ── Compliance requirements section ── */}
         {complianceQ.isLoading ? (
@@ -354,11 +318,22 @@ export default function CertificationsPage() {
                   </p>
                 </div>
               </div>
+            ) : allSubmitted ? (
+              <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-center gap-3">
+                <Clock className="h-5 w-5 text-orange-500 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-800">All certifications submitted</p>
+                  <p className="text-xs text-orange-600 mt-0.5">
+                    Your documents are awaiting review by an administrator.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
                 {sitesWithIssues.map((site) => {
-                  const isExpanded = expandedSites.has(site.siteId);
                   const isNotCompliant = site.overallStatus === "NOT_COMPLIANT";
+                  // Show all items that aren't fully valid — MISSING, EXPIRED, NOT_VERIFIED, EXPIRING_SOON
+                  const visibleItems = site.items.filter((i) => i.status !== "VALID");
 
                   return (
                     <div
@@ -370,51 +345,44 @@ export default function CertificationsPage() {
                           : "border-amber-200 bg-amber-50/40",
                       )}
                     >
-                      {/* Site header */}
-                      <button
-                        type="button"
-                        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-black/[0.02] transition-colors"
-                        onClick={() => toggleSite(site.siteId)}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <AlertTriangle
-                            className={cn(
-                              "h-4 w-4 flex-shrink-0",
-                              isNotCompliant ? "text-red-500" : "text-amber-500",
-                            )}
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate">{site.siteName}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {site.missingCount > 0 && (
-                                <span className="text-red-600 font-medium">
-                                  {site.missingCount} action{site.missingCount !== 1 ? "s" : ""} required
-                                  {site.expiringCount > 0 ? " · " : ""}
-                                </span>
-                              )}
-                              {site.expiringCount > 0 && (
-                                <span className="text-amber-600 font-medium">
-                                  {site.expiringCount} expiring soon
-                                </span>
-                              )}
-                              {" · "}
-                              {site.validCount}/{site.requiredCount} complete
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0 text-muted-foreground">
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
+                      {/* Site header — non-interactive, always visible */}
+                      <div className="px-4 py-3 flex items-center gap-3">
+                        <AlertTriangle
+                          className={cn(
+                            "h-4 w-4 flex-shrink-0",
+                            isNotCompliant ? "text-red-500" : "text-amber-500",
                           )}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{site.siteName}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {site.missingCount > 0 && (
+                              <span className="text-red-600 font-medium">
+                                {site.missingCount} action{site.missingCount !== 1 ? "s" : ""} required
+                                {(site.expiringCount > 0 || site.awaitingReviewCount > 0) ? " · " : ""}
+                              </span>
+                            )}
+                            {site.expiringCount > 0 && (
+                              <span className="text-amber-600 font-medium">
+                                {site.expiringCount} expiring soon
+                                {site.awaitingReviewCount > 0 ? " · " : ""}
+                              </span>
+                            )}
+                            {site.awaitingReviewCount > 0 && (
+                              <span className="text-orange-600 font-medium">
+                                {site.awaitingReviewCount} awaiting review
+                              </span>
+                            )}
+                            {" · "}
+                            {site.validCount}/{site.requiredCount} complete
+                          </p>
                         </div>
-                      </button>
+                      </div>
 
-                      {/* Cert item list */}
-                      {isExpanded && (
+                      {/* Cert items — always visible, no expand needed */}
+                      {visibleItems.length > 0 && (
                         <div className="border-t border-inherit divide-y divide-inherit">
-                          {site.items.map((item) => {
+                          {visibleItems.map((item) => {
                             const badge = complianceItemBadge(item.status);
                             const needsAction =
                               item.status === "MISSING" || item.status === "EXPIRED";
@@ -487,6 +455,24 @@ export default function CertificationsPage() {
                       </div>
                     </div>
                   ))}
+                {/* Sites where all certs submitted but awaiting admin review */}
+                {complianceSites
+                  .filter((s) => s.overallStatus === "AWAITING_REVIEW")
+                  .map((site) => (
+                    <div
+                      key={site.siteId}
+                      className="rounded-xl border border-orange-200 bg-orange-50/50 px-4 py-2.5 flex items-center gap-3"
+                    >
+                      <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{site.siteName}</p>
+                        <p className="text-xs text-orange-600">
+                          {site.awaitingReviewCount} cert{site.awaitingReviewCount !== 1 ? "s" : ""} awaiting admin review
+                          {" · "}{site.validCount}/{site.requiredCount} complete
+                        </p>
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
           </section>
@@ -550,7 +536,7 @@ export default function CertificationsPage() {
                         <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
                       )}
 
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span
                           className={cn(
                             "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border",
@@ -573,6 +559,12 @@ export default function CertificationsPage() {
                           </a>
                         )}
                       </div>
+                      {wc.rejected && wc.rejectionComment && (
+                        <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1">
+                          <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                          {wc.rejectionComment}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -599,7 +591,6 @@ export default function CertificationsPage() {
             </div>
           )}
         </section>
-      </main>
 
       {/* Add Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

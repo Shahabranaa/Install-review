@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
@@ -15,13 +15,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
-  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw,
+  Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
+  Briefcase, AlertCircle, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING";
+type CertStatus = "VALID" | "EXPIRING_SOON" | "EXPIRED" | "NOT_VERIFIED" | "MISSING" | "REQUIRES_ACTION";
 type WorkerSiteStatus = "READY" | "EXPIRING_SOON" | "NOT_COMPLIANT" | "NO_REQUIREMENTS";
 
 interface Certification {
@@ -39,6 +40,8 @@ interface WorkerCert {
   dateAchieved: string | null;
   expiryDate: string | null;
   verified: boolean;
+  rejected: boolean;
+  rejectionComment: string | null;
   fileUrl: string | null;
   notes: string | null;
   certification: Certification;
@@ -65,6 +68,15 @@ interface WorkerDetail {
   notes: string | null;
   roleId: number | null;
   portalUsername: string | null;
+  passportNo: string | null;
+  passportIssueDate: string | null;
+  passportExpiryDate: string | null;
+  passportPlaceOfBirth: string | null;
+  passportWasabiKey: string | null;
+  nokName: string | null;
+  nokRelationship: string | null;
+  nokPhone: string | null;
+  cvWasabiKey: string | null;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
   assignments: SiteAssignment[];
@@ -85,6 +97,16 @@ interface SiteComplianceResult {
 
 interface Role { id: number; name: string }
 
+interface RoleHistoryEntry {
+  id: number;
+  workerId: number;
+  roleId: number | null;
+  roleNameSnapshot: string;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
+}
+
 interface PPEType { id: number; name: string; description: string | null }
 interface PPEAllocation {
   id: number;
@@ -102,6 +124,9 @@ interface PPEAllocation {
 }
 
 function certStatusInfo(wc: WorkerCert): { status: CertStatus; label: string; icon: React.ComponentType<{ className?: string }>; color: string } {
+  if (wc.rejected) {
+    return { status: "REQUIRES_ACTION", label: "Rejected", icon: AlertCircle, color: "text-red-500" };
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const in30 = new Date(today);
@@ -130,6 +155,354 @@ function siteStatusConfig(status: WorkerSiteStatus) {
   }
 }
 
+interface RotationPeriod {
+  id: number;
+  assignmentId: number;
+  plannedStart: string;
+  plannedEnd: string | null;
+  status: string;
+  notes: string | null;
+}
+
+const ROTATION_STATUSES = ["planned", "on-site", "completed", "cancelled"] as const;
+
+function rotationStatusBadge(status: string) {
+  switch (status) {
+    case "on-site": return "border-emerald-400 text-emerald-600";
+    case "completed": return "text-muted-foreground";
+    case "cancelled": return "border-red-300 text-red-500";
+    default: return "border-amber-400 text-amber-600";
+  }
+}
+
+function AssignmentWithRotations({
+  assignment,
+  workerRole,
+  isAdmin,
+}: {
+  assignment: SiteAssignment;
+  workerRole: { id: number; name: string } | null;
+  isAdmin: boolean;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingRotation, setEditingRotation] = useState<RotationPeriod | null>(null);
+  const blankForm = { plannedStart: "", plannedEnd: "", status: "planned", notes: "" };
+  const [form, setForm] = useState(blankForm);
+
+  const blankGenForm = { startDate: "", onDays: "21", offDays: "21", count: "6" };
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [genForm, setGenForm] = useState(blankGenForm);
+
+  const genPreview = useMemo(() => {
+    const { startDate, onDays, offDays, count } = genForm;
+    if (!startDate) return [];
+    const on = parseInt(onDays), off = parseInt(offDays), n = parseInt(count);
+    if (isNaN(on) || isNaN(off) || isNaN(n) || on < 1 || off < 0 || n < 1 || n > 52) return [];
+    const result: { start: string; end: string }[] = [];
+    let cur = startDate;
+    for (let i = 0; i < n; i++) {
+      const d = new Date(`${cur}T00:00:00`);
+      const endD = new Date(d);
+      endD.setDate(endD.getDate() + on - 1);
+      const fmt = (dt: Date) => dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      result.push({ start: fmt(d), end: fmt(endD) });
+      endD.setDate(endD.getDate() + off + 1);
+      cur = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, "0")}-${String(endD.getDate()).padStart(2, "0")}`;
+    }
+    return result;
+  }, [genForm]);
+
+  const { data: rotations, isLoading } = useQuery<RotationPeriod[]>({
+    queryKey: ["rotations", assignment.id],
+    queryFn: () => apiFetch<RotationPeriod[]>(`/api/workforce/assignments/${assignment.id}/rotations`),
+    enabled: open,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/assignments/${assignment.id}/rotations`, {
+      plannedStart: form.plannedStart,
+      plannedEnd: form.plannedEnd || null,
+      status: form.status,
+      notes: form.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "Rotation added" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setShowAdd(false);
+      setForm(blankForm);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (id: number) => apiPatch(`/api/workforce/rotations/${id}`, {
+      plannedStart: form.plannedStart,
+      plannedEnd: form.plannedEnd || null,
+      status: form.status,
+      notes: form.notes || null,
+    }),
+    onSuccess: () => {
+      toast({ title: "Rotation updated" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setEditingRotation(null);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiDelete(`/api/workforce/rotations/${id}`),
+    onSuccess: () => {
+      toast({ title: "Rotation deleted" });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => apiPost(`/api/workforce/assignments/${assignment.id}/rotations/generate`, {
+      startDate: genForm.startDate,
+      onDays: parseInt(genForm.onDays),
+      offDays: parseInt(genForm.offDays),
+      count: parseInt(genForm.count),
+    }),
+    onSuccess: () => {
+      toast({ title: `${genPreview.length} rotation periods generated` });
+      void qc.invalidateQueries({ queryKey: ["rotations", assignment.id] });
+      setShowGenerate(false);
+      setGenForm(blankGenForm);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  function openAdd() {
+    setForm(blankForm);
+    setShowAdd(true);
+  }
+
+  function openEdit(r: RotationPeriod) {
+    setForm({ plannedStart: r.plannedStart, plannedEnd: r.plannedEnd ?? "", status: r.status, notes: r.notes ?? "" });
+    setEditingRotation(r);
+  }
+
+  const upcomingCount = (rotations ?? []).filter(
+    r => r.plannedStart >= new Date().toISOString().split("T")[0] && r.status !== "cancelled" && r.status !== "completed"
+  ).length;
+
+  const RotationFormFields = (
+    <div className="space-y-3 py-2">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Start Date *</Label>
+          <Input type="date" value={form.plannedStart} onChange={e => setForm(f => ({ ...f, plannedStart: e.target.value }))} />
+        </div>
+        <div>
+          <Label>End Date</Label>
+          <Input type="date" value={form.plannedEnd} onChange={e => setForm(f => ({ ...f, plannedEnd: e.target.value }))} />
+        </div>
+      </div>
+      <div>
+        <Label>Status</Label>
+        <select
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+          value={form.status}
+          onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+        >
+          {ROTATION_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+        </select>
+      </div>
+      <div>
+        <Label>Notes</Label>
+        <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="px-4 py-3">
+        <button
+          className="w-full text-left flex items-center gap-3"
+          onClick={() => setOpen(o => !o)}
+        >
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">{assignment.site.name}</p>
+            {assignment.site.location && <p className="text-xs text-muted-foreground">{assignment.site.location}</p>}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {upcomingCount > 0 && open && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <CalendarRange className="h-3 w-3" /> {upcomingCount} upcoming
+              </span>
+            )}
+            {workerRole && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">{workerRole.name}</Badge>
+            )}
+            <Badge
+              variant="outline"
+              className={cn("text-[10px]",
+                assignment.status === "active" ? "border-emerald-400 text-emerald-600" :
+                assignment.status === "pending" ? "border-amber-400 text-amber-600" : "text-muted-foreground",
+              )}
+            >
+              {assignment.status}
+            </Badge>
+            <CalendarRange className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "text-primary")} />
+          </div>
+        </button>
+
+        {open && (
+          <div className="mt-3 ml-0 border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <CalendarRange className="h-3 w-3" /> Rotation Periods
+              </span>
+              {isAdmin && (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => { setGenForm(blankGenForm); setShowGenerate(true); }} data-testid={`button-generate-rotations-${assignment.id}`}>
+                    <RotateCcw className="h-3 w-3 mr-1" /> Generate
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={openAdd} data-testid={`button-add-rotation-${assignment.id}`}>
+                    <Plus className="h-3 w-3 mr-1" /> Add
+                  </Button>
+                </div>
+              )}
+            </div>
+            {isLoading ? (
+              <div className="px-3 py-4 text-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto" />
+              </div>
+            ) : !rotations?.length ? (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                No rotation periods recorded.{isAdmin && " Click Add to create one."}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {rotations.map(r => (
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="font-medium">{new Date(`${r.plannedStart}T00:00:00`).toLocaleDateString("en-GB")}</span>
+                        {r.plannedEnd && (
+                          <>
+                            <span className="text-muted-foreground">→</span>
+                            <span>{new Date(`${r.plannedEnd}T00:00:00`).toLocaleDateString("en-GB")}</span>
+                          </>
+                        )}
+                      </div>
+                      {r.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{r.notes}</p>}
+                    </div>
+                    <Badge variant="outline" className={cn("text-[10px] flex-shrink-0", rotationStatusBadge(r.status))}>
+                      {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                    </Badge>
+                    {isAdmin && (
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openEdit(r)} data-testid={`button-edit-rotation-${r.id}`}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => deleteMutation.mutate(r.id)} disabled={deleteMutation.isPending} data-testid={`button-delete-rotation-${r.id}`}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={showAdd} onOpenChange={o => { setShowAdd(o); if (!o) setForm(blankForm); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Rotation Period — {assignment.site.name}</DialogTitle></DialogHeader>
+          {RotationFormFields}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={() => addMutation.mutate()} disabled={!form.plannedStart || addMutation.isPending} data-testid="button-save-rotation">
+              {addMutation.isPending ? "Saving…" : "Add Rotation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingRotation} onOpenChange={o => { if (!o) setEditingRotation(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Rotation — {assignment.site.name}</DialogTitle></DialogHeader>
+          {RotationFormFields}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRotation(null)}>Cancel</Button>
+            <Button onClick={() => editingRotation && editMutation.mutate(editingRotation.id)} disabled={!form.plannedStart || editMutation.isPending} data-testid="button-save-rotation-edit">
+              {editMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showGenerate} onOpenChange={o => { setShowGenerate(o); if (!o) setGenForm(blankGenForm); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Generate Rotation Schedule — {assignment.site.name}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-1">
+            <div>
+              <Label>First on-site start date *</Label>
+              <Input type="date" className="mt-1" value={genForm.startDate} onChange={e => setGenForm(f => ({ ...f, startDate: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Days on site</Label>
+                <Input type="number" min="1" max="365" className="mt-1" value={genForm.onDays} onChange={e => setGenForm(f => ({ ...f, onDays: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Days off</Label>
+                <Input type="number" min="0" max="365" className="mt-1" value={genForm.offDays} onChange={e => setGenForm(f => ({ ...f, offDays: e.target.value }))} />
+              </div>
+              <div>
+                <Label>No. of rotations</Label>
+                <Input type="number" min="1" max="52" className="mt-1" value={genForm.count} onChange={e => setGenForm(f => ({ ...f, count: e.target.value }))} />
+              </div>
+            </div>
+            {genPreview.length > 0 && (
+              <div className="border rounded-md overflow-hidden">
+                <div className="px-3 py-1.5 bg-muted/30 border-b text-xs font-medium text-muted-foreground">
+                  Preview — {genPreview.length} rotation{genPreview.length !== 1 ? "s" : ""}
+                </div>
+                <div className="divide-y max-h-52 overflow-y-auto">
+                  {genPreview.slice(0, 8).map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                      <span className="text-muted-foreground w-5 flex-shrink-0">{i + 1}.</span>
+                      <span className="font-medium">{p.start}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span>{p.end}</span>
+                    </div>
+                  ))}
+                  {genPreview.length > 8 && (
+                    <div className="px-3 py-1.5 text-xs text-muted-foreground">
+                      …and {genPreview.length - 8} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerate(false)}>Cancel</Button>
+            <Button
+              onClick={() => generateMutation.mutate()}
+              disabled={!genForm.startDate || genPreview.length === 0 || generateMutation.isPending}
+              data-testid="button-confirm-generate-rotations"
+            >
+              {generateMutation.isPending ? "Generating…" : `Generate ${genPreview.length > 0 ? genPreview.length : ""} Rotations`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function WorkerProfilePage() {
   const [, params] = useRoute("/workers/:id");
   const workerId = params ? parseInt(params.id) : NaN;
@@ -153,12 +526,18 @@ export default function WorkerProfilePage() {
   }
 
   const [certEditForm, setCertEditForm] = useState({ dateAchieved: "", expiryDate: "", verified: false, fileUrl: "", notes: "" });
+  const [rejectTarget, setRejectTarget] = useState<WorkerCert | null>(null);
+  const [rejectComment, setRejectComment] = useState("");
   const [editForm, setEditForm] = useState({ name: "", email: "", company: "", windaId: "", notes: "", roleId: "", newSiteId: "" });
   const [fileUploading, setFileUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cardUploadingCertId, setCardUploadingCertId] = useState<number | null>(null);
   const [verifyingCertIds, setVerifyingCertIds] = useState<Set<number>>(new Set());
   const [showIssuePPE, setShowIssuePPE] = useState(false);
+  const [showAddRole, setShowAddRole] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleHistoryEntry | null>(null);
+  const blankRoleForm = { roleId: "", startDate: "", endDate: "", notes: "", closeOpenEntry: true };
+  const [roleHistoryForm, setRoleHistoryForm] = useState(blankRoleForm);
   const today = new Date().toISOString().split("T")[0];
   const [issueForm, setIssueForm] = useState({ ppeTypeId: "", siteId: "", issuedAt: today, sizeSpec: "", notes: "" });
   const cardFileInputRef = useRef<HTMLInputElement>(null);
@@ -212,6 +591,56 @@ export default function WorkerProfilePage() {
     queryKey: ["workforce-ppe-types"],
     queryFn: () => apiFetch<PPEType[]>("/api/workforce/ppe-types"),
     enabled: isAdmin,
+  });
+
+  const { data: roleHistory } = useQuery<RoleHistoryEntry[]>({
+    queryKey: ["worker-role-history", workerId],
+    queryFn: () => apiFetch<RoleHistoryEntry[]>(`/api/workforce/workers/${workerId}/role-history`),
+    enabled: !isNaN(workerId) && isAdmin,
+  });
+
+  const addRoleMutation = useMutation({
+    mutationFn: () =>
+      apiPost(`/api/workforce/workers/${workerId}/role-history`, {
+        roleId: roleHistoryForm.roleId ? parseInt(roleHistoryForm.roleId) : null,
+        startDate: roleHistoryForm.startDate,
+        endDate: roleHistoryForm.endDate || null,
+        notes: roleHistoryForm.notes || null,
+        closeOpenEntry: roleHistoryForm.closeOpenEntry,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role entry added" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      setShowAddRole(false);
+      setRoleHistoryForm(blankRoleForm);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const editRoleMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiPatch(`/api/workforce/workers/${workerId}/role-history/${id}`, {
+        startDate: roleHistoryForm.startDate,
+        endDate: roleHistoryForm.endDate || null,
+        notes: roleHistoryForm.notes || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role entry updated" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      setEditingRole(null);
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (id: number) => apiDelete(`/api/workforce/workers/${workerId}/role-history/${id}`),
+    onSuccess: () => {
+      toast({ title: "Role entry deleted" });
+      void qc.invalidateQueries({ queryKey: ["worker-role-history", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
   function openEdit() {
@@ -341,6 +770,22 @@ export default function WorkerProfilePage() {
       toast({ title: newVerified ? "Certification verified" : "Verification removed" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
       void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const rejectCertMutation = useMutation({
+    mutationFn: ({ certId, comment }: { certId: number; comment: string }) =>
+      apiPatch(`/api/workforce/workers/${workerId}/certifications/${certId}/reject`, {
+        rejected: true,
+        rejectionComment: comment.trim() || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Certification rejected" });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      void qc.invalidateQueries({ queryKey: ["worker-compliance", workerId] });
+      setRejectTarget(null);
+      setRejectComment("");
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -545,6 +990,83 @@ export default function WorkerProfilePage() {
         </div>
       </div>
 
+      {/* Passport */}
+      {(worker.passportNo || worker.passportPlaceOfBirth || worker.passportIssueDate || worker.passportExpiryDate || worker.passportWasabiKey) && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Passport</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-4 py-4 text-sm">
+            {worker.passportNo && (
+              <div>
+                <p className="text-xs text-muted-foreground">Passport no.</p>
+                <p className="font-medium font-mono">{worker.passportNo}</p>
+              </div>
+            )}
+            {worker.passportPlaceOfBirth && (
+              <div>
+                <p className="text-xs text-muted-foreground">Place of birth</p>
+                <p className="font-medium">{worker.passportPlaceOfBirth}</p>
+              </div>
+            )}
+            {worker.passportIssueDate && (
+              <div>
+                <p className="text-xs text-muted-foreground">Issue date</p>
+                <p className="font-medium">{worker.passportIssueDate}</p>
+              </div>
+            )}
+            {worker.passportExpiryDate && (
+              <div>
+                <p className="text-xs text-muted-foreground">Expiry date</p>
+                <p className="font-medium">{worker.passportExpiryDate}</p>
+              </div>
+            )}
+            {worker.passportWasabiKey && (
+              <div>
+                <p className="text-xs text-muted-foreground">Passport scan</p>
+                <a
+                  href={`${BASE}/api/workforce/workers/${worker.id}/passport`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
+                  <Paperclip className="h-3 w-3" /> Download
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Next of Kin */}
+      {worker.nokName && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <User className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Next of Kin</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-4 py-4 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Name</p>
+              <p className="font-medium">{worker.nokName}</p>
+            </div>
+            {worker.nokRelationship && (
+              <div>
+                <p className="text-xs text-muted-foreground">Relationship</p>
+                <p className="font-medium">{worker.nokRelationship}</p>
+              </div>
+            )}
+            {worker.nokPhone && (
+              <div>
+                <p className="text-xs text-muted-foreground">Phone</p>
+                <p className="font-medium font-mono">{worker.nokPhone}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Portal Access (admin only) */}
       {isAdmin && (
         <div className="border rounded-xl bg-card p-4 flex items-center justify-between gap-4">
@@ -682,6 +1204,24 @@ export default function WorkerProfilePage() {
                         <Button
                           size="icon"
                           variant="ghost"
+                          className={cn(
+                            "h-7 w-7 transition-colors",
+                            wc.rejected
+                              ? "text-red-500 hover:text-red-600"
+                              : "text-muted-foreground hover:text-red-500",
+                          )}
+                          title={wc.rejected ? "Rejection sent" : "Reject certification"}
+                          onClick={() => {
+                            setRejectTarget(wc);
+                            setRejectComment(wc.rejectionComment ?? "");
+                          }}
+                          data-testid={`button-reject-cert-${wc.certificationId}`}
+                        >
+                          <AlertCircle className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           className="h-7 w-7 text-muted-foreground hover:text-primary"
                           onClick={() => openEditCert(wc)}
                           data-testid={`button-edit-cert-${wc.certificationId}`}
@@ -761,7 +1301,7 @@ export default function WorkerProfilePage() {
         </div>
       )}
 
-      {/* Site Assignments */}
+      {/* Site Assignments with Rotation Periods */}
       {worker.assignments.length > 0 && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
@@ -770,26 +1310,7 @@ export default function WorkerProfilePage() {
           </div>
           <div className="divide-y">
             {worker.assignments.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">{a.site.name}</p>
-                  {a.site.location && <p className="text-xs text-muted-foreground">{a.site.location}</p>}
-                </div>
-                {worker.role && (
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                    {worker.role.name}
-                  </Badge>
-                )}
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px]",
-                    a.status === "active" ? "border-emerald-400 text-emerald-600" :
-                    a.status === "pending" ? "border-amber-400 text-amber-600" : "text-muted-foreground",
-                  )}
-                >
-                  {a.status}
-                </Badge>
-              </div>
+              <AssignmentWithRotations key={a.id} assignment={a} workerRole={worker.role} isAdmin={isAdmin} />
             ))}
           </div>
         </div>
@@ -876,6 +1397,206 @@ export default function WorkerProfilePage() {
           )}
         </div>
       )}
+
+      {/* Role History */}
+      {isAdmin && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              <h2 className="font-semibold text-sm">Role History ({(roleHistory ?? []).length})</h2>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setRoleHistoryForm(blankRoleForm); setShowAddRole(true); }}
+              data-testid="button-add-role-history"
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add role
+            </Button>
+          </div>
+
+          {!roleHistory || roleHistory.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No role history recorded. Click "Add role" to start tracking this worker's career progression.
+            </div>
+          ) : (
+            <div className="divide-y">
+              {roleHistory.map((entry) => (
+                <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{entry.roleNameSnapshot}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
+                        {entry.endDate
+                          ? <> → {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
+                          : <> → <span className="text-emerald-600 font-medium">Current</span></>
+                        }
+                      </span>
+                      {entry.notes && <span className="italic">{entry.notes}</span>}
+                    </div>
+                  </div>
+                  {!entry.endDate && (
+                    <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600 flex-shrink-0">
+                      Current
+                    </Badge>
+                  )}
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-primary"
+                      onClick={() => {
+                        setRoleHistoryForm({
+                          roleId: entry.roleId ? String(entry.roleId) : "",
+                          startDate: entry.startDate,
+                          endDate: entry.endDate ?? "",
+                          notes: entry.notes ?? "",
+                          closeOpenEntry: false,
+                        });
+                        setEditingRole(entry);
+                      }}
+                      data-testid={`button-edit-role-${entry.id}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteRoleMutation.mutate(entry.id)}
+                      disabled={deleteRoleMutation.isPending}
+                      data-testid={`button-delete-role-${entry.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Role History Dialog */}
+      <Dialog open={showAddRole} onOpenChange={(o) => { setShowAddRole(o); if (!o) setRoleHistoryForm(blankRoleForm); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Role Entry</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Role *</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background mt-1"
+                value={roleHistoryForm.roleId}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, roleId: e.target.value }))}
+              >
+                <option value="">— Select role —</option>
+                {(roles ?? []).map((r) => (
+                  <option key={r.id} value={String(r.id)}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start date *</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.startDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End date <span className="text-muted-foreground text-xs">(blank = current)</span></Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.endDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                className="mt-1"
+                value={roleHistoryForm.notes}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={roleHistoryForm.closeOpenEntry}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, closeOpenEntry: e.target.checked }))}
+              />
+              Automatically close current open role entry
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddRole(false)}>Cancel</Button>
+            <Button
+              onClick={() => addRoleMutation.mutate()}
+              disabled={!roleHistoryForm.roleId || !roleHistoryForm.startDate || addRoleMutation.isPending}
+              data-testid="button-save-role-history"
+            >
+              {addRoleMutation.isPending ? "Saving…" : "Add Entry"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Role History Dialog */}
+      <Dialog open={!!editingRole} onOpenChange={(o) => { if (!o) setEditingRole(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Role Entry</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start date *</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.startDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End date <span className="text-muted-foreground text-xs">(blank = current)</span></Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={roleHistoryForm.endDate}
+                  onChange={(e) => setRoleHistoryForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                className="mt-1"
+                value={roleHistoryForm.notes}
+                onChange={(e) => setRoleHistoryForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRole(null)}>Cancel</Button>
+            <Button
+              onClick={() => editingRole && editRoleMutation.mutate(editingRole.id)}
+              disabled={!roleHistoryForm.startDate || editRoleMutation.isPending}
+              data-testid="button-save-role-history-edit"
+            >
+              {editRoleMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit worker dialog */}
       <Dialog open={showEdit} onOpenChange={setShowEdit}>
@@ -1295,6 +2016,45 @@ export default function WorkerProfilePage() {
               data-testid="button-save-portal-creds"
             >
               {setPortalCredsMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving…</> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject certification dialog */}
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectComment(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reject certification</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Rejecting <span className="font-medium text-foreground">{rejectTarget?.certification.name}</span> will
+              notify the worker that action is required. You can optionally include a reason.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="reject-comment">Reason (optional)</Label>
+              <textarea
+                id="reject-comment"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                rows={3}
+                placeholder="e.g. Document is unreadable, please re-upload"
+                value={rejectComment}
+                onChange={(e) => setRejectComment(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectComment(""); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={rejectCertMutation.isPending}
+              onClick={() => rejectTarget && rejectCertMutation.mutate({ certId: rejectTarget.certificationId, comment: rejectComment })}
+            >
+              {rejectCertMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Reject
             </Button>
           </DialogFooter>
         </DialogContent>

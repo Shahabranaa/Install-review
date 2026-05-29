@@ -13,7 +13,7 @@ export interface WorkerUser {
 interface AuthContextValue {
   worker: WorkerUser | null;
   isLoading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<"admin" | "worker">;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -41,8 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh().finally(() => setIsLoading(false));
   }, []);
 
-  async function login(identifier: string, password: string) {
-    const res = await fetch(`${API_BASE}/api/worker-portal/login`, {
+  async function login(identifier: string, password: string): Promise<"admin" | "worker"> {
+    const res = await fetch(`${API_BASE}/api/auth/unified-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -52,7 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const err = await res.json().catch(() => ({ error: "Login failed" }));
       throw new Error(err.error ?? "Login failed");
     }
-    setWorker(await res.json());
+    const data = await res.json() as { type: "admin" | "worker"; worker?: WorkerUser };
+    if (data.type === "worker" && data.worker) {
+      setWorker(data.worker);
+    }
+    return data.type;
   }
 
   async function logout() {

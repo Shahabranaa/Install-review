@@ -30,3 +30,7 @@ export * from "./worker-activity-logs";
 export * from "./clients";
 export * from "./ppe-types";
 export * from "./ppe-allocations";
+export * from "./worker-rotation-periods";
+export * from "./worker-schedule-change-requests";
+export * from "./worker-unavailability-periods";
+export * from "./worker-role-history";

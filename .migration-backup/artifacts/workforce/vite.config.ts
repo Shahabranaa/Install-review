@@ -5,12 +5,10 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const port = Number(process.env.PORT ?? 5173);
-const basePath = process.env.BASE_PATH ?? "/";
+const basePath = process.env.BASE_PATH ?? "/workforce/";
 
-// Strip the trailing slash to get the prefix, e.g. "/workforce/" → "/workforce"
 const basePrefix = basePath.replace(/\/$/, "");
 
-// Build proxy rules: handle both "/api" (direct) and "/<base>/api" (via Replit proxy)
 const proxyRules: Record<string, object> = {
   "/api": {
     target: "http://localhost:8080",

@@ -12,13 +12,19 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(identifier, password);
+      const type = await login(identifier, password);
+      if (type === "admin") {
+        setRedirecting(true);
+        window.location.href = "/workforce/";
+      }
+      // worker: AuthContext already set worker state; App will render the portal
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -34,7 +40,7 @@ export default function LoginPage() {
             <HardHat className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-xl font-bold">Worker Portal</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to view your certifications</p>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-6 bg-card shadow-sm">
@@ -45,7 +51,7 @@ export default function LoginPage() {
               data-testid="input-identifier"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="name@example.com"
+              placeholder="name@example.com or username"
               autoComplete="username"
               required
             />
@@ -81,10 +87,14 @@ export default function LoginPage() {
             </p>
           )}
 
+          {redirecting && (
+            <p className="text-sm text-muted-foreground text-center">Taking you to the Admin Portal…</p>
+          )}
+
           <Button
             type="submit"
             className="w-full"
-            disabled={loading}
+            disabled={loading || redirecting}
             data-testid="button-login"
           >
             {loading ? "Signing in…" : "Sign in"}

@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import usersRouter from "./users";
@@ -32,6 +32,24 @@ import workerPortalRouter from "./worker-portal";
 
 const router: IRouter = Router();
 
+// Public paths that do not require an admin/reviewer session.
+// Worker-portal has its own session auth handled within workerPortalRouter.
+const PUBLIC_PREFIXES = ["/health", "/auth/", "/worker-portal/"];
+
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const path = req.path;
+  if (PUBLIC_PREFIXES.some((p) => path === p.replace(/\/$/, "") || path.startsWith(p))) {
+    next();
+    return;
+  }
+  if (req.session?.sessionType === "worker" || !req.session?.userId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  next();
+}
+
+router.use(requireAuth);
 router.use(healthRouter);
 router.use(authRouter);
 router.use(usersRouter);

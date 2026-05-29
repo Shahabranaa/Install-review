@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { eq, and, or, ilike, inArray, sql, desc } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, sql, desc, asc } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -22,11 +22,53 @@ import {
   clientCertRequirementsTable,
   ppeTypesTable,
   ppeAllocationsTable,
+  workerRotationPeriodsTable,
+  workerScheduleChangeRequestsTable,
+  workerRoleHistoryTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
+
+const UNIQUE_CONSTRAINT_MESSAGES: Record<string, string> = {
+  workers_email_unique: "A worker with this email already exists",
+  workers_winda_id_unique: "A worker with this WINDA ID already exists",
+  workers_portal_username_key: "A worker with this portal username already exists",
+  workers_portal_username_unique: "A worker with this portal username already exists",
+  worker_cert_unique: "This certification is already recorded for this worker",
+  roles_name_unique: "A role with this name already exists",
+  certifications_name_unique: "A certification type with this name already exists",
+  clients_name_unique: "A client with this name already exists",
+  ppe_types_name_unique: "A PPE type with this name already exists",
+  site_assignment_unique: "This worker is already assigned to this site",
+  role_cert_req_unique: "This certification requirement already exists for this role",
+  site_cert_req_unique: "This certification requirement already exists for this site",
+  client_cert_req_unique: "This certification requirement already exists for this client",
+  worker_cert_override_unique: "An override already exists for this worker and certification",
+};
+
+function extractPgError(err: unknown): { code?: string; constraint?: string } | null {
+  // Drizzle wraps the original pg error in err.cause
+  for (const candidate of [err, (err as { cause?: unknown })?.cause]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      return candidate as { code?: string; constraint?: string };
+    }
+  }
+  return null;
+}
+
+function handleRouteError(res: Response, err: unknown): void {
+  const pgErr = extractPgError(err);
+  if (pgErr?.code === "23505") {
+    const constraint = pgErr.constraint ?? "";
+    const message = UNIQUE_CONSTRAINT_MESSAGES[constraint] ?? "A record with these details already exists";
+    res.status(409).json({ error: message });
+    return;
+  }
+  logger.error({ err }, "Unexpected route error");
+  res.status(500).json({ error: "An unexpected error occurred" });
+}
 
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
@@ -264,7 +306,7 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
     res.json(workers.map(w => ({ ...w, roleName: w.roleId ? (roleMap.get(w.roleId) ?? null) : null })));
   } catch (err) {
     logger.error({ err }, "workforce workers GET error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -275,7 +317,7 @@ router.post("/workforce/workers", requireAuth, async (req, res): Promise<void> =
     const [worker] = await db.insert(workersTable).values({ name: name.trim(), email, company, windaId, roleId, notes }).returning();
     res.status(201).json(worker);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -313,7 +355,101 @@ router.get("/workforce/workers/:id", requireAuth, async (req, res): Promise<void
       assignments: assignments.map(r => ({ ...r.sa, site: r.site })),
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
+  }
+});
+
+// GET /api/workforce/workers/:id/cv — admin proxy to stream worker CV from Wasabi
+router.get("/workforce/workers/:id/cv", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [worker] = await db
+      .select({ cvWasabiKey: workersTable.cvWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, id));
+
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+    if (!worker.cvWasabiKey) { res.status(404).json({ error: "No CV on file" }); return; }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Storage not configured" }); return; }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: worker.cvWasabiKey }),
+    );
+
+    const filename = worker.cvWasabiKey.split("/").pop() ?? "cv.pdf";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// GET /api/workforce/workers/:id/passport — admin proxy to stream worker passport from Wasabi
+router.get("/workforce/workers/:id/passport", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [worker] = await db
+      .select({ passportWasabiKey: workersTable.passportWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, id));
+
+    if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+    if (!worker.passportWasabiKey) { res.status(404).json({ error: "No passport on file" }); return; }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (!wasabi) { res.status(503).json({ error: "Storage not configured" }); return; }
+
+    const obj = await wasabi.client.send(
+      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: worker.passportWasabiKey }),
+    );
+
+    const filename = worker.passportWasabiKey.split("/").pop() ?? "passport";
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      pdf: "application/pdf",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+    };
+    const contentType = mimeMap[ext] ?? "application/octet-stream";
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
+
+    if (obj.Body instanceof Readable) {
+      obj.Body.pipe(res);
+    } else if (obj.Body) {
+      const buf = Buffer.from(
+        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
+      );
+      res.send(buf);
+    } else {
+      res.status(502).json({ error: "Empty body from storage" });
+    }
+  } catch (err) {
+    handleRouteError(res, err);
   }
 });
 
@@ -328,7 +464,7 @@ router.patch("/workforce/workers/:id", requireAuth, async (req, res): Promise<vo
     if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -342,7 +478,7 @@ router.delete("/workforce/workers/:id", requireAdmin, async (req, res): Promise<
     if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -353,7 +489,7 @@ router.get("/workforce/roles", requireAuth, async (_req, res): Promise<void> => 
     const roles = await db.select().from(workforceRolesTable).orderBy(workforceRolesTable.name);
     res.json(roles);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -364,7 +500,7 @@ router.post("/workforce/roles", requireAdmin, async (req, res): Promise<void> =>
     const [role] = await db.insert(workforceRolesTable).values({ name: name.trim(), description }).returning();
     res.status(201).json(role);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -379,7 +515,7 @@ router.patch("/workforce/roles/:id", requireAdmin, async (req, res): Promise<voi
     if (!updated) { res.status(404).json({ error: "Role not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -390,7 +526,7 @@ router.delete("/workforce/roles/:id", requireAdmin, async (req, res): Promise<vo
     await db.delete(workforceRolesTable).where(eq(workforceRolesTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -401,7 +537,7 @@ router.get("/workforce/sites", requireAuth, async (_req, res): Promise<void> => 
     const sites = await db.select().from(mobSitesTable).orderBy(mobSitesTable.name);
     res.json(sites);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -429,7 +565,7 @@ router.get("/workforce/sites/:id", requireAuth, async (req, res): Promise<void> 
     if (!row) { res.status(404).json({ error: "Site not found" }); return; }
     res.json(row);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -462,7 +598,7 @@ router.post("/workforce/sites", requireAdmin, async (req, res): Promise<void> =>
 
     res.status(201).json(site);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -505,7 +641,7 @@ router.patch("/workforce/sites/:id", requireAdmin, async (req, res): Promise<voi
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -519,7 +655,7 @@ router.delete("/workforce/sites/:id", requireAdmin, async (req, res): Promise<vo
     if (!updated) { res.status(404).json({ error: "Site not found" }); return; }
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -540,7 +676,7 @@ router.get("/workforce/certifications", requireAuth, async (_req, res): Promise<
 
     res.json(certs.map(c => ({ ...c, holderCount: countMap.get(c.id) ?? 0 })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -552,7 +688,7 @@ router.post("/workforce/certifications", requireAdmin, async (req, res): Promise
       .values({ name: name.trim(), description, validityMonths, category, autoCalculateExpiry: autoCalculateExpiry ?? false }).returning();
     res.status(201).json(cert);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -567,7 +703,7 @@ router.patch("/workforce/certifications/:id", requireAdmin, async (req, res): Pr
     if (!updated) { res.status(404).json({ error: "Certification not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -578,7 +714,7 @@ router.delete("/workforce/certifications/:id", requireAdmin, async (req, res): P
     await db.delete(certificationsTable).where(eq(certificationsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -589,7 +725,7 @@ router.get("/workforce/clients", requireAuth, async (_req, res): Promise<void> =
     const clients = await db.select().from(clientsTable).orderBy(clientsTable.name);
     res.json(clients);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -600,7 +736,7 @@ router.post("/workforce/clients", requireAdmin, async (req, res): Promise<void> 
     const [client] = await db.insert(clientsTable).values({ name: name.trim(), notes: notes || null }).returning();
     res.status(201).json(client);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -615,7 +751,7 @@ router.patch("/workforce/clients/:id", requireAdmin, async (req, res): Promise<v
     if (!updated) { res.status(404).json({ error: "Client not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -626,7 +762,7 @@ router.delete("/workforce/clients/:id", requireAdmin, async (req, res): Promise<
     await db.delete(clientsTable).where(eq(clientsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -640,7 +776,7 @@ router.get("/workforce/clients/:id/cert-requirements", requireAuth, async (req, 
       .where(eq(clientCertRequirementsTable.clientId, id));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -660,7 +796,7 @@ router.put("/workforce/clients/:id/cert-requirements", requireAdmin, async (req,
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -693,7 +829,7 @@ router.post("/workforce/sites/:id/apply-client-template", requireAdmin, async (r
 
     res.json({ added: toAdd.length });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -714,7 +850,7 @@ router.get("/workforce/workers/:id/certifications", requireAuth, async (req, res
       .where(eq(workerCertificationsTable.workerId, workerId));
     res.json(certs.map(r => ({ ...r.wc, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -733,7 +869,7 @@ router.post("/workforce/workers/:id/certifications", requireAuth, async (req, re
       .returning();
     res.status(201).json(wc);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -744,7 +880,16 @@ router.patch("/workforce/workers/:id/certifications/:certId", requireAuth, async
     if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
     const { dateAchieved, expiryDate, verified, verifiedAt, fileUrl, notes } = req.body;
     const [updated] = await db.update(workerCertificationsTable)
-      .set({ dateAchieved, expiryDate, verified, verifiedAt, fileUrl, notes, updatedAt: new Date() })
+      .set({
+        dateAchieved,
+        expiryDate,
+        verified,
+        verifiedAt,
+        fileUrl,
+        notes,
+        updatedAt: new Date(),
+        ...(verified === true ? { rejected: false, rejectionComment: null } : {}),
+      })
       .where(and(
         eq(workerCertificationsTable.workerId, workerId),
         eq(workerCertificationsTable.certificationId, certificationId),
@@ -752,7 +897,32 @@ router.patch("/workforce/workers/:id/certifications/:certId", requireAuth, async
     if (!updated) { res.status(404).json({ error: "Worker certification not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
+  }
+});
+
+router.patch("/workforce/workers/:id/certifications/:certId/reject", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const workerId = parseInt(req.params.id ?? "");
+    const certificationId = parseInt(req.params.certId ?? "");
+    if (isNaN(workerId) || isNaN(certificationId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { rejected, rejectionComment } = req.body;
+    const [updated] = await db.update(workerCertificationsTable)
+      .set({
+        rejected: rejected ?? true,
+        rejectionComment: rejectionComment ?? null,
+        verified: false,
+        verifiedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(workerCertificationsTable.workerId, workerId),
+        eq(workerCertificationsTable.certificationId, certificationId),
+      )).returning();
+    if (!updated) { res.status(404).json({ error: "Worker certification not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    handleRouteError(res, err);
   }
 });
 
@@ -768,7 +938,7 @@ router.delete("/workforce/workers/:id/certifications/:certId", requireAdmin, asy
       ));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -835,7 +1005,7 @@ router.post(
       res.status(201).json({ fileUrl: key, workerCertification: updated });
     } catch (err) {
       logger.error({ err }, "Failed to upload cert file");
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      handleRouteError(res, err);
     }
   },
 );
@@ -891,7 +1061,7 @@ router.get("/workforce/workers/:id/certifications/:certId/file", requireAuth, as
     await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -910,7 +1080,7 @@ router.get("/workforce/certifications/:id/file", requireAuth, async (req, res): 
     await streamCertFile(row.fileUrl, res);
   } catch (err) {
     logger.error({ err }, "Failed to fetch cert file (alias)");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -931,7 +1101,7 @@ router.get("/workforce/sites/:id/requirements", requireAuth, async (req, res): P
       .where(eq(siteCertRequirementsTable.siteId, siteId));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -953,7 +1123,7 @@ router.put("/workforce/sites/:id/requirements", requireAdmin, async (req, res): 
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1003,7 +1173,7 @@ router.get("/workforce/sites/:id/role-requirements", requireAuth, async (req, re
 
     res.json([...grouped.values()]);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1171,7 +1341,7 @@ router.get("/workforce/sites/:id/readiness-forecast", requireAuth, async (req, r
 
     res.json(forecast);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1313,7 +1483,7 @@ router.get("/workforce/sites/:id/mob-readiness", requireAuth, async (req, res): 
 
     res.json({ mobilisationDate: site.mobilisationDate, readyCount, expiringCount, nonCompliantCount, noReqCount, workers });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1332,7 +1502,7 @@ router.get("/workforce/roles/:id/requirements", requireAuth, async (req, res): P
       .where(eq(roleCertRequirementsTable.roleId, roleId));
     res.json(reqs.map(r => ({ ...r.req, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1352,7 +1522,7 @@ router.put("/workforce/roles/:id/requirements", requireAdmin, async (req, res): 
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1371,7 +1541,7 @@ router.get("/workforce/workers/:id/overrides", requireAuth, async (req, res): Pr
       .where(eq(workerCertOverridesTable.workerId, workerId));
     res.json(overrides.map(r => ({ ...r.override, certification: r.cert })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1397,7 +1567,7 @@ router.put("/workforce/workers/:id/overrides", requireAdmin, async (req, res): P
     });
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1426,7 +1596,7 @@ router.get("/workforce/assignments", requireAuth, async (req, res): Promise<void
 
     res.json(assignments.map(r => ({ ...r.sa, worker: r.worker, site: r.site })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1443,7 +1613,7 @@ router.post("/workforce/assignments", requireAuth, async (req, res): Promise<voi
       .returning();
     res.status(201).json(assignment);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1458,7 +1628,7 @@ router.patch("/workforce/assignments/:id", requireAuth, async (req, res): Promis
     if (!updated) { res.status(404).json({ error: "Assignment not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1469,7 +1639,172 @@ router.delete("/workforce/assignments/:id", requireAdmin, async (req, res): Prom
     await db.delete(siteAssignmentsTable).where(eq(siteAssignmentsTable.id, id));
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
+  }
+});
+
+// ── Rotation Periods ──────────────────────────────────────────────────────────
+
+router.get("/workforce/assignments/:id/rotations", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const rows = await db.select().from(workerRotationPeriodsTable)
+      .where(eq(workerRotationPeriodsTable.assignmentId, assignmentId))
+      .orderBy(workerRotationPeriodsTable.plannedStart);
+    res.json(rows);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+const VALID_ROTATION_STATUSES = ["planned", "on-site", "completed", "cancelled"] as const;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateRotationFields(
+  res: Response,
+  fields: { plannedStart?: unknown; plannedEnd?: unknown; status?: unknown },
+  requireStart = false,
+): fields is { plannedStart: string; plannedEnd?: string | null; status?: string } {
+  const { plannedStart, plannedEnd, status } = fields;
+  if (requireStart) {
+    if (!plannedStart || typeof plannedStart !== "string" || !ISO_DATE_RE.test(plannedStart)) {
+      res.status(400).json({ error: "plannedStart must be a valid date (YYYY-MM-DD)" });
+      return false;
+    }
+  } else if (plannedStart !== undefined) {
+    if (typeof plannedStart !== "string" || !ISO_DATE_RE.test(plannedStart)) {
+      res.status(400).json({ error: "plannedStart must be a valid date (YYYY-MM-DD)" });
+      return false;
+    }
+  }
+  if (plannedEnd !== undefined && plannedEnd !== null && plannedEnd !== "") {
+    if (typeof plannedEnd !== "string" || !ISO_DATE_RE.test(plannedEnd)) {
+      res.status(400).json({ error: "plannedEnd must be a valid date (YYYY-MM-DD) or null" });
+      return false;
+    }
+    const start = (plannedStart as string | undefined) ?? "";
+    if (start && plannedEnd < start) {
+      res.status(400).json({ error: "plannedEnd must not be before plannedStart" });
+      return false;
+    }
+  }
+  if (status !== undefined && !VALID_ROTATION_STATUSES.includes(status as typeof VALID_ROTATION_STATUSES[number])) {
+    res.status(400).json({ error: `status must be one of: ${VALID_ROTATION_STATUSES.join(", ")}` });
+    return false;
+  }
+  return true;
+}
+
+router.post("/workforce/assignments/:id/rotations", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { plannedStart, plannedEnd, status, notes } = req.body;
+    if (!validateRotationFields(res, { plannedStart, plannedEnd, status }, true)) return;
+    const [row] = await db.insert(workerRotationPeriodsTable).values({
+      assignmentId,
+      plannedStart,
+      plannedEnd: plannedEnd || null,
+      status: status || "planned",
+      notes: notes || null,
+    }).returning();
+    res.status(201).json(row);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+function addDaysISO(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+router.post("/workforce/assignments/:id/rotations/generate", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const assignmentId = parseInt(req.params.id ?? "");
+    if (isNaN(assignmentId)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { startDate, onDays, offDays, count } = req.body;
+    if (!startDate || typeof startDate !== "string" || !ISO_DATE_RE.test(startDate)) {
+      res.status(400).json({ error: "startDate must be a valid date (YYYY-MM-DD)" }); return;
+    }
+    const onDaysNum = parseInt(onDays);
+    const offDaysNum = parseInt(offDays);
+    const countNum = parseInt(count);
+    if (!Number.isInteger(onDaysNum) || onDaysNum < 1 || onDaysNum > 365) {
+      res.status(400).json({ error: "onDays must be between 1 and 365" }); return;
+    }
+    if (!Number.isInteger(offDaysNum) || offDaysNum < 0 || offDaysNum > 365) {
+      res.status(400).json({ error: "offDays must be between 0 and 365" }); return;
+    }
+    if (!Number.isInteger(countNum) || countNum < 1 || countNum > 52) {
+      res.status(400).json({ error: "count must be between 1 and 52" }); return;
+    }
+    const periods: { assignmentId: number; plannedStart: string; plannedEnd: string; status: "planned" }[] = [];
+    let currentStart = startDate;
+    for (let i = 0; i < countNum; i++) {
+      const currentEnd = addDaysISO(currentStart, onDaysNum - 1);
+      periods.push({ assignmentId, plannedStart: currentStart, plannedEnd: currentEnd, status: "planned" });
+      currentStart = addDaysISO(currentEnd, offDaysNum + 1);
+    }
+    const rows = await db.insert(workerRotationPeriodsTable).values(periods).returning();
+    res.status(201).json(rows);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.patch("/workforce/rotations/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const { plannedStart, plannedEnd, status, notes } = req.body;
+    if (!validateRotationFields(res, { plannedStart, plannedEnd, status }, false)) return;
+    const [updated] = await db.update(workerRotationPeriodsTable)
+      .set({
+        ...(plannedStart !== undefined && { plannedStart }),
+        ...(plannedEnd !== undefined && { plannedEnd: plannedEnd || null }),
+        ...(status !== undefined && { status }),
+        ...(notes !== undefined && { notes: notes || null }),
+        updatedAt: new Date(),
+      })
+      .where(eq(workerRotationPeriodsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Rotation not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+router.delete("/workforce/rotations/:id", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.delete(workerRotationPeriodsTable).where(eq(workerRotationPeriodsTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// Returns the next upcoming rotation (planned_start >= today) per assignment for a given site
+router.get("/workforce/sites/:siteId/next-rotations", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const siteId = parseInt(req.params.siteId ?? "");
+    if (isNaN(siteId)) { res.status(400).json({ error: "Invalid siteId" }); return; }
+    const rows = await db.execute<{ worker_id: number; assignment_id: number; planned_start: string }>(sql`
+      SELECT sa.worker_id, wrp.assignment_id, MIN(wrp.planned_start) AS planned_start
+      FROM site_assignments sa
+      JOIN worker_rotation_periods wrp ON wrp.assignment_id = sa.id
+      WHERE sa.site_id = ${siteId}
+        AND wrp.planned_start >= CURRENT_DATE
+        AND wrp.status NOT IN ('completed', 'cancelled')
+      GROUP BY sa.worker_id, wrp.assignment_id
+    `);
+    res.json(rows.rows ?? rows);
+  } catch (err) {
+    handleRouteError(res, err);
   }
 });
 
@@ -1511,7 +1846,7 @@ router.get("/workforce/compliance/site/:siteId", requireAuth, async (req, res): 
     );
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1535,7 +1870,7 @@ router.get("/workforce/compliance/worker/:workerId", requireAuth, async (req, re
     );
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1777,7 +2112,7 @@ router.get("/workforce/dashboard", requireAuth, async (req, res): Promise<void> 
     });
   } catch (err) {
     logger.error({ err }, "workforce dashboard error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1857,7 +2192,7 @@ router.get("/workforce/cert-issue-workers", requireAuth, async (req, res): Promi
     })));
   } catch (err) {
     logger.error({ err }, "cert-issue-workers error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -1976,7 +2311,7 @@ router.get("/workforce/workers-compliance-summary", requireAuth, async (_req, re
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce workers-compliance-summary error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2112,7 +2447,7 @@ router.get("/workforce/sites-with-stats", requireAuth, async (_req, res): Promis
     res.json(results);
   } catch (err) {
     logger.error({ err }, "workforce sites-with-stats error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2166,7 +2501,7 @@ router.get("/workforce/worker-activity", requireAdmin, async (req, res): Promise
     res.json({ data: rows, total, page, pageSize });
   } catch (err) {
     logger.error({ err }, "workforce worker-activity error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2349,7 +2684,7 @@ router.get("/workforce/activity-feed", requireAdmin, async (req, res): Promise<v
     res.json({ data, total, page, pageSize });
   } catch (err) {
     logger.error({ err }, "workforce activity-feed error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2360,7 +2695,7 @@ router.get("/workforce/ppe-types", requireAuth, async (_req, res): Promise<void>
     const types = await db.select().from(ppeTypesTable).orderBy(ppeTypesTable.name);
     res.json(types);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2373,7 +2708,7 @@ router.post("/workforce/ppe-types", requireAdmin, async (req, res): Promise<void
       .returning();
     res.status(201).json(type);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2392,7 +2727,7 @@ router.patch("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promise
     if (!updated) { res.status(404).json({ error: "PPE type not found" }); return; }
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2408,7 +2743,7 @@ router.delete("/workforce/ppe-types/:id", requireAdmin, async (req, res): Promis
       res.status(409).json({ error: "Cannot delete: this PPE type has existing allocation records. Remove all allocations first." });
       return;
     }
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2447,7 +2782,7 @@ router.get("/workforce/workers/:id/ppe", requireAuth, async (req, res): Promise<
       notes: r.notes ?? null,
     })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2484,7 +2819,7 @@ router.post("/workforce/workers/:id/ppe", requireAdmin, async (req, res): Promis
 
     res.status(201).json(allocation);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2524,7 +2859,7 @@ router.patch("/workforce/ppe-allocations/:id", requireAdmin, async (req, res): P
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
 
@@ -2552,9 +2887,351 @@ router.get("/workforce/sites/:id/ppe-summary", requireAuth, async (req, res): Pr
       activeCount: Number(r.active_count),
     })));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    handleRouteError(res, err);
   }
 });
+
+// ── Schedule Change Requests (admin) ─────────────────────────────────────────
+
+// GET /workforce/change-requests?status=pending|approved|rejected|withdrawn|all
+router.get("/workforce/change-requests", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const { status } = req.query as Record<string, string>;
+
+    const rows = await db
+      .select({
+        cr: workerScheduleChangeRequestsTable,
+        worker: { id: workersTable.id, name: workersTable.name },
+        period: workerRotationPeriodsTable,
+        site: mobSitesTable,
+      })
+      .from(workerScheduleChangeRequestsTable)
+      .innerJoin(workersTable, eq(workerScheduleChangeRequestsTable.workerId, workersTable.id))
+      .innerJoin(
+        workerRotationPeriodsTable,
+        eq(workerScheduleChangeRequestsTable.rotationPeriodId, workerRotationPeriodsTable.id),
+      )
+      .innerJoin(
+        siteAssignmentsTable,
+        eq(workerRotationPeriodsTable.assignmentId, siteAssignmentsTable.id),
+      )
+      .innerJoin(mobSitesTable, eq(siteAssignmentsTable.siteId, mobSitesTable.id))
+      .where(
+        status && status !== "all"
+          ? eq(workerScheduleChangeRequestsTable.status, status)
+          : undefined,
+      )
+      .orderBy(desc(workerScheduleChangeRequestsTable.createdAt));
+
+    res.json({
+      requests: rows.map((r) => ({
+        id: r.cr.id,
+        workerId: r.worker.id,
+        workerName: r.worker.name,
+        rotationPeriodId: r.cr.rotationPeriodId,
+        requestedStart: r.cr.requestedStart,
+        requestedEnd: r.cr.requestedEnd,
+        reason: r.cr.reason,
+        status: r.cr.status,
+        adminNotes: r.cr.adminNotes,
+        createdAt: r.cr.createdAt,
+        siteId: r.site.id,
+        siteName: r.site.name,
+        originalStart: r.period.plannedStart,
+        originalEnd: r.period.plannedEnd,
+      })),
+    });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
+// PATCH /workforce/change-requests/:id
+router.patch(
+  "/workforce/change-requests/:id",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id ?? "");
+      if (isNaN(id)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const { status, adminNotes } = req.body as {
+        status?: string;
+        adminNotes?: string | null;
+      };
+
+      const VALID_STATUSES = ["approved", "rejected"];
+      if (!status || !VALID_STATUSES.includes(status)) {
+        res.status(400).json({ error: "status must be 'approved' or 'rejected'" });
+        return;
+      }
+
+      const [row] = await db
+        .select()
+        .from(workerScheduleChangeRequestsTable)
+        .where(eq(workerScheduleChangeRequestsTable.id, id));
+
+      if (!row) {
+        res.status(404).json({ error: "Change request not found" });
+        return;
+      }
+
+      if (row.status !== "pending") {
+        res.status(409).json({ error: "Only pending requests can be approved or rejected" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(workerScheduleChangeRequestsTable)
+        .set({
+          status,
+          adminNotes: adminNotes !== undefined ? adminNotes : row.adminNotes,
+          updatedAt: new Date(),
+        })
+        .where(eq(workerScheduleChangeRequestsTable.id, id))
+        .returning();
+
+      res.json(updated);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// ── Worker Role History ────────────────────────────────────────────────────────
+
+// GET /api/workforce/workers/:id/role-history
+router.get(
+  "/workforce/workers/:id/role-history",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      if (isNaN(workerId)) {
+        res.status(400).json({ error: "Invalid worker id" });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(eq(workerRoleHistoryTable.workerId, workerId))
+        .orderBy(desc(workerRoleHistoryTable.startDate));
+      res.json(rows);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// POST /api/workforce/workers/:id/role-history
+router.post(
+  "/workforce/workers/:id/role-history",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      if (isNaN(workerId)) {
+        res.status(400).json({ error: "Invalid worker id" });
+        return;
+      }
+      const { roleId, startDate, endDate, notes, closeOpenEntry } = req.body as {
+        roleId?: number | null;
+        startDate?: string;
+        endDate?: string | null;
+        notes?: string | null;
+        closeOpenEntry?: boolean;
+      };
+      if (!startDate) {
+        res.status(400).json({ error: "startDate is required" });
+        return;
+      }
+
+      let roleNameSnapshot = "Unknown";
+      if (roleId) {
+        const [role] = await db
+          .select({ name: workforceRolesTable.name })
+          .from(workforceRolesTable)
+          .where(eq(workforceRolesTable.id, roleId));
+        if (!role) {
+          res.status(400).json({ error: "Role not found" });
+          return;
+        }
+        roleNameSnapshot = role.name;
+      }
+
+      // Optionally close the current open entry
+      if (closeOpenEntry) {
+        const openEntries = await db
+          .select()
+          .from(workerRoleHistoryTable)
+          .where(
+            and(
+              eq(workerRoleHistoryTable.workerId, workerId),
+              sql`${workerRoleHistoryTable.endDate} IS NULL`,
+            ),
+          );
+        for (const entry of openEntries) {
+          await db
+            .update(workerRoleHistoryTable)
+            .set({ endDate: startDate, updatedAt: new Date() })
+            .where(eq(workerRoleHistoryTable.id, entry.id));
+        }
+      }
+
+      const [row] = await db
+        .insert(workerRoleHistoryTable)
+        .values({
+          workerId,
+          roleId: roleId ?? null,
+          roleNameSnapshot,
+          startDate,
+          endDate: endDate ?? null,
+          notes: notes ?? null,
+        })
+        .returning();
+
+      // Sync workers.role_id if this is a current (open-ended) entry — even if roleId is null
+      if (!endDate) {
+        await db
+          .update(workersTable)
+          .set({ roleId: roleId ?? null, updatedAt: new Date() })
+          .where(eq(workersTable.id, workerId));
+      }
+
+      res.status(201).json(row);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// PATCH /api/workforce/workers/:id/role-history/:entryId
+router.patch(
+  "/workforce/workers/:id/role-history/:entryId",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      const entryId = parseInt(req.params.entryId ?? "");
+      if (isNaN(workerId) || isNaN(entryId)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const { startDate, endDate, notes } = req.body as {
+        startDate?: string;
+        endDate?: string | null;
+        notes?: string | null;
+      };
+
+      const [existing] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.id, entryId),
+            eq(workerRoleHistoryTable.workerId, workerId),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Entry not found" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(workerRoleHistoryTable)
+        .set({
+          startDate: startDate ?? existing.startDate,
+          endDate: endDate !== undefined ? (endDate ?? null) : existing.endDate,
+          notes: notes !== undefined ? (notes ?? null) : existing.notes,
+          updatedAt: new Date(),
+        })
+        .where(eq(workerRoleHistoryTable.id, entryId))
+        .returning();
+
+      // Recalculate and sync workers.role_id after any date change
+      const [latestOpen] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.workerId, workerId),
+            sql`${workerRoleHistoryTable.endDate} IS NULL`,
+          ),
+        )
+        .orderBy(desc(workerRoleHistoryTable.startDate))
+        .limit(1);
+
+      await db
+        .update(workersTable)
+        .set({ roleId: latestOpen?.roleId ?? null, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
+
+      res.json(updated);
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
+
+// DELETE /api/workforce/workers/:id/role-history/:entryId
+router.delete(
+  "/workforce/workers/:id/role-history/:entryId",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    try {
+      const workerId = parseInt(req.params.id ?? "");
+      const entryId = parseInt(req.params.entryId ?? "");
+      if (isNaN(workerId) || isNaN(entryId)) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.id, entryId),
+            eq(workerRoleHistoryTable.workerId, workerId),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Entry not found" });
+        return;
+      }
+
+      await db
+        .delete(workerRoleHistoryTable)
+        .where(eq(workerRoleHistoryTable.id, entryId));
+
+      // Recalculate and sync workers.role_id
+      const [latestOpen] = await db
+        .select()
+        .from(workerRoleHistoryTable)
+        .where(
+          and(
+            eq(workerRoleHistoryTable.workerId, workerId),
+            sql`${workerRoleHistoryTable.endDate} IS NULL`,
+          ),
+        )
+        .orderBy(desc(workerRoleHistoryTable.startDate))
+        .limit(1);
+
+      await db
+        .update(workersTable)
+        .set({ roleId: latestOpen?.roleId ?? null, updatedAt: new Date() })
+        .where(eq(workersTable.id, workerId));
+
+      res.json({ ok: true });
+    } catch (err) {
+      handleRouteError(res, err);
+    }
+  },
+);
 
 export default router;
 

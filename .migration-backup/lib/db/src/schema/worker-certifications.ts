@@ -12,6 +12,8 @@ export const workerCertificationsTable = pgTable("worker_certifications", {
   expiryDate: date("expiry_date"),
   verified: boolean("verified").notNull().default(false),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  rejected: boolean("rejected").notNull().default(false),
+  rejectionComment: text("rejection_comment"),
   fileUrl: text("file_url"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

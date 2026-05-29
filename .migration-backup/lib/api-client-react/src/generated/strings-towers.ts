@@ -6,9 +6,32 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 import { customFetch, type ErrorType } from "../custom-fetch";
-import type { StringRecord, TowerRecord } from "@workspace/api-zod";
 
 type SecondParameter<T extends (...args: unknown[]) => unknown> = Parameters<T>[1];
+
+export interface StringRecord {
+  id: number;
+  locationId: number;
+  name: string;
+  stringNumber?: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TowerRecord {
+  id: number;
+  stringId: number;
+  name: string;
+  lat?: number | null;
+  lng?: number | null;
+  progressStatus: string;
+  locationType: string;
+  connectedTo?: string | null;
+  countOnString?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // ─── STRINGS ─────────────────────────────────────────────────────────────────
 
