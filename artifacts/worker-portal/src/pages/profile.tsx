@@ -31,6 +31,11 @@ import {
   X,
   Briefcase,
   Calendar,
+  Sparkles,
+  ShieldCheck,
+  Phone,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 import { AIRPORTS, type Airport } from "@/data/airports";
 import { cn } from "@/lib/utils";
@@ -57,6 +62,7 @@ interface WorkerProfile {
   windaId: string | null;
   roleName: string | null;
   cvWasabiKey: string | null;
+  cvUploadedAt: string | null;
 }
 
 interface RoleHistoryEntry {
@@ -198,6 +204,35 @@ function AirportMultiSelect({ value, onChange }: AirportMultiSelectProps) {
   );
 }
 
+// ── Section header ─────────────────────────────────────────────────────────────
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold leading-snug">{title}</h2>
+          {description && (
+            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+          )}
+        </div>
+      </div>
+      {action && <div className="flex-shrink-0">{action}</div>}
+    </div>
+  );
+}
+
 // ── Profile page ──────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
@@ -215,20 +250,28 @@ export default function ProfilePage() {
     queryFn: () => apiFetch<RoleHistoryEntry[]>("/api/worker-portal/role-history"),
   });
 
+  // ── Form state ──────────────────────────────────────────────────────────────
+
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     company: "",
     preferredAirport: [] as string[],
+    qualifications: "",
+  });
+
+  const [passportForm, setPassportForm] = useState({
     passportNo: "",
+    passportPlaceOfBirth: "",
     passportIssueDate: "",
     passportExpiryDate: "",
-    passportPlaceOfBirth: "",
+  });
+
+  const [nokForm, setNokForm] = useState({
     nokName: "",
     nokRelationship: "",
     nokPhone: "",
-    qualifications: "",
   });
 
   const [pwForm, setPwForm] = useState({
@@ -237,31 +280,45 @@ export default function ProfilePage() {
     confirmPassword: "",
   });
 
+  // ── File upload state ───────────────────────────────────────────────────────
+
   const cvInputRef = useRef<HTMLInputElement>(null);
   const [cvUploading, setCvUploading] = useState(false);
 
   const passportInputRef = useRef<HTMLInputElement>(null);
   const [passportUploading, setPassportUploading] = useState(false);
 
+  const [passportExtracting, setPassportExtracting] = useState(false);
+  const [cvExtracting, setCvExtracting] = useState(false);
+
+  // ── Populate forms from profile data ───────────────────────────────────────
+
   useEffect(() => {
     if (profileQ.data) {
+      const p = profileQ.data;
       setForm({
-        name: profileQ.data.name ?? "",
-        email: profileQ.data.email ?? "",
-        phone: profileQ.data.phone ?? "",
-        company: profileQ.data.company ?? "",
-        preferredAirport: profileQ.data.preferredAirport ?? [],
-        passportNo: profileQ.data.passportNo ?? "",
-        passportIssueDate: profileQ.data.passportIssueDate ?? "",
-        passportExpiryDate: profileQ.data.passportExpiryDate ?? "",
-        passportPlaceOfBirth: profileQ.data.passportPlaceOfBirth ?? "",
-        nokName: profileQ.data.nokName ?? "",
-        nokRelationship: profileQ.data.nokRelationship ?? "",
-        nokPhone: profileQ.data.nokPhone ?? "",
-        qualifications: profileQ.data.qualifications ?? "",
+        name: p.name ?? "",
+        email: p.email ?? "",
+        phone: p.phone ?? "",
+        company: p.company ?? "",
+        preferredAirport: p.preferredAirport ?? [],
+        qualifications: p.qualifications ?? "",
+      });
+      setPassportForm({
+        passportNo: p.passportNo ?? "",
+        passportPlaceOfBirth: p.passportPlaceOfBirth ?? "",
+        passportIssueDate: p.passportIssueDate ?? "",
+        passportExpiryDate: p.passportExpiryDate ?? "",
+      });
+      setNokForm({
+        nokName: p.nokName ?? "",
+        nokRelationship: p.nokRelationship ?? "",
+        nokPhone: p.nokPhone ?? "",
       });
     }
   }, [profileQ.data]);
+
+  // ── Mutations ───────────────────────────────────────────────────────────────
 
   const saveMut = useMutation({
     mutationFn: (data: typeof form) =>
@@ -270,6 +327,28 @@ export default function ProfilePage() {
       await qc.invalidateQueries({ queryKey: ["worker-profile"] });
       await refresh();
       toast({ title: "Profile saved" });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" }),
+  });
+
+  const savePassportMut = useMutation({
+    mutationFn: (data: typeof passportForm) =>
+      apiPatch<WorkerProfile>("/api/worker-portal/profile", data),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      toast({ title: "Passport details saved" });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" }),
+  });
+
+  const saveNokMut = useMutation({
+    mutationFn: (data: typeof nokForm) =>
+      apiPatch<WorkerProfile>("/api/worker-portal/profile", data),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      toast({ title: "Next of kin saved" });
     },
     onError: (err: Error) =>
       toast({ title: "Failed to save", description: err.message, variant: "destructive" }),
@@ -286,10 +365,7 @@ export default function ProfilePage() {
       toast({ title: "Failed to change password", description: err.message, variant: "destructive" }),
   });
 
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    saveMut.mutate(form);
-  }
+  // ── File handlers ───────────────────────────────────────────────────────────
 
   async function handlePassportUpload(file: File) {
     const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
@@ -315,7 +391,7 @@ export default function ProfilePage() {
         throw new Error((err as { error?: string }).error ?? `Upload failed: ${res.status}`);
       }
       await qc.invalidateQueries({ queryKey: ["worker-profile"] });
-      toast({ title: "Passport uploaded successfully" });
+      toast({ title: "Passport uploaded" });
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
     } finally {
@@ -347,12 +423,79 @@ export default function ProfilePage() {
         throw new Error((err as { error?: string }).error ?? `Upload failed: ${res.status}`);
       }
       await qc.invalidateQueries({ queryKey: ["worker-profile"] });
-      toast({ title: "CV uploaded successfully" });
+      toast({ title: "CV uploaded" });
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
     } finally {
       setCvUploading(false);
       if (cvInputRef.current) cvInputRef.current.value = "";
+    }
+  }
+
+  async function handlePassportExtract() {
+    setPassportExtracting(true);
+    try {
+      const res = await fetch(`${BASE}/api/worker-portal/passport-extract`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? `Extraction failed: ${res.status}`);
+      }
+      const data = await res.json() as {
+        passportNo?: string;
+        passportPlaceOfBirth?: string;
+        passportIssueDate?: string;
+        passportExpiryDate?: string;
+        name?: string;
+      };
+
+      setPassportForm((f) => ({
+        passportNo: data.passportNo ?? f.passportNo,
+        passportPlaceOfBirth: data.passportPlaceOfBirth ?? f.passportPlaceOfBirth,
+        passportIssueDate: data.passportIssueDate ?? f.passportIssueDate,
+        passportExpiryDate: data.passportExpiryDate ?? f.passportExpiryDate,
+      }));
+
+      const filled = Object.values(data).filter(Boolean).length;
+      toast({
+        title: "Passport scanned",
+        description: filled > 0
+          ? `${filled} field${filled > 1 ? "s" : ""} filled in — review and save.`
+          : "No fields could be read. Please fill in manually.",
+      });
+    } catch (err) {
+      toast({ title: "Extraction failed", description: String(err), variant: "destructive" });
+    } finally {
+      setPassportExtracting(false);
+    }
+  }
+
+  async function handleCvExtract() {
+    setCvExtracting(true);
+    try {
+      const res = await fetch(`${BASE}/api/worker-portal/cv-extract`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? `Extraction failed: ${res.status}`);
+      }
+      const data = await res.json() as { roles: { project: string; role: string; dateFrom: string; dateTo: string }[] };
+      const count = data.roles?.length ?? 0;
+      toast({
+        title: "CV scanned",
+        description: count > 0
+          ? `Found ${count} role${count > 1 ? "s" : ""} — added below.`
+          : "No work history found in CV.",
+      });
+      await qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
+    } catch (err) {
+      toast({ title: "Extraction failed", description: String(err), variant: "destructive" });
+    } finally {
+      setCvExtracting(false);
     }
   }
 
@@ -369,7 +512,19 @@ export default function ProfilePage() {
     pwMut.mutate({ currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword });
   }
 
+  // ── CV staleness check ──────────────────────────────────────────────────────
+
   const profile = profileQ.data;
+
+  const cvIsStale = useMemo(() => {
+    if (!profile?.cvUploadedAt) return false;
+    const uploaded = new Date(profile.cvUploadedAt);
+    const now = new Date();
+    const monthsOld = (now.getFullYear() - uploaded.getFullYear()) * 12 + (now.getMonth() - uploaded.getMonth());
+    return monthsOld >= 12;
+  }, [profile?.cvUploadedAt]);
+
+  // ── Loading / error states ──────────────────────────────────────────────────
 
   if (profileQ.isLoading) {
     return (
@@ -390,14 +545,17 @@ export default function ProfilePage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
 
-      {/* ── Profile details ── */}
+      {/* ── Section 1: Personal details ── */}
       <section className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center gap-2">
-          <User className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Profile details</h2>
-        </div>
-
-        <form onSubmit={handleSave} className="px-5 py-5 space-y-4">
+        <SectionHeader
+          icon={User}
+          title="Personal details"
+          description="Your basic contact information"
+        />
+        <form
+          onSubmit={(e) => { e.preventDefault(); saveMut.mutate(form); }}
+          className="px-5 py-5 space-y-4"
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="prof-name">Full name <span className="text-destructive">*</span></Label>
@@ -441,81 +599,11 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Preferred airports</Label>
+            <Label>Preferred departure airports</Label>
             <AirportMultiSelect
               value={form.preferredAirport}
               onChange={(val) => setForm((f) => ({ ...f, preferredAirport: val }))}
             />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-passport">Passport number</Label>
-              <Input
-                id="prof-passport"
-                value={form.passportNo}
-                onChange={(e) => setForm((f) => ({ ...f, passportNo: e.target.value }))}
-                placeholder="e.g. 123456789"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-passport-pob">Place of birth</Label>
-              <Input
-                id="prof-passport-pob"
-                value={form.passportPlaceOfBirth}
-                onChange={(e) => setForm((f) => ({ ...f, passportPlaceOfBirth: e.target.value }))}
-                placeholder="e.g. Dublin"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-passport-issue">Issue date</Label>
-              <Input
-                id="prof-passport-issue"
-                type="date"
-                value={form.passportIssueDate}
-                onChange={(e) => setForm((f) => ({ ...f, passportIssueDate: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-passport-expiry">Expiry date</Label>
-              <Input
-                id="prof-passport-expiry"
-                type="date"
-                value={form.passportExpiryDate}
-                onChange={(e) => setForm((f) => ({ ...f, passportExpiryDate: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-nok-name">Next of kin — full name</Label>
-              <Input
-                id="prof-nok-name"
-                value={form.nokName}
-                onChange={(e) => setForm((f) => ({ ...f, nokName: e.target.value }))}
-                placeholder="e.g. Jane Smith"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-nok-rel">Relationship</Label>
-              <Input
-                id="prof-nok-rel"
-                value={form.nokRelationship}
-                onChange={(e) => setForm((f) => ({ ...f, nokRelationship: e.target.value }))}
-                placeholder="e.g. Spouse, Parent"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="prof-nok-phone">NOK phone</Label>
-              <Input
-                id="prof-nok-phone"
-                type="tel"
-                value={form.nokPhone}
-                onChange={(e) => setForm((f) => ({ ...f, nokPhone: e.target.value }))}
-                placeholder="+44 7700 000000"
-              />
-            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -529,7 +617,6 @@ export default function ProfilePage() {
             />
           </div>
 
-          {/* Read-only identity fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">Portal username</Label>
@@ -545,25 +632,42 @@ export default function ProfilePage() {
 
           <div className="flex justify-end pt-1">
             <Button type="submit" disabled={saveMut.isPending} className="gap-2">
-              {saveMut.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
+              {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save changes
             </Button>
           </div>
         </form>
       </section>
 
-      {/* ── Passport document ── */}
+      {/* ── Section 2: Passport ── */}
       <section className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Passport document</h2>
-        </div>
+        <SectionHeader
+          icon={ShieldCheck}
+          title="Passport"
+          description="Travel document details and scan"
+        />
 
-        <div className="px-5 py-5">
+        {/* Passport scan upload */}
+        <div className="px-5 pt-5 pb-4 border-b">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Document scan</p>
+            {profile?.passportWasabiKey && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-7"
+                disabled={passportExtracting || !profile.passportWasabiKey}
+                onClick={handlePassportExtract}
+              >
+                {passportExtracting
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Sparkles className="h-3.5 w-3.5" />}
+                Auto-fill from scan
+              </Button>
+            )}
+          </div>
+
           {profile?.passportWasabiKey ? (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -577,13 +681,9 @@ export default function ProfilePage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button size="sm" variant="outline" className="gap-1.5" asChild>
-                  <a
-                    href={`${BASE}/api/worker-portal/passport`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href={`${BASE}/api/worker-portal/passport`} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
-                    View passport
+                    View
                   </a>
                 </Button>
                 <Button
@@ -593,11 +693,7 @@ export default function ProfilePage() {
                   disabled={passportUploading}
                   onClick={() => passportInputRef.current?.click()}
                 >
-                  {passportUploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
+                  {passportUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                   Replace
                 </Button>
               </div>
@@ -605,7 +701,7 @@ export default function ProfilePage() {
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <p className="text-sm text-muted-foreground flex-1">
-                No passport scan uploaded yet. Upload a scan so administrators can verify your travel documents.
+                No passport scan uploaded yet. Upload a scan and we can auto-fill the details below.
               </p>
               <Button
                 size="sm"
@@ -614,11 +710,7 @@ export default function ProfilePage() {
                 disabled={passportUploading}
                 onClick={() => passportInputRef.current?.click()}
               >
-                {passportUploading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
+                {passportUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                 Upload passport
               </Button>
             </div>
@@ -635,16 +727,148 @@ export default function ProfilePage() {
             }}
           />
         </div>
+
+        {/* Passport details form */}
+        <form
+          onSubmit={(e) => { e.preventDefault(); savePassportMut.mutate(passportForm); }}
+          className="px-5 py-5 space-y-4"
+        >
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Passport details</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-no">Passport number</Label>
+              <Input
+                id="prof-passport-no"
+                value={passportForm.passportNo}
+                onChange={(e) => setPassportForm((f) => ({ ...f, passportNo: e.target.value }))}
+                placeholder="e.g. 123456789"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-pob">Place of birth</Label>
+              <Input
+                id="prof-passport-pob"
+                value={passportForm.passportPlaceOfBirth}
+                onChange={(e) => setPassportForm((f) => ({ ...f, passportPlaceOfBirth: e.target.value }))}
+                placeholder="e.g. Dublin"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-issue">Issue date</Label>
+              <Input
+                id="prof-passport-issue"
+                type="date"
+                value={passportForm.passportIssueDate}
+                onChange={(e) => setPassportForm((f) => ({ ...f, passportIssueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-passport-expiry">Expiry date</Label>
+              <Input
+                id="prof-passport-expiry"
+                type="date"
+                value={passportForm.passportExpiryDate}
+                onChange={(e) => setPassportForm((f) => ({ ...f, passportExpiryDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end pt-1">
+            <Button type="submit" disabled={savePassportMut.isPending} className="gap-2">
+              {savePassportMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save passport details
+            </Button>
+          </div>
+        </form>
       </section>
 
-      {/* ── CV / Résumé ── */}
+      {/* ── Section 3: Next of kin ── */}
       <section className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">CV / Résumé</h2>
-        </div>
+        <SectionHeader
+          icon={Phone}
+          title="Next of kin"
+          description="Emergency contact information"
+        />
+        <form
+          onSubmit={(e) => { e.preventDefault(); saveNokMut.mutate(nokForm); }}
+          className="px-5 py-5 space-y-4"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-name">Full name</Label>
+              <Input
+                id="prof-nok-name"
+                value={nokForm.nokName}
+                onChange={(e) => setNokForm((f) => ({ ...f, nokName: e.target.value }))}
+                placeholder="e.g. Jane Smith"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-rel">Relationship</Label>
+              <Input
+                id="prof-nok-rel"
+                value={nokForm.nokRelationship}
+                onChange={(e) => setNokForm((f) => ({ ...f, nokRelationship: e.target.value }))}
+                placeholder="e.g. Spouse, Parent"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prof-nok-phone">Phone number</Label>
+              <Input
+                id="prof-nok-phone"
+                type="tel"
+                value={nokForm.nokPhone}
+                onChange={(e) => setNokForm((f) => ({ ...f, nokPhone: e.target.value }))}
+                placeholder="+44 7700 000000"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end pt-1">
+            <Button type="submit" disabled={saveNokMut.isPending} className="gap-2">
+              {saveNokMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save next of kin
+            </Button>
+          </div>
+        </form>
+      </section>
 
-        <div className="px-5 py-5">
+      {/* ── Section 4: CV & role history ── */}
+      <section className="rounded-xl border bg-card overflow-hidden">
+        <SectionHeader
+          icon={Briefcase}
+          title="CV & work history"
+          description="Upload your CV and review extracted roles"
+        />
+
+        {/* CV upload row */}
+        <div className="px-5 pt-5 pb-4 border-b">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CV document</p>
+            {profile?.cvWasabiKey && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-7"
+                disabled={cvExtracting}
+                onClick={handleCvExtract}
+              >
+                {cvExtracting
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Sparkles className="h-3.5 w-3.5" />}
+                Extract roles from CV
+              </Button>
+            )}
+          </div>
+
+          {cvIsStale && (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2.5 mb-3">
+              <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Your CV was uploaded over a year ago. Consider replacing it with an up-to-date version.
+              </p>
+            </div>
+          )}
+
           {profile?.cvWasabiKey ? (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -653,21 +877,21 @@ export default function ProfilePage() {
                   <p className="text-sm font-medium truncate">
                     {profile.cvWasabiKey.split("/").pop()}
                   </p>
-                  <p className="text-xs text-muted-foreground">PDF on file</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    {profile.cvUploadedAt ? (
+                      <>
+                        <Clock className="h-3 w-3" />
+                        Uploaded {new Date(profile.cvUploadedAt).toLocaleDateString("en-GB")}
+                      </>
+                    ) : (
+                      "PDF on file"
+                    )}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
-                  asChild
-                >
-                  <a
-                    href={`${BASE}/api/worker-portal/profile/cv`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                <Button size="sm" variant="outline" className="gap-1.5" asChild>
+                  <a href={`${BASE}/api/worker-portal/profile/cv`} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
                     View CV
                   </a>
@@ -679,11 +903,7 @@ export default function ProfilePage() {
                   disabled={cvUploading}
                   onClick={() => cvInputRef.current?.click()}
                 >
-                  {cvUploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
+                  {cvUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                   Replace
                 </Button>
               </div>
@@ -691,7 +911,7 @@ export default function ProfilePage() {
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <p className="text-sm text-muted-foreground flex-1">
-                No CV uploaded yet. Upload a PDF to share with administrators.
+                No CV uploaded yet. Upload a PDF and we can automatically extract your role history.
               </p>
               <Button
                 size="sm"
@@ -700,11 +920,7 @@ export default function ProfilePage() {
                 disabled={cvUploading}
                 onClick={() => cvInputRef.current?.click()}
               >
-                {cvUploading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="h-3.5 w-3.5" />
-                )}
+                {cvUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                 Upload CV
               </Button>
             </div>
@@ -721,57 +937,65 @@ export default function ProfilePage() {
             }}
           />
         </div>
-      </section>
 
-      {/* ── Role history ── */}
-      <section className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center gap-2">
-          <Briefcase className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Role history</h2>
-        </div>
-        {!roleHistoryQ.data || roleHistoryQ.data.length === 0 ? (
-          <div className="px-5 py-6 text-center text-sm text-muted-foreground">
-            No role assigned yet.
+        {/* Role history list */}
+        <div>
+          <div className="px-5 py-3 border-b bg-muted/30">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Role history</p>
           </div>
-        ) : (
-          <div className="divide-y">
-            {roleHistoryQ.data.map((entry) => {
-              const isCurrent = !entry.endDate;
-              return (
-                <div key={entry.id} className={`px-5 py-3.5 flex items-center gap-3 ${isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : ""}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm text-muted-foreground"}`}>
-                      {entry.roleNameSnapshot}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                      <Calendar className="h-3 w-3 flex-shrink-0" />
-                      {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
-                      {entry.endDate
-                        ? <> — {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
-                        : <> — <span className="text-emerald-600 font-medium">Present</span></>
-                      }
-                    </p>
-                    {entry.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>}
+          {!roleHistoryQ.data || roleHistoryQ.data.length === 0 ? (
+            <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+              {roleHistoryQ.isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              ) : (
+                <span>No roles on record. Upload a CV and use &ldquo;Extract roles&rdquo; to populate this automatically.</span>
+              )}
+            </div>
+          ) : (
+            <div className="divide-y">
+              {roleHistoryQ.data.map((entry) => {
+                const isCurrent = !entry.endDate;
+                return (
+                  <div
+                    key={entry.id}
+                    className={`px-5 py-3.5 flex items-center gap-3 ${isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : ""}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm text-muted-foreground"}`}>
+                        {entry.roleNameSnapshot}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                        <Calendar className="h-3 w-3 flex-shrink-0" />
+                        {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
+                        {entry.endDate
+                          ? <> — {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
+                          : <> — <span className="text-emerald-600 font-medium">Present</span></>
+                        }
+                      </p>
+                      {entry.notes && (
+                        <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>
+                      )}
+                    </div>
+                    {isCurrent && (
+                      <span className="text-[10px] border border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
+                        Current
+                      </span>
+                    )}
                   </div>
-                  {isCurrent && (
-                    <span className="text-[10px] border border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
-                      Current
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* ── Change password ── */}
+      {/* ── Section 5: Change password ── */}
       <section className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b flex items-center gap-2">
-          <Lock className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold">Change password</h2>
-        </div>
-
+        <SectionHeader
+          icon={Lock}
+          title="Change password"
+          description="Update your portal login password"
+        />
         <form onSubmit={handlePwChange} className="px-5 py-5 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="pw-current">Current password</Label>
@@ -812,14 +1036,9 @@ export default function ProfilePage() {
               />
             </div>
           </div>
-
           <div className="flex justify-end pt-1">
             <Button type="submit" disabled={pwMut.isPending} variant="outline" className="gap-2">
-              {pwMut.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <KeyRound className="h-4 w-4" />
-              )}
+              {pwMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               Change password
             </Button>
           </div>

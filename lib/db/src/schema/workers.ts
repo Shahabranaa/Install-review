@@ -27,6 +27,7 @@ export const workersTable = pgTable("workers", {
   qualifications: text("qualifications"),
   // CV file (Wasabi key)
   cvWasabiKey: text("cv_wasabi_key"),
+  cvUploadedAt: timestamp("cv_uploaded_at", { withTimezone: true }),
   // Worker portal credentials
   portalUsername: text("portal_username").unique(),
   portalPasswordHash: text("portal_password_hash"),
