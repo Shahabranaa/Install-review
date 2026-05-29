@@ -1,0 +1,17 @@
+0:04 I'm just looking at this. Um, I'll send you some pictures as well, but I'm just thinking just for the flow, if you like.
+0:11 Um, that works, that works, the airports work, um, passport, these bits, can we kind of chunk them together in the passport, passport details, we call it, and then we can have upload passports and then potentially could we have it say that when you upload it it kind of passes the information out so pulls
+0:34 out the passport number place of birth issue day expiry date so the guide don't need to fill it in it just kind of you upload the dock and then it takes it out a bit maybe.
+0:42 Um, and I was thinking maybe we could do the same thing for CV upload as well when the, um, when they upload to CV, um, if it kind of less CV and the rolled history qualifications and notes is all kind of chunked into the, into this bit, the CV resume so these two bits together would hold all of that
+1:05 . Um, and then, and then there's pull like next like next to kin out of it. as well, so it's the same section next to Kin.
+1:14 And then in here really, it would be the name, email, email phone company through our porch. Uh, or username and window ID because all this would be kind of taken care of down here and then the, um, password bit.
+1:29 I think that would be like a better flow. The minute is kind of like, you kind of jump over this to that to this to that.
+1:35 Yeah, if the upload CV did the same thing or similar thing as passport that it would be able to extract, um, a list of all the, um, of all the roll history so I project, roll, um, date from day two, for example.
+1:53 I could give you a few examples, CBs, if that's helpful, just to kind of work out how I extract back then.
+2:00 But it's just more so we've got a kind of, I guess, a little bit of a database if you'd like us to, who's done what, um, and kind of if we're looking for a certain person to fill a role that maybe suggestions are made or, um, we've got a list of them.
+2:16 It's from this extractive information from a guy's CV, if you like. Um, and then just kind of, I guess the date, uh, CV was uploaded just so we can kind of track when it hasn't been done for six months.
+2:28 Um, it doesn't necessarily need to be done. here but it's just so that we could then prompt the guy to update his CV from six six times a day.
+2:38 Yeah I think that'll work mate. We'll come back to schedule in a bit, um, with a stratification. Like when you, in the work report, or I think maybe these should be kind of like the sub menus, but then if there was like a bit of a, a kind of summary page if you like, just as to, you know, can kind of
+2:57 show, you know, the status of his, his profile if you like, you know, what's outstanding is profile, what needs to be done still for example, and then the stratification, what needs to be done still, so more of a summary page, and then you'd be able to jump to the stratification or jump to the pro page
+3:11 . file or jump to the schedule. Do you know what I mean? It kind of I hope we had that first kind of almost like a dashboard for him to be able to see.
+3:20 What he's got to do, what he's done, that kind of stuff. Um, yeah, yeah, I think that'd be a good start mate.
+3:27 All right.
