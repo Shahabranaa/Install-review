@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/worker-portal/"
+title = "Worker Portal"
+version = "1.0.0"
+id = "artifacts/worker-portal"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/worker-portal/" ]
+localPort = 20171
+
+[services.development]
+run = "pnpm --filter @workspace/worker-portal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/worker-portal", "run", "build" ]
+publicDir = "artifacts/worker-portal/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20171"
+BASE_PATH = "/worker-portal/"
