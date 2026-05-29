@@ -22,6 +22,12 @@ export interface CvRoleEntry {
   dateTo: string;
 }
 
+export interface CvExtractResult {
+  roles: CvRoleEntry[];
+  qualifications: string | null;
+  notes: string | null;
+}
+
 /** Extract passport fields from an image or PDF buffer using GPT-4o vision.
  *  Returns null if OpenAI is not configured or extraction fails.
  */
@@ -78,12 +84,12 @@ Only include keys where you are confident in the value. Omit keys you cannot rea
   }
 }
 
-/** Extract role/project history from CV PDF text using GPT-4o.
+/** Extract role/project history, qualifications, and notes from CV PDF text.
  *  Returns null if OpenAI is not configured or extraction fails.
  */
-export async function extractCvRoles(
+export async function extractCvData(
   pdfText: string,
-): Promise<CvRoleEntry[] | null> {
+): Promise<CvExtractResult | null> {
   const openai = getOpenAI();
   if (!openai) {
     logger.warn("OPENAI_API_KEY not set — skipping CV extraction");
@@ -95,17 +101,21 @@ export async function extractCvRoles(
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 1024,
+      max_tokens: 1500,
       messages: [
         {
           role: "user",
-          content: `You are a CV parser. Extract all work experience / project roles from the following CV text and return them as a JSON array. Each entry must have exactly these keys:
-- project (string, company or project name)
-- role (string, job title / role)
-- dateFrom (string, start date, format YYYY-MM if known, otherwise approximate year e.g. "2019")
-- dateTo (string, end date in same format, or "Present" if current)
+          content: `You are a CV parser. Analyse the following CV text and return a JSON object with exactly these keys:
 
-Return only the JSON array, no explanation. If no work experience is found, return [].
+- roles: array of work experience entries, each with:
+  - project (string, company or project name)
+  - role (string, job title)
+  - dateFrom (string, start date as YYYY-MM if known, else just the year e.g. "2019")
+  - dateTo (string, end date in same format, or "Present" if current)
+- qualifications: string summarising academic qualifications, certifications, and training (null if none found)
+- notes: string with any other notable information (skills summary, languages, memberships, etc.) — null if none
+
+Return only valid JSON, no explanation. If no work experience is found, set roles to [].
 
 CV TEXT:
 ${truncated}`,
@@ -114,9 +124,9 @@ ${truncated}`,
     });
 
     const text = response.choices[0]?.message?.content?.trim() ?? "";
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
-    return JSON.parse(jsonMatch[0]) as CvRoleEntry[];
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { roles: [], qualifications: null, notes: null };
+    return JSON.parse(jsonMatch[0]) as CvExtractResult;
   } catch (err) {
     logger.error({ err }, "CV AI extraction error");
     return null;

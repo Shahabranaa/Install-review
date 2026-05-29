@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvRoles } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 
 const router: IRouter = Router();
@@ -1006,6 +1006,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        notes: workersTable.notes,
         passportNo: workersTable.passportNo,
         passportIssueDate: workersTable.passportIssueDate,
         passportExpiryDate: workersTable.passportExpiryDate,
@@ -1040,13 +1041,14 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
 router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const { name, email, phone, company, preferredAirport, qualifications, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth, nokName, nokRelationship, nokPhone } = req.body as {
+    const { name, email, phone, company, preferredAirport, qualifications, notes, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth, nokName, nokRelationship, nokPhone } = req.body as {
       name?: string;
       email?: string;
       phone?: string;
       company?: string;
       preferredAirport?: string[];
       qualifications?: string;
+      notes?: string;
       passportNo?: string;
       passportIssueDate?: string;
       passportExpiryDate?: string;
@@ -1071,6 +1073,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (typeof company === "string") updateSet.company = company.trim() || null;
     if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
+    if (typeof notes === "string") updateSet.notes = notes.trim() || null;
     if (typeof passportNo === "string") updateSet.passportNo = passportNo.trim() || null;
     if (typeof passportIssueDate === "string") updateSet.passportIssueDate = passportIssueDate.trim() || null;
     if (typeof passportExpiryDate === "string") updateSet.passportExpiryDate = passportExpiryDate.trim() || null;
@@ -1091,6 +1094,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        notes: workersTable.notes,
         passportNo: workersTable.passportNo,
         passportIssueDate: workersTable.passportIssueDate,
         passportExpiryDate: workersTable.passportExpiryDate,
@@ -1164,7 +1168,57 @@ router.post(
 
       await logActivity(workerId, "cv_uploaded", safeName, getClientIp(req));
 
-      res.json({ cvWasabiKey: key, filename: safeName });
+      // Run AI extraction immediately after upload — parse PDF text then call AI
+      let cvExtracted: { roles: { project: string; role: string; dateFrom: string; dateTo: string }[]; qualifications: string | null; notes: string | null } | null = null;
+      try {
+        const { text } = await extractText(new Uint8Array(req.file.buffer), { mergePages: true });
+        const pdfText = Array.isArray(text) ? text.join("\n") : (text ?? "");
+        if (pdfText.trim()) {
+          cvExtracted = await extractCvData(pdfText);
+        }
+      } catch (extractErr) {
+        logger.warn({ extractErr }, "CV text extraction failed — skipping AI parse");
+      }
+
+      // Persist extracted data if we got results
+      if (cvExtracted) {
+        // Update qualifications and notes fields on the worker record
+        const qualUpdate: Record<string, unknown> = { updatedAt: new Date() };
+        if (cvExtracted.qualifications) qualUpdate.qualifications = cvExtracted.qualifications;
+        if (cvExtracted.notes) qualUpdate.notes = cvExtracted.notes;
+        if (Object.keys(qualUpdate).length > 1) {
+          await db.update(workersTable).set(qualUpdate).where(eq(workersTable.id, workerId));
+        }
+
+        // Insert extracted roles into worker_role_history
+        if (cvExtracted.roles.length > 0) {
+          // No source column — skip pre-delete, just upsert by roleNameSnapshot+startDate via onConflictDoNothing
+          for (const r of cvExtracted.roles) {
+            const startDate = r.dateFrom?.match(/^\d{4}-\d{2}$/)
+              ? `${r.dateFrom}-01`
+              : r.dateFrom?.match(/^\d{4}$/)
+              ? `${r.dateFrom}-01-01`
+              : r.dateFrom ?? "2000-01-01";
+            const endDate =
+              r.dateTo === "Present" || r.dateTo === "present" || !r.dateTo
+                ? null
+                : r.dateTo?.match(/^\d{4}-\d{2}$/)
+                ? `${r.dateTo}-01`
+                : r.dateTo?.match(/^\d{4}$/)
+                ? `${r.dateTo}-12-31`
+                : r.dateTo;
+            await db.insert(workerRoleHistoryTable).values({
+              workerId,
+              roleNameSnapshot: [r.role, r.project].filter(Boolean).join(" @ "),
+              startDate,
+              endDate: endDate ?? null,
+              notes: null,
+            }).onConflictDoNothing();
+          }
+        }
+      }
+
+      res.json({ cvWasabiKey: key, filename: safeName, extracted: cvExtracted ?? null });
     } catch (err) {
       logger.error({ err }, "worker-portal cv POST error");
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1274,7 +1328,10 @@ router.post(
 
       await logActivity(workerId, "passport_uploaded", safeName, getClientIp(req));
 
-      res.json({ passportWasabiKey: key, filename: safeName });
+      // Run AI extraction immediately after upload — return result in response
+      const extracted = await extractPassportFields(req.file.buffer, req.file.mimetype);
+
+      res.json({ passportWasabiKey: key, filename: safeName, extracted: extracted ?? null });
     } catch (err) {
       logger.error({ err }, "worker-portal passport upload POST error");
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1464,141 +1521,6 @@ router.get("/worker-portal/role-history", requireWorkerAuth, async (req, res): P
       .orderBy(desc(workerRoleHistoryTable.startDate));
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-// POST /api/worker-portal/passport-extract
-// Reads the already-stored passport file and uses AI to extract fields.
-router.post("/worker-portal/passport-extract", requireWorkerAuth, async (req, res): Promise<void> => {
-  try {
-    const workerId = req.session.workerId!;
-
-    const [row] = await db
-      .select({ passportWasabiKey: workersTable.passportWasabiKey })
-      .from(workersTable)
-      .where(eq(workersTable.id, workerId));
-
-    if (!row?.passportWasabiKey) {
-      res.status(404).json({ error: "No passport on file to extract from" });
-      return;
-    }
-
-    const wasabi = await getWasabiClientAndCreds();
-    if (!wasabi) {
-      res.status(503).json({ error: "Storage not configured" });
-      return;
-    }
-
-    const obj = await wasabi.client.send(
-      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.passportWasabiKey }),
-    );
-
-    let buffer: Buffer;
-    if (obj.Body instanceof Readable) {
-      const chunks: Buffer[] = [];
-      for await (const chunk of obj.Body) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
-      }
-      buffer = Buffer.concat(chunks);
-    } else if (obj.Body) {
-      buffer = Buffer.from(
-        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
-      );
-    } else {
-      res.status(502).json({ error: "Empty body from storage" });
-      return;
-    }
-
-    const ext = row.passportWasabiKey.split(".").pop()?.toLowerCase() ?? "";
-    const mimeMap: Record<string, string> = {
-      pdf: "application/pdf",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      png: "image/png",
-      webp: "image/webp",
-    };
-    const mimeType = mimeMap[ext] ?? "image/jpeg";
-
-    // For PDFs, render first page as an image isn't feasible server-side without heavy deps.
-    // Instead send the PDF as a base64 image_url — GPT-4o can read PDF pages via vision.
-    const extracted = await extractPassportFields(buffer, mimeType);
-
-    if (!extracted) {
-      res.status(503).json({ error: "AI extraction is not available (OPENAI_API_KEY not set or extraction failed)" });
-      return;
-    }
-
-    await logActivity(workerId, "passport_extracted", null, getClientIp(req));
-    res.json(extracted);
-  } catch (err) {
-    logger.error({ err }, "worker-portal passport-extract POST error");
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
-// POST /api/worker-portal/cv-extract
-// Reads the stored CV PDF, extracts text, then uses AI to parse role history.
-router.post("/worker-portal/cv-extract", requireWorkerAuth, async (req, res): Promise<void> => {
-  try {
-    const workerId = req.session.workerId!;
-
-    const [row] = await db
-      .select({ cvWasabiKey: workersTable.cvWasabiKey })
-      .from(workersTable)
-      .where(eq(workersTable.id, workerId));
-
-    if (!row?.cvWasabiKey) {
-      res.status(404).json({ error: "No CV on file to extract from" });
-      return;
-    }
-
-    const wasabi = await getWasabiClientAndCreds();
-    if (!wasabi) {
-      res.status(503).json({ error: "Storage not configured" });
-      return;
-    }
-
-    const obj = await wasabi.client.send(
-      new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
-    );
-
-    let buffer: Buffer;
-    if (obj.Body instanceof Readable) {
-      const chunks: Buffer[] = [];
-      for await (const chunk of obj.Body) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
-      }
-      buffer = Buffer.concat(chunks);
-    } else if (obj.Body) {
-      buffer = Buffer.from(
-        await (obj.Body as unknown as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray(),
-      );
-    } else {
-      res.status(502).json({ error: "Empty body from storage" });
-      return;
-    }
-
-    let pdfText = "";
-    try {
-      const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-      pdfText = Array.isArray(text) ? text.join("\n") : (text ?? "");
-    } catch {
-      res.status(422).json({ error: "Could not parse PDF text" });
-      return;
-    }
-
-    const roles = await extractCvRoles(pdfText);
-
-    if (roles === null) {
-      res.status(503).json({ error: "AI extraction is not available (OPENAI_API_KEY not set or extraction failed)" });
-      return;
-    }
-
-    await logActivity(workerId, "cv_extracted", `${roles.length} roles`, getClientIp(req));
-    res.json({ roles });
-  } catch (err) {
-    logger.error({ err }, "worker-portal cv-extract POST error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
