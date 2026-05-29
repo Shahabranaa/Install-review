@@ -823,21 +823,9 @@ export default function ProfilePage() {
         <div className="px-5 pt-5 pb-4 border-b">
           <div className="flex items-center justify-between gap-3 mb-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">CV document</p>
-            {profile?.cvWasabiKey && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="gap-1.5 text-xs h-7"
-                disabled={cvExtracting}
-                onClick={handleCvExtract}
-              >
-                {cvExtracting
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <Sparkles className="h-3.5 w-3.5" />}
-                Extract roles from CV
-              </Button>
-            )}
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Sparkles className="h-3 w-3" /> Roles &amp; qualifications extracted on upload
+            </span>
           </div>
 
           {cvIsStale && (
