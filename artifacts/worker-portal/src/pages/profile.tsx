@@ -535,10 +535,6 @@ export default function ProfilePage() {
               <Label className="text-muted-foreground text-xs">Portal username</Label>
               <Input value={profile?.portalUsername ?? "—"} disabled className="bg-muted/40 text-muted-foreground" />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground text-xs">Role</Label>
-              <Input value={profile?.roleName ?? "—"} disabled className="bg-muted/40 text-muted-foreground" />
-            </div>
             {profile?.windaId && (
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground text-xs">WINDA ID</Label>
@@ -728,37 +724,46 @@ export default function ProfilePage() {
       </section>
 
       {/* ── Role history ── */}
-      {roleHistoryQ.data && roleHistoryQ.data.length > 0 && (
-        <section className="rounded-xl border bg-card overflow-hidden">
-          <div className="px-5 py-4 border-b flex items-center gap-2">
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Role history</h2>
+      <section className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-5 py-4 border-b flex items-center gap-2">
+          <Briefcase className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">Role history</h2>
+        </div>
+        {!roleHistoryQ.data || roleHistoryQ.data.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+            No role assigned yet.
           </div>
+        ) : (
           <div className="divide-y">
-            {roleHistoryQ.data.map((entry) => (
-              <div key={entry.id} className="px-5 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">{entry.roleNameSnapshot}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
-                    {entry.endDate
-                      ? <> — {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
-                      : <> — <span className="text-emerald-600 font-medium">Current</span></>
-                    }
-                  </p>
-                  {entry.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>}
+            {roleHistoryQ.data.map((entry) => {
+              const isCurrent = !entry.endDate;
+              return (
+                <div key={entry.id} className={`px-5 py-3.5 flex items-center gap-3 ${isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : ""}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm text-muted-foreground"}`}>
+                      {entry.roleNameSnapshot}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <Calendar className="h-3 w-3 flex-shrink-0" />
+                      {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
+                      {entry.endDate
+                        ? <> — {new Date(`${entry.endDate}T00:00:00`).toLocaleDateString("en-GB")}</>
+                        : <> — <span className="text-emerald-600 font-medium">Present</span></>
+                      }
+                    </p>
+                    {entry.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>}
+                  </div>
+                  {isCurrent && (
+                    <span className="text-[10px] border border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
+                      Current
+                    </span>
+                  )}
                 </div>
-                {!entry.endDate && (
-                  <span className="text-[10px] border border-emerald-400 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0">
-                    Current
-                  </span>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* ── Change password ── */}
       <section className="rounded-xl border bg-card overflow-hidden">
