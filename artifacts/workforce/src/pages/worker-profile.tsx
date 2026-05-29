@@ -16,7 +16,7 @@ import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
   Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
-  Briefcase, AlertCircle,
+  Briefcase, AlertCircle, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -987,72 +987,85 @@ export default function WorkerProfilePage() {
               <p className="text-sm">{worker.notes}</p>
             </div>
           )}
-          {worker.passportNo && (
-            <div>
-              <p className="text-xs text-muted-foreground">Passport no.</p>
-              <p className="font-medium font-mono">{worker.passportNo}</p>
-            </div>
-          )}
-          {worker.passportPlaceOfBirth && (
-            <div>
-              <p className="text-xs text-muted-foreground">Place of birth</p>
-              <p className="font-medium">{worker.passportPlaceOfBirth}</p>
-            </div>
-          )}
-          {worker.passportIssueDate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Passport issued</p>
-              <p className="font-medium">{worker.passportIssueDate}</p>
-            </div>
-          )}
-          {worker.passportExpiryDate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Passport expires</p>
-              <p className="font-medium">{worker.passportExpiryDate}</p>
-            </div>
-          )}
-          {worker.passportWasabiKey && (
-            <div>
-              <p className="text-xs text-muted-foreground">Passport scan</p>
-              <a
-                href={`${BASE}/api/workforce/workers/${worker.id}/passport`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                Download
-              </a>
-            </div>
-          )}
-          {worker.nokName && (
-            <div>
-              <p className="text-xs text-muted-foreground">Next of kin</p>
-              <p className="font-medium">{worker.nokName}</p>
-              {worker.nokRelationship && (
-                <p className="text-xs text-muted-foreground">{worker.nokRelationship}</p>
-              )}
-              {worker.nokPhone && (
-                <p className="text-xs font-mono">{worker.nokPhone}</p>
-              )}
-            </div>
-          )}
-          <div>
-            <p className="text-xs text-muted-foreground">CV / Résumé</p>
-            {worker.cvWasabiKey ? (
-              <a
-                href={`${BASE}/api/workforce/workers/${worker.id}/cv`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-              >
-                Download CV
-              </a>
-            ) : (
-              <p className="text-sm text-muted-foreground">No CV on file</p>
+        </div>
+      </div>
+
+      {/* Passport */}
+      {(worker.passportNo || worker.passportPlaceOfBirth || worker.passportIssueDate || worker.passportExpiryDate || worker.passportWasabiKey) && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Passport</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-4 py-4 text-sm">
+            {worker.passportNo && (
+              <div>
+                <p className="text-xs text-muted-foreground">Passport no.</p>
+                <p className="font-medium font-mono">{worker.passportNo}</p>
+              </div>
+            )}
+            {worker.passportPlaceOfBirth && (
+              <div>
+                <p className="text-xs text-muted-foreground">Place of birth</p>
+                <p className="font-medium">{worker.passportPlaceOfBirth}</p>
+              </div>
+            )}
+            {worker.passportIssueDate && (
+              <div>
+                <p className="text-xs text-muted-foreground">Issue date</p>
+                <p className="font-medium">{worker.passportIssueDate}</p>
+              </div>
+            )}
+            {worker.passportExpiryDate && (
+              <div>
+                <p className="text-xs text-muted-foreground">Expiry date</p>
+                <p className="font-medium">{worker.passportExpiryDate}</p>
+              </div>
+            )}
+            {worker.passportWasabiKey && (
+              <div>
+                <p className="text-xs text-muted-foreground">Passport scan</p>
+                <a
+                  href={`${BASE}/api/workforce/workers/${worker.id}/passport`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
+                  <Paperclip className="h-3 w-3" /> Download
+                </a>
+              </div>
             )}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Next of Kin */}
+      {worker.nokName && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <User className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Next of Kin</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-4 py-4 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Name</p>
+              <p className="font-medium">{worker.nokName}</p>
+            </div>
+            {worker.nokRelationship && (
+              <div>
+                <p className="text-xs text-muted-foreground">Relationship</p>
+                <p className="font-medium">{worker.nokRelationship}</p>
+              </div>
+            )}
+            {worker.nokPhone && (
+              <div>
+                <p className="text-xs text-muted-foreground">Phone</p>
+                <p className="font-medium font-mono">{worker.nokPhone}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Portal Access (admin only) */}
       {isAdmin && (
