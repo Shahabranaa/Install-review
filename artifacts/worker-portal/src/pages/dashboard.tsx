@@ -182,7 +182,14 @@ function ProfileCompletionCard({ profile, onNavigate }: { profile: WorkerProfile
                 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
                 : <XCircle className="h-3.5 w-3.5 text-muted-foreground/40 flex-shrink-0" />
               }
-              <span className={c.done ? "text-foreground" : "text-muted-foreground"}>{c.label}</span>
+              <span className={c.done ? "text-foreground" : "text-muted-foreground"}>
+                {c.label}
+                {c.label === "CV uploaded" && profile.cvUploadedAt && (
+                  <span className="text-muted-foreground font-normal ml-1">
+                    · {formatDate(profile.cvUploadedAt)}
+                  </span>
+                )}
+              </span>
             </div>
           ))}
         </div>
@@ -207,7 +214,7 @@ function CertSummaryCard({ certs, onNavigate }: { certs: WorkerCert[]; onNavigat
     const in60 = new Date(today);
     in60.setDate(in60.getDate() + 60);
 
-    let valid = 0, expiringSoon = 0, expired = 0, needsAction = 0;
+    let valid = 0, expiringSoon = 0, expired = 0, needsAction = 0, pendingVerification = 0;
 
     for (const c of certs) {
       if (c.rejected || !c.fileUrl || !c.dateAchieved || !c.expiryDate) {
@@ -217,10 +224,11 @@ function CertSummaryCard({ certs, onNavigate }: { certs: WorkerCert[]; onNavigat
       const exp = new Date(c.expiryDate + "T00:00:00");
       if (exp < today) { expired++; continue; }
       if (exp <= in60) { expiringSoon++; continue; }
+      if (!c.verified) { pendingVerification++; continue; }
       valid++;
     }
 
-    return { total: certs.length, valid, expiringSoon, expired, needsAction };
+    return { total: certs.length, valid, expiringSoon, expired, needsAction, pendingVerification };
   }, [certs]);
 
   const expiringItems = useMemo(() => {
@@ -250,6 +258,12 @@ function CertSummaryCard({ certs, onNavigate }: { certs: WorkerCert[]; onNavigat
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
                   <CheckCircle2 className="h-3 w-3" />
                   {summary.valid} valid
+                </span>
+              )}
+              {summary.pendingVerification > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border bg-orange-50 text-orange-700 border-orange-200">
+                  <Clock className="h-3 w-3" />
+                  {summary.pendingVerification} awaiting review
                 </span>
               )}
               {summary.expiringSoon > 0 && (
