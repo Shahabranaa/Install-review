@@ -111,6 +111,8 @@ function certStatusInfo(wc: WorkerCert): {
     return { status: "EXPIRED", label: "Expired", icon: XCircle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
   if (exp <= in30)
     return { status: "EXPIRING_SOON", label: "Expiring soon", icon: Clock, color: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" };
+  if (!wc.verified)
+    return { status: "NOT_VERIFIED", label: "Pending verification", icon: HelpCircle, color: "text-orange-500", badgeClass: "bg-orange-50 text-orange-700 border-orange-200" };
   return { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
 
