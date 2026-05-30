@@ -1218,9 +1218,17 @@ router.post(
           await db.update(workersTable).set(qualUpdate).where(eq(workersTable.id, workerId));
         }
 
-        // Insert extracted roles into worker_role_history
+        // Replace AI-extracted roles: delete previous cv_ai rows then insert fresh ones
+        await db
+          .delete(workerRoleHistoryTable)
+          .where(
+            and(
+              eq(workerRoleHistoryTable.workerId, workerId),
+              eq(workerRoleHistoryTable.source, "cv_ai"),
+            ),
+          );
+
         if (cvExtracted.roles.length > 0) {
-          // No source column — skip pre-delete, just upsert by roleNameSnapshot+startDate via onConflictDoNothing
           for (const r of cvExtracted.roles) {
             const startDate = r.dateFrom?.match(/^\d{4}-\d{2}$/)
               ? `${r.dateFrom}-01`
@@ -1241,7 +1249,8 @@ router.post(
               startDate,
               endDate: endDate ?? null,
               notes: null,
-            }).onConflictDoNothing();
+              source: "cv_ai",
+            });
           }
         }
       }
