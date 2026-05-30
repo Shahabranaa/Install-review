@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, apiPatch, apiPost } from "@/lib/api";
+import { apiFetch, apiPatch, apiPost, apiDelete } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -13,6 +13,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,6 +55,8 @@ import {
   Clock,
   AlertCircle,
   Trash2,
+  Pencil,
+  Plus,
 } from "lucide-react";
 import { AIRPORTS, type Airport } from "@/data/airports";
 import { cn } from "@/lib/utils";
@@ -84,7 +93,11 @@ interface RoleHistoryEntry {
   startDate: string;
   endDate: string | null;
   notes: string | null;
+  source: string;
 }
+
+const EMPTY_ROLE_FORM = { roleNameSnapshot: "", startDate: "", endDate: "", notes: "" };
+type RoleFormFields = typeof EMPTY_ROLE_FORM;
 
 // ── Airport multi-select ──────────────────────────────────────────────────────
 
@@ -291,6 +304,10 @@ export default function ProfilePage() {
     nokPhone: "",
   });
 
+  const [roleForm, setRoleForm] = useState<RoleFormFields>(EMPTY_ROLE_FORM);
+  const [roleFormMode, setRoleFormMode] = useState<{ mode: "add" } | { mode: "edit"; id: number } | null>(null);
+  const [deleteRoleId, setDeleteRoleId] = useState<number | null>(null);
+
   const [pwForm, setPwForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -409,6 +426,78 @@ export default function ProfilePage() {
     onError: (err: Error) =>
       toast({ title: "Failed to remove CV", description: err.message, variant: "destructive" }),
   });
+
+  // ── Role history mutations ──────────────────────────────────────────────────
+
+  const addRoleMut = useMutation({
+    mutationFn: (fields: RoleFormFields) =>
+      apiPost("/api/worker-portal/role-history", {
+        roleNameSnapshot: fields.roleNameSnapshot,
+        startDate: fields.startDate,
+        endDate: fields.endDate || null,
+        notes: fields.notes || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role added" });
+      void qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
+      setRoleFormMode(null);
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to add role", description: err.message, variant: "destructive" }),
+  });
+
+  const editRoleMut = useMutation({
+    mutationFn: ({ id, fields }: { id: number; fields: RoleFormFields }) =>
+      apiPatch(`/api/worker-portal/role-history/${id}`, {
+        roleNameSnapshot: fields.roleNameSnapshot,
+        startDate: fields.startDate,
+        endDate: fields.endDate || null,
+        notes: fields.notes || null,
+      }),
+    onSuccess: () => {
+      toast({ title: "Role updated" });
+      void qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
+      setRoleFormMode(null);
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to update role", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteRoleMut = useMutation({
+    mutationFn: (id: number) => apiDelete(`/api/worker-portal/role-history/${id}`),
+    onSuccess: () => {
+      toast({ title: "Role removed" });
+      void qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
+      setDeleteRoleId(null);
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to remove role", description: err.message, variant: "destructive" }),
+  });
+
+  function openAddRole() {
+    setRoleForm(EMPTY_ROLE_FORM);
+    setRoleFormMode({ mode: "add" });
+  }
+
+  function openEditRole(entry: RoleHistoryEntry) {
+    setRoleForm({
+      roleNameSnapshot: entry.roleNameSnapshot,
+      startDate: entry.startDate,
+      endDate: entry.endDate ?? "",
+      notes: entry.notes ?? "",
+    });
+    setRoleFormMode({ mode: "edit", id: entry.id });
+  }
+
+  function submitRoleForm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!roleFormMode) return;
+    if (roleFormMode.mode === "add") {
+      addRoleMut.mutate(roleForm);
+    } else {
+      editRoleMut.mutate({ id: roleFormMode.id, fields: roleForm });
+    }
+  }
 
   // ── File handlers ───────────────────────────────────────────────────────────
 
@@ -986,30 +1075,51 @@ export default function ProfilePage() {
 
         {/* Role history list */}
         <div>
-          <div className="px-5 py-3 border-b bg-muted/30">
+          <div className="px-5 py-3 border-b bg-muted/30 flex items-center justify-between">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Role history</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
+              onClick={openAddRole}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add role
+            </Button>
           </div>
           {!roleHistoryQ.data || roleHistoryQ.data.length === 0 ? (
             <div className="px-5 py-6 text-center text-sm text-muted-foreground">
               {roleHistoryQ.isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin mx-auto" />
               ) : (
-                <span>No roles on record. Upload a CV and role history will be extracted automatically.</span>
+                <span>No roles on record. Upload a CV or add a role manually.</span>
               )}
             </div>
           ) : (
             <div className="divide-y">
               {roleHistoryQ.data.map((entry) => {
                 const isCurrent = !entry.endDate;
+                const isManual = entry.source === "manual";
                 return (
                   <div
                     key={entry.id}
-                    className={`px-5 py-3.5 flex items-center gap-3 ${isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : ""}`}
+                    className={cn(
+                      "px-5 py-3.5 flex items-center gap-3 group",
+                      isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : "",
+                    )}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm text-muted-foreground"}`}>
-                        {entry.roleNameSnapshot}
-                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm"}`}>
+                          {entry.roleNameSnapshot}
+                        </p>
+                        {isManual && (
+                          <span className="text-[10px] border border-blue-300 text-blue-500 px-1.5 py-0.5 rounded-full leading-none flex-shrink-0">
+                            manual
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                         <Calendar className="h-3 w-3 flex-shrink-0" />
                         {new Date(`${entry.startDate}T00:00:00`).toLocaleDateString("en-GB")}
@@ -1022,17 +1132,124 @@ export default function ProfilePage() {
                         <p className="text-xs text-muted-foreground italic mt-0.5">{entry.notes}</p>
                       )}
                     </div>
-                    {isCurrent && (
-                      <span className="text-[10px] border border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">
-                        Current
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {isCurrent && (
+                        <span className="text-[10px] border border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full font-semibold">
+                          Current
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openEditRole(entry)}
+                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Edit role"
+                        aria-label="Edit role"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteRoleId(entry.id)}
+                        className="p-1.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove role"
+                        aria-label="Remove role"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* Add / edit role dialog */}
+        <Dialog open={roleFormMode !== null} onOpenChange={(open) => { if (!open) setRoleFormMode(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{roleFormMode?.mode === "edit" ? "Edit role" : "Add role"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={submitRoleForm} className="space-y-4 py-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="role-title">Role / position *</Label>
+                <Input
+                  id="role-title"
+                  value={roleForm.roleNameSnapshot}
+                  onChange={(e) => setRoleForm((f) => ({ ...f, roleNameSnapshot: e.target.value }))}
+                  placeholder="e.g. Senior Electrician @ Hornsea Project"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="role-start">Start date *</Label>
+                  <Input
+                    id="role-start"
+                    type="date"
+                    value={roleForm.startDate}
+                    onChange={(e) => setRoleForm((f) => ({ ...f, startDate: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="role-end">End date</Label>
+                  <Input
+                    id="role-end"
+                    type="date"
+                    value={roleForm.endDate}
+                    onChange={(e) => setRoleForm((f) => ({ ...f, endDate: e.target.value }))}
+                    placeholder="Leave blank if current"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Leave blank if current role</p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="role-notes">Notes</Label>
+                <Textarea
+                  id="role-notes"
+                  value={roleForm.notes}
+                  onChange={(e) => setRoleForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Project details, responsibilities…"
+                  rows={2}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setRoleFormMode(null)}>Cancel</Button>
+                <Button
+                  type="submit"
+                  disabled={addRoleMut.isPending || editRoleMut.isPending}
+                  className="gap-2"
+                >
+                  {(addRoleMut.isPending || editRoleMut.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {roleFormMode?.mode === "edit" ? "Save changes" : "Add role"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete role confirmation */}
+        <AlertDialog open={deleteRoleId !== null} onOpenChange={(open) => { if (!open) setDeleteRoleId(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove this role?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This role entry will be permanently removed from your history. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => { if (deleteRoleId !== null) deleteRoleMut.mutate(deleteRoleId); }}
+                disabled={deleteRoleMut.isPending}
+              >
+                {deleteRoleMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Qualifications, notes, preferred airports */}
         <form

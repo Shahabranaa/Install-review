@@ -1638,4 +1638,106 @@ router.get("/worker-portal/role-history", requireWorkerAuth, async (req, res): P
   }
 });
 
+// POST /api/worker-portal/role-history
+router.post("/worker-portal/role-history", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { roleNameSnapshot, startDate, endDate, notes } = req.body as {
+      roleNameSnapshot: string;
+      startDate: string;
+      endDate?: string | null;
+      notes?: string | null;
+    };
+    if (!roleNameSnapshot?.trim()) {
+      res.status(400).json({ error: "Role title is required" });
+      return;
+    }
+    if (!startDate?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      res.status(400).json({ error: "Start date must be YYYY-MM-DD" });
+      return;
+    }
+    const [row] = await db
+      .insert(workerRoleHistoryTable)
+      .values({
+        workerId,
+        roleNameSnapshot: roleNameSnapshot.trim(),
+        startDate,
+        endDate: endDate || null,
+        notes: notes?.trim() || null,
+        source: "manual",
+      })
+      .returning();
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PATCH /api/worker-portal/role-history/:id
+router.patch("/worker-portal/role-history/:id", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [existing] = await db
+      .select({ id: workerRoleHistoryTable.id, workerId: workerRoleHistoryTable.workerId })
+      .from(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.workerId !== workerId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { roleNameSnapshot, startDate, endDate, notes } = req.body as {
+      roleNameSnapshot?: string;
+      startDate?: string;
+      endDate?: string | null;
+      notes?: string | null;
+    };
+    if (roleNameSnapshot !== undefined && !roleNameSnapshot.trim()) {
+      res.status(400).json({ error: "Role title cannot be empty" });
+      return;
+    }
+    if (startDate !== undefined && !startDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      res.status(400).json({ error: "Start date must be YYYY-MM-DD" });
+      return;
+    }
+
+    const update: Record<string, unknown> = { source: "manual" };
+    if (roleNameSnapshot !== undefined) update.roleNameSnapshot = roleNameSnapshot.trim();
+    if (startDate !== undefined) update.startDate = startDate;
+    if ("endDate" in req.body) update.endDate = endDate || null;
+    if ("notes" in req.body) update.notes = notes?.trim() || null;
+
+    const [updated] = await db
+      .update(workerRoleHistoryTable)
+      .set(update)
+      .where(eq(workerRoleHistoryTable.id, id))
+      .returning();
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/role-history/:id
+router.delete("/worker-portal/role-history/:id", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [existing] = await db
+      .select({ id: workerRoleHistoryTable.id, workerId: workerRoleHistoryTable.workerId })
+      .from(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.workerId !== workerId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.delete(workerRoleHistoryTable).where(eq(workerRoleHistoryTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;
