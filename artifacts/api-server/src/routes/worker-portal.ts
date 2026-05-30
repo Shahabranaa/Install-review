@@ -1369,6 +1369,18 @@ router.post(
       // Run AI extraction immediately after upload — return result in response
       const extracted = await extractPassportFields(req.file.buffer, req.file.mimetype);
 
+      // Persist extracted passport fields to DB so the profile re-fetch picks them up
+      if (extracted) {
+        const passUpdate: Record<string, unknown> = { updatedAt: new Date() };
+        if (extracted.passportNo) passUpdate.passportNo = extracted.passportNo;
+        if (extracted.passportPlaceOfBirth) passUpdate.passportPlaceOfBirth = extracted.passportPlaceOfBirth;
+        if (extracted.passportIssueDate) passUpdate.passportIssueDate = extracted.passportIssueDate;
+        if (extracted.passportExpiryDate) passUpdate.passportExpiryDate = extracted.passportExpiryDate;
+        if (Object.keys(passUpdate).length > 1) {
+          await db.update(workersTable).set(passUpdate).where(eq(workersTable.id, workerId));
+        }
+      }
+
       res.json({ passportWasabiKey: key, filename: safeName, extracted: extracted ?? null });
     } catch (err) {
       logger.error({ err }, "worker-portal passport upload POST error");

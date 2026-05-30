@@ -420,9 +420,9 @@ export default function ProfilePage() {
         } | null;
       };
 
-      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
-
-      // Auto-fill passport fields from AI extraction result
+      // Auto-fill passport fields from AI extraction result BEFORE invalidating
+      // the profile query — this prevents the useEffect re-render from wiping them.
+      // The server now also persists these to DB so a page refresh keeps them.
       if (data.extracted) {
         const ext = data.extracted;
         setPassportForm((f) => ({
@@ -441,6 +441,8 @@ export default function ProfilePage() {
       } else {
         toast({ title: "Passport uploaded", description: "Fill in the details below and save." });
       }
+
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
     } finally {
@@ -490,10 +492,9 @@ export default function ProfilePage() {
         } | null;
       };
 
-      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
-      await qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
-
-      // Auto-fill qualifications/notes from AI extraction
+      // Auto-fill qualifications/notes BEFORE invalidating the profile query —
+      // prevents the useEffect re-render from wiping the extracted values.
+      // The server persists these to DB so a page refresh also shows them.
       if (data.extracted) {
         const ext = data.extracted;
         setCvForm((f) => ({
@@ -511,6 +512,9 @@ export default function ProfilePage() {
       } else {
         toast({ title: "CV uploaded" });
       }
+
+      await qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      await qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
     } finally {
