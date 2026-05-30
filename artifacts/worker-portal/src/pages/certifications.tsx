@@ -171,7 +171,6 @@ export default function CertificationsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  const inlineFileRef = useRef<HTMLInputElement>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -179,8 +178,6 @@ export default function CertificationsPage() {
   const [form, setForm] = useState<CertFormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
-  const [inlineAddCertId, setInlineAddCertId] = useState<number | null>(null);
-  const [inlineForm, setInlineForm] = useState({ dateAchieved: "", expiryDate: "", file: null as File | null });
 
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
@@ -217,8 +214,6 @@ export default function CertificationsPage() {
       qc.invalidateQueries({ queryKey: ["worker-compliance"] });
       setAddOpen(false);
       setForm(EMPTY_FORM);
-      setInlineAddCertId(null);
-      setInlineForm({ dateAchieved: "", expiryDate: "", file: null });
       toast({ title: "Certification added" });
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
@@ -268,22 +263,8 @@ export default function CertificationsPage() {
   }
 
   function openAddForCert(certId: number) {
-    if (inlineAddCertId === certId) {
-      setInlineAddCertId(null);
-    } else {
-      setInlineAddCertId(certId);
-      setInlineForm({ dateAchieved: "", expiryDate: "", file: null });
-    }
-  }
-
-  function submitInline(certId: number) {
-    addMut.mutate({
-      certificationId: String(certId),
-      dateAchieved: inlineForm.dateAchieved,
-      expiryDate: inlineForm.expiryDate,
-      notes: "",
-      file: inlineForm.file,
-    });
+    setForm({ ...EMPTY_FORM, certificationId: String(certId) });
+    setAddOpen(true);
   }
 
   const certs = [...(certsQ.data ?? [])].sort(
@@ -426,130 +407,51 @@ export default function CertificationsPage() {
                             const badge = complianceItemBadge(item.status);
                             const needsAction =
                               item.status === "MISSING" || item.status === "EXPIRED";
-                            const isInlineOpen = inlineAddCertId === item.certId;
                             return (
-                              <div key={item.certId}>
-                                <div className="px-4 py-2.5 flex items-center justify-between gap-3 bg-white/60">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-sm font-medium">{item.certName}</span>
-                                      {item.category && (
-                                        <span className="text-[10px] text-muted-foreground bg-muted/70 rounded px-1.5 py-0.5">
-                                          {item.category}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {item.expiryDate && item.status !== "MISSING" && (
-                                      <p className="text-xs text-muted-foreground mt-0.5">
-                                        {item.status === "EXPIRED"
-                                          ? `Expired ${formatDate(item.expiryDate)}`
-                                          : item.daysUntilExpiry !== null
-                                          ? `Expires in ${item.daysUntilExpiry} day${item.daysUntilExpiry !== 1 ? "s" : ""}`
-                                          : `Expires ${formatDate(item.expiryDate)}`}
-                                      </p>
+                              <div
+                                key={item.certId}
+                                className="px-4 py-2.5 flex items-center justify-between gap-3 bg-white/60"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-medium">{item.certName}</span>
+                                    {item.category && (
+                                      <span className="text-[10px] text-muted-foreground bg-muted/70 rounded px-1.5 py-0.5">
+                                        {item.category}
+                                      </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span
-                                      className={cn(
-                                        "text-xs font-medium px-2 py-0.5 rounded-full border",
-                                        badge.cls,
-                                      )}
-                                    >
-                                      {badge.label}
-                                    </span>
-                                    {needsAction && (
-                                      <Button
-                                        size="sm"
-                                        variant={isInlineOpen ? "secondary" : "outline"}
-                                        className={cn(
-                                          "h-7 text-xs px-2.5",
-                                          isInlineOpen
-                                            ? "border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
-                                            : "border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400",
-                                        )}
-                                        onClick={() => openAddForCert(item.certId)}
-                                      >
-                                        <Plus className={cn("h-3 w-3 mr-1 transition-transform", isInlineOpen && "rotate-45")} />
-                                        {isInlineOpen ? "Cancel" : "Add"}
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Inline quick-add form */}
-                                {isInlineOpen && (
-                                  <form
-                                    onSubmit={(e) => { e.preventDefault(); submitInline(item.certId); }}
-                                    className="px-4 py-3 bg-blue-50/40 border-t border-blue-100 space-y-3"
-                                  >
-                                    <p className="text-xs font-medium text-blue-700">
-                                      Adding: <span className="font-semibold">{item.certName}</span>
+                                  {item.expiryDate && item.status !== "MISSING" && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {item.status === "EXPIRED"
+                                        ? `Expired ${formatDate(item.expiryDate)}`
+                                        : item.daysUntilExpiry !== null
+                                        ? `Expires in ${item.daysUntilExpiry} day${item.daysUntilExpiry !== 1 ? "s" : ""}`
+                                        : `Expires ${formatDate(item.expiryDate)}`}
                                     </p>
-                                    <div className="grid grid-cols-2 gap-3">
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Date achieved *</Label>
-                                        <Input
-                                          type="date"
-                                          className="h-8 text-sm"
-                                          value={inlineForm.dateAchieved}
-                                          onChange={(e) => setInlineForm((f) => ({ ...f, dateAchieved: e.target.value }))}
-                                          required
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Expiry date</Label>
-                                        <Input
-                                          type="date"
-                                          className="h-8 text-sm"
-                                          value={inlineForm.expiryDate}
-                                          onChange={(e) => setInlineForm((f) => ({ ...f, expiryDate: e.target.value }))}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <Label className="text-xs">Supporting document <span className="text-muted-foreground">(optional)</span></Label>
-                                      <button
-                                        type="button"
-                                        onClick={() => inlineFileRef.current?.click()}
-                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-md border border-dashed border-blue-300 bg-white/60 text-xs text-muted-foreground hover:border-blue-400 hover:bg-white/80 transition-colors"
-                                      >
-                                        <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
-                                        <span className="truncate">
-                                          {inlineForm.file ? inlineForm.file.name : "Click to attach a file"}
-                                        </span>
-                                        {inlineForm.file && (
-                                          <span
-                                            className="ml-auto text-muted-foreground hover:text-destructive"
-                                            onClick={(e) => { e.stopPropagation(); setInlineForm((f) => ({ ...f, file: null })); }}
-                                          >
-                                            ×
-                                          </span>
-                                        )}
-                                      </button>
-                                      <input
-                                        ref={inlineFileRef}
-                                        type="file"
-                                        className="hidden"
-                                        accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                        onChange={(e) => setInlineForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))}
-                                      />
-                                    </div>
-                                    <div className="flex items-center justify-end gap-3 pt-0.5">
-                                      <button
-                                        type="button"
-                                        className="text-xs text-muted-foreground hover:text-foreground"
-                                        onClick={() => setInlineAddCertId(null)}
-                                      >
-                                        Cancel
-                                      </button>
-                                      <Button type="submit" size="sm" disabled={addMut.isPending} className="h-7 gap-1.5">
-                                        {addMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                        Submit
-                                      </Button>
-                                    </div>
-                                  </form>
-                                )}
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span
+                                    className={cn(
+                                      "text-xs font-medium px-2 py-0.5 rounded-full border",
+                                      badge.cls,
+                                    )}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                  {needsAction && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs px-2.5 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
+                                      onClick={() => openAddForCert(item.certId)}
+                                    >
+                                      <Plus className="h-3 w-3 mr-1" />
+                                      Add
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
