@@ -404,7 +404,7 @@ export default function ProfilePage() {
     onSuccess: () => {
       toast({ title: "CV removed", description: "Your CV and extracted data have been deleted." });
       void qc.invalidateQueries({ queryKey: ["worker-profile"] });
-      void qc.invalidateQueries({ queryKey: ["role-history"] });
+      void qc.invalidateQueries({ queryKey: ["worker-portal-role-history"] });
     },
     onError: (err: Error) =>
       toast({ title: "Failed to remove CV", description: err.message, variant: "destructive" }),

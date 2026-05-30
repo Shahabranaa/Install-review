@@ -1341,8 +1341,14 @@ router.delete("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): 
         await wasabi.client.send(
           new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
         );
-      } catch (storageErr) {
-        logger.warn({ storageErr }, "Failed to delete CV from storage — continuing");
+      } catch (storageErr: unknown) {
+        const code = (storageErr as { Code?: string; name?: string })?.Code ?? (storageErr as { name?: string })?.name;
+        if (code !== "NoSuchKey" && code !== "NotFound") {
+          logger.error({ storageErr }, "Failed to delete CV from storage");
+          res.status(502).json({ error: "Failed to delete CV from storage" });
+          return;
+        }
+        logger.warn({ storageErr }, "CV file not found in storage — continuing with DB cleanup");
       }
     }
 
