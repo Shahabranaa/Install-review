@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -1188,6 +1188,10 @@ router.post(
         if (mime === "application/pdf") {
           const { text } = await extractText(new Uint8Array(req.file.buffer), { mergePages: true });
           cvText = Array.isArray(text) ? text.join("\n") : (text ?? "");
+          // If unpdf found no text (scanned/image-based PDF), use OpenAI vision directly
+          if (!cvText.trim()) {
+            cvExtracted = await extractCvDataFromPdfBuffer(req.file.buffer);
+          }
         } else if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
           const result = await mammoth.extractRawText({ buffer: req.file.buffer });
           cvText = result.value;

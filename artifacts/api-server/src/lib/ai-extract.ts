@@ -84,7 +84,65 @@ Only include keys where you are confident in the value. Omit keys you cannot rea
   }
 }
 
-/** Extract role/project history, qualifications, and notes from CV PDF text.
+const CV_PROMPT = `You are a CV parser. Analyse the CV and return a JSON object with exactly these keys:
+
+- roles: array of work experience entries, each with:
+  - project (string, company or project name)
+  - role (string, job title)
+  - dateFrom (string, start date as YYYY-MM if known, else just the year e.g. "2019")
+  - dateTo (string, end date in same format, or "Present" if current)
+- qualifications: string summarising academic qualifications, certifications, and training (null if none found)
+- notes: string with any other notable information (skills summary, languages, memberships, etc.) — null if none
+
+Return only valid JSON, no explanation. If no work experience is found, set roles to [].`;
+
+/** Extract CV data directly from a PDF buffer (handles scanned/image-based PDFs).
+ *  Uses OpenAI's native file content type — no text extraction needed.
+ *  Returns null if OpenAI is not configured or extraction fails.
+ */
+export async function extractCvDataFromPdfBuffer(
+  buffer: Buffer,
+): Promise<CvExtractResult | null> {
+  const openai = getOpenAI();
+  if (!openai) {
+    logger.warn("OPENAI_API_KEY not set — skipping CV PDF extraction");
+    return null;
+  }
+
+  try {
+    const b64 = buffer.toString("base64");
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 1500,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "file" as const,
+              file: {
+                filename: "cv.pdf",
+                file_data: `data:application/pdf;base64,${b64}`,
+              },
+            } as unknown as OpenAI.Chat.ChatCompletionContentPartText,
+            { type: "text", text: CV_PROMPT },
+          ],
+        },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { roles: [], qualifications: null, notes: null };
+    return JSON.parse(jsonMatch[0]) as CvExtractResult;
+  } catch (err) {
+    logger.error({ err }, "CV PDF (vision) AI extraction error");
+    return null;
+  }
+}
+
+/** Extract role/project history, qualifications, and notes from CV text.
  *  Returns null if OpenAI is not configured or extraction fails.
  */
 export async function extractCvData(
