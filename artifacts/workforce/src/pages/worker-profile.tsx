@@ -105,6 +105,7 @@ interface RoleHistoryEntry {
   startDate: string;
   endDate: string | null;
   notes: string | null;
+  source: string | null;
 }
 
 interface PPEType { id: number; name: string; description: string | null }
@@ -1438,11 +1439,23 @@ export default function WorkerProfilePage() {
                       {entry.notes && <span className="italic">{entry.notes}</span>}
                     </div>
                   </div>
-                  {!entry.endDate && (
-                    <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600 flex-shrink-0">
-                      Current
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {entry.source === "manual" && (
+                      <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 bg-blue-50">
+                        Manual
+                      </Badge>
+                    )}
+                    {entry.source === "cv_ai" && (
+                      <Badge variant="outline" className="text-[10px] border-violet-300 text-violet-600 bg-violet-50">
+                        CV
+                      </Badge>
+                    )}
+                    {!entry.endDate && (
+                      <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600">
+                        Current
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
                     <Button
                       size="icon"
