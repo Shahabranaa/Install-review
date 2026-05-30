@@ -181,7 +181,7 @@ export default function CertificationsPage() {
   const [form, setForm] = useState<CertFormState>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
-  const [inlineAddCertId, setInlineAddCertId] = useState<number | null>(null);
+  const [inlineAddKey, setInlineAddKey] = useState<string | null>(null);
   const [inlineForm, setInlineForm] = useState({ dateAchieved: "", expiryDate: "", notes: "", file: null as File | null });
 
   const certsQ = useQuery<WorkerCert[]>({
@@ -219,7 +219,7 @@ export default function CertificationsPage() {
       qc.invalidateQueries({ queryKey: ["worker-compliance"] });
       setAddOpen(false);
       setForm(EMPTY_FORM);
-      setInlineAddCertId(null);
+      setInlineAddKey(null);
       setInlineForm({ dateAchieved: "", expiryDate: "", notes: "", file: null });
       toast({ title: "Certification added" });
     },
@@ -274,11 +274,11 @@ export default function CertificationsPage() {
     setAddOpen(true);
   }
 
-  function toggleInlineForm(certId: number) {
-    if (inlineAddCertId === certId) {
-      setInlineAddCertId(null);
+  function toggleInlineForm(rowKey: string) {
+    if (inlineAddKey === rowKey) {
+      setInlineAddKey(null);
     } else {
-      setInlineAddCertId(certId);
+      setInlineAddKey(rowKey);
       setInlineForm({ dateAchieved: "", expiryDate: "", notes: "", file: null });
     }
   }
@@ -433,9 +433,10 @@ export default function CertificationsPage() {
                             const badge = complianceItemBadge(item.status);
                             const needsAction =
                               item.status === "MISSING" || item.status === "EXPIRED";
-                            const isOpen = inlineAddCertId === item.certId;
+                            const rowKey = `${site.siteId}:${item.certId}`;
+                            const isOpen = inlineAddKey === rowKey;
                             return (
-                              <div key={item.certId}>
+                              <div key={rowKey}>
                                 {/* Row header */}
                                 <div className="px-4 py-2.5 flex items-center justify-between gap-3 bg-white/60">
                                   <div className="min-w-0 flex-1">
@@ -469,14 +470,14 @@ export default function CertificationsPage() {
                                     {needsAction && (
                                       <button
                                         type="button"
-                                        onClick={() => toggleInlineForm(item.certId)}
+                                        onClick={() => toggleInlineForm(rowKey)}
                                         className={cn(
                                           "h-7 w-7 flex items-center justify-center rounded border transition-colors",
                                           isOpen
                                             ? "border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100"
                                             : "border-red-300 text-red-600 hover:bg-red-50",
                                         )}
-                                        aria-label={isOpen ? "Collapse" : "Add certification"}
+                                        aria-label={isOpen ? "Collapse form" : "Add certification"}
                                       >
                                         <ChevronDown
                                           className={cn("h-4 w-4 transition-transform duration-200", isOpen && "rotate-180")}
@@ -492,7 +493,8 @@ export default function CertificationsPage() {
                                     onSubmit={(e) => { e.preventDefault(); submitInline(item.certId); }}
                                     className="px-4 pt-3 pb-4 bg-slate-50 border-t border-slate-200 space-y-3"
                                   >
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {/* Dates row — side by side */}
+                                    <div className="grid grid-cols-2 gap-3">
                                       <div className="space-y-1">
                                         <Label className="text-xs">Date achieved *</Label>
                                         <Input
@@ -512,35 +514,37 @@ export default function CertificationsPage() {
                                           onChange={(e) => setInlineForm((f) => ({ ...f, expiryDate: e.target.value }))}
                                         />
                                       </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Supporting document <span className="text-muted-foreground">(optional)</span></Label>
-                                        <button
-                                          type="button"
-                                          onClick={() => inlineFileRef.current?.click()}
-                                          className="w-full h-8 flex items-center gap-2 px-3 rounded-md border border-dashed border-slate-300 bg-white text-xs text-muted-foreground hover:border-slate-400 hover:bg-slate-50 transition-colors"
-                                        >
-                                          <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
-                                          <span className="truncate flex-1 text-left">
-                                            {inlineForm.file ? inlineForm.file.name : "Click to attach a file"}
-                                          </span>
-                                          {inlineForm.file && (
-                                            <span
-                                              className="text-muted-foreground hover:text-destructive flex-shrink-0"
-                                              onClick={(e) => { e.stopPropagation(); setInlineForm((f) => ({ ...f, file: null })); if (inlineFileRef.current) inlineFileRef.current.value = ""; }}
-                                            >
-                                              ×
-                                            </span>
-                                          )}
-                                        </button>
-                                        <input
-                                          ref={inlineFileRef}
-                                          type="file"
-                                          className="hidden"
-                                          accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                          onChange={(e) => setInlineForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))}
-                                        />
-                                      </div>
                                     </div>
+                                    {/* File — full width */}
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Supporting document <span className="text-muted-foreground">(optional)</span></Label>
+                                      <button
+                                        type="button"
+                                        onClick={() => inlineFileRef.current?.click()}
+                                        className="w-full h-8 flex items-center gap-2 px-3 rounded-md border border-dashed border-slate-300 bg-white text-xs text-muted-foreground hover:border-slate-400 hover:bg-slate-50 transition-colors"
+                                      >
+                                        <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
+                                        <span className="truncate flex-1 text-left">
+                                          {inlineForm.file ? inlineForm.file.name : "Click to attach a file"}
+                                        </span>
+                                        {inlineForm.file && (
+                                          <span
+                                            className="text-muted-foreground hover:text-destructive flex-shrink-0"
+                                            onClick={(e) => { e.stopPropagation(); setInlineForm((f) => ({ ...f, file: null })); if (inlineFileRef.current) inlineFileRef.current.value = ""; }}
+                                          >
+                                            ×
+                                          </span>
+                                        )}
+                                      </button>
+                                      <input
+                                        ref={inlineFileRef}
+                                        type="file"
+                                        className="hidden"
+                                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                        onChange={(e) => setInlineForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))}
+                                      />
+                                    </div>
+                                    {/* Notes — full width */}
                                     <div className="space-y-1">
                                       <Label className="text-xs">Notes <span className="text-muted-foreground">(optional)</span></Label>
                                       <Textarea
@@ -555,7 +559,7 @@ export default function CertificationsPage() {
                                       <button
                                         type="button"
                                         className="text-sm text-muted-foreground hover:text-foreground"
-                                        onClick={() => setInlineAddCertId(null)}
+                                        onClick={() => setInlineAddKey(null)}
                                       >
                                         Cancel
                                       </button>
