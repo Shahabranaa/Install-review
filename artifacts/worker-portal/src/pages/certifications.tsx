@@ -97,24 +97,43 @@ function certStatusInfo(wc: WorkerCert): {
   color: string;
   badgeClass: string;
 } {
-  if (wc.rejected || !wc.fileUrl || !wc.dateAchieved || !wc.expiryDate) {
-    return { status: "REQUIRES_ACTION", label: "Requires action", icon: AlertTriangle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
-  }
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const in30 = new Date(today);
-  in30.setDate(in30.getDate() + 30);
+  const red = { status: "REQUIRES_ACTION" as CertStatus, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
 
-  const exp = new Date(wc.expiryDate);
-  exp.setHours(0, 0, 0, 0);
-  if (exp < today)
-    return { status: "EXPIRED", label: "Expired", icon: XCircle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
-  if (exp <= in30)
-    return { status: "EXPIRING_SOON", label: "Expiring soon", icon: Clock, color: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" };
+  if (wc.rejected)
+    return { ...red, label: "Rejected", icon: XCircle };
+  if (!wc.fileUrl)
+    return { ...red, label: "Upload required", icon: AlertTriangle };
+  if (!wc.dateAchieved)
+    return { ...red, label: "Date required", icon: AlertTriangle };
+  if (!wc.expiryDate && wc.certification.validityMonths)
+    return { ...red, label: "Expiry date required", icon: AlertTriangle };
+
+  if (wc.expiryDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in30 = new Date(today);
+    in30.setDate(in30.getDate() + 30);
+    const exp = new Date(wc.expiryDate);
+    exp.setHours(0, 0, 0, 0);
+    if (exp < today)
+      return { status: "EXPIRED", label: "Expired", icon: XCircle, color: "text-red-500", badgeClass: "bg-red-50 text-red-700 border-red-200" };
+    if (exp <= in30)
+      return { status: "EXPIRING_SOON", label: "Expiring soon", icon: Clock, color: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700 border-amber-200" };
+  }
+
   if (!wc.verified)
     return { status: "NOT_VERIFIED", label: "Pending verification", icon: HelpCircle, color: "text-orange-500", badgeClass: "bg-orange-50 text-orange-700 border-orange-200" };
   return { status: "VALID", label: "Valid", icon: CheckCircle2, color: "text-emerald-500", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200" };
 }
+
+const STATUS_SORT_ORDER: Record<CertStatus, number> = {
+  REQUIRES_ACTION: 0,
+  EXPIRED: 1,
+  EXPIRING_SOON: 2,
+  NOT_VERIFIED: 3,
+  MISSING: 4,
+  VALID: 5,
+};
 
 function complianceItemBadge(status: CertStatus): { label: string; cls: string } {
   switch (status) {
@@ -248,7 +267,9 @@ export default function CertificationsPage() {
     setAddOpen(true);
   }
 
-  const certs = certsQ.data ?? [];
+  const certs = [...(certsQ.data ?? [])].sort(
+    (a, b) => STATUS_SORT_ORDER[certStatusInfo(a).status] - STATUS_SORT_ORDER[certStatusInfo(b).status],
+  );
   const certTypes = typesQ.data ?? [];
   const complianceSites = complianceQ.data?.sites ?? [];
 
@@ -764,15 +785,6 @@ function CertForm({ form, setForm, grouped, fileRef, lockType }: CertFormProps) 
       </div>
 
       <div className="space-y-1.5">
-        <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
-        <Input
-          value={form.notes}
-          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-          placeholder="Any relevant notes…"
-        />
-      </div>
-
-      <div className="space-y-1.5">
         <Label>Supporting document <span className="text-muted-foreground font-normal">(optional)</span></Label>
         <div
           className="border border-dashed rounded-lg px-4 py-3 text-sm text-muted-foreground cursor-pointer hover:border-primary/50 transition-colors text-center"
@@ -796,6 +808,15 @@ function CertForm({ form, setForm, grouped, fileRef, lockType }: CertFormProps) 
             const f = e.target.files?.[0] ?? null;
             setForm((prev) => ({ ...prev, file: f }));
           }}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+        <Input
+          value={form.notes}
+          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          placeholder="Any relevant notes…"
         />
       </div>
     </div>
