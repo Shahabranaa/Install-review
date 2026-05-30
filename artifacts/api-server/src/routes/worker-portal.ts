@@ -1359,12 +1359,7 @@ router.delete("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): 
 
     await db
       .delete(workerRoleHistoryTable)
-      .where(
-        and(
-          eq(workerRoleHistoryTable.workerId, workerId),
-          eq(workerRoleHistoryTable.source, "cv_ai"),
-        ),
-      );
+      .where(eq(workerRoleHistoryTable.workerId, workerId));
 
     await logActivity(workerId, "cv_removed", row.cvWasabiKey.split("/").pop() ?? "", getClientIp(req));
 
