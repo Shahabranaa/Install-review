@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { eq, or, and, inArray, desc } from "drizzle-orm";
+import { eq, or, and, inArray, desc, asc, sql } from "drizzle-orm";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
@@ -1233,6 +1233,32 @@ router.post(
           );
 
         if (cvExtracted.roles.length > 0) {
+          // Normalize sortOrder for all surviving manual rows first.
+          // Rows with null sortOrder sort NULLS LAST in the GET query, meaning they would
+          // appear AFTER any row with an explicit sortOrder — including newly inserted AI rows.
+          // To guarantee AI rows always appear after manual rows, we must give every manual
+          // row an explicit sortOrder before inserting the AI rows.
+          const manualRows = await db
+            .select({ id: workerRoleHistoryTable.id, sortOrder: workerRoleHistoryTable.sortOrder, startDate: workerRoleHistoryTable.startDate })
+            .from(workerRoleHistoryTable)
+            .where(eq(workerRoleHistoryTable.workerId, workerId))
+            .orderBy(
+              sql`${workerRoleHistoryTable.sortOrder} ASC NULLS LAST`,
+              desc(workerRoleHistoryTable.startDate),
+            );
+
+          for (let i = 0; i < manualRows.length; i++) {
+            const row = manualRows[i]!;
+            if (row.sortOrder !== i) {
+              await db
+                .update(workerRoleHistoryTable)
+                .set({ sortOrder: i })
+                .where(eq(workerRoleHistoryTable.id, row.id));
+            }
+          }
+
+          const aiSortBase = manualRows.length;
+          let aiOffset = 0;
           for (const r of cvExtracted.roles) {
             const startDate = r.dateFrom?.match(/^\d{4}-\d{2}$/)
               ? `${r.dateFrom}-01`
@@ -1254,6 +1280,7 @@ router.post(
               endDate: endDate ?? null,
               notes: null,
               source: "cv_ai",
+              sortOrder: aiSortBase + aiOffset++,
             });
           }
         }
@@ -1631,8 +1658,53 @@ router.get("/worker-portal/role-history", requireWorkerAuth, async (req, res): P
       .select()
       .from(workerRoleHistoryTable)
       .where(eq(workerRoleHistoryTable.workerId, workerId))
-      .orderBy(desc(workerRoleHistoryTable.startDate));
+      .orderBy(
+        sql`${workerRoleHistoryTable.sortOrder} ASC NULLS LAST`,
+        desc(workerRoleHistoryTable.startDate),
+      );
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PATCH /api/worker-portal/role-history/reorder
+router.patch("/worker-portal/role-history/reorder", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { orderedIds } = req.body as { orderedIds?: unknown };
+
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      res.status(400).json({ error: "orderedIds must be a non-empty array" });
+      return;
+    }
+
+    const ids = orderedIds.map((v) => Number(v));
+    if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+      res.status(400).json({ error: "All ids must be positive integers" });
+      return;
+    }
+
+    // Verify all rows belong to this worker
+    const existing = await db
+      .select({ id: workerRoleHistoryTable.id })
+      .from(workerRoleHistoryTable)
+      .where(and(eq(workerRoleHistoryTable.workerId, workerId), inArray(workerRoleHistoryTable.id, ids)));
+
+    if (existing.length !== ids.length) {
+      res.status(403).json({ error: "One or more role IDs are invalid or don't belong to you" });
+      return;
+    }
+
+    // Update sort_order for each id based on its position
+    for (let i = 0; i < ids.length; i++) {
+      await db
+        .update(workerRoleHistoryTable)
+        .set({ sortOrder: i })
+        .where(eq(workerRoleHistoryTable.id, ids[i]!));
+    }
+
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

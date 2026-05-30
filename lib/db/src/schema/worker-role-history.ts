@@ -15,6 +15,7 @@ export const workerRoleHistoryTable = pgTable("worker_role_history", {
   endDate: text("end_date"),
   notes: text("notes"),
   source: text("source"),
+  sortOrder: integer("sort_order"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

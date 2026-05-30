@@ -57,6 +57,7 @@ import {
   Trash2,
   Pencil,
   Plus,
+  GripVertical,
 } from "lucide-react";
 import { AIRPORTS, type Airport } from "@/data/airports";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,7 @@ interface RoleHistoryEntry {
   endDate: string | null;
   notes: string | null;
   source: string;
+  sortOrder: number | null;
 }
 
 const EMPTY_ROLE_FORM = { roleNameSnapshot: "", startDate: "", endDate: "", notes: "" };
@@ -308,6 +310,15 @@ export default function ProfilePage() {
   const [roleFormMode, setRoleFormMode] = useState<{ mode: "add" } | { mode: "edit"; id: number } | null>(null);
   const [deleteRoleId, setDeleteRoleId] = useState<number | null>(null);
 
+  // Drag-to-reorder state
+  const [orderedRoles, setOrderedRoles] = useState<RoleHistoryEntry[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (roleHistoryQ.data) setOrderedRoles(roleHistoryQ.data);
+  }, [roleHistoryQ.data]);
+
   const [pwForm, setPwForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -472,6 +483,15 @@ export default function ProfilePage() {
     },
     onError: (err: Error) =>
       toast({ title: "Failed to remove role", description: err.message, variant: "destructive" }),
+  });
+
+  const reorderMut = useMutation({
+    mutationFn: (orderedIds: number[]) =>
+      apiPatch("/api/worker-portal/role-history/reorder", { orderedIds }),
+    onError: (err: Error) => {
+      toast({ title: "Failed to save order", description: err.message, variant: "destructive" });
+      if (roleHistoryQ.data) setOrderedRoles(roleHistoryQ.data);
+    },
   });
 
   function openAddRole() {
@@ -1088,7 +1108,7 @@ export default function ProfilePage() {
               Add role
             </Button>
           </div>
-          {!roleHistoryQ.data || roleHistoryQ.data.length === 0 ? (
+          {orderedRoles.length === 0 ? (
             <div className="px-5 py-6 text-center text-sm text-muted-foreground">
               {roleHistoryQ.isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin mx-auto" />
@@ -1098,17 +1118,46 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="divide-y">
-              {roleHistoryQ.data.map((entry) => {
+              {orderedRoles.map((entry, index) => {
                 const isCurrent = !entry.endDate;
                 const isManual = entry.source === "manual";
+                const isDraggingOver = dragOverIndex === index && dragIndex !== index;
                 return (
                   <div
                     key={entry.id}
+                    draggable
+                    onDragStart={() => setDragIndex(index)}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index); }}
+                    onDragLeave={() => setDragOverIndex(null)}
+                    onDrop={() => {
+                      if (dragIndex === null || dragIndex === index) {
+                        setDragIndex(null);
+                        setDragOverIndex(null);
+                        return;
+                      }
+                      const next = [...orderedRoles];
+                      const [moved] = next.splice(dragIndex, 1);
+                      next.splice(index, 0, moved!);
+                      setOrderedRoles(next);
+                      setDragIndex(null);
+                      setDragOverIndex(null);
+                      reorderMut.mutate(next.map((r) => r.id));
+                    }}
+                    onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
                     className={cn(
-                      "px-5 py-3.5 flex items-center gap-3 group",
+                      "px-5 py-3.5 flex items-center gap-3 group cursor-default transition-colors",
                       isCurrent ? "bg-emerald-50/50 dark:bg-emerald-950/20" : "",
+                      isDraggingOver ? "border-t-2 border-primary" : "",
+                      dragIndex === index ? "opacity-50" : "",
                     )}
                   >
+                    <div
+                      className="flex-shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                      title="Drag to reorder"
+                      aria-label="Drag handle"
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className={`font-semibold ${isCurrent ? "text-base" : "text-sm"}`}>
