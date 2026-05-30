@@ -2,6 +2,17 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiPatch, apiPost } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,6 +47,7 @@ import {
   Phone,
   Clock,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { AIRPORTS, type Airport } from "@/data/airports";
 import { cn } from "@/lib/utils";
@@ -381,6 +393,21 @@ export default function ProfilePage() {
     },
     onError: (err: Error) =>
       toast({ title: "Failed to change password", description: err.message, variant: "destructive" }),
+  });
+
+  const removeCvMut = useMutation({
+    mutationFn: () =>
+      fetch(`${BASE}/api/worker-portal/profile/cv`, { method: "DELETE", credentials: "include" }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Error ${r.status}`);
+        return r.json() as Promise<{ ok: boolean }>;
+      }),
+    onSuccess: () => {
+      toast({ title: "CV removed", description: "Your CV and extracted data have been deleted." });
+      void qc.invalidateQueries({ queryKey: ["worker-profile"] });
+      void qc.invalidateQueries({ queryKey: ["role-history"] });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to remove CV", description: err.message, variant: "destructive" }),
   });
 
   // ── File handlers ───────────────────────────────────────────────────────────
@@ -881,12 +908,42 @@ export default function ProfilePage() {
                   size="sm"
                   variant="outline"
                   className="gap-1.5"
-                  disabled={cvUploading}
+                  disabled={cvUploading || removeCvMut.isPending}
                   onClick={() => cvInputRef.current?.click()}
                 >
                   {cvUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                   Replace
                 </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-destructive hover:text-destructive"
+                      disabled={cvUploading || removeCvMut.isPending}
+                    >
+                      {removeCvMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Remove
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove CV?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete your CV file and all data extracted from it — including extracted roles, qualifications, and notes. Manually added roles will not be affected.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => removeCvMut.mutate()}
+                      >
+                        Remove CV
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           ) : (

@@ -1320,6 +1320,55 @@ router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Pro
   }
 });
 
+// DELETE /api/worker-portal/profile/cv
+router.delete("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ cvWasabiKey: workersTable.cvWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.cvWasabiKey) {
+      res.status(404).json({ error: "No CV on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (wasabi) {
+      try {
+        await wasabi.client.send(
+          new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
+        );
+      } catch (storageErr) {
+        logger.warn({ storageErr }, "Failed to delete CV from storage — continuing");
+      }
+    }
+
+    await db
+      .update(workersTable)
+      .set({ cvWasabiKey: null, cvUploadedAt: null, qualifications: null, notes: null, updatedAt: new Date() })
+      .where(eq(workersTable.id, workerId));
+
+    await db
+      .delete(workerRoleHistoryTable)
+      .where(
+        and(
+          eq(workerRoleHistoryTable.workerId, workerId),
+          eq(workerRoleHistoryTable.source, "cv_ai"),
+        ),
+      );
+
+    await logActivity(workerId, "cv_removed", row.cvWasabiKey.split("/").pop() ?? "", getClientIp(req));
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal cv DELETE error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // POST /api/worker-portal/passport-upload
 router.post(
   "/worker-portal/passport-upload",
