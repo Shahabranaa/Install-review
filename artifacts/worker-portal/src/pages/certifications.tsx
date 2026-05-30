@@ -525,92 +525,128 @@ export default function CertificationsPage() {
               <p className="font-medium">No certifications yet</p>
               <p className="text-sm mt-1">Add your first certification to get started.</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {certs.map((wc) => {
-                const { label, icon: Icon, color, badgeClass } = certStatusInfo(wc);
-                return (
-                  <div
-                    key={wc.certificationId}
-                    className="rounded-xl border bg-card p-4 flex items-start justify-between gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{wc.certification.name}</span>
-                        {wc.certification.category && (
-                          <span className="text-[11px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                            {wc.certification.category}
-                          </span>
-                        )}
-                      </div>
+          ) : (() => {
+            const actionRequired = certs.filter(wc => certStatusInfo(wc).status === "REQUIRES_ACTION");
+            const awaitingVerification = certs.filter(wc => certStatusInfo(wc).status === "NOT_VERIFIED");
+            const approved = certs.filter(wc => {
+              const s = certStatusInfo(wc).status;
+              return s === "VALID" || s === "EXPIRING_SOON" || s === "EXPIRED";
+            });
 
-                      <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
-                        {wc.dateAchieved && (
-                          <span>Achieved: {formatDate(wc.dateAchieved)}</span>
-                        )}
-                        {wc.expiryDate && (
-                          <span>Expires: {formatDate(wc.expiryDate)}</span>
-                        )}
-                      </div>
-
-                      {wc.notes && (
-                        <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
-                      )}
-
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border",
-                            badgeClass,
-                          )}
-                        >
-                          <Icon className={cn("h-3 w-3", color)} />
-                          {label}
+            function CertCard({ wc }: { wc: WorkerCert }) {
+              const { label, icon: Icon, color, badgeClass } = certStatusInfo(wc);
+              return (
+                <div className="rounded-xl border bg-card p-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{wc.certification.name}</span>
+                      {wc.certification.category && (
+                        <span className="text-[11px] text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                          {wc.certification.category}
                         </span>
-
-                        {wc.fileUrl && (
-                          <a
-                            href={`${BASE}/api/worker-portal/certifications/${wc.certificationId}/file`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                          >
-                            <Paperclip className="h-3 w-3" />
-                            View document
-                          </a>
-                        )}
-                      </div>
-                      {wc.rejected && wc.rejectionComment && (
-                        <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1">
-                          <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                          {wc.rejectionComment}
-                        </p>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        onClick={() => openEdit(wc)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => openDelete(wc)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                    <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
+                      {wc.dateAchieved && <span>Achieved: {formatDate(wc.dateAchieved)}</span>}
+                      {wc.expiryDate && <span>Expires: {formatDate(wc.expiryDate)}</span>}
+                    </div>
+
+                    {wc.notes && (
+                      <p className="text-xs text-muted-foreground mt-1.5 truncate">{wc.notes}</p>
+                    )}
+
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <span className={cn("inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border", badgeClass)}>
+                        <Icon className={cn("h-3 w-3", color)} />
+                        {label}
+                      </span>
+                      {wc.fileUrl && (
+                        <a
+                          href={`${BASE}/api/worker-portal/certifications/${wc.certificationId}/file`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <Paperclip className="h-3 w-3" />
+                          View document
+                        </a>
+                      )}
+                    </div>
+
+                    {wc.rejected && wc.rejectionComment && (
+                      <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1">
+                        <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                        {wc.rejectionComment}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => openEdit(wc)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => openDelete(wc)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6">
+                {actionRequired.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="h-4 w-4 text-red-500" />
+                      <h2 className="text-sm font-semibold text-red-600 uppercase tracking-wide">Action Required</h2>
+                      <span className="text-xs text-red-400 font-medium">({actionRequired.length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      {actionRequired.map(wc => <CertCard key={wc.certificationId} wc={wc} />)}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                )}
+
+                {awaitingVerification.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="h-4 w-4 text-orange-500" />
+                      <h2 className="text-sm font-semibold text-orange-600 uppercase tracking-wide">Awaiting Verification</h2>
+                      <span className="text-xs text-orange-400 font-medium">({awaitingVerification.length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      {awaitingVerification.map(wc => <CertCard key={wc.certificationId} wc={wc} />)}
+                    </div>
+                  </div>
+                )}
+
+                {approved.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <h2 className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Approved Certifications</h2>
+                      <span className="text-xs text-emerald-500 font-medium">({approved.length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      {approved.map(wc => <CertCard key={wc.certificationId} wc={wc} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </section>
 
       {/* Add Dialog */}
