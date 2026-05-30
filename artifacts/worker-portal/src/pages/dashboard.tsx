@@ -145,8 +145,7 @@ function ProfileCompletionCard({ profile, onNavigate }: { profile: WorkerProfile
     { label: "Name",            done: !!profile.name },
     { label: "Email",           done: !!profile.email },
     { label: "Phone",           done: !!profile.phone },
-    { label: "Passport number", done: !!profile.passportNo },
-    { label: "Passport expiry", done: !!profile.passportExpiryDate },
+    { label: "Passport uploaded", done: !!profile.passportWasabiKey },
     { label: "CV uploaded",     done: !!profile.cvWasabiKey },
     { label: "Next of kin",     done: !!(profile.nokName && profile.nokPhone) },
   ], [profile]);
