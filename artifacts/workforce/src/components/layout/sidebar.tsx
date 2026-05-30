@@ -13,6 +13,7 @@ import {
   Handshake,
   HardDriveUpload,
   CalendarDays,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
   { href: "/clients", label: "Clients", icon: Handshake, adminOnly: true },
   { href: "/ppe-types", label: "PPE Types", icon: HardDriveUpload, adminOnly: true },
+  { href: "/review-queue", label: "Review Queue", icon: ClipboardCheck, adminOnly: true },
   { href: "/schedule-requests", label: "Schedule Requests", icon: CalendarDays, adminOnly: true },
   { href: "/emails", label: "Emails", icon: Mail, adminOnly: true },
   { href: "/worker-activity", label: "Worker Activity", icon: Activity, adminOnly: true },

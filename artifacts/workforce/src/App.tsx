@@ -18,6 +18,7 @@ import WorkerActivityPage from "@/pages/worker-activity";
 import ClientsPage from "@/pages/clients";
 import PPETypesPage from "@/pages/ppe-types";
 import ScheduleRequestsPage from "@/pages/schedule-requests";
+import ReviewQueuePage from "@/pages/review-queue";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -140,6 +141,13 @@ function Router() {
         {() => (
           <AuthGate adminOnly>
             <ScheduleRequestsPage />
+          </AuthGate>
+        )}
+      </Route>
+      <Route path="/review-queue">
+        {() => (
+          <AuthGate adminOnly>
+            <ReviewQueuePage />
           </AuthGate>
         )}
       </Route>

@@ -942,6 +942,39 @@ router.delete("/workforce/workers/:id/certifications/:certId", requireAdmin, asy
   }
 });
 
+// GET /workforce/review-queue — all certs awaiting admin verification
+// Returns certs where verified=false AND rejected=false AND fileUrl IS NOT NULL
+router.get("/workforce/review-queue", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const rows = await db
+      .select({
+        workerId: workerCertificationsTable.workerId,
+        workerName: workersTable.name,
+        certId: workerCertificationsTable.certificationId,
+        certName: certificationsTable.name,
+        certCategory: certificationsTable.category,
+        dateAchieved: workerCertificationsTable.dateAchieved,
+        expiryDate: workerCertificationsTable.expiryDate,
+        submittedAt: workerCertificationsTable.updatedAt,
+        fileUrl: workerCertificationsTable.fileUrl,
+      })
+      .from(workerCertificationsTable)
+      .innerJoin(workersTable, eq(workerCertificationsTable.workerId, workersTable.id))
+      .innerJoin(certificationsTable, eq(workerCertificationsTable.certificationId, certificationsTable.id))
+      .where(
+        and(
+          eq(workerCertificationsTable.verified, false),
+          eq(workerCertificationsTable.rejected, false),
+          sql`${workerCertificationsTable.fileUrl} IS NOT NULL`,
+        ),
+      )
+      .orderBy(asc(workerCertificationsTable.updatedAt));
+    res.json(rows);
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
 // POST /workforce/workers/:id/certifications/:certId/file
 // Upload a file for a worker certification. Stores in Wasabi and updates file_url.
 router.post(

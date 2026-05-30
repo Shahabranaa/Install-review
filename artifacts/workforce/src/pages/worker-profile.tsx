@@ -2030,10 +2030,12 @@ export default function WorkerProfilePage() {
           <div className="space-y-3 py-1">
             <p className="text-sm text-muted-foreground">
               Rejecting <span className="font-medium text-foreground">{rejectTarget?.certification.name}</span> will
-              notify the worker that action is required. You can optionally include a reason.
+              notify the worker that action is required. A reason is required.
             </p>
             <div className="space-y-1.5">
-              <Label htmlFor="reject-comment">Reason (optional)</Label>
+              <Label htmlFor="reject-comment">
+                Reason <span className="text-red-500">*</span>
+              </Label>
               <textarea
                 id="reject-comment"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
@@ -2050,7 +2052,7 @@ export default function WorkerProfilePage() {
             </Button>
             <Button
               variant="destructive"
-              disabled={rejectCertMutation.isPending}
+              disabled={rejectCertMutation.isPending || !rejectComment.trim()}
               onClick={() => rejectTarget && rejectCertMutation.mutate({ certId: rejectTarget.certificationId, comment: rejectComment })}
             >
               {rejectCertMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
