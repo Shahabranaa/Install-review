@@ -686,7 +686,13 @@ export default function CertificationsPage() {
 
                     <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
                       {wc.dateAchieved && <span>Achieved: {formatDate(wc.dateAchieved)}</span>}
-                      {wc.expiryDate && <span>Expires: {formatDate(wc.expiryDate)}</span>}
+                      {wc.expiryDate ? (
+                        <span>Expires: {formatDate(wc.expiryDate)}</span>
+                      ) : !wc.certification.validityMonths ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                          No expiry
+                        </span>
+                      ) : null}
                     </div>
 
                     {wc.notes && (

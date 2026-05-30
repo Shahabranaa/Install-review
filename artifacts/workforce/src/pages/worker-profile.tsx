@@ -1143,11 +1143,15 @@ export default function WorkerProfilePage() {
                           <Calendar className="h-3 w-3" /> Achieved {new Date(wc.dateAchieved).toLocaleDateString("en-GB")}
                         </span>
                       )}
-                      {wc.expiryDate && (
+                      {wc.expiryDate ? (
                         <span className={cn("flex items-center gap-1", new Date(wc.expiryDate) < new Date() ? "text-red-500" : "")}>
                           <Clock className="h-3 w-3" /> Expires {new Date(wc.expiryDate).toLocaleDateString("en-GB")}
                         </span>
-                      )}
+                      ) : !wc.certification.validityMonths ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                          No expiry
+                        </span>
+                      ) : null}
                       {wc.fileUrl && (
                         <a
                           href={certFileHref(wc)}
