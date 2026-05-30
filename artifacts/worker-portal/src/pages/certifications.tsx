@@ -157,6 +157,7 @@ interface CertFormState {
   certificationId: string;
   dateAchieved: string;
   expiryDate: string;
+  noExpiry: boolean;
   notes: string;
   file: File | null;
 }
@@ -165,6 +166,7 @@ const EMPTY_FORM: CertFormState = {
   certificationId: "",
   dateAchieved: "",
   expiryDate: "",
+  noExpiry: false,
   notes: "",
   file: null,
 };
@@ -182,7 +184,7 @@ export default function CertificationsPage() {
   const [editTarget, setEditTarget] = useState<WorkerCert | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkerCert | null>(null);
   const [inlineAddKey, setInlineAddKey] = useState<string | null>(null);
-  const [inlineForm, setInlineForm] = useState({ dateAchieved: "", expiryDate: "", notes: "", file: null as File | null });
+  const [inlineForm, setInlineForm] = useState({ dateAchieved: "", expiryDate: "", noExpiry: false, notes: "", file: null as File | null });
 
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
@@ -220,7 +222,7 @@ export default function CertificationsPage() {
       setAddOpen(false);
       setForm(EMPTY_FORM);
       setInlineAddKey(null);
-      setInlineForm({ dateAchieved: "", expiryDate: "", notes: "", file: null });
+      setInlineForm({ dateAchieved: "", expiryDate: "", noExpiry: false, notes: "", file: null });
       toast({ title: "Certification added" });
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
@@ -258,6 +260,7 @@ export default function CertificationsPage() {
       certificationId: String(wc.certificationId),
       dateAchieved: wc.dateAchieved ?? "",
       expiryDate: wc.expiryDate ?? "",
+      noExpiry: !wc.expiryDate,
       notes: wc.notes ?? "",
       file: null,
     });
@@ -279,7 +282,7 @@ export default function CertificationsPage() {
       setInlineAddKey(null);
     } else {
       setInlineAddKey(rowKey);
-      setInlineForm({ dateAchieved: "", expiryDate: "", notes: "", file: null });
+      setInlineForm({ dateAchieved: "", expiryDate: "", noExpiry: false, notes: "", file: null });
     }
   }
 
@@ -287,7 +290,8 @@ export default function CertificationsPage() {
     addMut.mutate({
       certificationId: String(certId),
       dateAchieved: inlineForm.dateAchieved,
-      expiryDate: inlineForm.expiryDate,
+      expiryDate: inlineForm.noExpiry ? "" : inlineForm.expiryDate,
+      noExpiry: inlineForm.noExpiry,
       notes: inlineForm.notes,
       file: inlineForm.file,
     });
@@ -506,18 +510,33 @@ export default function CertificationsPage() {
                                         />
                                       </div>
                                       <div className="space-y-1">
-                                        <Label className="text-xs">Expiry date</Label>
-                                        <Input
-                                          type="date"
-                                          className="h-8 text-sm"
-                                          value={inlineForm.expiryDate}
-                                          onChange={(e) => setInlineForm((f) => ({ ...f, expiryDate: e.target.value }))}
-                                        />
+                                        <div className="flex items-center justify-between gap-1">
+                                          <Label className="text-xs">Expiry date</Label>
+                                          <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              className="h-3 w-3 rounded"
+                                              checked={inlineForm.noExpiry}
+                                              onChange={(e) =>
+                                                setInlineForm((f) => ({ ...f, noExpiry: e.target.checked, expiryDate: e.target.checked ? "" : f.expiryDate }))
+                                              }
+                                            />
+                                            No expiry
+                                          </label>
+                                        </div>
+                                        {!inlineForm.noExpiry && (
+                                          <Input
+                                            type="date"
+                                            className="h-8 text-sm"
+                                            value={inlineForm.expiryDate}
+                                            onChange={(e) => setInlineForm((f) => ({ ...f, expiryDate: e.target.value }))}
+                                          />
+                                        )}
                                       </div>
                                     </div>
                                     {/* File — full width */}
                                     <div className="space-y-1">
-                                      <Label className="text-xs">Supporting document <span className="text-muted-foreground">(optional)</span></Label>
+                                      <Label className="text-xs">Supporting document</Label>
                                       <button
                                         type="button"
                                         onClick={() => inlineFileRef.current?.click()}
@@ -924,22 +943,39 @@ function CertForm({ form, setForm, grouped, fileRef, lockType }: CertFormProps) 
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="flex items-center gap-1">
-            Expiry date
-            {isAutoExpiry && <span className="text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">auto</span>}
-          </Label>
-          <Input
-            type="date"
-            value={form.expiryDate}
-            onChange={(e) => setForm((f) => ({ ...f, expiryDate: e.target.value }))}
-            readOnly={!!isAutoExpiry}
-            className={isAutoExpiry ? "bg-muted/40" : ""}
-          />
+          <div className="flex items-center justify-between gap-2">
+            <Label className="flex items-center gap-1">
+              Expiry date
+              {isAutoExpiry && <span className="text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">auto</span>}
+            </Label>
+            {!isAutoExpiry && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded"
+                  checked={form.noExpiry}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, noExpiry: e.target.checked, expiryDate: e.target.checked ? "" : f.expiryDate }))
+                  }
+                />
+                No expiry date
+              </label>
+            )}
+          </div>
+          {!form.noExpiry && (
+            <Input
+              type="date"
+              value={form.expiryDate}
+              onChange={(e) => setForm((f) => ({ ...f, expiryDate: e.target.value }))}
+              readOnly={!!isAutoExpiry}
+              className={isAutoExpiry ? "bg-muted/40" : ""}
+            />
+          )}
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <Label>Supporting document <span className="text-muted-foreground font-normal">(optional)</span></Label>
+        <Label>Supporting document</Label>
         <div
           className="border border-dashed rounded-lg px-4 py-3 text-sm text-muted-foreground cursor-pointer hover:border-primary/50 transition-colors text-center"
           onClick={() => fileRef.current?.click()}
