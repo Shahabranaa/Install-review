@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe, ClipboardCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  PieChart, Pie, Cell, Tooltip,
 } from "recharts";
 
 interface CertIssueWorker {
@@ -124,6 +125,65 @@ const CHART_COLORS = {
   UNASSIGNED: "#94a3b8",
 };
 
+type Severity = "red" | "orange" | "amber" | "slate";
+
+const SEVERITY_RANK: Record<Severity, number> = { red: 0, orange: 1, amber: 2, slate: 3 };
+
+const SEVERITY_STYLES: Record<Severity, {
+  wrap: string; iconBg: string; title: string; sub: string; cta: string;
+}> = {
+  red: {
+    wrap: "border-red-200 bg-red-50 hover:bg-red-100",
+    iconBg: "bg-red-500", title: "text-red-800", sub: "text-red-600", cta: "text-red-700",
+  },
+  orange: {
+    wrap: "border-orange-200 bg-orange-50 hover:bg-orange-100",
+    iconBg: "bg-orange-500", title: "text-orange-800", sub: "text-orange-600", cta: "text-orange-700",
+  },
+  amber: {
+    wrap: "border-amber-200 bg-amber-50 hover:bg-amber-100",
+    iconBg: "bg-amber-500", title: "text-amber-800", sub: "text-amber-600", cta: "text-amber-700",
+  },
+  slate: {
+    wrap: "border-slate-200 bg-slate-50 hover:bg-slate-100",
+    iconBg: "bg-slate-400", title: "text-slate-700", sub: "text-slate-500", cta: "text-slate-600",
+  },
+};
+
+interface ActionItem {
+  key: string;
+  severity: Severity;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  sub: string;
+  href: string;
+  cta: string;
+}
+
+function ActionRow({ item }: { item: ActionItem }) {
+  const s = SEVERITY_STYLES[item.severity];
+  const Icon = item.icon;
+  return (
+    <Link href={item.href}>
+      <a
+        data-testid={`action-${item.key}`}
+        className={cn("flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors", s.wrap)}
+      >
+        <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0", s.iconBg)}>
+          <Icon className="h-5 w-5 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={cn("text-sm font-semibold", s.title)}>{item.title}</p>
+          <p className={cn("text-xs mt-0.5", s.sub)}>{item.sub}</p>
+        </div>
+        <span className={cn("text-xs font-medium hover:underline flex-shrink-0 whitespace-nowrap", s.cta)}>
+          {item.cta} →
+        </span>
+      </a>
+    </Link>
+  );
+}
+
 function StatCard({
   label, value, icon: Icon, color, href,
 }: {
@@ -180,6 +240,7 @@ export default function DashboardPage() {
   const selectedSite = sites?.find(s => s.id === selectedSiteId) ?? null;
 
   const expiringItems = data?.expiringInNext30Days ?? [];
+  const expiring7Count = expiringItems.filter(i => i.daysUntilExpiry <= 7).length;
 
   const displayCounts = selectedSite
     ? {
@@ -199,6 +260,77 @@ export default function DashboardPage() {
       }
     : null;
 
+  const compliancePct = displayCounts && displayCounts.totalWorkers > 0
+    ? Math.round((displayCounts.readyCount / displayCounts.totalWorkers) * 100)
+    : 0;
+
+  // Build the prioritized action queue from data we already have.
+  const actionItems: ActionItem[] = [];
+  if (displayCounts) {
+    if (displayCounts.nonCompliantCount > 0) {
+      actionItems.push({
+        key: "non-compliant",
+        severity: "red",
+        icon: AlertTriangle,
+        title: `${displayCounts.nonCompliantCount} worker${displayCounts.nonCompliantCount !== 1 ? "s" : ""} not compliant`,
+        sub: "Missing or expired required certifications — resolve before deployment",
+        href: "/workers",
+        cta: "Review workers",
+      });
+    }
+    if (expiring7Count > 0) {
+      actionItems.push({
+        key: "expiring-7",
+        severity: "red",
+        icon: Clock,
+        title: `${expiring7Count} certification${expiring7Count !== 1 ? "s" : ""} expire within 7 days`,
+        sub: "Renew now to prevent a compliance lapse",
+        href: "/workers",
+        cta: "View workers",
+      });
+    }
+    if (reviewCount > 0) {
+      actionItems.push({
+        key: "review",
+        severity: "orange",
+        icon: ClipboardCheck,
+        title: `${reviewCount} certification${reviewCount !== 1 ? "s" : ""} awaiting your review`,
+        sub: selectedSite
+          ? "Workers submitted documents to verify or reject (across all sites)"
+          : "Workers submitted documents to verify or reject",
+        href: "/review-queue",
+        cta: "Go to Review Queue",
+      });
+    }
+    if (displayCounts.expiringCount > 0) {
+      actionItems.push({
+        key: "expiring-soon",
+        severity: "amber",
+        icon: Clock,
+        title: `${displayCounts.expiringCount} worker${displayCounts.expiringCount !== 1 ? "s" : ""} with certs expiring soon`,
+        sub: `Certifications lapsing within the next ${expiryDays} days`,
+        href: "/workers",
+        cta: "View workers",
+      });
+    }
+    if (displayCounts.unassignedCount > 0) {
+      actionItems.push({
+        key: "unassigned",
+        severity: "slate",
+        icon: UserX,
+        title: selectedSite
+          ? `${displayCounts.unassignedCount} worker${displayCounts.unassignedCount !== 1 ? "s" : ""} with no requirements`
+          : `${displayCounts.unassignedCount} unassigned worker${displayCounts.unassignedCount !== 1 ? "s" : ""}`,
+        sub: selectedSite
+          ? "No certification requirements set for this site"
+          : "Assign to a site to start tracking compliance",
+        href: "/workers",
+        cta: "Manage",
+      });
+    }
+  }
+  actionItems.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+
   const complianceChartData = displayCounts ? [
     { name: "Ready", value: displayCounts.readyCount, color: CHART_COLORS.READY },
     { name: "Expiring Soon", value: displayCounts.expiringCount, color: CHART_COLORS.EXPIRING_SOON },
@@ -206,6 +338,14 @@ export default function DashboardPage() {
     { name: selectedSite ? "No Requirements" : "Unassigned", value: displayCounts.unassignedCount, color: CHART_COLORS.UNASSIGNED },
   ] : [];
   const compliancePieData = complianceChartData.filter(d => d.value > 0);
+
+  const sortedSites = (sites ?? [])
+    .filter(s => s.active)
+    .sort((a, b) =>
+      (b.nonCompliantCount - a.nonCompliantCount) ||
+      (b.expiringCount - a.expiringCount) ||
+      (b.workerCount - a.workerCount),
+    );
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -216,7 +356,7 @@ export default function DashboardPage() {
             Workforce Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Live compliance overview for all active workers.
+            What needs your attention, and how the workforce is tracking.
           </p>
         </div>
 
@@ -262,29 +402,39 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Pending review banner */}
-      {reviewCount > 0 && (
-        <Link href="/review-queue">
-          <a className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 hover:bg-orange-100 transition-colors">
-            <div className="h-9 w-9 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0">
-              <ClipboardCheck className="h-5 w-5 text-white" />
+      {/* SECTION 1 — Needs your attention (prioritized action queue) */}
+      <section className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">Needs your attention</h2>
+          {!isLoading && actionItems.length > 0 && (
+            <Badge variant="outline" className="text-[10px]">{actionItems.length}</Badge>
+          )}
+        </div>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+          </div>
+        ) : actionItems.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3" data-testid="all-clear">
+            <div className="h-9 w-9 rounded-lg bg-emerald-500 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="h-5 w-5 text-white" />
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-orange-800">
-                {reviewCount} certification{reviewCount !== 1 ? "s" : ""} awaiting your review
-              </p>
-              <p className="text-xs text-orange-600 mt-0.5">
-                Workers have submitted documents — click to verify or reject
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">All clear</p>
+              <p className="text-xs text-emerald-600 mt-0.5">
+                No outstanding compliance actions{selectedSite ? ` for ${selectedSite.name}` : ""}.
               </p>
             </div>
-            <span className="text-xs font-medium text-orange-700 hover:underline flex-shrink-0">
-              Go to Review Queue →
-            </span>
-          </a>
-        </Link>
-      )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {actionItems.map((item) => <ActionRow key={item.key} item={item} />)}
+          </div>
+        )}
+      </section>
 
-      {/* Stat cards */}
+      {/* SECTION 2 — Quick stat strip */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -299,30 +449,39 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
+      {/* SECTION 3 — Health + upcoming expirations */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Compliance donut chart */}
+        {/* Workforce health: headline % + donut */}
         <div className="border rounded-xl bg-card overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-sm">Compliance Breakdown</h2>
+            <h2 className="font-semibold text-sm">Workforce Health</h2>
             {selectedSite && <span className="text-xs text-muted-foreground">· {selectedSite.name}</span>}
           </div>
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center h-48">
               <Skeleton className="h-36 w-36 rounded-full" />
             </div>
-          ) : !displayCounts ? (
+          ) : !displayCounts || displayCounts.totalWorkers === 0 ? (
             <div className="flex-1 flex items-center justify-center h-48 text-sm text-muted-foreground">
               No assigned workers.
             </div>
           ) : (
-            <div className="flex-1 p-4 flex flex-col items-center justify-center gap-4">
-              <div className="relative" style={{ width: 200, height: 200 }}>
-                <PieChart width={200} height={200}>
+            <div className="flex-1 p-4 flex flex-col items-center justify-center gap-3">
+              <div className="text-center">
+                <p className="text-3xl font-bold tabular-nums" data-testid="text-compliance-pct">
+                  {compliancePct}<span className="text-lg text-muted-foreground">%</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  compliant · {displayCounts.readyCount} of {displayCounts.totalWorkers} workers ready
+                </p>
+              </div>
+              <div className="relative" style={{ width: 180, height: 180 }}>
+                <PieChart width={180} height={180}>
                   <Pie
                     data={[{ value: 1 }]}
-                    cx={100} cy={100}
-                    innerRadius={56} outerRadius={84}
+                    cx={90} cy={90}
+                    innerRadius={50} outerRadius={76}
                     dataKey="value"
                     stroke="none"
                     isAnimationActive={false}
@@ -331,8 +490,8 @@ export default function DashboardPage() {
                   </Pie>
                   <Pie
                     data={compliancePieData}
-                    cx={100} cy={100}
-                    innerRadius={56} outerRadius={84}
+                    cx={90} cy={90}
+                    innerRadius={50} outerRadius={76}
                     paddingAngle={compliancePieData.length > 1 ? 2 : 0}
                     dataKey="value"
                     startAngle={90}
@@ -367,11 +526,11 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Expiring certifications */}
+        {/* Upcoming expirations */}
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-500" />
-            <h2 className="font-semibold text-sm">Expiring in Next {expiryDays} Days</h2>
+            <h2 className="font-semibold text-sm">Upcoming Expirations</h2>
             <div className="ml-auto flex items-center gap-1">
               {selectedSite && (
                 <span className="text-xs text-muted-foreground mr-2">{selectedSite.name}</span>
@@ -392,6 +551,20 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+          {!isLoading && expiringItems.length > 0 && (
+            <div className="px-4 py-2 border-b bg-muted/30 text-xs text-muted-foreground flex items-center gap-3">
+              {expiring7Count > 0 && (
+                <span className="flex items-center gap-1 font-medium text-red-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                  {expiring7Count} within 7 days
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {expiringItems.length} within {expiryDays} days
+              </span>
+            </div>
+          )}
           {isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
@@ -401,7 +574,7 @@ export default function DashboardPage() {
               No certifications expiring in the next {expiryDays} days.
             </div>
           ) : (
-            <div className="divide-y">
+            <div className="divide-y max-h-[360px] overflow-y-auto">
               {expiringItems.map((item, i) => (
                 <div key={i} className="flex items-center gap-3 px-4 py-2.5">
                   <div className="flex-1 min-w-0">
@@ -436,19 +609,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Sites overview (when no specific site is selected) */}
-      {!selectedSite && sites && sites.length > 0 && (
+      {/* SECTION 4 — Sites, sorted by risk */}
+      {!selectedSite && sortedSites.length > 0 && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Building2 className="h-4 w-4 text-primary" />
             <h2 className="font-semibold text-sm">Sites Overview</h2>
+            <span className="text-xs text-muted-foreground">· sorted by risk</span>
           </div>
           <div className="divide-y">
-            {sites.filter(s => s.active).map((site) => {
+            {sortedSites.map((site) => {
               const total = site.workerCount;
               const readyPct = total > 0 ? Math.round((site.readyCount / total) * 100) : 0;
               return (
                 <div key={site.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full flex-shrink-0",
+                      site.nonCompliantCount > 0 ? "bg-red-500" :
+                      site.expiringCount > 0 ? "bg-amber-500" :
+                      total > 0 ? "bg-emerald-500" : "bg-muted-foreground/30",
+                    )}
+                    title={
+                      site.nonCompliantCount > 0 ? "Has non-compliant workers" :
+                      site.expiringCount > 0 ? "Has expiring certifications" :
+                      "Compliant"
+                    }
+                  />
                   <div className="flex-1 min-w-0">
                     <Link href={`/sites/${site.id}`}>
                       <a className="font-medium text-sm hover:underline truncate block">{site.name}</a>
@@ -456,6 +643,11 @@ export default function DashboardPage() {
                     {site.location && <p className="text-xs text-muted-foreground">{site.location}</p>}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {site.nonCompliantCount > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-red-400 text-red-600 hidden sm:inline-flex">
+                        {site.nonCompliantCount} non-compliant
+                      </Badge>
+                    )}
                     <span className="text-xs text-muted-foreground">{total} workers</span>
                     <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden hidden sm:block">
                       <div
@@ -488,7 +680,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Certification issues */}
+      {/* SECTION 5 — Certification issues by type */}
       {data && data.certificationsByStatus.some(c => c.missing + c.expired + c.expiring > 0) && (
         <div className="border rounded-xl bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
