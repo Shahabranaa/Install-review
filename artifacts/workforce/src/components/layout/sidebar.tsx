@@ -18,6 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 
 interface NavItem {
   href: string;
@@ -47,6 +49,14 @@ export function Sidebar() {
 
   const visibleItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
+  const { data: reviewItems } = useQuery<{ workerId: number }[]>({
+    queryKey: ["review-queue"],
+    queryFn: () => apiFetch("/api/workforce/review-queue"),
+    refetchInterval: 60_000,
+    enabled: isAdmin,
+  });
+  const reviewCount = reviewItems?.length ?? 0;
+
   return (
     <aside className="w-60 flex-shrink-0 flex flex-col border-r bg-sidebar h-screen sticky top-0">
       <div className="flex items-center gap-2.5 px-5 py-4 border-b">
@@ -62,6 +72,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {visibleItems.map(({ href, label, icon: Icon }) => {
           const active = location === href;
+          const isReviewQueue = href === "/review-queue";
           return (
             <Link key={href} href={href}>
               <a
@@ -75,6 +86,11 @@ export function Sidebar() {
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 {label}
+                {isReviewQueue && reviewCount > 0 && (
+                  <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+                    {reviewCount > 99 ? "99+" : reviewCount}
+                  </span>
+                )}
               </a>
             </Link>
           );

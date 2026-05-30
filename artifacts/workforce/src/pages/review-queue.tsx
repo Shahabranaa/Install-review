@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiFetch, apiPatch } from "@/lib/api";
@@ -305,13 +305,48 @@ export default function ReviewQueuePage() {
 }
 
 function DocumentViewer({ url }: { url: string }) {
-  const [failed, setFailed] = useState(false);
+  const [state, setState] = useState<
+    { kind: "loading" } | { kind: "error" } | { kind: "ok"; blobUrl: string; contentType: string }
+  >({ kind: "loading" });
 
-  if (failed) {
+  useEffect(() => {
+    setState({ kind: "loading" });
+    let cancelled = false;
+    let createdUrl: string | null = null;
+
+    fetch(url, { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const ct = res.headers.get("content-type") ?? "application/octet-stream";
+        const blob = await res.blob();
+        if (cancelled) return;
+        createdUrl = URL.createObjectURL(new Blob([blob], { type: ct }));
+        setState({ kind: "ok", blobUrl: createdUrl, contentType: ct });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ kind: "error" });
+      });
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [url]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin opacity-40" />
+        <p className="text-sm">Loading document…</p>
+      </div>
+    );
+  }
+
+  if (state.kind === "error") {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
         <FileText className="h-10 w-10 opacity-30" />
-        <p className="text-sm">Could not display document inline.</p>
+        <p className="text-sm">Could not load document.</p>
         <a
           href={url}
           target="_blank"
@@ -325,12 +360,23 @@ function DocumentViewer({ url }: { url: string }) {
     );
   }
 
+  if (state.contentType.startsWith("image/")) {
+    return (
+      <div className="flex items-center justify-center h-full p-4 overflow-auto bg-muted/20">
+        <img
+          src={state.blobUrl}
+          alt="Certification document"
+          className="max-w-full max-h-full object-contain rounded shadow"
+        />
+      </div>
+    );
+  }
+
   return (
     <iframe
-      src={url}
+      src={state.blobUrl}
       title="Certification document"
       className="w-full h-full border-0"
-      onError={() => setFailed(true)}
     />
   );
 }

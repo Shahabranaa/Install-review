@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe,
+  Users, ShieldCheck, AlertTriangle, Clock, UserX, Award, Building2, Globe, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -165,6 +165,13 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   });
 
+  const { data: reviewItems } = useQuery<{ workerId: number }[]>({
+    queryKey: ["review-queue"],
+    queryFn: () => apiFetch("/api/workforce/review-queue"),
+    refetchInterval: 60_000,
+  });
+  const reviewCount = reviewItems?.length ?? 0;
+
   const { data: sites } = useQuery<SiteWithStats[]>({
     queryKey: ["workforce-sites-with-stats"],
     queryFn: () => apiFetch<SiteWithStats[]>("/api/workforce/sites-with-stats"),
@@ -253,6 +260,28 @@ export default function DashboardPage() {
             <a className="ml-auto text-xs text-primary hover:underline">View site</a>
           </Link>
         </div>
+      )}
+
+      {/* Pending review banner */}
+      {reviewCount > 0 && (
+        <Link href="/review-queue">
+          <a className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 hover:bg-orange-100 transition-colors">
+            <div className="h-9 w-9 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0">
+              <ClipboardCheck className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-orange-800">
+                {reviewCount} certification{reviewCount !== 1 ? "s" : ""} awaiting your review
+              </p>
+              <p className="text-xs text-orange-600 mt-0.5">
+                Workers have submitted documents — click to verify or reject
+              </p>
+            </div>
+            <span className="text-xs font-medium text-orange-700 hover:underline flex-shrink-0">
+              Go to Review Queue →
+            </span>
+          </a>
+        </Link>
       )}
 
       {/* Stat cards */}
