@@ -270,6 +270,7 @@ export default function ProfilePage() {
     email: "",
     phone: "",
     company: "",
+    preferredAirport: [] as string[],
   });
 
   const [passportForm, setPassportForm] = useState({
@@ -282,7 +283,6 @@ export default function ProfilePage() {
   const [cvForm, setCvForm] = useState({
     qualifications: "",
     notes: "",
-    preferredAirport: [] as string[],
   });
 
   const [nokForm, setNokForm] = useState({
@@ -317,6 +317,7 @@ export default function ProfilePage() {
         email: p.email ?? "",
         phone: p.phone ?? "",
         company: p.company ?? "",
+        preferredAirport: p.preferredAirport ?? [],
       });
       setPassportForm({
         passportNo: p.passportNo ?? "",
@@ -327,7 +328,6 @@ export default function ProfilePage() {
       setCvForm({
         qualifications: p.qualifications ?? "",
         notes: p.notes ?? "",
-        preferredAirport: p.preferredAirport ?? [],
       });
       setNokForm({
         nokName: p.nokName ?? "",
@@ -660,6 +660,14 @@ export default function ProfilePage() {
                 <Input value={profile.windaId} disabled className="bg-muted/40 text-muted-foreground" />
               </div>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Preferred departure airports</Label>
+            <AirportMultiSelect
+              value={form.preferredAirport}
+              onChange={(val) => setForm((f) => ({ ...f, preferredAirport: val }))}
+            />
           </div>
 
           <div className="flex justify-end pt-1">
@@ -1050,13 +1058,6 @@ export default function ProfilePage() {
               onChange={(e) => setCvForm((f) => ({ ...f, notes: e.target.value }))}
               placeholder="Skills summary, languages, memberships, other relevant information…"
               rows={3}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Preferred departure airports</Label>
-            <AirportMultiSelect
-              value={cvForm.preferredAirport}
-              onChange={(val) => setCvForm((f) => ({ ...f, preferredAirport: val }))}
             />
           </div>
           <div className="flex justify-end pt-1">
