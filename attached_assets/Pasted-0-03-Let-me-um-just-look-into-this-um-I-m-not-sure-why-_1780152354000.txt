@@ -1,0 +1,16 @@
+0:03 Let me, um, just look into this, um, I'm not sure why these require an action, um, because the expiry date is way in advance.
+0:12 Yeah, I'm not sure what this will make, why it requires an action, um, cause you're assuming it will be pending verification.
+0:19 Uh, this one, there's no, no, sir, uploaded, so, should be up here, kind of requires upload, if you like. Um, requires action, I don't know what action it requires, it needs a date, doesn't it?
+0:36 That's right, we'll get you all together. So it's just pending verification now. Uh, documents are waiting to be reviewed by administrator.
+1:01 So, with that, this is what I'm trying to show you. So, over here, you know, as, as the admin, I've got no idea of knowing, kind of, what, what's new to review, cause that's, that's the main thing that these guys are going to be doing, isn't it?
+1:16 Kind of checking that information. So you'd almost want to, um, Um, Be able to, you know, see, kind of, like, this guy's waiting for you to review, that guy's waiting for you to review, so, I guess kind of, at this point.
+1:37 Um, Yeah, you kind of, you can't see the files for that of some reason. Um, I'm not sure why. Yeah, so the way I'd want to see this really as I wouldn't want to have to go into this guide profile to review it, you almost want to, all you need to see is the person kind of where they're going, if you like
+2:02 , and then what is there to review? Ideally, I'd kind of, like, click this or something, and then, in a viewing pane on the right, you'd be able to see the actual cert, um, verify it, and we'd verify the actual expiring and stuff, see the names there, and then just, um, yeah.
+2:20 Uh, yeah, and then kind of tick it off. So I don't want to have to click it to view it, I want to be able to, like, click it, you know, kind of click view here, for example, then it will open and then you you can mark and verify.
+2:40 Until you've viewed it if you like. I'm not going to put those in because it's not showing me the file, so, this should be, um, if there's, if it's being rejected, it shouldn't be optional, you should have to give it a reason.
+3:21 And then that kind of drops off your, kind of, to do if you like. So if you had this, like I said, this kind of list of names with, you know, requiring, uh, approval or verification, you kind of want to see it there, and then it would drop off because it's almost like your, you know, task list.
+3:38 Otherwise, it's a bit like, why are you in here? There's an admin, you know, there's a lot of information, but there's no actual workflows, no process.
+3:45 Um, so I think we developed that first. Cause it's just, it's just a lot of noise at a minute. it really until we start to give it a reason for being.
+3:56 So yeah, like I said, this seems to be kind of gay. I'm getting there now. Um, I think I said I want that moving out the way, didn't I?
+4:39 I want the upload before the, Note. I'm not sure if it notices even necessary and get over complicated, you just need to be able to see, um.
+4:51 Yeah, so again there, because they required an action, they should have been back up here, probably. Umm.
