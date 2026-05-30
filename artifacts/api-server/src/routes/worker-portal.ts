@@ -25,6 +25,7 @@ import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
 import { extractPassportFields, extractCvData } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
+import mammoth from "mammoth";
 
 const router: IRouter = Router();
 
@@ -33,14 +34,24 @@ const certFileUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
 
+const CV_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/msword", // .doc
+  "text/csv",
+  "text/plain",
+  "application/rtf",
+  "text/rtf",
+]);
+
 const cvFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter(_req, file, cb) {
-    if (file.mimetype === "application/pdf") {
+    if (CV_ALLOWED_MIMES.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PDF files are accepted"));
+      cb(new Error("Accepted formats: PDF, Word (DOCX/DOC), CSV, TXT, RTF"));
     }
   },
 });
@@ -1136,7 +1147,7 @@ router.post(
       const workerId = req.session.workerId!;
 
       if (!req.file) {
-        res.status(400).json({ error: "A PDF file is required" });
+        res.status(400).json({ error: "A CV file is required" });
         return;
       }
 
@@ -1157,7 +1168,7 @@ router.post(
           Bucket: wasabi.creds.bucket,
           Key: key,
           Body: req.file.buffer,
-          ContentType: "application/pdf",
+          ContentType: req.file.mimetype,
         }),
       );
 
@@ -1168,13 +1179,30 @@ router.post(
 
       await logActivity(workerId, "cv_uploaded", safeName, getClientIp(req));
 
-      // Run AI extraction immediately after upload — parse PDF text then call AI
+      // Run AI extraction immediately after upload — extract text by file type then call AI
       let cvExtracted: { roles: { project: string; role: string; dateFrom: string; dateTo: string }[]; qualifications: string | null; notes: string | null } | null = null;
       try {
-        const { text } = await extractText(new Uint8Array(req.file.buffer), { mergePages: true });
-        const pdfText = Array.isArray(text) ? text.join("\n") : (text ?? "");
-        if (pdfText.trim()) {
-          cvExtracted = await extractCvData(pdfText);
+        let cvText = "";
+        const mime = req.file.mimetype;
+
+        if (mime === "application/pdf") {
+          const { text } = await extractText(new Uint8Array(req.file.buffer), { mergePages: true });
+          cvText = Array.isArray(text) ? text.join("\n") : (text ?? "");
+        } else if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+          cvText = result.value;
+        } else if (
+          mime === "text/plain" ||
+          mime === "text/csv" ||
+          mime === "application/rtf" ||
+          mime === "text/rtf"
+        ) {
+          cvText = req.file.buffer.toString("utf-8");
+        }
+        // application/msword (.doc) binary format — skip extraction, just store
+
+        if (cvText.trim()) {
+          cvExtracted = await extractCvData(cvText);
         }
       } catch (extractErr) {
         logger.warn({ extractErr }, "CV text extraction failed — skipping AI parse");
@@ -1251,8 +1279,18 @@ router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Pro
       new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
     );
 
-    const filename = row.cvWasabiKey.split("/").pop() ?? "cv.pdf";
-    res.setHeader("Content-Type", "application/pdf");
+    const filename = row.cvWasabiKey.split("/").pop() ?? "cv";
+    const ext = filename.split(".").pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      doc: "application/msword",
+      csv: "text/csv",
+      txt: "text/plain",
+      rtf: "application/rtf",
+    };
+    const contentType = (ext && mimeMap[ext]) ?? "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
     res.setHeader("Cache-Control", "private, max-age=300");
     if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));

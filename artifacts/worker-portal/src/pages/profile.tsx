@@ -450,8 +450,17 @@ export default function ProfilePage() {
   }
 
   async function handleCvUpload(file: File) {
-    if (file.type !== "application/pdf") {
-      toast({ title: "Invalid file type", description: "Only PDF files are accepted.", variant: "destructive" });
+    const allowedCvTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
+      "text/csv",
+      "text/plain",
+      "application/rtf",
+      "text/rtf",
+    ];
+    if (!allowedCvTypes.includes(file.type) && !file.name.match(/\.(pdf|docx|doc|csv|txt|rtf)$/i)) {
+      toast({ title: "Invalid file type", description: "Accepted: PDF, Word (DOCX/DOC), CSV, TXT, RTF.", variant: "destructive" });
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -852,7 +861,7 @@ export default function ProfilePage() {
                         Uploaded {new Date(profile.cvUploadedAt).toLocaleDateString("en-GB")}
                       </>
                     ) : (
-                      "PDF on file"
+                      "Document on file"
                     )}
                   </p>
                 </div>
@@ -879,7 +888,7 @@ export default function ProfilePage() {
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <p className="text-sm text-muted-foreground flex-1">
-                No CV uploaded yet. Upload a PDF and we can automatically extract your role history.
+                No CV uploaded yet. Upload a PDF, Word doc, CSV or TXT file and we can automatically extract your role history.
               </p>
               <Button
                 size="sm"
@@ -893,11 +902,11 @@ export default function ProfilePage() {
               </Button>
             </div>
           )}
-          <p className="text-xs text-muted-foreground mt-3">PDF only · max 10 MB</p>
+          <p className="text-xs text-muted-foreground mt-3">PDF, Word, CSV or TXT · max 10 MB</p>
           <input
             ref={cvInputRef}
             type="file"
-            accept="application/pdf"
+            accept=".pdf,.docx,.doc,.csv,.txt,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/csv,text/plain,application/rtf,text/rtf"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
