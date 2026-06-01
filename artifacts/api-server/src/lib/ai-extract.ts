@@ -142,6 +142,80 @@ export async function extractCvDataFromPdfBuffer(
   }
 }
 
+export interface CertExtractResult {
+  certTypeName: string | null;
+  dateAchieved: string | null;
+  expiryDate: string | null;
+  noExpiry: boolean;
+  notes: string | null;
+  confidence: "high" | "medium" | "low";
+}
+
+/** Extract certification details from a PDF buffer using GPT-4o.
+ *  certTypeNames is the list of known cert type names in this organisation
+ *  so the AI can match the document to the closest type.
+ *  Returns null if OpenAI is not configured or extraction fails.
+ */
+export async function extractCertFromPdf(
+  buffer: Buffer,
+  certTypeNames: string[],
+): Promise<CertExtractResult | null> {
+  const openai = getOpenAI();
+  if (!openai) {
+    logger.warn("OPENAI_API_KEY not set — skipping cert extraction");
+    return null;
+  }
+
+  const typeList = certTypeNames.slice(0, 80).join("\n");
+
+  const prompt = `You are a certification document parser. Analyse this document and extract the following fields, then return them as a JSON object.
+
+Known certification types in this organisation:
+${typeList}
+
+Return a JSON object with exactly these keys:
+- certTypeName (string): the name of the certification from the list above that best matches this document. Use the exact name from the list. If no match, use your best description.
+- dateAchieved (string | null): the date the certification was awarded/passed/achieved, in YYYY-MM-DD format. Null if not found.
+- expiryDate (string | null): the expiry/renewal date in YYYY-MM-DD format. Null if not found or not applicable.
+- noExpiry (boolean): true if the document explicitly states the certification does not expire or has no expiry date.
+- notes (string | null): any other notable information from the document (issuing body, cert number, etc.). Null if nothing noteworthy.
+- confidence ("high" | "medium" | "low"): your overall confidence in the extracted fields. Use "high" if dates and cert type are clearly readable, "medium" if some fields required inference, "low" if the document is unclear.
+
+Return only valid JSON, no explanation.`;
+
+  try {
+    const b64 = buffer.toString("base64");
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 512,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "file" as const,
+              file: {
+                filename: "cert.pdf",
+                file_data: `data:application/pdf;base64,${b64}`,
+              },
+            } as unknown as OpenAI.Chat.ChatCompletionContentPartText,
+            { type: "text", text: prompt },
+          ],
+        },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    return JSON.parse(jsonMatch[0]) as CertExtractResult;
+  } catch (err) {
+    logger.error({ err }, "cert AI extraction error");
+    return null;
+  }
+}
+
 /** Extract role/project history, qualifications, and notes from CV text.
  *  Returns null if OpenAI is not configured or extraction fails.
  */

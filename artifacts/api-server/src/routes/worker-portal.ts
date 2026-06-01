@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -32,6 +32,11 @@ const router: IRouter = Router();
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+});
+
+const certBatchUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 12 },
 });
 
 const CV_ALLOWED_MIMES = new Set([
@@ -270,6 +275,84 @@ router.get("/worker-portal/certifications", requireWorkerAuth, async (req, res):
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// POST /api/worker-portal/certifications/ai-scan
+router.post(
+  "/worker-portal/certifications/ai-scan",
+  requireWorkerAuth,
+  certBatchUpload.array("files", 12),
+  async (req, res): Promise<void> => {
+    try {
+      const certTypes = await db
+        .select()
+        .from(certificationsTable)
+        .orderBy(certificationsTable.name);
+      const typeNames = certTypes.map((ct) => ct.name);
+      const files = (req.files ?? []) as Express.Multer.File[];
+      if (files.length === 0) {
+        res.status(400).json({ error: "No files uploaded" });
+        return;
+      }
+
+      const results = await Promise.all(
+        files.map(async (file) => {
+          try {
+            const extracted = await extractCertFromPdf(file.buffer, typeNames);
+            if (!extracted) {
+              return {
+                filename: file.originalname,
+                certificationId: null,
+                certTypeName: null,
+                dateAchieved: null,
+                expiryDate: null,
+                noExpiry: false,
+                notes: null,
+                confidence: "low" as const,
+                error: "AI extraction failed — fill in manually",
+              };
+            }
+            const lower = (extracted.certTypeName ?? "").toLowerCase();
+            const matched =
+              certTypes.find((ct) => ct.name.toLowerCase() === lower) ??
+              certTypes.find(
+                (ct) =>
+                  ct.name.toLowerCase().includes(lower) ||
+                  lower.includes(ct.name.toLowerCase()),
+              );
+            return {
+              filename: file.originalname,
+              certificationId: matched?.id ?? null,
+              certTypeName: extracted.certTypeName,
+              dateAchieved: extracted.dateAchieved,
+              expiryDate: extracted.expiryDate,
+              noExpiry: extracted.noExpiry,
+              notes: extracted.notes,
+              confidence: extracted.confidence,
+              error: null,
+            };
+          } catch (err) {
+            return {
+              filename: file.originalname,
+              certificationId: null,
+              certTypeName: null,
+              dateAchieved: null,
+              expiryDate: null,
+              noExpiry: false,
+              notes: null,
+              confidence: "low" as const,
+              error: err instanceof Error ? err.message : "Unknown error",
+            };
+          }
+        }),
+      );
+
+      res.json(results);
+    } catch (err) {
+      logger.error({ err }, "cert ai-scan error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
 
 // POST /api/worker-portal/certifications
 router.post(

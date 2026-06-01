@@ -36,10 +36,49 @@ import {
   CheckCheck,
   Building2,
   ChevronDown,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface ScanApiResult {
+  filename: string;
+  certificationId: number | null;
+  certTypeName: string | null;
+  dateAchieved: string | null;
+  expiryDate: string | null;
+  noExpiry: boolean;
+  notes: string | null;
+  confidence: "high" | "medium" | "low";
+  error: string | null;
+}
+
+interface ScanItem {
+  id: string;
+  filename: string;
+  file: File;
+  certificationId: string;
+  dateAchieved: string;
+  expiryDate: string;
+  noExpiry: boolean;
+  notes: string;
+  confidence: "high" | "medium" | "low";
+  error: string | null;
+}
+
+function confidenceBadge(c: "high" | "medium" | "low") {
+  if (c === "high") return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 flex-shrink-0">AI: confident</span>
+  );
+  if (c === "medium") return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200 flex-shrink-0">AI: check dates</span>
+  );
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200 flex-shrink-0">AI: low confidence</span>
+  );
+}
 
 interface CertType {
   id: number;
@@ -186,6 +225,10 @@ export default function CertificationsPage() {
   const [inlineAddKey, setInlineAddKey] = useState<string | null>(null);
   const [inlineForm, setInlineForm] = useState({ dateAchieved: "", expiryDate: "", noExpiry: false, notes: "", file: null as File | null });
 
+  const scanFileInputRef = useRef<HTMLInputElement>(null);
+  const [aiPhase, setAiPhase] = useState<"idle" | "scanning" | "review" | "saving">("idle");
+  const [scanItems, setScanItems] = useState<ScanItem[]>([]);
+
   const certsQ = useQuery<WorkerCert[]>({
     queryKey: ["worker-certs"],
     queryFn: () => apiFetch("/api/worker-portal/certifications"),
@@ -254,6 +297,59 @@ export default function CertificationsPage() {
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
 
+  const scanMut = useMutation({
+    mutationFn: (files: File[]) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      return apiUpload<ScanApiResult[]>("/api/worker-portal/certifications/ai-scan", fd);
+    },
+    onSuccess: (results, files) => {
+      setScanItems(
+        results.map((r, i) => ({
+          id: Math.random().toString(36).slice(2),
+          filename: r.filename,
+          file: files[i],
+          certificationId: r.certificationId != null ? String(r.certificationId) : "",
+          dateAchieved: r.dateAchieved ?? "",
+          expiryDate: r.expiryDate ?? "",
+          noExpiry: r.noExpiry,
+          notes: r.notes ?? "",
+          confidence: r.confidence,
+          error: r.error,
+        })),
+      );
+      setAiPhase("review");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Scan failed", description: err.message, variant: "destructive" });
+      setAiPhase("idle");
+    },
+  });
+
+  const saveScanMut = useMutation({
+    mutationFn: async (items: ScanItem[]) => {
+      const valid = items.filter((i) => !i.error && i.certificationId);
+      for (const item of valid) {
+        const fd = new FormData();
+        fd.append("certificationId", item.certificationId);
+        if (item.dateAchieved) fd.append("dateAchieved", item.dateAchieved);
+        if (!item.noExpiry && item.expiryDate) fd.append("expiryDate", item.expiryDate);
+        if (item.notes) fd.append("notes", item.notes);
+        if (item.file) fd.append("file", item.file);
+        await apiUpload("/api/worker-portal/certifications", fd);
+      }
+      return valid.length;
+    },
+    onSuccess: (count) => {
+      qc.invalidateQueries({ queryKey: ["worker-certs"] });
+      qc.invalidateQueries({ queryKey: ["worker-compliance"] });
+      setAiPhase("idle");
+      setScanItems([]);
+      toast({ title: `${count} certification${count !== 1 ? "s" : ""} saved` });
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
   function openEdit(wc: WorkerCert) {
     setEditTarget(wc);
     setForm({
@@ -284,6 +380,26 @@ export default function CertificationsPage() {
       setInlineAddKey(rowKey);
       setInlineForm({ dateAchieved: "", expiryDate: "", noExpiry: false, notes: "", file: null });
     }
+  }
+
+  function handleScanFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    e.target.value = "";
+    setAiPhase("scanning");
+    scanMut.mutate(files);
+  }
+
+  function updateScanItem(id: string, patch: Partial<ScanItem>) {
+    setScanItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function removeScanItem(id: string) {
+    setScanItems((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      if (next.length === 0) setAiPhase("idle");
+      return next;
+    });
   }
 
   function submitInline(certId: number) {
@@ -646,11 +762,191 @@ export default function CertificationsPage() {
                 <span className="text-sm text-muted-foreground">({certs.length})</span>
               )}
             </div>
-            <Button size="sm" className="gap-1.5" onClick={() => { setForm(EMPTY_FORM); setAddOpen(true); }}>
-              <Plus className="h-4 w-4" />
-              Add certification
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => scanFileInputRef.current?.click()}
+                disabled={aiPhase === "scanning"}
+              >
+                {aiPhase === "scanning" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Upload with AI
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={() => { setForm(EMPTY_FORM); setAddOpen(true); }}>
+                <Plus className="h-4 w-4" />
+                Add
+              </Button>
+            </div>
           </div>
+          <input
+            ref={scanFileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            className="hidden"
+            onChange={handleScanFiles}
+          />
+
+          {/* AI scan panel */}
+          {aiPhase === "scanning" && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-6 text-center space-y-2 mb-6">
+              <Loader2 className="h-6 w-6 animate-spin text-violet-500 mx-auto" />
+              <p className="text-sm font-medium text-violet-800">Reading documents with AI…</p>
+              <p className="text-xs text-violet-500">This usually takes a few seconds per file</p>
+            </div>
+          )}
+
+          {aiPhase === "review" && scanItems.length > 0 && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50/30 p-4 mb-6 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-violet-500" />
+                  <h3 className="text-sm font-semibold text-violet-900">Review AI-extracted certifications</h3>
+                  <span className="text-xs text-violet-500">
+                    {scanItems.filter((i) => !i.error).length} of {scanItems.length} read successfully — edit anything before saving
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setAiPhase("idle"); setScanItems([]); }}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {scanItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "rounded-lg border bg-white p-4 space-y-3",
+                      item.confidence === "low" && !item.error && "border-amber-300",
+                      item.error && "border-red-200 bg-red-50/40",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm font-medium truncate">{item.filename}</span>
+                        {!item.error && confidenceBadge(item.confidence)}
+                      </div>
+                      {item.error ? (
+                        <span className="text-xs text-red-600 flex-shrink-0">{item.error}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => removeScanItem(item.id)}
+                          className="text-muted-foreground hover:text-destructive flex-shrink-0"
+                          aria-label="Remove"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {!item.error && (
+                      <>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Certification type *</Label>
+                          <Select
+                            value={item.certificationId}
+                            onValueChange={(v) => updateScanItem(item.id, { certificationId: v })}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Select a certification…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(grouped).map(([cat, items]) => (
+                                <div key={cat}>
+                                  <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{cat}</div>
+                                  {items.map((ct) => (
+                                    <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
+                                  ))}
+                                </div>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Date achieved</Label>
+                            <Input
+                              type="date"
+                              className="h-8 text-sm"
+                              value={item.dateAchieved}
+                              onChange={(e) => updateScanItem(item.id, { dateAchieved: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <Label className="text-xs">Expiry date</Label>
+                              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  className="h-3 w-3 rounded"
+                                  checked={item.noExpiry}
+                                  onChange={(e) =>
+                                    updateScanItem(item.id, { noExpiry: e.target.checked, expiryDate: e.target.checked ? "" : item.expiryDate })
+                                  }
+                                />
+                                No expiry
+                              </label>
+                            </div>
+                            {!item.noExpiry && (
+                              <Input
+                                type="date"
+                                className="h-8 text-sm"
+                                value={item.expiryDate}
+                                onChange={(e) => updateScanItem(item.id, { expiryDate: e.target.value })}
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Notes <span className="text-muted-foreground">(optional)</span></Label>
+                          <Textarea
+                            className="text-sm resize-none"
+                            rows={2}
+                            value={item.notes}
+                            placeholder="Any relevant notes…"
+                            onChange={(e) => updateScanItem(item.id, { notes: e.target.value })}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => { setAiPhase("idle"); setScanItems([]); }}
+                >
+                  Cancel
+                </button>
+                <Button
+                  onClick={() => saveScanMut.mutate(scanItems)}
+                  disabled={saveScanMut.isPending || scanItems.filter((i) => !i.error && i.certificationId).length === 0}
+                  className="gap-1.5"
+                >
+                  {saveScanMut.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Save {scanItems.filter((i) => !i.error && i.certificationId).length} certification
+                  {scanItems.filter((i) => !i.error && i.certificationId).length !== 1 ? "s" : ""}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {certsQ.isLoading ? (
             <div className="flex justify-center py-12">
