@@ -159,6 +159,7 @@ export interface CertExtractResult {
 export async function extractCertFromPdf(
   buffer: Buffer,
   certTypeNames: string[],
+  mimeType = "application/pdf",
 ): Promise<CertExtractResult | null> {
   const openai = getOpenAI();
   if (!openai) {
@@ -186,22 +187,28 @@ Return only valid JSON, no explanation.`;
   try {
     const b64 = buffer.toString("base64");
 
+    const isImage = mimeType.startsWith("image/");
+
+    const filePart: OpenAI.Chat.ChatCompletionContentPart = isImage
+      ? ({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${b64}` },
+        } as OpenAI.Chat.ChatCompletionContentPartImage)
+      : ({
+          type: "file" as const,
+          file: {
+            filename: "cert.pdf",
+            file_data: `data:application/pdf;base64,${b64}`,
+          },
+        } as unknown as OpenAI.Chat.ChatCompletionContentPartText);
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 512,
       messages: [
         {
           role: "user",
-          content: [
-            {
-              type: "file" as const,
-              file: {
-                filename: "cert.pdf",
-                file_data: `data:application/pdf;base64,${b64}`,
-              },
-            } as unknown as OpenAI.Chat.ChatCompletionContentPartText,
-            { type: "text", text: prompt },
-          ],
+          content: [filePart, { type: "text", text: prompt }],
         },
       ],
     });

@@ -297,7 +297,7 @@ router.post(
       const results = await Promise.all(
         files.map(async (file) => {
           try {
-            const extracted = await extractCertFromPdf(file.buffer, typeNames);
+            const extracted = await extractCertFromPdf(file.buffer, typeNames, file.mimetype);
             if (!extracted) {
               return {
                 filename: file.originalname,
