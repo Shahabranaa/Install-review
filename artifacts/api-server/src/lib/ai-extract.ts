@@ -44,6 +44,30 @@ export async function extractPassportFields(
   try {
     const b64 = buffer.toString("base64");
 
+    const promptText = `You are a passport OCR assistant. Extract the following fields from the passport document and return them as a JSON object with exactly these keys:
+- passportNo (string, passport number / document number)
+- passportPlaceOfBirth (string, place of birth)
+- passportIssueDate (string, issue date in YYYY-MM-DD format)
+- passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
+- name (string, full name as shown on passport)
+
+Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.`;
+
+    const isPdf = mimeType === "application/pdf";
+
+    const docPart: OpenAI.Chat.ChatCompletionContentPart = isPdf
+      ? ({
+          type: "file" as const,
+          file: {
+            filename: "passport.pdf",
+            file_data: `data:application/pdf;base64,${b64}`,
+          },
+        } as unknown as OpenAI.Chat.ChatCompletionContentPartText)
+      : ({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${b64}`, detail: "high" },
+        } as OpenAI.Chat.ChatCompletionContentPartImage);
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 512,
@@ -51,24 +75,8 @@ export async function extractPassportFields(
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: `You are a passport OCR assistant. Extract the following fields from the passport image and return them as a JSON object with exactly these keys:
-- passportNo (string, passport number / document number)
-- passportPlaceOfBirth (string, place of birth)
-- passportIssueDate (string, issue date in YYYY-MM-DD format)
-- passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
-- name (string, full name as shown on passport)
-
-Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.`,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${b64}`,
-                detail: "high",
-              },
-            },
+            { type: "text", text: promptText },
+            docPart,
           ],
         },
       ],

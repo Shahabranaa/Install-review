@@ -1484,6 +1484,52 @@ router.delete("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): 
   }
 });
 
+// DELETE /api/worker-portal/passport
+router.delete("/worker-portal/passport", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ passportWasabiKey: workersTable.passportWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.passportWasabiKey) {
+      res.status(404).json({ error: "No passport on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (wasabi) {
+      try {
+        await wasabi.client.send(
+          new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.passportWasabiKey }),
+        );
+      } catch (storageErr: unknown) {
+        const code = (storageErr as { Code?: string; name?: string })?.Code ?? (storageErr as { name?: string })?.name;
+        if (code !== "NoSuchKey" && code !== "NotFound") {
+          logger.error({ storageErr }, "Failed to delete passport from storage");
+          res.status(502).json({ error: "Failed to delete passport from storage" });
+          return;
+        }
+        logger.warn({ storageErr }, "Passport file not found in storage — continuing with DB cleanup");
+      }
+    }
+
+    await db
+      .update(workersTable)
+      .set({ passportWasabiKey: null, updatedAt: new Date() })
+      .where(eq(workersTable.id, workerId));
+
+    await logActivity(workerId, "passport_removed", row.passportWasabiKey.split("/").pop() ?? "", getClientIp(req));
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal passport DELETE error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // POST /api/worker-portal/passport-upload
 router.post(
   "/worker-portal/passport-upload",
