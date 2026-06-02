@@ -29,10 +29,41 @@ import mammoth from "mammoth";
 
 const router: IRouter = Router();
 
+const CERT_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter(_req, file, cb) {
+    if (CERT_ALLOWED_MIMES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Accepted formats: PDF, JPEG, PNG, WebP"));
+    }
+  },
 });
+
+function certFileUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  certFileUpload.single("file")(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "File exceeds the 20 MB limit"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
 
 const certBatchUpload = multer({
   storage: multer.memoryStorage(),
@@ -358,7 +389,7 @@ router.post(
 router.post(
   "/worker-portal/certifications",
   requireWorkerAuth,
-  certFileUpload.single("file"),
+  certFileUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const workerId = req.session.workerId!;
@@ -432,7 +463,7 @@ router.post(
 router.patch(
   "/worker-portal/certifications/:certId",
   requireWorkerAuth,
-  certFileUpload.single("file"),
+  certFileUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const workerId = req.session.workerId!;
