@@ -70,6 +70,24 @@ const certBatchUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 12 },
 });
 
+function certBatchUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  certBatchUpload.array("files", 12)(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "One or more files exceed the 20 MB limit"
+          : err instanceof multer.MulterError && err.code === "LIMIT_FILE_COUNT"
+          ? "You can upload up to 12 files at a time"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
+
 const CV_ALLOWED_MIMES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
@@ -311,7 +329,7 @@ router.get("/worker-portal/certifications", requireWorkerAuth, async (req, res):
 router.post(
   "/worker-portal/certifications/ai-scan",
   requireWorkerAuth,
-  certBatchUpload.array("files", 12),
+  certBatchUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const certTypes = await db
@@ -327,6 +345,19 @@ router.post(
 
       const results = await Promise.all(
         files.map(async (file) => {
+          if (!CERT_ALLOWED_MIMES.has(file.mimetype)) {
+            return {
+              filename: file.originalname,
+              certificationId: null,
+              certTypeName: null,
+              dateAchieved: null,
+              expiryDate: null,
+              noExpiry: false,
+              notes: null,
+              confidence: "low" as const,
+              error: "Unsupported file type — please upload a PDF, JPEG, PNG, or WebP",
+            };
+          }
           try {
             const extracted = await extractCertFromPdf(file.buffer, typeNames, file.mimetype);
             if (!extracted) {

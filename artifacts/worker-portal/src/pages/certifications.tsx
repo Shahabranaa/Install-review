@@ -382,12 +382,30 @@ export default function CertificationsPage() {
     }
   }
 
+  const CERT_ALLOWED_MIMES = new Set([
+    "application/pdf",
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+  ]);
+
   function handleScanFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
+    const all = Array.from(e.target.files ?? []);
     e.target.value = "";
+    if (!all.length) return;
+    const rejected = all.filter((f) => !CERT_ALLOWED_MIMES.has(f.type));
+    const accepted = all.filter((f) => CERT_ALLOWED_MIMES.has(f.type));
+    if (rejected.length > 0) {
+      toast({
+        title: `${rejected.length} file${rejected.length !== 1 ? "s" : ""} can't be scanned`,
+        description: `${rejected.map((f) => f.name).join(", ")} — only PDF, JPEG, PNG, and WebP are supported.`,
+        variant: "destructive",
+      });
+    }
+    if (!accepted.length) return;
     setAiPhase("scanning");
-    scanMut.mutate(files);
+    scanMut.mutate(accepted);
   }
 
   function updateScanItem(id: string, patch: Partial<ScanItem>) {
