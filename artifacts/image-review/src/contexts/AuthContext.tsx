@@ -46,15 +46,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(identifier: string, password: string): Promise<"admin" | "worker"> {
-    const res = await fetch(`${API_BASE}/api/auth/unified-login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ identifier, password }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/api/auth/unified-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ identifier, password }),
+      });
+    } catch (networkErr: unknown) {
+      throw new Error(`Network error: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`);
+    }
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Login failed" }));
-      throw new Error(err.error ?? "Login failed");
+      const text = await res.text().catch(() => "");
+      let msg = `HTTP ${res.status}`;
+      try { msg = JSON.parse(text).error ?? msg; } catch { msg = text.slice(0, 120) || msg; }
+      throw new Error(msg);
     }
     const data = await res.json() as { type: "admin" | "worker"; user?: AuthUser };
     if (data.type === "admin" && data.user) {
