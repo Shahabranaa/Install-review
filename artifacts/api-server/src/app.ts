@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import session from "express-session";
@@ -52,6 +52,8 @@ app.use(
       if (envOrigins.includes(origin)) return cb(null, true);
       // Replit preview and deployment domains
       if (origin.endsWith(".replit.dev") || origin.endsWith(".replit.app")) return cb(null, true);
+      // Vercel deployment domains
+      if (origin.endsWith(".vercel.app")) return cb(null, true);
       // Development: allow any localhost port
       if (isDev && /^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
       logger.warn({ origin }, "CORS: rejected request from unlisted origin");
@@ -126,6 +128,21 @@ app.use((req, _res, next) => {
 });
 
 app.use("/api", router);
+
+// ── Global JSON error handler ─────────────────────────────────────────────────
+// Must have 4 parameters so Express treats it as an error handler.
+// Catches any error thrown (or passed via next(err)) from route handlers,
+// including async throws caught by express-async-errors.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const status = (err as { status?: number; statusCode?: number }).status
+    ?? (err as { status?: number; statusCode?: number }).statusCode
+    ?? 500;
+  const message =
+    err instanceof Error ? err.message : "Internal server error";
+  logger.error({ err }, "Unhandled route error");
+  res.status(status).json({ error: message });
+});
 
 // ── Startup security tasks ────────────────────────────────────────────────────
 // Audit for compromised default credentials in all environments
