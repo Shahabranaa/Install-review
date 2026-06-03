@@ -92,24 +92,48 @@ function ResultCard({ result }: { result: MethodResult }) {
   );
 }
 
+function PendingCard({ name }: { name: string }) {
+  return (
+    <Card className="flex-1 min-w-0 opacity-60">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{name}</CardTitle>
+        <div className="flex items-center gap-1.5 mt-1">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Running…</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {FIELD_LABELS.map(({ key, label }) => (
+          <div key={key} className="flex flex-col gap-0.5">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">{label}</p>
+            <p className="text-sm text-muted-foreground italic">—</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const METHOD_NAMES = ["GPT-4o General", "GPT-4o MRZ-focused", "Tesseract + MRZ parser"];
+
 export default function PassportOcrTestPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<MethodResult[] | null>(null);
+  const [results, setResults] = useState<MethodResult[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setFile(f);
-    setResults(null);
+    setResults([]);
     setError(null);
   }
 
   async function runComparison() {
     if (!file) return;
     setRunning(true);
-    setResults(null);
+    setResults([]);
     setError(null);
 
     try {
@@ -127,14 +151,37 @@ export default function PassportOcrTestPage() {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
 
-      const data = await res.json() as MethodResult[];
-      setResults(data);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const json = line.slice(6).trim();
+            if (json && json !== "{}") {
+              try {
+                const r = JSON.parse(json) as MethodResult;
+                setResults((prev) => [...prev, r]);
+              } catch {}
+            }
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRunning(false);
     }
   }
+
+  const arrivedNames = new Set(results.map((r) => r.method));
+  const pendingNames = running ? METHOD_NAMES.filter((n) => !arrivedNames.has(n)) : [];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -188,7 +235,7 @@ export default function PassportOcrTestPage() {
 
           {running && (
             <p className="text-xs text-muted-foreground mt-3">
-              Running all three methods in parallel — Tesseract may take 20–30 s on first use while language data loads.
+              Results appear as each method finishes — all three run in parallel.
             </p>
           )}
 
@@ -200,10 +247,13 @@ export default function PassportOcrTestPage() {
         </CardContent>
       </Card>
 
-      {results && (
+      {(results.length > 0 || pendingNames.length > 0) && (
         <div className="flex flex-col md:flex-row gap-4 items-start">
           {results.map((r) => (
             <ResultCard key={r.method} result={r} />
+          ))}
+          {pendingNames.map((n) => (
+            <PendingCard key={n} name={n} />
           ))}
         </div>
       )}

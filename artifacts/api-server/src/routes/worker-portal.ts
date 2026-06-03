@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, comparePassportExtractors } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportTesseract, type PassportExtractResult } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -2004,22 +2004,60 @@ router.delete("/worker-portal/role-history/:id", requireWorkerAuth, async (req, 
 });
 
 // POST /api/worker-portal/passport-ocr-compare  (dev/test only)
+// Streams results via Server-Sent Events so each method's result arrives as it finishes,
+// avoiding proxy timeouts on slow GPT-4o vision calls.
 router.post(
   "/worker-portal/passport-ocr-compare",
   requireWorkerAuth,
   passportUploadMiddleware,
   async (req, res): Promise<void> => {
-    try {
-      if (!req.file) {
-        res.status(400).json({ error: "A file is required" });
-        return;
-      }
-      const results = await comparePassportExtractors(req.file.buffer, req.file.mimetype);
-      res.json(results);
-    } catch (err) {
-      logger.error({ err }, "passport-ocr-compare error");
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    if (!req.file) {
+      res.status(400).json({ error: "A file is required" });
+      return;
     }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    const { buffer, mimetype } = req.file;
+
+    const methods: { key: string; description: string; fn: () => Promise<PassportExtractResult | null> }[] = [
+      {
+        key: "GPT-4o General",
+        description: "Current production method — general OCR prompt",
+        fn: () => extractPassportGptGeneral(buffer, mimetype),
+      },
+      {
+        key: "GPT-4o MRZ-focused",
+        description: "MRZ-first prompt — transcribes machine-readable zone then parses fields",
+        fn: () => extractPassportGptMrz(buffer, mimetype),
+      },
+      {
+        key: "Tesseract + MRZ parser",
+        description: "Open-source OCR (no API cost) — finds MRZ lines and parses with mrz package",
+        fn: () => extractPassportTesseract(buffer, mimetype),
+      },
+    ];
+
+    await Promise.all(
+      methods.map(async (m) => {
+        const start = Date.now();
+        try {
+          const result = await m.fn();
+          const payload = { method: m.key, description: m.description, result, durationMs: Date.now() - start, error: null };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        } catch (err) {
+          logger.error({ err }, `passport-ocr-compare error: ${m.key}`);
+          const payload = { method: m.key, description: m.description, result: null, durationMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      })
+    );
+
+    res.write("event: done\ndata: {}\n\n");
+    res.end();
   },
 );
 
