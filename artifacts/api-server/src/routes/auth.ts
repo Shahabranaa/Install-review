@@ -77,9 +77,6 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
   if (adminUser && adminUser.active) {
     const valid = await bcrypt.compare(password, adminUser.passwordHash);
     if (valid) {
-      await new Promise<void>((resolve, reject) =>
-        req.session.regenerate((err) => (err ? reject(err) : resolve()))
-      );
       req.session.userId = adminUser.id;
       req.session.username = adminUser.username;
       req.session.displayName = adminUser.displayName;
@@ -118,9 +115,6 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
   if (worker && worker.active && worker.portalPasswordHash) {
     const valid = await bcrypt.compare(password, worker.portalPasswordHash);
     if (valid) {
-      await new Promise<void>((resolve, reject) =>
-        req.session.regenerate((err) => (err ? reject(err) : resolve()))
-      );
       req.session.sessionType = "worker";
       req.session.workerId = worker.id;
       req.session.workerName = worker.name;

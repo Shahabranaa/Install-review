@@ -1,1 +1,1 @@
-- [executeSql vs Neon DB](executesql-vs-neon.md) — executeSql sandbox writes to Replit's built-in DB, not NEON_DATABASE_URL; use pg driver directly for Neon ops.
+- [Session regenerate breaks Replit proxy cookies](session-regenerate-replit.md) — session.regenerate() creates new SID but Replit proxy doesn't forward updated Set-Cookie; skip regenerate, update session in place.
