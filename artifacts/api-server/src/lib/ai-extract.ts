@@ -143,12 +143,7 @@ export async function extractPassportTesseract(
     throw new Error("Tesseract method only supports image files (JPEG, PNG, WebP). Re-upload as an image to test this method.");
   }
 
-  const worker = await createWorker("eng", 1, {
-    workerPath: undefined,
-    langPath: undefined,
-    corePath: undefined,
-    logger: undefined,
-  });
+  const worker = await createWorker("eng");
 
   try {
     const { data: { text } } = await worker.recognize(buffer);
