@@ -8,6 +8,7 @@ import DashboardPage from "@/pages/dashboard";
 import CertificationsPage from "@/pages/certifications";
 import SchedulePage from "@/pages/schedule";
 import ProfilePage from "@/pages/profile";
+import PassportOcrTestPage from "@/pages/passport-ocr-test";
 import { Button } from "@/components/ui/button";
 import { HardHat, LogOut, LayoutDashboard, Award, CalendarDays, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,9 @@ function AppShell() {
   );
 }
 
+const isOcrTestMode = typeof window !== "undefined" &&
+  (window.location.search.includes("ocr-test") || window.location.hash === "#ocr-test");
+
 function AppContent() {
   const { worker, isLoading } = useAuth();
 
@@ -135,6 +139,7 @@ function AppContent() {
   }
 
   if (!worker) return <LoginPage />;
+  if (isOcrTestMode) return <PassportOcrTestPage />;
   return <AppShell />;
 }
 

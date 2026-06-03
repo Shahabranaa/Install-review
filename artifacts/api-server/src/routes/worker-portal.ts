@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, comparePassportExtractors } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -2002,5 +2002,25 @@ router.delete("/worker-portal/role-history/:id", requireWorkerAuth, async (req, 
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// POST /api/worker-portal/passport-ocr-compare  (dev/test only)
+router.post(
+  "/worker-portal/passport-ocr-compare",
+  requireWorkerAuth,
+  passportUploadMiddleware,
+  async (req, res): Promise<void> => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "A file is required" });
+        return;
+      }
+      const results = await comparePassportExtractors(req.file.buffer, req.file.mimetype);
+      res.json(results);
+    } catch (err) {
+      logger.error({ err }, "passport-ocr-compare error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
 
 export default router;
