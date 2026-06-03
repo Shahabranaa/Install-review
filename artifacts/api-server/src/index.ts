@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { syncCablesFromSheet } from "./routes/cables";
 import { scanImageAvailability, syncPhotosFromSheet, parseSyncIntervalMs } from "./routes/photos";
+import { warmTesseractWorker } from "./lib/tesseract-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -98,6 +99,9 @@ app.listen(port, (err) => {
 
   // Pass 5: schedule automatic photo sync from Google Sheet
   const syncIntervalMs = parseSyncIntervalMs();
+
+  // Pass 6: pre-warm Tesseract worker so language data is ready before first request
+  warmTesseractWorker();
 
   logger.info({ syncIntervalMs }, "Auto-sync: scheduling photo sync interval");
 

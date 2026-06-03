@@ -1,6 +1,6 @@
 import OpenAI from "openai";
-import { createWorker } from "tesseract.js";
 import { parse as parseMrz } from "mrz";
+import { getTesseractWorker } from "./tesseract-worker.js";
 import { logger } from "./logger.js";
 
 function getOpenAI(): OpenAI | null {
@@ -143,56 +143,51 @@ export async function extractPassportTesseract(
     throw new Error("Tesseract method only supports image files (JPEG, PNG, WebP). Re-upload as an image to test this method.");
   }
 
-  const worker = await createWorker("eng");
+  const worker = await getTesseractWorker();
+  const { data: { text } } = await worker.recognize(buffer);
 
-  try {
-    const { data: { text } } = await worker.recognize(buffer);
+  // Find MRZ lines: TD3 passport = 2 lines of exactly 44 chars matching [A-Z0-9<]{44}
+  const lines = text.split("\n").map((l) => l.trim().replace(/\s+/g, "").toUpperCase());
+  const mrzCandidates = lines.filter((l) => /^[A-Z0-9<]{40,50}$/.test(l));
 
-    // Find MRZ lines: TD3 passport = 2 lines of exactly 44 chars matching [A-Z0-9<]{44}
-    const lines = text.split("\n").map((l) => l.trim().replace(/\s+/g, "").toUpperCase());
-    const mrzCandidates = lines.filter((l) => /^[A-Z0-9<]{40,50}$/.test(l));
-
-    if (mrzCandidates.length < 2) {
-      throw new Error(
-        `Tesseract could not find MRZ lines. Found ${mrzCandidates.length} candidate line(s) — ` +
-        `the image quality may be too low, or the MRZ zone is obscured.`
-      );
-    }
-
-    // Normalise to exactly 44 chars (pad/trim) and try to parse
-    const line1 = mrzCandidates[0].padEnd(44, "<").slice(0, 44);
-    const line2 = mrzCandidates[1].padEnd(44, "<").slice(0, 44);
-
-    let parsed;
-    try {
-      parsed = parseMrz([line1, line2]);
-    } catch (parseErr) {
-      throw new Error(`MRZ parse failed: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
-    }
-
-    const f = parsed.fields;
-
-    function mrzDate(raw: string | null | undefined): string | null {
-      if (!raw || raw.length !== 6) return null;
-      const yy = parseInt(raw.slice(0, 2), 10);
-      const year = yy >= 0 && yy <= 30 ? 2000 + yy : 1900 + yy;
-      return `${year}-${raw.slice(2, 4)}-${raw.slice(4, 6)}`;
-    }
-
-    const surname = (f.lastName as string | null) ?? null;
-    const given = (f.firstName as string | null) ?? null;
-    const fullName = [surname, given].filter(Boolean).join(", ") || null;
-
-    return {
-      passportNo: (f.documentNumber as string | null) ?? undefined,
-      passportPlaceOfBirth: undefined,
-      passportIssueDate: undefined,
-      passportExpiryDate: mrzDate(f.expirationDate as string | null) ?? undefined,
-      name: fullName ?? undefined,
-    };
-  } finally {
-    await worker.terminate();
+  if (mrzCandidates.length < 2) {
+    throw new Error(
+      `Tesseract could not find MRZ lines. Found ${mrzCandidates.length} candidate line(s) — ` +
+      `the image quality may be too low, or the MRZ zone is obscured.`
+    );
   }
+
+  // Normalise to exactly 44 chars (pad/trim) and try to parse
+  const line1 = mrzCandidates[0].padEnd(44, "<").slice(0, 44);
+  const line2 = mrzCandidates[1].padEnd(44, "<").slice(0, 44);
+
+  let parsed;
+  try {
+    parsed = parseMrz([line1, line2]);
+  } catch (parseErr) {
+    throw new Error(`MRZ parse failed: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+  }
+
+  const f = parsed.fields;
+
+  function mrzDate(raw: string | null | undefined): string | null {
+    if (!raw || raw.length !== 6) return null;
+    const yy = parseInt(raw.slice(0, 2), 10);
+    const year = yy >= 0 && yy <= 30 ? 2000 + yy : 1900 + yy;
+    return `${year}-${raw.slice(2, 4)}-${raw.slice(4, 6)}`;
+  }
+
+  const surname = (f.lastName as string | null) ?? null;
+  const given = (f.firstName as string | null) ?? null;
+  const fullName = [surname, given].filter(Boolean).join(", ") || null;
+
+  return {
+    passportNo: (f.documentNumber as string | null) ?? undefined,
+    passportPlaceOfBirth: undefined,
+    passportIssueDate: undefined,
+    passportExpiryDate: mrzDate(f.expirationDate as string | null) ?? undefined,
+    name: fullName ?? undefined,
+  };
 }
 
 /** Run all three passport OCR methods in parallel and return timed results. */
