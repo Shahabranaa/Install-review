@@ -88,6 +88,10 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
       delete req.session.workerId;
       delete req.session.workerName;
 
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve()))
+      );
+
       res.json({
         type: "admin" as const,
         user: {
@@ -124,6 +128,10 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
       delete req.session.username;
       delete req.session.displayName;
       delete req.session.accessLevel;
+
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve()))
+      );
 
       res.json({
         type: "worker" as const,
