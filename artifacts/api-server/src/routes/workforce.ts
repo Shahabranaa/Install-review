@@ -70,9 +70,29 @@ function handleRouteError(res: Response, err: unknown): void {
   res.status(500).json({ error: "An unexpected error occurred" });
 }
 
+const ALLOWED_CERT_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+/** Validate file magic bytes and return the detected MIME type, or null if unrecognised. */
+function detectMimeFromBytes(buf: Buffer): string | null {
+  if (buf.length >= 4 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "application/pdf";
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) return "image/png";
+  if (buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 && buf.slice(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return null;
+}
+
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_CERT_MIME_TYPES.has(file.mimetype)) return cb(null, true);
+    cb(new Error("File type not allowed. Accepted: PDF, JPEG, PNG, WebP."));
+  },
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
@@ -310,7 +330,7 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
   }
 });
 
-router.post("/workforce/workers", requireAuth, async (req, res): Promise<void> => {
+router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { name, email, company, windaId, roleId, notes } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
@@ -453,7 +473,7 @@ router.get("/workforce/workers/:id/passport", requireAuth, async (req, res): Pro
   }
 });
 
-router.patch("/workforce/workers/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/workforce/workers/:id", requireAdmin, async (req, res): Promise<void> => {
   try {
     const id = parseInt(req.params.id ?? "");
     if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -854,7 +874,7 @@ router.get("/workforce/workers/:id/certifications", requireAuth, async (req, res
   }
 });
 
-router.post("/workforce/workers/:id/certifications", requireAuth, async (req, res): Promise<void> => {
+router.post("/workforce/workers/:id/certifications", requireAdmin, async (req, res): Promise<void> => {
   try {
     const workerId = parseInt(req.params.id ?? "");
     if (isNaN(workerId)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -873,7 +893,7 @@ router.post("/workforce/workers/:id/certifications", requireAuth, async (req, re
   }
 });
 
-router.patch("/workforce/workers/:id/certifications/:certId", requireAuth, async (req, res): Promise<void> => {
+router.patch("/workforce/workers/:id/certifications/:certId", requireAdmin, async (req, res): Promise<void> => {
   try {
     const workerId = parseInt(req.params.id ?? "");
     const certificationId = parseInt(req.params.certId ?? "");
@@ -1022,11 +1042,18 @@ router.post(
         .slice(0, 120);
       const key = `workforce/certifications/${row.id}/${safeName}`;
 
+      // Validate file magic bytes — reject if they don't match a known safe type
+      const detectedMime = detectMimeFromBytes(req.file.buffer);
+      if (!detectedMime) {
+        res.status(400).json({ error: "File content does not match an accepted type. Accepted: PDF, JPEG, PNG, WebP." });
+        return;
+      }
+
       await wasabi.client.send(new PutObjectCommand({
         Bucket: wasabi.creds.bucket,
         Key: key,
         Body: req.file.buffer,
-        ContentType: req.file.mimetype,
+        ContentType: detectedMime,
       }));
 
       const [updated] = await db.update(workerCertificationsTable)
@@ -1046,6 +1073,15 @@ router.post(
 /** Shared helper: stream a cert file from Wasabi (or redirect legacy http URLs). */
 async function streamCertFile(fileUrl: string, res: Response): Promise<void> {
   if (fileUrl.startsWith("http")) {
+    // Legacy URLs — only redirect to trusted Wasabi domains
+    let parsed: URL;
+    try { parsed = new URL(fileUrl); } catch { res.status(400).json({ error: "Invalid file URL" }); return; }
+    const trustedSuffix = ".wasabisys.com";
+    if (!parsed.hostname.endsWith(trustedSuffix)) {
+      res.status(400).json({ error: "Legacy file URL is not from a trusted storage domain." });
+      return;
+    }
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.redirect(fileUrl);
     return;
   }
@@ -1057,8 +1093,11 @@ async function streamCertFile(fileUrl: string, res: Response): Promise<void> {
     Key: fileUrl,
   }));
 
-  const contentType = obj.ContentType ?? "application/octet-stream";
+  const rawContentType = obj.ContentType ?? "application/octet-stream";
+  const contentType = ALLOWED_CERT_MIME_TYPES.has(rawContentType) ? rawContentType : "application/octet-stream";
   res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", "attachment");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, max-age=300");
   if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
 

@@ -1,12 +1,13 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { Pool } from "pg";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { seedAdminUser } from "./routes/auth";
+import { seedAdminUser, auditDefaultAdminCredential } from "./routes/auth";
 
 const app: Express = express();
 
@@ -32,7 +33,47 @@ app.use(
   }),
 );
 
-app.use(cors({ origin: true, credentials: true }));
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Allowlist only known origins. Set ALLOWED_ORIGINS (comma-separated) in env
+// to add production/Vercel domains.
+const envOrigins = (process.env["ALLOWED_ORIGINS"] ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const isDev = process.env["NODE_ENV"] !== "production";
+
+app.use(
+  cors({
+    origin(origin, cb) {
+      // Same-origin / server-to-server requests have no Origin header
+      if (!origin) return cb(null, true);
+      // Explicit env allowlist
+      if (envOrigins.includes(origin)) return cb(null, true);
+      // Replit preview and deployment domains
+      if (origin.endsWith(".replit.dev") || origin.endsWith(".replit.app")) return cb(null, true);
+      // Development: allow any localhost port
+      if (isDev && /^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+      logger.warn({ origin }, "CORS: rejected request from unlisted origin");
+      cb(new Error(`CORS: origin not allowed`));
+    },
+    credentials: true,
+  }),
+);
+
+// ── Rate limiting on auth routes ──────────────────────────────────────────────
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Too many login attempts — please try again later." },
+});
+app.use("/api/auth/login", loginLimiter);
+app.use("/api/auth/unified-login", loginLimiter);
+app.use("/api/worker-portal/login", loginLimiter);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -86,7 +127,13 @@ app.use((req, _res, next) => {
 
 app.use("/api", router);
 
-// Only seed default admin in development with no existing users
+// ── Startup security tasks ────────────────────────────────────────────────────
+// Audit for compromised default credentials in all environments
+auditDefaultAdminCredential().catch((err) =>
+  logger.error({ err }, "Failed to audit default admin credential"),
+);
+
+// Seed a dev admin only outside production
 if (process.env["NODE_ENV"] !== "production") {
   seedAdminUser().catch((err) => logger.error({ err }, "Failed to seed admin user"));
 }
