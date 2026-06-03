@@ -114,7 +114,7 @@ function PendingCard({ name }: { name: string }) {
   );
 }
 
-const METHOD_NAMES = ["GPT-4o General", "GPT-4o MRZ-focused", "Tesseract + MRZ parser"];
+const METHOD_NAMES = ["GPT-4o General", "GPT-4o MRZ-focused", "Azure Document Intelligence"];
 
 export default function PassportOcrTestPage() {
   const fileRef = useRef<HTMLInputElement>(null);

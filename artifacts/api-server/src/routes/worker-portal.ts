@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportTesseract, type PassportExtractResult } from "../lib/ai-extract.js";
+import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, type PassportExtractResult } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -2035,9 +2035,9 @@ router.post(
         fn: () => extractPassportGptMrz(buffer, mimetype),
       },
       {
-        key: "Tesseract + MRZ parser",
-        description: "Open-source OCR (no API cost) — finds MRZ lines and parses with mrz package",
-        fn: () => extractPassportTesseract(buffer, mimetype),
+        key: "Azure Document Intelligence",
+        description: "Prebuilt identity document model — returns structured fields directly",
+        fn: () => extractPassportAzure(buffer, mimetype),
       },
     ];
 
