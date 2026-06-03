@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractPassportFields, extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, type PassportExtractResult } from "../lib/ai-extract.js";
+import { extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, type PassportExtractResult } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -1648,7 +1648,7 @@ router.post(
       await logActivity(workerId, "passport_uploaded", safeName, getClientIp(req));
 
       // Run AI extraction immediately after upload — return result in response
-      const extracted = await extractPassportFields(req.file.buffer, req.file.mimetype);
+      const extracted = await extractPassportAzure(req.file.buffer, req.file.mimetype);
 
       // Persist extracted passport fields to DB so the profile re-fetch picks them up
       if (extracted) {

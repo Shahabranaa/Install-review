@@ -332,6 +332,22 @@ export default function ProfilePage() {
 
   const passportInputRef = useRef<HTMLInputElement>(null);
   const [passportUploading, setPassportUploading] = useState(false);
+  const [passportProgress, setPassportProgress] = useState(0);
+
+  useEffect(() => {
+    if (!passportUploading) return;
+    setPassportProgress(0);
+    const interval = setInterval(() => {
+      setPassportProgress((prev) => {
+        if (prev < 20) return prev + 5;
+        if (prev < 60) return prev + 2;
+        if (prev < 82) return prev + 0.8;
+        if (prev < 92) return prev + 0.2;
+        return prev;
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, [passportUploading]);
 
   // No separate extract state needed — extraction runs inside upload
 
@@ -596,7 +612,10 @@ export default function ProfilePage() {
     } catch (err) {
       toast({ title: "Upload failed", description: String(err), variant: "destructive" });
     } finally {
+      setPassportProgress(100);
+      await new Promise((r) => setTimeout(r, 400));
       setPassportUploading(false);
+      setPassportProgress(0);
       if (passportInputRef.current) passportInputRef.current.value = "";
     }
   }
@@ -819,7 +838,23 @@ export default function ProfilePage() {
             </span>
           </div>
 
-          {profile?.passportWasabiKey ? (
+          {passportUploading ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Scanning with Azure AI…
+                </span>
+                <span className="font-medium tabular-nums">{Math.round(passportProgress)}%</span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-200 ease-out"
+                  style={{ width: `${passportProgress}%` }}
+                />
+              </div>
+            </div>
+          ) : profile?.passportWasabiKey ? (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <FileText className="h-8 w-8 text-primary/60 flex-shrink-0" />
@@ -841,10 +876,10 @@ export default function ProfilePage() {
                   size="sm"
                   variant="outline"
                   className="gap-1.5"
-                  disabled={passportUploading || removePassportMut.isPending}
+                  disabled={removePassportMut.isPending}
                   onClick={() => passportInputRef.current?.click()}
                 >
-                  {passportUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  <Upload className="h-3.5 w-3.5" />
                   Replace
                 </Button>
                 <AlertDialog>
@@ -853,7 +888,7 @@ export default function ProfilePage() {
                       size="sm"
                       variant="outline"
                       className="gap-1.5 text-destructive hover:text-destructive"
-                      disabled={passportUploading || removePassportMut.isPending}
+                      disabled={removePassportMut.isPending}
                     >
                       {removePassportMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       Remove
@@ -888,10 +923,9 @@ export default function ProfilePage() {
                 size="sm"
                 variant="outline"
                 className="gap-1.5 flex-shrink-0"
-                disabled={passportUploading}
                 onClick={() => passportInputRef.current?.click()}
               >
-                {passportUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                <Upload className="h-3.5 w-3.5" />
                 Upload passport
               </Button>
             </div>
