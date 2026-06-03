@@ -226,8 +226,18 @@ export async function comparePassportExtractors(
   const settled = await Promise.allSettled(
     methods.map(async (m) => {
       const start = Date.now();
-      const result = await m.fn();
-      return { method: m.key, description: m.description, result, durationMs: Date.now() - start, error: null };
+      try {
+        const result = await m.fn();
+        return { method: m.key, description: m.description, result, durationMs: Date.now() - start, error: null };
+      } catch (err) {
+        return {
+          method: m.key,
+          description: m.description,
+          result: null,
+          durationMs: Date.now() - start,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     })
   );
 

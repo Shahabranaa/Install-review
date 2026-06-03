@@ -124,8 +124,15 @@ function AppShell() {
   );
 }
 
-const isOcrTestMode = typeof window !== "undefined" &&
-  (window.location.search.includes("ocr-test") || window.location.hash === "#ocr-test");
+const isOcrTestMode = typeof window !== "undefined" && (() => {
+  const { pathname, search, hash } = window.location;
+  return (
+    pathname.endsWith("/passport-ocr-test") ||
+    pathname.endsWith("/passport-ocr-test/") ||
+    search.includes("ocr-test") ||
+    hash === "#ocr-test"
+  );
+})();
 
 function AppContent() {
   const { worker, isLoading } = useAuth();
