@@ -1,0 +1,1 @@
+- [executeSql vs Neon DB](executesql-vs-neon.md) — executeSql sandbox writes to Replit's built-in DB, not NEON_DATABASE_URL; use pg driver directly for Neon ops.
