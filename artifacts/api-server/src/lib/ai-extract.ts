@@ -8,6 +8,19 @@ function getOpenAI(): OpenAI | null {
   return new OpenAI({ apiKey });
 }
 
+function getOpenRouter(): OpenAI | null {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": "https://workforce-compliance.app",
+      "X-Title": "Workforce Compliance",
+    },
+  });
+}
+
 export interface PassportExtractResult {
   passportNo?: string;
   passportPlaceOfBirth?: string;
@@ -493,4 +506,111 @@ ${truncated}`,
     logger.error({ err }, "CV AI extraction error");
     return null;
   }
+}
+
+// ── OpenRouter extractors ─────────────────────────────────────────────────────
+
+const PASSPORT_OCR_PROMPT = `You are a passport OCR assistant. Extract the following fields from the passport document and return them as a JSON object with exactly these keys:
+- passportNo (string, passport number / document number)
+- passportPlaceOfBirth (string, place of birth)
+- passportIssueDate (string, issue date in YYYY-MM-DD format)
+- passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
+- name (string, full name as shown on passport)
+
+Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.`;
+
+/**
+ * Extract passport fields via OpenRouter using a specified model.
+ * Uses the OpenAI SDK pointed at OpenRouter's base URL.
+ */
+export async function extractPassportOpenRouter(
+  buffer: Buffer,
+  mimeType: string,
+  model: string,
+): Promise<PassportExtractResult | null> {
+  const client = getOpenRouter();
+  if (!client) {
+    logger.warn("OPENROUTER_API_KEY not set — skipping OpenRouter passport extraction");
+    return null;
+  }
+
+  const b64 = buffer.toString("base64");
+
+  const docPart: OpenAI.Chat.ChatCompletionContentPart =
+    mimeType === "application/pdf"
+      ? ({
+          type: "file" as const,
+          file: { filename: "passport.pdf", file_data: `data:application/pdf;base64,${b64}` },
+        } as unknown as OpenAI.Chat.ChatCompletionContentPartText)
+      : ({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${b64}`, detail: "high" },
+        } as OpenAI.Chat.ChatCompletionContentPartImage);
+
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens: 8192,
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: PASSPORT_OCR_PROMPT }, docPart],
+      },
+    ],
+  });
+
+  const text = response.choices[0]?.message?.content?.trim() ?? "";
+  return parseJson<PassportExtractResult>(text);
+}
+
+/**
+ * Extract certification details via OpenRouter using a specified model.
+ */
+export async function extractCertOpenRouter(
+  buffer: Buffer,
+  certTypeNames: string[],
+  model: string,
+  mimeType = "application/pdf",
+): Promise<CertExtractResult | null> {
+  const client = getOpenRouter();
+  if (!client) {
+    logger.warn("OPENROUTER_API_KEY not set — skipping OpenRouter cert extraction");
+    return null;
+  }
+
+  const typeList = certTypeNames.slice(0, 80).join("\n");
+  const prompt = `You are a certification document parser. Analyse this document and extract the following fields, then return them as a JSON object.
+
+Known certification types in this organisation:
+${typeList}
+
+Return a JSON object with exactly these keys:
+- certTypeName (string): the name of the certification from the list above that best matches this document. Use the exact name from the list. If no match, use your best description.
+- dateAchieved (string | null): the date the certification was awarded/passed/achieved, in YYYY-MM-DD format. Null if not found.
+- expiryDate (string | null): the expiry/renewal date in YYYY-MM-DD format. Null if not found or not applicable.
+- noExpiry (boolean): true if the document explicitly states the certification does not expire or has no expiry date.
+- notes (string | null): any other notable information from the document (issuing body, cert number, etc.). Null if nothing noteworthy.
+- confidence ("high" | "medium" | "low"): your overall confidence in the extracted fields.
+
+Return only valid JSON, no explanation.`;
+
+  const b64 = buffer.toString("base64");
+  const filePart: OpenAI.Chat.ChatCompletionContentPart =
+    mimeType.startsWith("image/")
+      ? ({
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${b64}` },
+        } as OpenAI.Chat.ChatCompletionContentPartImage)
+      : ({
+          type: "file" as const,
+          file: { filename: "cert.pdf", file_data: `data:application/pdf;base64,${b64}` },
+        } as unknown as OpenAI.Chat.ChatCompletionContentPartText);
+
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens: 8192,
+    messages: [{ role: "user", content: [filePart, { type: "text", text: prompt }] }],
+  });
+
+  const text = response.choices[0]?.message?.content?.trim() ?? "";
+  return parseJson<CertExtractResult>(text);
 }

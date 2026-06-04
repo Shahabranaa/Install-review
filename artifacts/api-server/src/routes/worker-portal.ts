@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, type PassportExtractResult } from "../lib/ai-extract.js";
+import { extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, extractPassportOpenRouter, type PassportExtractResult } from "../lib/ai-extract.js";
 import { extractText } from "unpdf";
 import mammoth from "mammoth";
 
@@ -2038,6 +2038,16 @@ router.post(
         key: "Azure Document Intelligence",
         description: "Prebuilt identity document model — returns structured fields directly",
         fn: () => extractPassportAzure(buffer, mimetype),
+      },
+      {
+        key: "GPT-5.5 (OpenRouter)",
+        description: "OpenAI GPT-5.5 via OpenRouter — latest generation vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-5.5"),
+      },
+      {
+        key: "GPT-5.5 Pro (OpenRouter)",
+        description: "OpenAI GPT-5.5 Pro via OpenRouter — highest capability vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-5.5-pro"),
       },
     ];
 
