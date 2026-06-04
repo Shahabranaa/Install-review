@@ -26,7 +26,8 @@ export interface PassportExtractResult {
   passportPlaceOfBirth?: string;
   passportIssueDate?: string;
   passportExpiryDate?: string;
-  name?: string;
+  surname?: string;
+  givenName?: string;
 }
 
 export interface CvRoleEntry {
@@ -92,7 +93,8 @@ export async function extractPassportGptGeneral(
 - passportPlaceOfBirth (string, place of birth)
 - passportIssueDate (string, issue date in YYYY-MM-DD format)
 - passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
-- name (string, full name as shown on passport)
+- surname (string, family name / last name as shown on passport)
+- givenName (string, given name(s) / first and middle names as shown on passport)
 
 Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.` },
         makeDocPart(b64, mimeType),
@@ -128,7 +130,8 @@ Step 2: From the MRZ lines, extract the following fields and return a JSON objec
 - passportPlaceOfBirth: null (not in MRZ, skip)
 - passportIssueDate: null (not in MRZ, skip)
 - passportExpiryDate: expiry date from MRZ in YYYY-MM-DD format (positions 22–27 of line 2, format YYMMDD)
-- name: surname and given names from line 1 (after the country code, separated by '<<', replace '<' with space)
+- surname: family name from line 1 (the part before '<<', replace '<' with space, trim)
+- givenName: given name(s) from line 1 (the part after '<<', replace '<' with space, trim)
 
 Also include a "mrzLines" key with the two raw MRZ strings as an array so they can be verified.
 
@@ -191,10 +194,10 @@ export async function extractPassportAzure(
 
   const firstName = strVal(f["FirstName"]);
   const lastName = strVal(f["LastName"]);
-  const fullName = [lastName, firstName].filter(Boolean).join(", ") || undefined;
 
   return {
-    name: fullName,
+    surname: lastName || undefined,
+    givenName: firstName || undefined,
     passportNo: strVal(f["DocumentNumber"]),
     passportPlaceOfBirth: strVal(f["PlaceOfBirth"]),
     passportIssueDate: dateVal(f["DateOfIssue"]),
@@ -277,7 +280,8 @@ export async function extractPassportFields(
 - passportPlaceOfBirth (string, place of birth)
 - passportIssueDate (string, issue date in YYYY-MM-DD format)
 - passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
-- name (string, full name as shown on passport)
+- surname (string, family name / last name as shown on passport)
+- givenName (string, given name(s) / first and middle names as shown on passport)
 
 Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.`;
 
@@ -515,7 +519,8 @@ const PASSPORT_OCR_PROMPT = `You are a passport OCR assistant. Extract the follo
 - passportPlaceOfBirth (string, place of birth)
 - passportIssueDate (string, issue date in YYYY-MM-DD format)
 - passportExpiryDate (string, expiry/expiration date in YYYY-MM-DD format)
-- name (string, full name as shown on passport)
+- surname (string, family name / last name as shown on passport)
+- givenName (string, given name(s) / first and middle names as shown on passport)
 
 Only include keys where you are confident in the value. Omit keys you cannot read. Return only valid JSON, no explanation.`;
 

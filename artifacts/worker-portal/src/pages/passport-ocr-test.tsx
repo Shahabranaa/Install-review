@@ -11,7 +11,8 @@ interface PassportExtractResult {
   passportPlaceOfBirth?: string;
   passportIssueDate?: string;
   passportExpiryDate?: string;
-  name?: string;
+  surname?: string;
+  givenName?: string;
 }
 
 interface MethodResult {
@@ -23,7 +24,8 @@ interface MethodResult {
 }
 
 const FIELD_LABELS: { key: keyof PassportExtractResult; label: string }[] = [
-  { key: "name", label: "Full name" },
+  { key: "surname", label: "Surname" },
+  { key: "givenName", label: "Given name(s)" },
   { key: "passportNo", label: "Passport number" },
   { key: "passportPlaceOfBirth", label: "Place of birth" },
   { key: "passportIssueDate", label: "Issue date" },
