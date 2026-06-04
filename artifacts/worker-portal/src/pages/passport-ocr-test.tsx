@@ -114,7 +114,13 @@ function PendingCard({ name }: { name: string }) {
   );
 }
 
-const METHOD_NAMES = ["GPT-4o General", "GPT-4o MRZ-focused", "Azure Document Intelligence"];
+const METHOD_NAMES = [
+  "GPT-4o General",
+  "GPT-4o MRZ-focused",
+  "Azure Document Intelligence",
+  "GPT-5.5 (OpenRouter)",
+  "GPT-5.5 Pro (OpenRouter)",
+];
 
 export default function PassportOcrTestPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -235,7 +241,7 @@ export default function PassportOcrTestPage() {
 
           {running && (
             <p className="text-xs text-muted-foreground mt-3">
-              Results appear as each method finishes — all three run in parallel.
+              Results appear as each method finishes — all five run in parallel.
             </p>
           )}
 
@@ -248,7 +254,7 @@ export default function PassportOcrTestPage() {
       </Card>
 
       {(results.length > 0 || pendingNames.length > 0) && (
-        <div className="flex flex-col md:flex-row gap-4 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 items-start">
           {results.map((r) => (
             <ResultCard key={r.method} result={r} />
           ))}
