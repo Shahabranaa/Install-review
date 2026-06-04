@@ -1,1 +1,2 @@
 - [Session regenerate breaks Replit proxy cookies](session-regenerate-replit.md) — session.regenerate() creates new SID but Replit proxy doesn't forward updated Set-Cookie; skip regenerate, update session in place.
+- [PostgreSQL rate limit store](rate-limit-store.md) — custom Store backed by Neon; dbUrl must be declared before the limiter block in app.ts

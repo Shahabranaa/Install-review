@@ -8,6 +8,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { seedAdminUser, auditDefaultAdminCredential } from "./routes/auth";
+import { PostgresRateLimitStore } from "./lib/rate-limit-store";
 
 const app: Express = express();
 
@@ -63,15 +64,37 @@ app.use(
   }),
 );
 
+// ── Shared database URL ───────────────────────────────────────────────────────
+const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+
+function makePool(): Pool {
+  const p = new Pool({ connectionString: dbUrl });
+  p.on("connect", (client) => { client.query("SET search_path TO public").catch(() => {}); });
+  return p;
+}
+
 // ── Rate limiting on auth routes ──────────────────────────────────────────────
+// Use a PostgreSQL-backed store so limits persist across server restarts and
+// are shared across all Vercel function instances (in-memory resets every cold start).
+const rateLimitWindowMs = 15 * 60 * 1000; // 15 minutes
+
+const rateLimitPool = dbUrl ? makePool() : null;
+if (!rateLimitPool) {
+  logger.warn("NEON_DATABASE_URL not set — rate limiter falling back to in-memory store");
+}
+
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
+  windowMs: rateLimitWindowMs,
+  limit: 10,
+  standardHeaders: "draft-8",
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   message: { error: "Too many login attempts — please try again later." },
+  ...(rateLimitPool
+    ? { store: new PostgresRateLimitStore(rateLimitPool, rateLimitWindowMs) }
+    : {}),
 });
+
 app.use("/api/auth/login", loginLimiter);
 app.use("/api/auth/unified-login", loginLimiter);
 app.use("/api/worker-portal/login", loginLimiter);
@@ -79,17 +102,11 @@ app.use("/api/worker-portal/login", loginLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ── Session store ─────────────────────────────────────────────────────────────
 const PgSession = connectPgSimple(session);
-const dbUrl = process.env["NEON_DATABASE_URL"] ?? process.env["DATABASE_URL"];
-function buildSessionPool() {
-  if (!dbUrl) return undefined;
-  const p = new Pool({ connectionString: dbUrl });
-  p.on("connect", (client) => { client.query("SET search_path TO public").catch(() => {}); });
-  return p;
-}
 const sessionStore = dbUrl
   ? new PgSession({
-      pool: buildSessionPool()!,
+      pool: makePool(),
       createTableIfMissing: false,
     })
   : undefined;
