@@ -2055,19 +2055,19 @@ router.post(
         fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-4.1"),
       },
       {
-        key: "Claude 3.5 Sonnet (OpenRouter)",
-        description: "Anthropic Claude 3.5 Sonnet via OpenRouter — precise structured extraction",
-        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-3.5-sonnet"),
+        key: "Claude Sonnet 4.5 (OpenRouter)",
+        description: "Anthropic Claude Sonnet 4.5 via OpenRouter — precise structured extraction",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-sonnet-4.5"),
       },
       {
-        key: "Claude 3.7 Sonnet (OpenRouter)",
-        description: "Anthropic Claude 3.7 Sonnet via OpenRouter — layout-aware reading",
-        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-3.7-sonnet"),
+        key: "Claude Sonnet 4.6 (OpenRouter)",
+        description: "Anthropic Claude Sonnet 4.6 via OpenRouter — latest Sonnet, layout-aware reading",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-sonnet-4.6"),
       },
       {
-        key: "Gemini 2.0 Flash (OpenRouter)",
-        description: "Google Gemini 2.0 Flash via OpenRouter — fast and cost-effective",
-        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.0-flash-001"),
+        key: "Gemini 2.5 Flash (OpenRouter)",
+        description: "Google Gemini 2.5 Flash via OpenRouter — fast and cost-effective",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.5-flash"),
       },
       {
         key: "Gemini 2.5 Pro (OpenRouter)",
