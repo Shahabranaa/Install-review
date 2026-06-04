@@ -2049,6 +2049,31 @@ router.post(
         description: "OpenAI GPT-5.5 Pro via OpenRouter — highest capability vision model",
         fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-5.5-pro"),
       },
+      {
+        key: "GPT-4.1 (OpenRouter)",
+        description: "OpenAI GPT-4.1 via OpenRouter — newer instruction-following than GPT-4o",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-4.1"),
+      },
+      {
+        key: "Claude 3.5 Sonnet (OpenRouter)",
+        description: "Anthropic Claude 3.5 Sonnet via OpenRouter — precise structured extraction",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-3.5-sonnet"),
+      },
+      {
+        key: "Claude 3.7 Sonnet (OpenRouter)",
+        description: "Anthropic Claude 3.7 Sonnet via OpenRouter — layout-aware reading",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-3.7-sonnet"),
+      },
+      {
+        key: "Gemini 2.0 Flash (OpenRouter)",
+        description: "Google Gemini 2.0 Flash via OpenRouter — fast and cost-effective",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.0-flash-001"),
+      },
+      {
+        key: "Gemini 2.5 Pro (OpenRouter)",
+        description: "Google Gemini 2.5 Pro via OpenRouter — strongest Gemini vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.5-pro-preview"),
+      },
     ];
 
     await Promise.all(

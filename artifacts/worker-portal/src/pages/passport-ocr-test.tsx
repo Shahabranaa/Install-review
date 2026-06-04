@@ -122,6 +122,11 @@ const METHOD_NAMES = [
   "Azure Document Intelligence",
   "GPT-5.5 (OpenRouter)",
   "GPT-5.5 Pro (OpenRouter)",
+  "GPT-4.1 (OpenRouter)",
+  "Claude 3.5 Sonnet (OpenRouter)",
+  "Claude 3.7 Sonnet (OpenRouter)",
+  "Gemini 2.0 Flash (OpenRouter)",
+  "Gemini 2.5 Pro (OpenRouter)",
 ];
 
 export default function PassportOcrTestPage() {
