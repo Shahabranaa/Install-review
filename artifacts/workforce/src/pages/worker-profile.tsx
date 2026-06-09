@@ -16,7 +16,7 @@ import {
   ChevronLeft, User, Award, Building2, Calendar, CheckCircle2,
   AlertTriangle, Clock, HelpCircle, XCircle, Plus, Trash2, Pencil,
   Paperclip, X as XIcon, Loader2, KeyRound, Package, RotateCcw, CalendarRange,
-  Briefcase, AlertCircle, FileText,
+  Briefcase, AlertCircle, FileText, Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +77,7 @@ interface WorkerDetail {
   nokRelationship: string | null;
   nokPhone: string | null;
   cvWasabiKey: string | null;
+  installReviewAccess: boolean;
   role: { id: number; name: string } | null;
   certifications: WorkerCert[];
   assignments: SiteAssignment[];
@@ -174,6 +175,51 @@ function rotationStatusBadge(status: string) {
     case "cancelled": return "border-red-300 text-red-500";
     default: return "border-amber-400 text-amber-600";
   }
+}
+
+function InstallReviewAccessToggle({ workerId, currentAccess }: { workerId: number; currentAccess: boolean }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [pending, setPending] = useState(false);
+
+  const toggle = async () => {
+    setPending(true);
+    try {
+      await apiPatch(`/api/workforce/workers/${workerId}/install-review-access`, { access: !currentAccess });
+      void qc.invalidateQueries({ queryKey: ["worker", workerId] });
+      toast({ title: !currentAccess ? "InstallReview access granted" : "InstallReview access revoked" });
+    } catch (err) {
+      toast({ title: "Failed", description: String(err), variant: "destructive" });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-xl bg-card p-4 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+          <Camera className="h-4 w-4 text-blue-500" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">InstallReview Access</p>
+          <p className="text-xs text-muted-foreground">
+            {currentAccess ? "Can log in to InstallReview" : "No access to InstallReview"}
+          </p>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant={currentAccess ? "destructive" : "outline"}
+        onClick={toggle}
+        disabled={pending}
+        data-testid="button-install-review-access"
+      >
+        {pending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+        {currentAccess ? "Revoke access" : "Grant access"}
+      </Button>
+    </div>
+  );
 }
 
 function AssignmentWithRotations({
@@ -1097,6 +1143,11 @@ export default function WorkerProfilePage() {
             {worker.portalUsername ? "Update credentials" : "Set credentials"}
           </Button>
         </div>
+      )}
+
+      {/* InstallReview Access (admin only) */}
+      {isAdmin && (
+        <InstallReviewAccessToggle workerId={worker.id} currentAccess={worker.installReviewAccess} />
       )}
 
       {/* Hidden file input for card-level uploads (non-admin & admin quick upload) */}

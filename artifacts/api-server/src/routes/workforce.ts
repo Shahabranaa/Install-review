@@ -2613,6 +2613,32 @@ router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async
   res.json({ ok: true });
 });
 
+// PATCH /api/workforce/workers/:id/install-review-access
+router.patch("/workforce/workers/:id/install-review-access", requireAdmin, async (req, res): Promise<void> => {
+  const workerId = parseInt(req.params.id ?? "");
+  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
+
+  const { access } = req.body as { access?: boolean };
+  if (typeof access !== "boolean") {
+    res.status(400).json({ error: "access must be a boolean" });
+    return;
+  }
+
+  const [worker] = await db.select({ id: workersTable.id }).from(workersTable).where(eq(workersTable.id, workerId));
+  if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+
+  await db.update(workersTable).set({ installReviewAccess: access, updatedAt: new Date() }).where(eq(workersTable.id, workerId));
+
+  await db.insert(workerActivityLogsTable).values({
+    workerId,
+    action: "credentials_set",
+    detail: `Admin ${access ? "granted" : "revoked"} InstallReview access`,
+    ipAddress: null,
+  }).catch(() => {});
+
+  res.json({ ok: true, installReviewAccess: access });
+});
+
 // ── Unified activity feed (portal events + email events) ──────────────────────
 
 const ALLOWED_FEED_SOURCES = ["portal", "email"] as const;

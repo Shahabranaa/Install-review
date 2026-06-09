@@ -14,6 +14,8 @@ import {
   HardDriveUpload,
   CalendarDays,
   ClipboardCheck,
+  Camera,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -98,6 +100,18 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t px-3 py-3 space-y-1">
+        {isAdmin && (
+          <a
+            href="https://installreview.spx.site"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <Camera className="h-4 w-4 flex-shrink-0 text-blue-500" />
+            InstallReview
+            <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+          </a>
+        )}
         {user && (
           <div className="px-3 py-1.5">
             <p className="text-xs font-medium truncate">{user.displayName}</p>

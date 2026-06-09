@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ identifier, password, appContext: "installreview" }),
       });
     } catch (networkErr: unknown) {
       throw new Error(`Network error: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`);

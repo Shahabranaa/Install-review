@@ -2,7 +2,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import {
   LayoutDashboard, FileText, Settings, Building2, LogOut, ShieldCheck,
   ClipboardCheck, ClipboardEdit, Eye, Camera, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag, BarChart3, LayoutTemplate,
+  CheckCircle2, XCircle, Clock, Wind, Layers, Loader2, Map, SlidersHorizontal, ListChecks, BarChart2, Package, Flag, BarChart3, LayoutTemplate, Users, ExternalLink,
 } from "lucide-react";
 import { useState, useEffect, useCallback, type ElementType } from "react";
 import { cn } from "@/lib/utils";
@@ -395,6 +395,22 @@ export function AppSidebar() {
           </Link>
         </nav>
       </div>
+
+      {/* Portal switcher — admin only */}
+      {user?.accessLevel === "admin" && (
+        <div className="px-2 pb-1 pt-2 border-t border-sidebar-border flex-shrink-0">
+          <a
+            href="https://workforce.spx.site"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center px-2 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Users className="mr-3 h-5 w-5 flex-shrink-0 text-emerald-500" />
+            Workforce
+            <ExternalLink className="ml-auto h-3.5 w-3.5 text-sidebar-foreground/40" />
+          </a>
+        </div>
+      )}
 
       {/* Settings + Site Setup — pinned above user footer */}
       <div className="px-2 pb-2 pt-1 border-t border-sidebar-border flex-shrink-0 space-y-0.5">

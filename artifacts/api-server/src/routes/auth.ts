@@ -62,7 +62,7 @@ export async function auditDefaultAdminCredential() {
 // Returns { type: "admin", user: {...} } or { type: "worker", worker: {...} }.
 router.post("/auth/unified-login", async (req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
-  const { identifier, password } = req.body as { identifier?: string; password?: string };
+  const { identifier, password, appContext } = req.body as { identifier?: string; password?: string; appContext?: string };
 
   if (!identifier?.trim() || !password) {
     res.status(400).json({ error: "Email/username and password are required" });
@@ -115,6 +115,12 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
   if (worker && worker.active && worker.portalPasswordHash) {
     const valid = await bcrypt.compare(password, worker.portalPasswordHash);
     if (valid) {
+      // If logging in via InstallReview, worker must have explicit access granted
+      if (appContext === "installreview" && !worker.installReviewAccess) {
+        res.status(403).json({ error: "You do not have access to InstallReview. Contact your administrator." });
+        return;
+      }
+
       req.session.sessionType = "worker";
       req.session.workerId = worker.id;
       req.session.workerName = worker.name;
