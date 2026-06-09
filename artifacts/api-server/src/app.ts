@@ -53,6 +53,8 @@ app.use(
       if (envOrigins.includes(origin)) return cb(null, true);
       // Replit preview and deployment domains
       if (origin.endsWith(".replit.dev") || origin.endsWith(".replit.app")) return cb(null, true);
+      // SPX production domains
+      if (origin.endsWith(".spx.site") || origin === "https://spx.site") return cb(null, true);
       // Vercel deployment domains
       if (origin.endsWith(".vercel.app")) return cb(null, true);
       // Development: allow any localhost port
