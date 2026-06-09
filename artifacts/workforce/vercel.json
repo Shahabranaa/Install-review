@@ -1,4 +1,7 @@
 {
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && BASE_PATH=/ pnpm --filter @workspace/workforce run build",
+  "outputDirectory": "dist/public",
   "rewrites": [
     {
       "source": "/api/:path*",
