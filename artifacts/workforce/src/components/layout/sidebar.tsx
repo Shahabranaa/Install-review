@@ -45,7 +45,8 @@ const navItems: NavItem[] = [
   { href: "/worker-activity", label: "Worker Activity", icon: Activity, adminOnly: true },
 ];
 
-export function Sidebar() {
+// Shared nav content — used by both desktop sidebar and mobile sheet
+export function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const [location] = useLocation();
   const { user, logout, isAdmin } = useAuth();
 
@@ -60,8 +61,9 @@ export function Sidebar() {
   const reviewCount = reviewItems?.length ?? 0;
 
   return (
-    <aside className="w-60 flex-shrink-0 flex flex-col border-r bg-sidebar h-screen sticky top-0">
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b">
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="flex items-center gap-2.5 px-5 py-4 border-b flex-shrink-0">
         <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
           <HardHat className="h-4 w-4 text-primary-foreground" />
         </div>
@@ -71,6 +73,7 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* Nav links */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {visibleItems.map(({ href, label, icon: Icon }) => {
           const active = location === href;
@@ -79,6 +82,7 @@ export function Sidebar() {
             <Link key={href} href={href}>
               <a
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                onClick={onNavigate}
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   active
@@ -99,7 +103,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t px-3 py-3 space-y-1">
+      {/* Footer */}
+      <div className="border-t px-3 py-3 space-y-1 flex-shrink-0">
         {isAdmin && (
           <a
             href="https://installreview.spx.site"
@@ -129,6 +134,15 @@ export function Sidebar() {
           Sign out
         </Button>
       </div>
+    </div>
+  );
+}
+
+// Desktop sidebar — hidden on mobile
+export function Sidebar() {
+  return (
+    <aside className="w-60 flex-shrink-0 hidden md:flex flex-col border-r bg-sidebar h-screen sticky top-0">
+      <NavContent />
     </aside>
   );
 }
