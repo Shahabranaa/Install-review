@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { eq, or, and, inArray, desc } from "drizzle-orm";
+import { eq, or, and, inArray, desc, asc, sql } from "drizzle-orm";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
@@ -23,22 +23,89 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
+import { extractCvData, extractCvDataFromPdfBuffer, extractCertFromPdf, extractPassportGptGeneral, extractPassportGptMrz, extractPassportAzure, extractPassportOpenRouter, type PassportExtractResult } from "../lib/ai-extract.js";
+import { extractText } from "unpdf";
+import mammoth from "mammoth";
 
 const router: IRouter = Router();
+
+const CERT_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
 
 const certFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter(_req, file, cb) {
+    if (CERT_ALLOWED_MIMES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Accepted formats: PDF, JPEG, PNG, WebP"));
+    }
+  },
 });
+
+function certFileUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  certFileUpload.single("file")(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "File exceeds the 20 MB limit"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
+
+const certBatchUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 12 },
+});
+
+function certBatchUploadMiddleware(req: Request, res: Response, next: NextFunction): void {
+  certBatchUpload.array("files", 12)(req, res, (err) => {
+    if (err) {
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "One or more files exceed the 20 MB limit"
+          : err instanceof multer.MulterError && err.code === "LIMIT_FILE_COUNT"
+          ? "You can upload up to 12 files at a time"
+          : err instanceof Error
+          ? err.message
+          : "Upload error";
+      res.status(400).json({ error: message });
+      return;
+    }
+    next();
+  });
+}
+
+const CV_ALLOWED_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/msword", // .doc
+  "text/csv",
+  "text/plain",
+  "application/rtf",
+  "text/rtf",
+]);
 
 const cvFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter(_req, file, cb) {
-    if (file.mimetype === "application/pdf") {
+    if (CV_ALLOWED_MIMES.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PDF files are accepted"));
+      cb(new Error("Accepted formats: PDF, Word (DOCX/DOC), CSV, TXT, RTF"));
     }
   },
 });
@@ -258,11 +325,102 @@ router.get("/worker-portal/certifications", requireWorkerAuth, async (req, res):
   }
 });
 
+// POST /api/worker-portal/certifications/ai-scan
+router.post(
+  "/worker-portal/certifications/ai-scan",
+  requireWorkerAuth,
+  certBatchUploadMiddleware,
+  async (req, res): Promise<void> => {
+    try {
+      const certTypes = await db
+        .select()
+        .from(certificationsTable)
+        .orderBy(certificationsTable.name);
+      const typeNames = certTypes.map((ct) => ct.name);
+      const files = (req.files ?? []) as Express.Multer.File[];
+      if (files.length === 0) {
+        res.status(400).json({ error: "No files uploaded" });
+        return;
+      }
+
+      const results = await Promise.all(
+        files.map(async (file) => {
+          if (!CERT_ALLOWED_MIMES.has(file.mimetype)) {
+            return {
+              filename: file.originalname,
+              certificationId: null,
+              certTypeName: null,
+              dateAchieved: null,
+              expiryDate: null,
+              noExpiry: false,
+              notes: null,
+              confidence: "low" as const,
+              error: "Unsupported file type — please upload a PDF, JPEG, PNG, or WebP",
+            };
+          }
+          try {
+            const extracted = await extractCertFromPdf(file.buffer, typeNames, file.mimetype);
+            if (!extracted) {
+              return {
+                filename: file.originalname,
+                certificationId: null,
+                certTypeName: null,
+                dateAchieved: null,
+                expiryDate: null,
+                noExpiry: false,
+                notes: null,
+                confidence: "low" as const,
+                error: "AI extraction failed — fill in manually",
+              };
+            }
+            const lower = (extracted.certTypeName ?? "").toLowerCase();
+            const matched =
+              certTypes.find((ct) => ct.name.toLowerCase() === lower) ??
+              certTypes.find(
+                (ct) =>
+                  ct.name.toLowerCase().includes(lower) ||
+                  lower.includes(ct.name.toLowerCase()),
+              );
+            return {
+              filename: file.originalname,
+              certificationId: matched?.id ?? null,
+              certTypeName: extracted.certTypeName,
+              dateAchieved: extracted.dateAchieved,
+              expiryDate: extracted.expiryDate,
+              noExpiry: extracted.noExpiry,
+              notes: extracted.notes,
+              confidence: extracted.confidence,
+              error: null,
+            };
+          } catch (err) {
+            return {
+              filename: file.originalname,
+              certificationId: null,
+              certTypeName: null,
+              dateAchieved: null,
+              expiryDate: null,
+              noExpiry: false,
+              notes: null,
+              confidence: "low" as const,
+              error: err instanceof Error ? err.message : "Unknown error",
+            };
+          }
+        }),
+      );
+
+      res.json(results);
+    } catch (err) {
+      logger.error({ err }, "cert ai-scan error");
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
 // POST /api/worker-portal/certifications
 router.post(
   "/worker-portal/certifications",
   requireWorkerAuth,
-  certFileUpload.single("file"),
+  certFileUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const workerId = req.session.workerId!;
@@ -336,7 +494,7 @@ router.post(
 router.patch(
   "/worker-portal/certifications/:certId",
   requireWorkerAuth,
-  certFileUpload.single("file"),
+  certFileUploadMiddleware,
   async (req, res): Promise<void> => {
     try {
       const workerId = req.session.workerId!;
@@ -1004,6 +1162,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        notes: workersTable.notes,
         passportNo: workersTable.passportNo,
         passportIssueDate: workersTable.passportIssueDate,
         passportExpiryDate: workersTable.passportExpiryDate,
@@ -1015,6 +1174,7 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
         portalUsername: workersTable.portalUsername,
         windaId: workersTable.windaId,
         cvWasabiKey: workersTable.cvWasabiKey,
+        cvUploadedAt: workersTable.cvUploadedAt,
         roleName: workforceRolesTable.name,
       })
       .from(workersTable)
@@ -1037,13 +1197,14 @@ router.get("/worker-portal/profile", requireWorkerAuth, async (req, res): Promis
 router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Promise<void> => {
   try {
     const workerId = req.session.workerId!;
-    const { name, email, phone, company, preferredAirport, qualifications, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth, nokName, nokRelationship, nokPhone } = req.body as {
+    const { name, email, phone, company, preferredAirport, qualifications, notes, passportNo, passportIssueDate, passportExpiryDate, passportPlaceOfBirth, nokName, nokRelationship, nokPhone } = req.body as {
       name?: string;
       email?: string;
       phone?: string;
       company?: string;
       preferredAirport?: string[];
       qualifications?: string;
+      notes?: string;
       passportNo?: string;
       passportIssueDate?: string;
       passportExpiryDate?: string;
@@ -1068,6 +1229,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (typeof company === "string") updateSet.company = company.trim() || null;
     if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
+    if (typeof notes === "string") updateSet.notes = notes.trim() || null;
     if (typeof passportNo === "string") updateSet.passportNo = passportNo.trim() || null;
     if (typeof passportIssueDate === "string") updateSet.passportIssueDate = passportIssueDate.trim() || null;
     if (typeof passportExpiryDate === "string") updateSet.passportExpiryDate = passportExpiryDate.trim() || null;
@@ -1088,6 +1250,7 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
         company: workersTable.company,
         preferredAirport: workersTable.preferredAirport,
         qualifications: workersTable.qualifications,
+        notes: workersTable.notes,
         passportNo: workersTable.passportNo,
         passportIssueDate: workersTable.passportIssueDate,
         passportExpiryDate: workersTable.passportExpiryDate,
@@ -1129,7 +1292,7 @@ router.post(
       const workerId = req.session.workerId!;
 
       if (!req.file) {
-        res.status(400).json({ error: "A PDF file is required" });
+        res.status(400).json({ error: "A CV file is required" });
         return;
       }
 
@@ -1150,18 +1313,125 @@ router.post(
           Bucket: wasabi.creds.bucket,
           Key: key,
           Body: req.file.buffer,
-          ContentType: "application/pdf",
+          ContentType: req.file.mimetype,
         }),
       );
 
       await db
         .update(workersTable)
-        .set({ cvWasabiKey: key, updatedAt: new Date() })
+        .set({ cvWasabiKey: key, cvUploadedAt: new Date(), updatedAt: new Date() })
         .where(eq(workersTable.id, workerId));
 
       await logActivity(workerId, "cv_uploaded", safeName, getClientIp(req));
 
-      res.json({ cvWasabiKey: key, filename: safeName });
+      // Run AI extraction immediately after upload — extract text by file type then call AI
+      let cvExtracted: { roles: { project: string; role: string; dateFrom: string; dateTo: string }[]; qualifications: string | null; notes: string | null } | null = null;
+      try {
+        let cvText = "";
+        const mime = req.file.mimetype;
+
+        if (mime === "application/pdf") {
+          const { text } = await extractText(new Uint8Array(req.file.buffer), { mergePages: true });
+          cvText = Array.isArray(text) ? text.join("\n") : (text ?? "");
+          // If unpdf found no text (scanned/image-based PDF), use OpenAI vision directly
+          if (!cvText.trim()) {
+            cvExtracted = await extractCvDataFromPdfBuffer(req.file.buffer);
+          }
+        } else if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+          cvText = result.value;
+        } else if (
+          mime === "text/plain" ||
+          mime === "text/csv" ||
+          mime === "application/rtf" ||
+          mime === "text/rtf"
+        ) {
+          cvText = req.file.buffer.toString("utf-8");
+        }
+        // application/msword (.doc) binary format — skip extraction, just store
+
+        if (cvText.trim()) {
+          cvExtracted = await extractCvData(cvText);
+        }
+      } catch (extractErr) {
+        logger.warn({ extractErr }, "CV text extraction failed — skipping AI parse");
+      }
+
+      // Persist extracted data if we got results
+      if (cvExtracted) {
+        // Update qualifications and notes fields on the worker record
+        const qualUpdate: Record<string, unknown> = { updatedAt: new Date() };
+        if (cvExtracted.qualifications) qualUpdate.qualifications = cvExtracted.qualifications;
+        if (cvExtracted.notes) qualUpdate.notes = cvExtracted.notes;
+        if (Object.keys(qualUpdate).length > 1) {
+          await db.update(workersTable).set(qualUpdate).where(eq(workersTable.id, workerId));
+        }
+
+        // Replace AI-extracted roles: delete previous cv_ai rows then insert fresh ones
+        await db
+          .delete(workerRoleHistoryTable)
+          .where(
+            and(
+              eq(workerRoleHistoryTable.workerId, workerId),
+              eq(workerRoleHistoryTable.source, "cv_ai"),
+            ),
+          );
+
+        if (cvExtracted.roles.length > 0) {
+          // Normalize sortOrder for all surviving manual rows first.
+          // Rows with null sortOrder sort NULLS LAST in the GET query, meaning they would
+          // appear AFTER any row with an explicit sortOrder — including newly inserted AI rows.
+          // To guarantee AI rows always appear after manual rows, we must give every manual
+          // row an explicit sortOrder before inserting the AI rows.
+          const manualRows = await db
+            .select({ id: workerRoleHistoryTable.id, sortOrder: workerRoleHistoryTable.sortOrder, startDate: workerRoleHistoryTable.startDate })
+            .from(workerRoleHistoryTable)
+            .where(eq(workerRoleHistoryTable.workerId, workerId))
+            .orderBy(
+              sql`${workerRoleHistoryTable.sortOrder} ASC NULLS LAST`,
+              desc(workerRoleHistoryTable.startDate),
+            );
+
+          for (let i = 0; i < manualRows.length; i++) {
+            const row = manualRows[i]!;
+            if (row.sortOrder !== i) {
+              await db
+                .update(workerRoleHistoryTable)
+                .set({ sortOrder: i })
+                .where(eq(workerRoleHistoryTable.id, row.id));
+            }
+          }
+
+          const aiSortBase = manualRows.length;
+          let aiOffset = 0;
+          for (const r of cvExtracted.roles) {
+            const startDate = r.dateFrom?.match(/^\d{4}-\d{2}$/)
+              ? `${r.dateFrom}-01`
+              : r.dateFrom?.match(/^\d{4}$/)
+              ? `${r.dateFrom}-01-01`
+              : r.dateFrom ?? "2000-01-01";
+            const endDate =
+              r.dateTo === "Present" || r.dateTo === "present" || !r.dateTo
+                ? null
+                : r.dateTo?.match(/^\d{4}-\d{2}$/)
+                ? `${r.dateTo}-01`
+                : r.dateTo?.match(/^\d{4}$/)
+                ? `${r.dateTo}-12-31`
+                : r.dateTo;
+            await db.insert(workerRoleHistoryTable).values({
+              workerId,
+              roleNameSnapshot: [r.role, r.project].filter(Boolean).join(" @ "),
+              startDate,
+              endDate: endDate ?? null,
+              notes: null,
+              source: "cv_ai",
+              sortOrder: aiSortBase + aiOffset++,
+            });
+          }
+        }
+      }
+
+      res.json({ cvWasabiKey: key, filename: safeName, extracted: cvExtracted ?? null });
     } catch (err) {
       logger.error({ err }, "worker-portal cv POST error");
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1194,8 +1464,18 @@ router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Pro
       new GetObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
     );
 
-    const filename = row.cvWasabiKey.split("/").pop() ?? "cv.pdf";
-    res.setHeader("Content-Type", "application/pdf");
+    const filename = row.cvWasabiKey.split("/").pop() ?? "cv";
+    const ext = filename.split(".").pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      doc: "application/msword",
+      csv: "text/csv",
+      txt: "text/plain",
+      rtf: "application/rtf",
+    };
+    const contentType = (ext && mimeMap[ext]) ?? "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
     res.setHeader("Cache-Control", "private, max-age=300");
     if (obj.ContentLength) res.setHeader("Content-Length", String(obj.ContentLength));
@@ -1212,6 +1492,102 @@ router.get("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Pro
     }
   } catch (err) {
     logger.error({ err }, "worker-portal cv GET error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/profile/cv
+router.delete("/worker-portal/profile/cv", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ cvWasabiKey: workersTable.cvWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.cvWasabiKey) {
+      res.status(404).json({ error: "No CV on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (wasabi) {
+      try {
+        await wasabi.client.send(
+          new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.cvWasabiKey }),
+        );
+      } catch (storageErr: unknown) {
+        const code = (storageErr as { Code?: string; name?: string })?.Code ?? (storageErr as { name?: string })?.name;
+        if (code !== "NoSuchKey" && code !== "NotFound") {
+          logger.error({ storageErr }, "Failed to delete CV from storage");
+          res.status(502).json({ error: "Failed to delete CV from storage" });
+          return;
+        }
+        logger.warn({ storageErr }, "CV file not found in storage — continuing with DB cleanup");
+      }
+    }
+
+    await db
+      .update(workersTable)
+      .set({ cvWasabiKey: null, cvUploadedAt: null, qualifications: null, notes: null, updatedAt: new Date() })
+      .where(eq(workersTable.id, workerId));
+
+    await db
+      .delete(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.workerId, workerId));
+
+    await logActivity(workerId, "cv_removed", row.cvWasabiKey.split("/").pop() ?? "", getClientIp(req));
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal cv DELETE error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/passport
+router.delete("/worker-portal/passport", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+
+    const [row] = await db
+      .select({ passportWasabiKey: workersTable.passportWasabiKey })
+      .from(workersTable)
+      .where(eq(workersTable.id, workerId));
+
+    if (!row?.passportWasabiKey) {
+      res.status(404).json({ error: "No passport on file" });
+      return;
+    }
+
+    const wasabi = await getWasabiClientAndCreds();
+    if (wasabi) {
+      try {
+        await wasabi.client.send(
+          new DeleteObjectCommand({ Bucket: wasabi.creds.bucket, Key: row.passportWasabiKey }),
+        );
+      } catch (storageErr: unknown) {
+        const code = (storageErr as { Code?: string; name?: string })?.Code ?? (storageErr as { name?: string })?.name;
+        if (code !== "NoSuchKey" && code !== "NotFound") {
+          logger.error({ storageErr }, "Failed to delete passport from storage");
+          res.status(502).json({ error: "Failed to delete passport from storage" });
+          return;
+        }
+        logger.warn({ storageErr }, "Passport file not found in storage — continuing with DB cleanup");
+      }
+    }
+
+    await db
+      .update(workersTable)
+      .set({ passportWasabiKey: null, updatedAt: new Date() })
+      .where(eq(workersTable.id, workerId));
+
+    await logActivity(workerId, "passport_removed", row.passportWasabiKey.split("/").pop() ?? "", getClientIp(req));
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal passport DELETE error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
@@ -1271,7 +1647,22 @@ router.post(
 
       await logActivity(workerId, "passport_uploaded", safeName, getClientIp(req));
 
-      res.json({ passportWasabiKey: key, filename: safeName });
+      // Run AI extraction immediately after upload — return result in response
+      const extracted = await extractPassportAzure(req.file.buffer, req.file.mimetype);
+
+      // Persist extracted passport fields to DB so the profile re-fetch picks them up
+      if (extracted) {
+        const passUpdate: Record<string, unknown> = { updatedAt: new Date() };
+        if (extracted.passportNo) passUpdate.passportNo = extracted.passportNo;
+        if (extracted.passportPlaceOfBirth) passUpdate.passportPlaceOfBirth = extracted.passportPlaceOfBirth;
+        if (extracted.passportIssueDate) passUpdate.passportIssueDate = extracted.passportIssueDate;
+        if (extracted.passportExpiryDate) passUpdate.passportExpiryDate = extracted.passportExpiryDate;
+        if (Object.keys(passUpdate).length > 1) {
+          await db.update(workersTable).set(passUpdate).where(eq(workersTable.id, workerId));
+        }
+      }
+
+      res.json({ passportWasabiKey: key, filename: safeName, extracted: extracted ?? null });
     } catch (err) {
       logger.error({ err }, "worker-portal passport upload POST error");
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -1458,11 +1849,251 @@ router.get("/worker-portal/role-history", requireWorkerAuth, async (req, res): P
       .select()
       .from(workerRoleHistoryTable)
       .where(eq(workerRoleHistoryTable.workerId, workerId))
-      .orderBy(desc(workerRoleHistoryTable.startDate));
+      .orderBy(
+        sql`${workerRoleHistoryTable.sortOrder} ASC NULLS LAST`,
+        desc(workerRoleHistoryTable.startDate),
+      );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+// PATCH /api/worker-portal/role-history/reorder
+router.patch("/worker-portal/role-history/reorder", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { orderedIds } = req.body as { orderedIds?: unknown };
+
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      res.status(400).json({ error: "orderedIds must be a non-empty array" });
+      return;
+    }
+
+    const ids = orderedIds.map((v) => Number(v));
+    if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+      res.status(400).json({ error: "All ids must be positive integers" });
+      return;
+    }
+
+    // Verify all rows belong to this worker
+    const existing = await db
+      .select({ id: workerRoleHistoryTable.id })
+      .from(workerRoleHistoryTable)
+      .where(and(eq(workerRoleHistoryTable.workerId, workerId), inArray(workerRoleHistoryTable.id, ids)));
+
+    if (existing.length !== ids.length) {
+      res.status(403).json({ error: "One or more role IDs are invalid or don't belong to you" });
+      return;
+    }
+
+    // Update sort_order for each id based on its position
+    for (let i = 0; i < ids.length; i++) {
+      await db
+        .update(workerRoleHistoryTable)
+        .set({ sortOrder: i })
+        .where(eq(workerRoleHistoryTable.id, ids[i]!));
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/role-history
+router.post("/worker-portal/role-history", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const { roleNameSnapshot, startDate, endDate, notes } = req.body as {
+      roleNameSnapshot: string;
+      startDate: string;
+      endDate?: string | null;
+      notes?: string | null;
+    };
+    if (!roleNameSnapshot?.trim()) {
+      res.status(400).json({ error: "Role title is required" });
+      return;
+    }
+    if (!startDate?.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      res.status(400).json({ error: "Start date must be YYYY-MM-DD" });
+      return;
+    }
+    const [row] = await db
+      .insert(workerRoleHistoryTable)
+      .values({
+        workerId,
+        roleNameSnapshot: roleNameSnapshot.trim(),
+        startDate,
+        endDate: endDate || null,
+        notes: notes?.trim() || null,
+        source: "manual",
+      })
+      .returning();
+    res.status(201).json(row);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PATCH /api/worker-portal/role-history/:id
+router.patch("/worker-portal/role-history/:id", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [existing] = await db
+      .select({ id: workerRoleHistoryTable.id, workerId: workerRoleHistoryTable.workerId })
+      .from(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.workerId !== workerId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const { roleNameSnapshot, startDate, endDate, notes } = req.body as {
+      roleNameSnapshot?: string;
+      startDate?: string;
+      endDate?: string | null;
+      notes?: string | null;
+    };
+    if (roleNameSnapshot !== undefined && !roleNameSnapshot.trim()) {
+      res.status(400).json({ error: "Role title cannot be empty" });
+      return;
+    }
+    if (startDate !== undefined && !startDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      res.status(400).json({ error: "Start date must be YYYY-MM-DD" });
+      return;
+    }
+
+    const update: Record<string, unknown> = { source: "manual" };
+    if (roleNameSnapshot !== undefined) update.roleNameSnapshot = roleNameSnapshot.trim();
+    if (startDate !== undefined) update.startDate = startDate;
+    if ("endDate" in req.body) update.endDate = endDate || null;
+    if ("notes" in req.body) update.notes = notes?.trim() || null;
+
+    const [updated] = await db
+      .update(workerRoleHistoryTable)
+      .set(update)
+      .where(eq(workerRoleHistoryTable.id, id))
+      .returning();
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/worker-portal/role-history/:id
+router.delete("/worker-portal/role-history/:id", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const workerId = req.session.workerId!;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [existing] = await db
+      .select({ id: workerRoleHistoryTable.id, workerId: workerRoleHistoryTable.workerId })
+      .from(workerRoleHistoryTable)
+      .where(eq(workerRoleHistoryTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.workerId !== workerId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await db.delete(workerRoleHistoryTable).where(eq(workerRoleHistoryTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/worker-portal/passport-ocr-compare  (dev/test only)
+// Streams results via Server-Sent Events so each method's result arrives as it finishes,
+// avoiding proxy timeouts on slow GPT-4o vision calls.
+router.post(
+  "/worker-portal/passport-ocr-compare",
+  requireWorkerAuth,
+  passportUploadMiddleware,
+  async (req, res): Promise<void> => {
+    if (!req.file) {
+      res.status(400).json({ error: "A file is required" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    const { buffer, mimetype } = req.file;
+
+    const methods: { key: string; description: string; fn: () => Promise<PassportExtractResult | null> }[] = [
+      {
+        key: "GPT-4o General",
+        description: "Current production method — general OCR prompt",
+        fn: () => extractPassportGptGeneral(buffer, mimetype),
+      },
+      {
+        key: "GPT-4o MRZ-focused",
+        description: "MRZ-first prompt — transcribes machine-readable zone then parses fields",
+        fn: () => extractPassportGptMrz(buffer, mimetype),
+      },
+      {
+        key: "Azure Document Intelligence",
+        description: "Prebuilt identity document model — returns structured fields directly",
+        fn: () => extractPassportAzure(buffer, mimetype),
+      },
+      {
+        key: "GPT-5.5 (OpenRouter)",
+        description: "OpenAI GPT-5.5 via OpenRouter — latest generation vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-5.5"),
+      },
+      {
+        key: "GPT-5.5 Pro (OpenRouter)",
+        description: "OpenAI GPT-5.5 Pro via OpenRouter — highest capability vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-5.5-pro"),
+      },
+      {
+        key: "GPT-4.1 (OpenRouter)",
+        description: "OpenAI GPT-4.1 via OpenRouter — newer instruction-following than GPT-4o",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "openai/gpt-4.1"),
+      },
+      {
+        key: "Claude Sonnet 4.5 (OpenRouter)",
+        description: "Anthropic Claude Sonnet 4.5 via OpenRouter — precise structured extraction",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-sonnet-4.5"),
+      },
+      {
+        key: "Claude Sonnet 4.6 (OpenRouter)",
+        description: "Anthropic Claude Sonnet 4.6 via OpenRouter — latest Sonnet, layout-aware reading",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "anthropic/claude-sonnet-4.6"),
+      },
+      {
+        key: "Gemini 2.5 Flash (OpenRouter)",
+        description: "Google Gemini 2.5 Flash via OpenRouter — fast and cost-effective",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.5-flash"),
+      },
+      {
+        key: "Gemini 2.5 Pro (OpenRouter)",
+        description: "Google Gemini 2.5 Pro via OpenRouter — strongest Gemini vision model",
+        fn: () => extractPassportOpenRouter(buffer, mimetype, "google/gemini-2.5-pro-preview"),
+      },
+    ];
+
+    await Promise.all(
+      methods.map(async (m) => {
+        const start = Date.now();
+        try {
+          const result = await m.fn();
+          const payload = { method: m.key, description: m.description, result, durationMs: Date.now() - start, error: null };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        } catch (err) {
+          logger.error({ err }, `passport-ocr-compare error: ${m.key}`);
+          const payload = { method: m.key, description: m.description, result: null, durationMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      })
+    );
+
+    res.write("event: done\ndata: {}\n\n");
+    res.end();
+  },
+);
 
 export default router;

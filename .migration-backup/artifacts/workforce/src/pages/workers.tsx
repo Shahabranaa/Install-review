@@ -362,8 +362,17 @@ export default function WorkersPage() {
                     <td className={cn(cell, "text-muted-foreground text-xs")}>
                       {w.preferredAirport ?? "—"}
                     </td>
-                    <td className={cn(cell, "text-xs text-muted-foreground")}>
-                      {w.qualifications ?? "—"}
+                    <td className={cn(cell, "text-xs text-muted-foreground max-w-[180px]")}>
+                      {w.qualifications
+                        ? (
+                          <span
+                            className="block truncate"
+                            title={w.qualifications}
+                          >
+                            {w.qualifications}
+                          </span>
+                        )
+                        : "—"}
                     </td>
                     <td className={cell}>
                       <Badge

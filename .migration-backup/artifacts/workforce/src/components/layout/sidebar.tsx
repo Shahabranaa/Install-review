@@ -13,10 +13,15 @@ import {
   Handshake,
   HardDriveUpload,
   CalendarDays,
+  ClipboardCheck,
+  Camera,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 
 interface NavItem {
   href: string;
@@ -34,20 +39,31 @@ const navItems: NavItem[] = [
   { href: "/roles", label: "Roles", icon: Briefcase, adminOnly: true },
   { href: "/clients", label: "Clients", icon: Handshake, adminOnly: true },
   { href: "/ppe-types", label: "PPE Types", icon: HardDriveUpload, adminOnly: true },
+  { href: "/review-queue", label: "Review Queue", icon: ClipboardCheck, adminOnly: true },
   { href: "/schedule-requests", label: "Schedule Requests", icon: CalendarDays, adminOnly: true },
   { href: "/emails", label: "Emails", icon: Mail, adminOnly: true },
   { href: "/worker-activity", label: "Worker Activity", icon: Activity, adminOnly: true },
 ];
 
-export function Sidebar() {
+// Shared nav content — used by both desktop sidebar and mobile sheet
+export function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const [location] = useLocation();
   const { user, logout, isAdmin } = useAuth();
 
   const visibleItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
+  const { data: reviewItems } = useQuery<{ workerId: number }[]>({
+    queryKey: ["review-queue"],
+    queryFn: () => apiFetch("/api/workforce/review-queue"),
+    refetchInterval: 60_000,
+    enabled: isAdmin,
+  });
+  const reviewCount = reviewItems?.length ?? 0;
+
   return (
-    <aside className="w-60 flex-shrink-0 flex flex-col border-r bg-sidebar h-screen sticky top-0">
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b">
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="flex items-center gap-2.5 px-5 py-4 border-b flex-shrink-0">
         <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
           <HardHat className="h-4 w-4 text-primary-foreground" />
         </div>
@@ -57,13 +73,16 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* Nav links */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {visibleItems.map(({ href, label, icon: Icon }) => {
           const active = location === href;
+          const isReviewQueue = href === "/review-queue";
           return (
             <Link key={href} href={href}>
               <a
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                onClick={onNavigate}
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   active
@@ -73,13 +92,31 @@ export function Sidebar() {
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 {label}
+                {isReviewQueue && reviewCount > 0 && (
+                  <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+                    {reviewCount > 99 ? "99+" : reviewCount}
+                  </span>
+                )}
               </a>
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t px-3 py-3 space-y-1">
+      {/* Footer */}
+      <div className="border-t px-3 py-3 space-y-1 flex-shrink-0">
+        {isAdmin && (
+          <a
+            href="https://installreview.spx.site"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <Camera className="h-4 w-4 flex-shrink-0 text-blue-500" />
+            InstallReview
+            <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+          </a>
+        )}
         {user && (
           <div className="px-3 py-1.5">
             <p className="text-xs font-medium truncate">{user.displayName}</p>
@@ -97,6 +134,15 @@ export function Sidebar() {
           Sign out
         </Button>
       </div>
+    </div>
+  );
+}
+
+// Desktop sidebar — hidden on mobile
+export function Sidebar() {
+  return (
+    <aside className="w-60 flex-shrink-0 hidden md:flex flex-col border-r bg-sidebar h-screen sticky top-0">
+      <NavContent />
     </aside>
   );
 }

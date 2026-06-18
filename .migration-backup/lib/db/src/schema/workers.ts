@@ -27,11 +27,14 @@ export const workersTable = pgTable("workers", {
   qualifications: text("qualifications"),
   // CV file (Wasabi key)
   cvWasabiKey: text("cv_wasabi_key"),
+  cvUploadedAt: timestamp("cv_uploaded_at", { withTimezone: true }),
   // Worker portal credentials
   portalUsername: text("portal_username").unique(),
   portalPasswordHash: text("portal_password_hash"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   lastLoginIp: text("last_login_ip"),
+  // App access permissions
+  installReviewAccess: boolean("install_review_access").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
