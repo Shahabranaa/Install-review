@@ -1,0 +1,27 @@
+{
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "sh build-vercel.sh",
+  "outputDirectory": "dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://install-review-api-server.vercel.app/api/:path*"
+    },
+    {
+      "source": "/worker-portal/api/:path*",
+      "destination": "https://install-review-api-server.vercel.app/api/:path*"
+    },
+    {
+      "source": "/worker-portal",
+      "destination": "/worker-portal/index.html"
+    },
+    {
+      "source": "/worker-portal/:path*",
+      "destination": "/worker-portal/index.html"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
