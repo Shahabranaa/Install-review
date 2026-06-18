@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/worker-mobile/"
+title = "Worker Mobile App"
+version = "1.0.0"
+id = "artifacts/worker-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/worker-mobile/" ]
+localPort = 19059
+
+[services.development]
+run = "pnpm --filter @workspace/worker-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/worker-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/worker-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "19059"
+BASE_PATH = "/worker-mobile/"

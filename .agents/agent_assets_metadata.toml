@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "CcdPz05viIVawFVQgY7UD"
+uri = "file://artifacts/worker-mobile/assets/images/icon.png"
+type = "image"
+title = "worker portal app icon"
