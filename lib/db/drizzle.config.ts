@@ -10,6 +10,7 @@ if (!dbUrl) {
 export default defineConfig({
   schema: path.join(__dirname, "./src/schema/index.ts"),
   dialect: "postgresql",
+  schemaFilter: ["public"],
   dbCredentials: {
     url: dbUrl,
   },
