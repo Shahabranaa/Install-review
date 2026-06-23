@@ -402,9 +402,8 @@ export default function ProfileScreen() {
         style={[styles.root, { backgroundColor: colors.background }]}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: topPad + 16, paddingBottom: insets.bottom + 100 },
+          { paddingTop: topPad + 16, paddingBottom: insets.bottom + 120 },
         ]}
-        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
