@@ -1295,7 +1295,13 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (nameTrimmed !== undefined) updateSet.name = nameTrimmed;
     if (emailTrimmed !== undefined) updateSet.email = emailTrimmed || null;
     if (typeof phone === "string") updateSet.phone = phone.trim() || null;
-    if (typeof company === "string") updateSet.company = company.trim() || null;
+    if (typeof company === "string") {
+      if (!company.trim()) {
+        res.status(400).json({ error: "Company is required" });
+        return;
+      }
+      updateSet.company = company.trim();
+    }
     if (Array.isArray(preferredAirport)) updateSet.preferredAirport = preferredAirport.length > 0 ? preferredAirport : null;
     if (typeof qualifications === "string") updateSet.qualifications = qualifications.trim() || null;
     if (typeof notes === "string") updateSet.notes = notes.trim() || null;

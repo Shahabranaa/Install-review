@@ -621,11 +621,11 @@ export default function WorkersPage() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Name</Label>
+              <Label>Name *</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Full name"
+                placeholder="Full legal name"
                 data-testid="input-worker-name"
               />
             </div>
@@ -659,7 +659,7 @@ export default function WorkersPage() {
             <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={!form.email.trim() || createMutation.isPending}
+              disabled={!form.name.trim() || !form.email.trim() || createMutation.isPending}
               data-testid="button-save-worker"
             >
               {createMutation.isPending ? "Saving…" : "Add Worker"}

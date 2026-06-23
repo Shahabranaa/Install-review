@@ -133,6 +133,7 @@ export default function ProfileScreen() {
   const [editPassport, setEditPassport] = useState(false);
   const [editNok, setEditNok] = useState(false);
   const [editPassword, setEditPassword] = useState(false);
+  const [pFormError, setPFormError] = useState<string | null>(null);
 
   const [pForm, setPForm] = useState({ name: "", email: "", phone: "", company: "" });
   const [passForm, setPassForm] = useState({
@@ -190,10 +191,20 @@ export default function ProfileScreen() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["worker-profile"] });
       setEditPersonal(false);
+      setPFormError(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (e: Error) => Alert.alert("Error", e.message),
   });
+
+  function handleSavePersonal() {
+    if (!pForm.company.trim()) {
+      setPFormError("Company is required");
+      return;
+    }
+    setPFormError(null);
+    savePMut.mutate();
+  }
 
   const savePassMut = useMutation({
     mutationFn: () => apiPatch("/api/worker-portal/profile", passForm),
@@ -1019,7 +1030,7 @@ export default function ProfileScreen() {
         visible={editPersonal}
         transparent
         animationType="slide"
-        onRequestClose={() => setEditPersonal(false)}
+        onRequestClose={() => { setEditPersonal(false); setPFormError(null); }}
       >
         <View style={styles.modalOverlay}>
           <ScrollView
@@ -1038,32 +1049,46 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
             {[
-              { key: "name", label: "Full name", placeholder: "Your full name" },
-              { key: "email", label: "Email", placeholder: "your@email.com" },
-              { key: "phone", label: "Phone", placeholder: "+44 ..." },
-              { key: "company", label: "Company", placeholder: "Company name" },
-            ].map(({ key, label, placeholder }) => (
-              <View key={key}>
-                <Text style={[styles.modalLabel, { color: colors.foreground }]}>
-                  {label}
-                </Text>
-                <TextInput
-                  style={[
-                    styles.modalInput,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: colors.background,
-                      color: colors.foreground,
-                    },
-                  ]}
-                  value={(pForm as any)[key]}
-                  onChangeText={(v) => setPForm((f) => ({ ...f, [key]: v }))}
-                  placeholder={placeholder}
-                  placeholderTextColor={colors.mutedForeground}
-                  autoCapitalize={key === "email" ? "none" : "words"}
-                />
-              </View>
-            ))}
+              { key: "name", label: "Full name", placeholder: "Your full name", required: false },
+              { key: "email", label: "Email", placeholder: "your@email.com", required: false },
+              { key: "phone", label: "Phone", placeholder: "+44 ...", required: false },
+              { key: "company", label: "Company", placeholder: "Company name", required: true },
+            ].map(({ key, label, placeholder, required }) => {
+              const isCompanyError = key === "company" && !!pFormError;
+              return (
+                <View key={key}>
+                  <Text style={[styles.modalLabel, { color: colors.foreground }]}>
+                    {label}
+                    {required ? (
+                      <Text style={{ color: colors.destructive }}> *</Text>
+                    ) : null}
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      {
+                        borderColor: isCompanyError ? colors.destructive : colors.border,
+                        backgroundColor: colors.background,
+                        color: colors.foreground,
+                      },
+                    ]}
+                    value={(pForm as any)[key]}
+                    onChangeText={(v) => {
+                      setPForm((f) => ({ ...f, [key]: v }));
+                      if (key === "company" && pFormError) setPFormError(null);
+                    }}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize={key === "email" ? "none" : "words"}
+                  />
+                  {isCompanyError ? (
+                    <Text style={{ color: colors.destructive, fontSize: 12, marginTop: 3 }}>
+                      {pFormError}
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })}
             <View
               style={[
                 styles.modalFooter,
@@ -1071,7 +1096,7 @@ export default function ProfileScreen() {
               ]}
             >
               <TouchableOpacity
-                onPress={() => setEditPersonal(false)}
+                onPress={() => { setEditPersonal(false); setPFormError(null); }}
                 style={[styles.modalCancelBtn, { borderColor: colors.border }]}
               >
                 <Text style={[styles.modalCancelText, { color: colors.foreground }]}>
@@ -1079,7 +1104,7 @@ export default function ProfileScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => savePMut.mutate()}
+                onPress={handleSavePersonal}
                 disabled={savePMut.isPending}
                 style={[
                   styles.modalSubmitBtn,

@@ -386,8 +386,9 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
 router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { name, email, company, windaId, roleId, notes } = req.body;
+    if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
     if (!email?.trim()) { res.status(400).json({ error: "email is required" }); return; }
-    const resolvedName: string = name?.trim() || email.trim().split("@")[0];
+    const resolvedName: string = name.trim();
 
     let portalUsername: string | undefined;
     let rawSetupToken: string | undefined;
