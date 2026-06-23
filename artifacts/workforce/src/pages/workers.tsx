@@ -137,7 +137,7 @@ export default function WorkersPage() {
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "", siteId: "" });
+  const [form, setForm] = useState({ email: "", siteId: "" });
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const { data: complianceSummary, isLoading: compLoading } = useQuery<WorkerCompliance[]>({
@@ -227,11 +227,7 @@ export default function WorkersPage() {
   const createMutation = useMutation({
     mutationFn: async () => {
       const worker = await apiPost<{ id: number; emailSent?: boolean }>("/api/workforce/workers", {
-        name: form.name,
-        email: form.email || null,
-        company: form.company || null,
-        windaId: form.windaId || null,
-        roleId: form.roleId ? parseInt(form.roleId) : null,
+        email: form.email.trim(),
       });
       if (form.siteId) {
         await apiPost("/api/workforce/assignments", {
@@ -247,14 +243,12 @@ export default function WorkersPage() {
         title: "Worker added",
         description: worker.emailSent
           ? "Login credentials sent to the worker's email"
-          : form.email
-            ? "Worker added (email could not be sent)"
-            : undefined,
+          : "Worker added (email could not be sent)",
       });
       void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
       void qc.invalidateQueries({ queryKey: ["workforce-compliance-summary"] });
       setShowNew(false);
-      setForm({ name: "", email: "", company: "", windaId: "", roleId: "", siteId: "" });
+      setForm({ email: "", siteId: "" });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -620,59 +614,23 @@ export default function WorkersPage() {
 
       {/* Add worker dialog */}
       <Dialog open={showNew} onOpenChange={setShowNew}>
-        <DialogContent>
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Add Worker</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Name *</Label>
+              <Label>Email *</Label>
               <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Full name"
-                data-testid="input-worker-name"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="worker@example.com"
+                type="email"
+                data-testid="input-worker-email"
               />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Email</Label>
-                <Input
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="email@example.com"
-                />
-              </div>
-              <div>
-                <Label>Company</Label>
-                <Input
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                  placeholder="Company name"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>WINDA ID</Label>
-                <Input
-                  value={form.windaId}
-                  onChange={(e) => setForm({ ...form, windaId: e.target.value })}
-                  placeholder="WINDA ID"
-                />
-              </div>
-              <div>
-                <Label>Role</Label>
-                <select
-                  className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-                  value={form.roleId}
-                  onChange={(e) => setForm({ ...form, roleId: e.target.value })}
-                  data-testid="select-worker-role"
-                >
-                  <option value="">No role</option>
-                  {roles?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Login credentials will be sent to this address.
+              </p>
             </div>
             <div>
               <Label>Assign to Site</Label>
@@ -691,7 +649,7 @@ export default function WorkersPage() {
             <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={!form.name || createMutation.isPending}
+              disabled={!form.email.trim() || createMutation.isPending}
               data-testid="button-save-worker"
             >
               {createMutation.isPending ? "Saving…" : "Add Worker"}

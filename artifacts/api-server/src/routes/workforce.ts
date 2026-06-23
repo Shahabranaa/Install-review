@@ -377,20 +377,21 @@ router.get("/workforce/workers", requireAuth, async (req, res): Promise<void> =>
 router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { name, email, company, windaId, roleId, notes } = req.body;
-    if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+    if (!email?.trim()) { res.status(400).json({ error: "email is required" }); return; }
+    const resolvedName: string = name?.trim() || email.trim().split("@")[0];
 
     let portalUsername: string | undefined;
     let portalPasswordHash: string | undefined;
     let tempPassword: string | undefined;
 
     if (email?.trim()) {
-      portalUsername = generatePortalUsername(name.trim());
+      portalUsername = generatePortalUsername(resolvedName);
       tempPassword = generateTempPassword();
       portalPasswordHash = await bcrypt.hash(tempPassword, 12);
     }
 
     const [worker] = await db.insert(workersTable).values({
-      name: name.trim(),
+      name: resolvedName,
       email: email || null,
       company: company || null,
       windaId: windaId || null,
