@@ -14,41 +14,25 @@ export interface SendEmailResult {
   error?: string;
 }
 
-async function getSendGridCredentials(): Promise<{ apiKey: string; fromEmail: string } | null> {
-  try {
-    const connectorHostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-    const replIdentity = process.env.REPL_IDENTITY;
-    if (!connectorHostname || !replIdentity) return null;
-
-    const res = await fetch(
-      `https://${connectorHostname}/api/v2/connection/conn_sendgrid_01KVSN0GJF2T7G6A4BQ210GH9Q`,
-      { headers: { "x-replit-identity": replIdentity } },
-    );
-    if (!res.ok) return null;
-
-    const data = await res.json() as { credentials?: { api_key?: string; from_email?: string } };
-    const creds = data.credentials;
-    if (!creds?.api_key || !creds?.from_email) return null;
-    return { apiKey: creds.api_key, fromEmail: creds.from_email };
-  } catch {
-    return null;
-  }
-}
-
 export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
-  const creds = await getSendGridCredentials();
+  const apiKey = process.env.SENDGRID_API_KEY ?? "";
+  const fromEmail = process.env.EMAIL_FROM_ADDRESS ?? "";
 
-  if (!creds) {
-    logger.warn("SendGrid credentials not available — email not sent");
-    return { success: false, error: "SendGrid credentials not configured" };
+  if (!apiKey) {
+    logger.warn("SENDGRID_API_KEY not configured — email not sent");
+    return { success: false, error: "SENDGRID_API_KEY not configured" };
+  }
+  if (!fromEmail) {
+    logger.warn("EMAIL_FROM_ADDRESS not configured — email not sent");
+    return { success: false, error: "EMAIL_FROM_ADDRESS not configured" };
   }
 
   try {
-    sgMail.setApiKey(creds.apiKey);
+    sgMail.setApiKey(apiKey);
 
     await sgMail.send({
       to: { email: opts.toEmail, name: opts.toName },
-      from: { email: creds.fromEmail, name: process.env.EMAIL_FROM_NAME ?? "Workforce Compliance Manager" },
+      from: { email: fromEmail, name: process.env.EMAIL_FROM_NAME ?? "Workforce Compliance Manager" },
       subject: opts.subject,
       html: opts.htmlBody,
       text: opts.textBody ?? stripHtml(opts.htmlBody),
