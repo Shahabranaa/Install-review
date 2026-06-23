@@ -742,9 +742,9 @@ export default function WorkerProfilePage() {
 
   const resetPasswordMutation = useMutation({
     mutationFn: () =>
-      apiPost(`/api/workforce/workers/${workerId}/reset-portal-password`, {}),
+      apiPost(`/api/workforce/workers/${workerId}/resend-setup-link`, {}),
     onSuccess: () => {
-      toast({ title: "Password reset", description: "New login credentials sent to the worker's email" });
+      toast({ title: "Setup link sent", description: "A new account setup link has been emailed to the worker" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
@@ -1135,7 +1135,7 @@ export default function WorkerProfilePage() {
           >
             {resetPasswordMutation.isPending
               ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Sending…</>
-              : <><KeyRound className="h-3.5 w-3.5 mr-1" />{worker.portalUsername ? "Reset Password & Email" : "Create Account & Email"}</>
+              : <><KeyRound className="h-3.5 w-3.5 mr-1" />{worker.portalUsername ? "Resend Setup Link" : "Create Account & Send Link"}</>
             }
           </Button>
         </div>

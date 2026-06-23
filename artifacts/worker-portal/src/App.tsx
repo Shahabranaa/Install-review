@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import LoginPage from "@/pages/login";
+import SetupPage from "@/pages/setup";
 import DashboardPage from "@/pages/dashboard";
 import CertificationsPage from "@/pages/certifications";
 import SchedulePage from "@/pages/schedule";
@@ -114,8 +115,14 @@ const isOcrTestMode = typeof window !== "undefined" && (() => {
   );
 })();
 
+const setupToken = typeof window !== "undefined"
+  ? new URLSearchParams(window.location.search).get("setup-token")
+  : null;
+
 function AppContent() {
   const { worker, isLoading } = useAuth();
+
+  if (setupToken) return <SetupPage token={setupToken} />;
 
   if (isLoading) {
     return (

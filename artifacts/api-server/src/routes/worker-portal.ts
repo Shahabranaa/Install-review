@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
+import { createHash } from "node:crypto";
 import { eq, or, and, inArray, desc, asc, sql } from "drizzle-orm";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
@@ -250,6 +251,74 @@ router.post("/worker-portal/login", async (req, res): Promise<void> => {
   delete req.session.accessLevel;
 
   await logActivity(worker.id, "login", null, ip);
+
+  res.json({
+    id: worker.id,
+    name: worker.name,
+    email: worker.email,
+    company: worker.company,
+    portalUsername: worker.portalUsername,
+  });
+});
+
+// POST /api/worker-portal/setup-password
+router.post("/worker-portal/setup-password", async (req, res): Promise<void> => {
+  const { token, password } = req.body as { token?: string; password?: string };
+  if (!token?.trim() || !password) {
+    res.status(400).json({ error: "token and password are required" });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const hashedToken = createHash("sha256").update(token.trim()).digest("hex");
+
+  const [worker] = await db
+    .select()
+    .from(workersTable)
+    .where(eq(workersTable.setupToken, hashedToken))
+    .limit(1);
+
+  if (
+    !worker ||
+    !worker.active ||
+    !worker.setupTokenExpiresAt ||
+    worker.setupTokenExpiresAt < new Date()
+  ) {
+    res.status(410).json({ error: "This setup link has expired or has already been used." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  await db.update(workersTable).set({
+    portalPasswordHash: passwordHash,
+    setupToken: null,
+    setupTokenExpiresAt: null,
+    lastLoginAt: new Date(),
+    lastLoginIp: getClientIp(req),
+    updatedAt: new Date(),
+  }).where(eq(workersTable.id, worker.id));
+
+  await new Promise<void>((resolve, reject) =>
+    req.session.regenerate((err) => (err ? reject(err) : resolve()))
+  );
+  req.session.sessionType = "worker";
+  req.session.workerId = worker.id;
+  req.session.workerName = worker.name;
+  delete req.session.userId;
+  delete req.session.username;
+  delete req.session.displayName;
+  delete req.session.accessLevel;
+
+  await db.insert(workerActivityLogsTable).values({
+    workerId: worker.id,
+    action: "setup_password",
+    detail: "Worker set password via setup link",
+    ipAddress: getClientIp(req),
+  }).catch(() => {});
 
   res.json({
     id: worker.id,

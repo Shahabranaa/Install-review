@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
-import { randomUUID, randomBytes, randomInt } from "node:crypto";
+import { randomUUID, randomBytes, randomInt, createHash } from "node:crypto";
 import {
   db,
   usersTable,
@@ -29,7 +29,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
-import { sendEmail, buildLoginInfoHtml } from "../lib/mailjet.js";
+import { sendEmail, buildLoginInfoHtml, buildSetupLinkHtml } from "../lib/mailjet.js";
 
 const router: IRouter = Router();
 
@@ -112,6 +112,15 @@ function buildEmailTrackingUrl(req: Request, trackingId: string): string {
     ? req.headers["x-forwarded-host"][0]
     : (req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost");
   return `${proto}://${host}/api/workforce/emails/track/${trackingId}.gif`;
+}
+
+function hashSetupToken(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
+function buildPortalSetupUrl(req: Request, rawToken: string): string {
+  const base = buildPortalLoginUrl(req).replace(/\/$/, "");
+  return `${base}/?setup-token=${encodeURIComponent(rawToken)}`;
 }
 
 const ALLOWED_CERT_MIME_TYPES = new Set([
@@ -381,13 +390,15 @@ router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> 
     const resolvedName: string = name?.trim() || email.trim().split("@")[0];
 
     let portalUsername: string | undefined;
-    let portalPasswordHash: string | undefined;
-    let tempPassword: string | undefined;
+    let rawSetupToken: string | undefined;
+    let hashedSetupToken: string | undefined;
+    let setupTokenExpiresAt: Date | undefined;
 
     if (email?.trim()) {
       portalUsername = generatePortalUsername(resolvedName);
-      tempPassword = generateTempPassword();
-      portalPasswordHash = await bcrypt.hash(tempPassword, 12);
+      rawSetupToken = randomBytes(32).toString("hex");
+      hashedSetupToken = hashSetupToken(rawSetupToken);
+      setupTokenExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
     }
 
     const [worker] = await db.insert(workersTable).values({
@@ -397,28 +408,26 @@ router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> 
       windaId: windaId || null,
       roleId: roleId || null,
       notes: notes || null,
-      ...(portalUsername ? { portalUsername } : {}),
-      ...(portalPasswordHash ? { portalPasswordHash } : {}),
+      ...(portalUsername ? { portalUsername, setupToken: hashedSetupToken, setupTokenExpiresAt } : {}),
     }).returning();
 
     let emailSent = false;
 
-    if (email?.trim() && tempPassword && portalUsername) {
+    if (email?.trim() && rawSetupToken && portalUsername) {
       try {
-        const loginUrl = buildPortalLoginUrl(req);
+        const setupUrl = buildPortalSetupUrl(req, rawSetupToken);
         const trackingId = randomUUID();
         const trackingPixelUrl = buildEmailTrackingUrl(req, trackingId);
-        const html = buildLoginInfoHtml({
+        const subject = "Set up your Worker Portal account";
+        const html = buildSetupLinkHtml({
           workerName: worker.name,
-          loginUrl,
-          username: portalUsername,
-          temporaryPassword: tempPassword,
+          setupUrl,
           trackingPixelUrl,
         });
         const result = await sendEmail({
           toEmail: email.trim(),
           toName: worker.name,
-          subject: "Your Worker Portal Account",
+          subject,
           htmlBody: html,
         });
         emailSent = result.success;
@@ -427,9 +436,9 @@ router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> 
           sentBy: req.session!.userId as number,
           toEmail: email.trim(),
           toName: worker.name,
-          subject: "Your Worker Portal Account",
+          subject,
           bodyHtml: html,
-          emailType: "login_info",
+          emailType: "setup_link",
           status: result.success ? "sent" : "failed",
           error: result.error ?? null,
           trackingId,
@@ -437,11 +446,11 @@ router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> 
         await db.insert(workerActivityLogsTable).values({
           workerId: worker.id,
           action: "credentials_set",
-          detail: `Portal account created automatically (username: ${portalUsername})`,
+          detail: `Portal account created with setup link (username: ${portalUsername})`,
           ipAddress: null,
         }).catch(() => {});
       } catch (emailErr) {
-        logger.error({ emailErr }, "Failed to send login info email on worker creation");
+        logger.error({ emailErr }, "Failed to send setup link email on worker creation");
       }
     }
 
@@ -2737,54 +2746,39 @@ router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async
 });
 
 // POST /api/workforce/workers/:id/reset-portal-password
-router.post("/workforce/workers/:id/reset-portal-password", requireAdmin, async (req, res): Promise<void> => {
-  const workerId = parseInt(req.params.id ?? "");
-  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
-
+async function sendSetupLinkToWorker(req: Request, workerId: number, sentByUserId: number): Promise<{ ok: boolean; username: string; error?: string }> {
   const [worker] = await db.select().from(workersTable).where(eq(workersTable.id, workerId));
-  if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
-  if (!worker.email) { res.status(400).json({ error: "Worker has no email address" }); return; }
+  if (!worker) return { ok: false, username: "", error: "Worker not found" };
+  if (!worker.email) return { ok: false, username: "", error: "Worker has no email address" };
 
   const username = worker.portalUsername ?? generatePortalUsername(worker.name);
-  const tempPassword = generateTempPassword();
-  const hash = await bcrypt.hash(tempPassword, 12);
+  const rawSetupToken = randomBytes(32).toString("hex");
+  const hashedSetupToken = hashSetupToken(rawSetupToken);
+  const setupTokenExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
   await db.update(workersTable).set({
-    portalPasswordHash: hash,
     ...(!worker.portalUsername ? { portalUsername: username } : {}),
+    setupToken: hashedSetupToken,
+    setupTokenExpiresAt,
     updatedAt: new Date(),
   }).where(eq(workersTable.id, workerId));
 
-  const loginUrl = buildPortalLoginUrl(req);
+  const setupUrl = buildPortalSetupUrl(req, rawSetupToken);
   const trackingId = randomUUID();
   const trackingPixelUrl = buildEmailTrackingUrl(req, trackingId);
-  const isReset = !!worker.portalUsername;
-  const subject = isReset
-    ? "Your Worker Portal Password Has Been Reset"
-    : "Your Worker Portal Account";
-  const html = buildLoginInfoHtml({
-    workerName: worker.name,
-    loginUrl,
-    username,
-    temporaryPassword: tempPassword,
-    trackingPixelUrl,
-  });
+  const subject = "Set up your Worker Portal account";
+  const html = buildSetupLinkHtml({ workerName: worker.name, setupUrl, trackingPixelUrl });
 
-  const sendResult = await sendEmail({
-    toEmail: worker.email,
-    toName: worker.name,
-    subject,
-    htmlBody: html,
-  });
+  const sendResult = await sendEmail({ toEmail: worker.email, toName: worker.name, subject, htmlBody: html });
 
   await db.insert(emailLogsTable).values({
     workerId,
-    sentBy: req.session!.userId as number,
+    sentBy: sentByUserId,
     toEmail: worker.email,
     toName: worker.name,
     subject,
     bodyHtml: html,
-    emailType: "login_info",
+    emailType: "setup_link",
     status: sendResult.success ? "sent" : "failed",
     error: sendResult.error ?? null,
     trackingId,
@@ -2793,16 +2787,36 @@ router.post("/workforce/workers/:id/reset-portal-password", requireAdmin, async 
   await db.insert(workerActivityLogsTable).values({
     workerId,
     action: "credentials_set",
-    detail: `Admin ${isReset ? "reset portal password" : "created portal account"} and sent credentials to ${worker.email}`,
+    detail: `Admin sent setup link to ${worker.email}`,
     ipAddress: null,
   }).catch(() => {});
 
-  if (!sendResult.success) {
-    res.status(502).json({ error: `Credentials updated but email failed: ${sendResult.error ?? "unknown error"}` });
+  if (!sendResult.success) return { ok: false, username, error: `Email failed: ${sendResult.error ?? "unknown error"}` };
+  return { ok: true, username };
+}
+
+router.post("/workforce/workers/:id/resend-setup-link", requireAdmin, async (req, res): Promise<void> => {
+  const workerId = parseInt(req.params.id ?? "");
+  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
+  const result = await sendSetupLinkToWorker(req, workerId, req.session!.userId as number);
+  if (!result.ok) {
+    const status = result.error === "Worker not found" ? 404 : result.error === "Worker has no email address" ? 400 : 502;
+    res.status(status).json({ error: result.error });
     return;
   }
+  res.json({ ok: true, emailSent: true, username: result.username });
+});
 
-  res.json({ ok: true, emailSent: true, username });
+router.post("/workforce/workers/:id/reset-portal-password", requireAdmin, async (req, res): Promise<void> => {
+  const workerId = parseInt(req.params.id ?? "");
+  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
+  const result = await sendSetupLinkToWorker(req, workerId, req.session!.userId as number);
+  if (!result.ok) {
+    const status = result.error === "Worker not found" ? 404 : result.error === "Worker has no email address" ? 400 : 502;
+    res.status(status).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true, emailSent: true, username: result.username });
 });
 
 // PATCH /api/workforce/workers/:id/install-review-access

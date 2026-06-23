@@ -31,6 +31,8 @@ export const workersTable = pgTable("workers", {
   // Worker portal credentials
   portalUsername: text("portal_username").unique(),
   portalPasswordHash: text("portal_password_hash"),
+  setupToken: text("setup_token").unique(),
+  setupTokenExpiresAt: timestamp("setup_token_expires_at", { withTimezone: true }),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   lastLoginIp: text("last_login_ip"),
   // App access permissions
