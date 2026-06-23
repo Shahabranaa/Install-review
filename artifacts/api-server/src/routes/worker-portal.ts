@@ -1295,6 +1295,12 @@ router.patch("/worker-portal/profile", requireWorkerAuth, async (req, res): Prom
     if (nameTrimmed !== undefined) updateSet.name = nameTrimmed;
     if (emailTrimmed !== undefined) updateSet.email = emailTrimmed || null;
     if (typeof phone === "string") updateSet.phone = phone.trim() || null;
+    // Company is required whenever the personal-info section is saved (i.e. name is in the payload).
+    // Passport and NOK saves do not include name, so they are not affected.
+    if (nameTrimmed !== undefined && (typeof company !== "string" || !company.trim())) {
+      res.status(400).json({ error: "Company is required" });
+      return;
+    }
     if (typeof company === "string") {
       if (!company.trim()) {
         res.status(400).json({ error: "Company is required" });
