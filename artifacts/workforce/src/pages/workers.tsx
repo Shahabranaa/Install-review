@@ -137,7 +137,7 @@ export default function WorkersPage() {
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ email: "", siteId: "" });
+  const [form, setForm] = useState({ name: "", email: "", siteId: "" });
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const { data: complianceSummary, isLoading: compLoading } = useQuery<WorkerCompliance[]>({
@@ -227,6 +227,7 @@ export default function WorkersPage() {
   const createMutation = useMutation({
     mutationFn: async () => {
       const worker = await apiPost<{ id: number; emailSent?: boolean }>("/api/workforce/workers", {
+        name: form.name.trim() || undefined,
         email: form.email.trim(),
       });
       if (form.siteId) {
@@ -248,7 +249,7 @@ export default function WorkersPage() {
       void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
       void qc.invalidateQueries({ queryKey: ["workforce-compliance-summary"] });
       setShowNew(false);
-      setForm({ email: "", siteId: "" });
+      setForm({ name: "", email: "", siteId: "" });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -619,6 +620,15 @@ export default function WorkersPage() {
             <DialogTitle>Add Worker</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Full name"
+                data-testid="input-worker-name"
+              />
+            </div>
             <div>
               <Label>Email *</Label>
               <Input
