@@ -1,10 +1,5 @@
-import Mailjet from "node-mailjet";
+import sgMail from "@sendgrid/mail";
 import { logger } from "./logger.js";
-
-const apiKey = process.env.MAILJET_API_KEY ?? "";
-const apiSecret = process.env.MAILJET_SECRET_KEY ?? "";
-const fromEmail = process.env.EMAIL_FROM_ADDRESS ?? "noreply@example.com";
-const fromName = process.env.EMAIL_FROM_NAME ?? "Workforce Compliance Manager";
 
 export interface SendEmailOptions {
   toEmail: string;
@@ -19,31 +14,50 @@ export interface SendEmailResult {
   error?: string;
 }
 
+async function getSendGridCredentials(): Promise<{ apiKey: string; fromEmail: string } | null> {
+  try {
+    const connectorHostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+    const replIdentity = process.env.REPL_IDENTITY;
+    if (!connectorHostname || !replIdentity) return null;
+
+    const res = await fetch(
+      `https://${connectorHostname}/api/v2/connection/conn_sendgrid_01KVSN0GJF2T7G6A4BQ210GH9Q`,
+      { headers: { "x-replit-identity": replIdentity } },
+    );
+    if (!res.ok) return null;
+
+    const data = await res.json() as { credentials?: { api_key?: string; from_email?: string } };
+    const creds = data.credentials;
+    if (!creds?.api_key || !creds?.from_email) return null;
+    return { apiKey: creds.api_key, fromEmail: creds.from_email };
+  } catch {
+    return null;
+  }
+}
+
 export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
-  if (!apiKey || !apiSecret) {
-    logger.warn("Mailjet credentials not configured — email not sent");
-    return { success: false, error: "Mailjet credentials not configured" };
+  const creds = await getSendGridCredentials();
+
+  if (!creds) {
+    logger.warn("SendGrid credentials not available — email not sent");
+    return { success: false, error: "SendGrid credentials not configured" };
   }
 
   try {
-    const mj = new Mailjet.Client({ apiKey, apiSecret });
+    sgMail.setApiKey(creds.apiKey);
 
-    await mj.post("send", { version: "v3.1" }).request({
-      Messages: [
-        {
-          From: { Email: fromEmail, Name: fromName },
-          To: [{ Email: opts.toEmail, Name: opts.toName }],
-          Subject: opts.subject,
-          HTMLPart: opts.htmlBody,
-          TextPart: opts.textBody ?? stripHtml(opts.htmlBody),
-        },
-      ],
+    await sgMail.send({
+      to: { email: opts.toEmail, name: opts.toName },
+      from: { email: creds.fromEmail, name: process.env.EMAIL_FROM_NAME ?? "Workforce Compliance Manager" },
+      subject: opts.subject,
+      html: opts.htmlBody,
+      text: opts.textBody ?? stripHtml(opts.htmlBody),
     });
 
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err }, "Mailjet send error");
+    logger.error({ err }, "SendGrid send error");
     return { success: false, error: message };
   }
 }
@@ -52,7 +66,7 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// Email HTML templates
+// ── Email HTML templates (unchanged) ─────────────────────────────────────────
 
 export function buildExpiryNotificationHtml(opts: {
   workerName: string;
@@ -140,7 +154,6 @@ export function buildCustomEmailHtml(opts: {
   bodyHtml: string;
   trackingPixelUrl: string;
 }): string {
-  // Inject tracking pixel into custom body
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
