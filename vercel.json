@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "buildCommand": "bash scripts/build.sh",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.mjs"
+    },
+    {
+      "source": "/worker-portal/:path*",
+      "destination": "/worker-portal/index.html"
+    }
+  ]
+}
