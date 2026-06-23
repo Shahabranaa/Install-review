@@ -32,7 +32,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
 
     await sgMail.send({
       to: { email: opts.toEmail, name: opts.toName },
-      from: { email: fromEmail, name: process.env.EMAIL_FROM_NAME ?? "Worker Portal" },
+      from: { email: fromEmail, name: process.env.EMAIL_FROM_NAME ?? "Workforce Compliance Manager" },
       subject: opts.subject,
       html: opts.htmlBody,
       text: opts.textBody ?? stripHtml(opts.htmlBody),
@@ -91,7 +91,7 @@ export function buildExpiryNotificationHtml(opts: {
       </table>
       <p style="color:#374151;">Please arrange renewal as soon as possible to maintain your compliance status.</p>
       <p style="color:#6b7280;font-size:13px;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:16px;">
-        This is an automated message from Worker Portal. For help, reply to this email.
+        This is an automated message from Workforce Compliance Manager. For help, contact <a href="mailto:andy@smart-projex.com" style="color:#1d4ed8;">andy@smart-projex.com</a>.
       </p>
     </div>
   </div>
@@ -113,16 +113,16 @@ export function buildSetupLinkHtml(opts: {
 <body style="font-family:Arial,sans-serif;background:#f9fafb;margin:0;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
     <div style="background:#1d4ed8;padding:24px;">
-      <h1 style="color:#ffffff;margin:0;font-size:20px;">Welcome to Worker Portal</h1>
+      <h1 style="color:#ffffff;margin:0;font-size:20px;">Welcome to Workforce Compliance Manager</h1>
     </div>
     <div style="padding:24px;">
       <p style="color:#111827;margin-top:0;">Hi <strong>${opts.workerName}</strong>,</p>
-      <p style="color:#374151;">Your Worker Portal account has been created. Click the button below to set your password and get started — this link expires in 48 hours and can only be used once.</p>
+      <p style="color:#374151;">You've been enrolled on <strong>Workforce Compliance Manager</strong> — the portal where you manage your certifications, schedule, and deployment details. Click the button below to set your password and get started. This link expires in 48 hours and can only be used once.</p>
       <div style="text-align:center;margin:28px 0;">
         <a href="${opts.setupUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:600;">Set up your account &rarr;</a>
       </div>
       <div style="background:#f3f4f6;border-radius:8px;padding:18px;margin:16px 0;">
-        <p style="margin:0 0 10px;color:#111827;font-weight:600;font-size:13px;">What to do next:</p>
+        <p style="margin:0 0 10px;color:#111827;font-weight:600;font-size:13px;">Your first steps once you're in:</p>
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:28px;vertical-align:top;padding:4px 0;color:#1d4ed8;font-weight:700;font-size:13px;">1.</td>
@@ -130,7 +130,7 @@ export function buildSetupLinkHtml(opts: {
           </tr>
           <tr>
             <td style="width:28px;vertical-align:top;padding:4px 0;color:#1d4ed8;font-weight:700;font-size:13px;">2.</td>
-            <td style="padding:4px 0;color:#374151;font-size:13px;"><strong>Upload your certifications</strong> — go to the Certs tab and upload your current certificates.</td>
+            <td style="padding:4px 0;color:#374151;font-size:13px;"><strong>Upload your certifications</strong> — go to the Certs tab and upload your current certificates so your compliance record is up to date.</td>
           </tr>
           <tr>
             <td style="width:28px;vertical-align:top;padding:4px 0;color:#1d4ed8;font-weight:700;font-size:13px;">3.</td>
@@ -140,8 +140,10 @@ export function buildSetupLinkHtml(opts: {
       </div>
       <p style="color:#6b7280;font-size:12px;margin-top:16px;">If the button above doesn't work, copy and paste this link into your browser:<br><a href="${opts.setupUrl}" style="color:#1d4ed8;word-break:break-all;">${opts.setupUrl}</a></p>
       <p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
-        If you weren't expecting this email, please ignore it — your account will not be activated until you complete setup.
-        For help, contact <a href="mailto:${support}" style="color:#1d4ed8;">${support}</a>.
+        If you weren't expecting this email, please contact <a href="mailto:${support}" style="color:#1d4ed8;">${support}</a> and we'll sort it out. Do not click the link above if you weren't expecting this invitation.
+      </p>
+      <p style="color:#6b7280;font-size:12px;margin-top:8px;">
+        Need help getting started? Reach us at <a href="mailto:${support}" style="color:#1d4ed8;">${support}</a>.
       </p>
     </div>
   </div>
@@ -163,19 +165,22 @@ export function buildLoginInfoHtml(opts: {
 <body style="font-family:Arial,sans-serif;background:#f9fafb;margin:0;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
     <div style="background:#1d4ed8;padding:24px;">
-      <h1 style="color:#ffffff;margin:0;font-size:20px;">Your Worker Portal Account</h1>
+      <h1 style="color:#ffffff;margin:0;font-size:20px;">Your Workforce Compliance Manager Account</h1>
     </div>
     <div style="padding:24px;">
       <p style="color:#111827;margin-top:0;">Dear <strong>${opts.workerName}</strong>,</p>
-      <p style="color:#374151;">Your Worker Portal account has been set up. Here are your login details:</p>
+      <p style="color:#374151;">Your <strong>Workforce Compliance Manager</strong> account has been set up. Here are your login details:</p>
       <div style="background:#f3f4f6;border-radius:6px;padding:16px;margin:16px 0;">
         <p style="margin:0 0 8px;color:#374151;"><strong>Login URL:</strong> <a href="${opts.loginUrl}" style="color:#1d4ed8;">${opts.loginUrl}</a></p>
         <p style="margin:0 0 8px;color:#374151;"><strong>Username:</strong> ${opts.username}</p>
         <p style="margin:0;color:#374151;"><strong>Temporary Password:</strong> <code style="background:#e5e7eb;padding:2px 6px;border-radius:4px;">${opts.temporaryPassword}</code></p>
       </div>
-      <p style="color:#dc2626;font-size:13px;">Please change your password after your first login.</p>
-      <p style="color:#6b7280;font-size:13px;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:16px;">
-        This is an automated message from Worker Portal.
+      <p style="color:#dc2626;font-size:13px;">Please change your password after your first login. This temporary password will expire in 48 hours.</p>
+      <p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
+        If you weren't expecting this email, please contact <a href="mailto:andy@smart-projex.com" style="color:#1d4ed8;">andy@smart-projex.com</a> and we'll sort it out.
+      </p>
+      <p style="color:#6b7280;font-size:12px;margin-top:8px;">
+        Need help? Reach us at <a href="mailto:andy@smart-projex.com" style="color:#1d4ed8;">andy@smart-projex.com</a>.
       </p>
     </div>
   </div>
@@ -196,7 +201,7 @@ export function buildCustomEmailHtml(opts: {
     <div style="padding:24px;">
       ${opts.bodyHtml}
       <p style="color:#6b7280;font-size:13px;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:16px;">
-        This is a message from Worker Portal.
+        This is a message from Workforce Compliance Manager. For help, contact <a href="mailto:andy@smart-projex.com" style="color:#1d4ed8;">andy@smart-projex.com</a>.
       </p>
     </div>
   </div>

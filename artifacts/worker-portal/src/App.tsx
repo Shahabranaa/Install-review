@@ -45,7 +45,7 @@ function AppShell() {
               <HardHat className="h-4 w-4 text-primary-foreground" />
             </div>
             <div className="min-w-0">
-              <p className="font-semibold text-sm leading-none">Worker Portal</p>
+              <p className="font-semibold text-sm leading-none">Workforce Compliance Manager</p>
               <p className="text-[11px] text-muted-foreground mt-0.5 leading-none truncate">{worker.name}</p>
             </div>
           </div>

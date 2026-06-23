@@ -756,7 +756,7 @@ export default function ProfilePage() {
                 id="prof-name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Your full name"
+                placeholder="Your full legal name"
                 required
               />
             </div>

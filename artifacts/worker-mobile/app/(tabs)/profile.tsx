@@ -198,6 +198,10 @@ export default function ProfileScreen() {
   });
 
   function handleSavePersonal() {
+    if (!pForm.name.trim()) {
+      setPFormError("Full name is required");
+      return;
+    }
     if (!pForm.company.trim()) {
       setPFormError("Company is required");
       return;
@@ -1049,12 +1053,14 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
             {[
-              { key: "name", label: "Full name", placeholder: "Your full name", required: false },
+              { key: "name", label: "Full name", placeholder: "Your full legal name", required: true },
               { key: "email", label: "Email", placeholder: "your@email.com", required: false },
               { key: "phone", label: "Phone", placeholder: "+44 ...", required: false },
-              { key: "company", label: "Company", placeholder: "Company name", required: true },
+              { key: "company", label: "Company / Employer", placeholder: "Company name", required: true },
             ].map(({ key, label, placeholder, required }) => {
-              const isCompanyError = key === "company" && !!pFormError;
+              const isNameError = key === "name" && pFormError === "Full name is required";
+              const isCompanyError = key === "company" && pFormError === "Company is required";
+              const hasFieldError = isNameError || isCompanyError;
               return (
                 <View key={key}>
                   <Text style={[styles.modalLabel, { color: colors.foreground }]}>
@@ -1067,7 +1073,7 @@ export default function ProfileScreen() {
                     style={[
                       styles.modalInput,
                       {
-                        borderColor: isCompanyError ? colors.destructive : colors.border,
+                        borderColor: hasFieldError ? colors.destructive : colors.border,
                         backgroundColor: colors.background,
                         color: colors.foreground,
                       },
@@ -1075,13 +1081,13 @@ export default function ProfileScreen() {
                     value={(pForm as any)[key]}
                     onChangeText={(v) => {
                       setPForm((f) => ({ ...f, [key]: v }));
-                      if (key === "company" && pFormError) setPFormError(null);
+                      if (pFormError) setPFormError(null);
                     }}
                     placeholder={placeholder}
                     placeholderTextColor={colors.mutedForeground}
                     autoCapitalize={key === "email" ? "none" : "words"}
                   />
-                  {isCompanyError ? (
+                  {hasFieldError ? (
                     <Text style={{ color: colors.destructive, fontSize: 12, marginTop: 3 }}>
                       {pFormError}
                     </Text>

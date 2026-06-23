@@ -82,7 +82,7 @@ export default function SetupPage({ token }: { token: string }) {
         <div className="w-full max-w-sm text-center">
           <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold">Password Set!</h1>
-          <p className="text-sm text-muted-foreground mt-2">Taking you to Worker Portal…</p>
+          <p className="text-sm text-muted-foreground mt-2">Taking you to Workforce Compliance Manager…</p>
         </div>
       </div>
     );
@@ -95,7 +95,7 @@ export default function SetupPage({ token }: { token: string }) {
           <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center mb-3">
             <HardHat className="h-6 w-6 text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-bold">Worker Portal</h1>
+          <h1 className="text-xl font-bold">Workforce Compliance Manager</h1>
           <p className="text-sm text-muted-foreground mt-1">Set your password to get started</p>
         </div>
 
