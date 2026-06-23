@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, randomInt } from "node:crypto";
 import {
   db,
   usersTable,
@@ -78,7 +78,7 @@ function generatePortalUsername(name: string): string {
     .replace(/[^a-z0-9\s]/g, "")
     .trim()
     .replace(/\s+/g, ".");
-  const suffix = Math.random().toString(36).slice(2, 6);
+  const suffix = randomBytes(3).toString("hex").slice(0, 6);
   return slug ? `${slug}.${suffix}` : `worker.${suffix}`;
 }
 
@@ -86,7 +86,7 @@ function generateTempPassword(): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let pass = "";
   for (let i = 0; i < 12; i++) {
-    pass += chars[Math.floor(Math.random() * chars.length)];
+    pass += chars[randomInt(chars.length)];
   }
   return pass;
 }
