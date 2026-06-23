@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { apiFetch, apiPost } from "@/lib/api";
+import { apiFetch, apiPost, apiPatch } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
   Users, Plus, Search, ChevronRight,
   CheckCircle2, AlertTriangle, Clock, HelpCircle,
   ChevronUp, ChevronDown, ChevronsUpDown,
+  UserX, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -72,7 +73,6 @@ const COMPLIANCE_ORDER: Record<ComplianceStatus, number> = {
   NOT_COMPLIANT: 0, EXPIRING_SOON: 1, READY: 2, NO_REQUIREMENTS: 3, UNASSIGNED: 4,
 };
 
-/** Extract trailing number from "S_N" for natural sort */
 function uidNum(uid: string | null): number {
   if (!uid) return Infinity;
   const m = uid.match(/\d+$/);
@@ -112,11 +112,7 @@ function SortTh({ label, col, active, onSort, className }: {
   const Icon = isActive ? (active.dir === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
   return (
     <th
-      className={cn(
-        hCell,
-        "cursor-pointer select-none hover:text-foreground group",
-        className,
-      )}
+      className={cn(hCell, "cursor-pointer select-none hover:text-foreground group", className)}
       onClick={() => onSort(col)}
     >
       <span className="inline-flex items-center gap-1">
@@ -134,6 +130,8 @@ export default function WorkersPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const [workerTab, setWorkerTab] = useState<"active" | "inactive">("active");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
@@ -162,6 +160,11 @@ export default function WorkersPage() {
     queryFn: () => apiFetch<Worker[]>("/api/workforce/workers"),
   });
 
+  const { data: inactiveWorkers, isLoading: inactiveLoading } = useQuery<Worker[]>({
+    queryKey: ["workforce-workers-inactive"],
+    queryFn: () => apiFetch<Worker[]>("/api/workforce/workers?status=inactive"),
+  });
+
   const isLoading = compLoading || workersLoading;
 
   const compMap = new Map((complianceSummary ?? []).map(c => [c.workerId, c.status]));
@@ -171,6 +174,13 @@ export default function WorkersPage() {
       ? { col, dir: prev.dir === "asc" ? "desc" : "asc" }
       : { col, dir: "asc" },
     );
+  }
+
+  function switchTab(tab: "active" | "inactive") {
+    setWorkerTab(tab);
+    setSearch("");
+    setRoleFilter("");
+    setStatusFilter("ALL");
   }
 
   const displayWorkers = useMemo(() => {
@@ -197,6 +207,21 @@ export default function WorkersPage() {
     return sortWorkers(filtered, sort.col, sort.dir);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawWorkers, complianceSummary, search, roleFilter, statusFilter, sort]);
+
+  const filteredInactive = useMemo(() => {
+    const all = inactiveWorkers ?? [];
+    if (!search) return [...all].sort((a, b) => a.name.localeCompare(b.name));
+    const q = search.toLowerCase();
+    return all
+      .filter(w =>
+        w.name.toLowerCase().includes(q) ||
+        (w.email ?? "").toLowerCase().includes(q) ||
+        (w.company ?? "").toLowerCase().includes(q) ||
+        (w.windaId ?? "").toLowerCase().includes(q) ||
+        (w.uniqueId ?? "").toLowerCase().includes(q),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [inactiveWorkers, search]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -233,8 +258,22 @@ export default function WorkersPage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
+  const reactivateMutation = useMutation({
+    mutationFn: (workerId: number) =>
+      apiPatch<Worker>(`/api/workforce/workers/${workerId}`, { active: true }),
+    onSuccess: () => {
+      toast({ title: "Worker reactivated" });
+      void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
+      void qc.invalidateQueries({ queryKey: ["workforce-workers-inactive"] });
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const inactiveCount = inactiveWorkers?.length ?? 0;
+
   return (
     <div className="p-6 space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -242,174 +281,314 @@ export default function WorkersPage() {
             Workers
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {displayWorkers.length} of {rawWorkers?.length ?? 0} workers shown
+            {workerTab === "active"
+              ? `${displayWorkers.length} of ${rawWorkers?.length ?? 0} workers shown`
+              : `${filteredInactive.length}${search ? ` of ${inactiveCount}` : ""} deactivated workers`}
           </p>
         </div>
-        {isAdmin && (
+        {isAdmin && workerTab === "active" && (
           <Button size="sm" onClick={() => setShowNew(true)} data-testid="button-add-worker">
             <Plus className="h-4 w-4 mr-1" /> Add Worker
           </Button>
         )}
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex gap-1.5 flex-wrap">
-        {STATUS_FILTERS.map(({ label, value }) => (
-          <button
-            key={value}
-            onClick={() => setStatusFilter(value)}
-            className={cn(
-              "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
-              statusFilter === value
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border hover:border-primary/50",
-            )}
-            data-testid={`filter-status-${value.toLowerCase()}`}
-          >
-            {label}
-            {value !== "ALL" && (
-              <span className="ml-1.5 text-[10px] opacity-70">
-                {(rawWorkers ?? []).filter(w => (compMap.get(w.id) ?? "UNASSIGNED") === value).length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Search + role filter */}
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-52">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search name, email, WINDA ID, passport, phone…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-            data-testid="input-worker-search"
-          />
-        </div>
-        {roles && roles.length > 0 && (
-          <select
-            className="border rounded-md px-3 py-1.5 text-sm bg-background"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            data-testid="select-role-filter"
-          >
-            <option value="">All roles</option>
-            {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        )}
-      </div>
-
-      {/* Table */}
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
-        </div>
-      ) : !displayWorkers.length ? (
-        <div className="border rounded-xl p-10 text-center text-muted-foreground">
-          <Users className="h-10 w-10 mx-auto mb-3 opacity-20" />
-          <p className="font-medium">No workers found</p>
-          {(search || statusFilter !== "ALL") && (
-            <p className="text-sm mt-1">Try adjusting your filters.</p>
+      {/* Active / Deactivated tab switcher */}
+      <div className="flex gap-0 border-b">
+        <button
+          onClick={() => switchTab("active")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+            workerTab === "active"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground",
           )}
-        </div>
-      ) : (
-        <div className="border rounded-xl overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/60 border-b">
-                <SortTh label="ID"          col="uniqueId"         active={sort} onSort={toggleSort} />
-                <SortTh label="Name"        col="name"             active={sort} onSort={toggleSort} className="min-w-[160px]" />
-                <SortTh label="Role"        col="roleName"         active={sort} onSort={toggleSort} className="min-w-[160px]" />
-                <th className={hCell}>Email</th>
-                <th className={hCell}>Tel No.</th>
-                <th className={hCell}>WINDA ID</th>
-                <SortTh label="DOB"         col="dob"              active={sort} onSort={toggleSort} />
-                <th className={hCell}>Passport No.</th>
-                <SortTh label="Airport"     col="preferredAirport" active={sort} onSort={toggleSort} />
-                <th className={hCell}>Qualifications</th>
-                <SortTh label="Compliance"  col="complianceStatus" active={sort} onSort={toggleSort} />
-                <SortTh label="Created"     col="createdAt"        active={sort} onSort={toggleSort} />
-                <th className="w-8" />
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {displayWorkers.map((w) => {
-                const cfg = complianceConfig(w.complianceStatus);
-                const StatusIcon = cfg.icon;
-                return (
-                  <tr key={w.id} className="hover:bg-muted/20 transition-colors">
-                    <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                      {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
-                    </td>
-                    <td className={cn(cell, "min-w-[160px]")}>
-                      <Link href={`/workers/${w.id}`}>
-                        <a className="font-medium hover:underline" data-testid={`link-worker-${w.id}`}>
-                          {w.name}
-                        </a>
-                      </Link>
-                    </td>
-                    <td className={cn(cell, "min-w-[160px]")}>
-                      {w.roleName
-                        ? <Badge variant="secondary" className="text-xs font-normal">{w.roleName}</Badge>
-                        : <span className="text-muted-foreground">—</span>}
-                    </td>
-                    <td className={cn(cell, "text-muted-foreground min-w-[180px]")}>
-                      {w.email ?? "—"}
-                    </td>
-                    <td className={cn(cell, "text-muted-foreground font-mono text-xs")}>
-                      {w.phone ?? "—"}
-                    </td>
-                    <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                      {w.windaId ?? "—"}
-                    </td>
-                    <td className={cn(cell, "text-muted-foreground text-xs")}>
-                      {w.dob ?? "—"}
-                    </td>
-                    <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                      {w.passportNo ?? "—"}
-                    </td>
-                    <td className={cn(cell, "text-muted-foreground text-xs")}>
-                      {w.preferredAirport ?? "—"}
-                    </td>
-                    <td className={cn(cell, "text-xs text-muted-foreground max-w-[180px]")}>
-                      {w.qualifications
-                        ? (
-                          <span
-                            className="block truncate"
-                            title={w.qualifications}
-                          >
-                            {w.qualifications}
-                          </span>
-                        )
-                        : "—"}
-                    </td>
-                    <td className={cell}>
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[10px] flex items-center gap-1 w-fit", cfg.cls)}
-                      >
-                        <StatusIcon className="h-3 w-3" />
-                        {cfg.label}
-                      </Badge>
-                    </td>
-                    <td className={cn(cell, "text-muted-foreground text-xs whitespace-nowrap")}>
-                      {w.createdAt
-                        ? new Date(w.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-                        : "—"}
-                    </td>
-                    <td className="px-2 py-2">
-                      <Link href={`/workers/${w.id}`}>
-                        <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
-                      </Link>
-                    </td>
+          data-testid="tab-active-workers"
+        >
+          <Users className="h-3.5 w-3.5" />
+          Active
+          <span className="ml-0.5 text-xs opacity-60">{rawWorkers?.length ?? 0}</span>
+        </button>
+        <button
+          onClick={() => switchTab("inactive")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+            workerTab === "inactive"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+          data-testid="tab-inactive-workers"
+        >
+          <UserX className="h-3.5 w-3.5" />
+          Deactivated
+          {inactiveCount > 0 && (
+            <span className={cn(
+              "ml-0.5 text-xs px-1.5 py-0.5 rounded-full font-medium",
+              workerTab === "inactive"
+                ? "bg-primary/10 text-primary"
+                : "bg-muted text-muted-foreground",
+            )}>
+              {inactiveCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ── Active tab ── */}
+      {workerTab === "active" && (
+        <>
+          {/* Compliance status filter pills */}
+          <div className="flex gap-1.5 flex-wrap">
+            {STATUS_FILTERS.map(({ label, value }) => (
+              <button
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+                  statusFilter === value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border hover:border-primary/50",
+                )}
+                data-testid={`filter-status-${value.toLowerCase()}`}
+              >
+                {label}
+                {value !== "ALL" && (
+                  <span className="ml-1.5 text-[10px] opacity-70">
+                    {(rawWorkers ?? []).filter(w => (compMap.get(w.id) ?? "UNASSIGNED") === value).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Search + role filter */}
+          <div className="flex gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-52">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search name, email, WINDA ID, passport, phone…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+                data-testid="input-worker-search"
+              />
+            </div>
+            {roles && roles.length > 0 && (
+              <select
+                className="border rounded-md px-3 py-1.5 text-sm bg-background"
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                data-testid="select-role-filter"
+              >
+                <option value="">All roles</option>
+                {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            )}
+          </div>
+
+          {/* Active workers table */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+            </div>
+          ) : !displayWorkers.length ? (
+            <div className="border rounded-xl p-10 text-center text-muted-foreground">
+              <Users className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">No workers found</p>
+              {(search || statusFilter !== "ALL") && (
+                <p className="text-sm mt-1">Try adjusting your filters.</p>
+              )}
+            </div>
+          ) : (
+            <div className="border rounded-xl overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/60 border-b">
+                    <SortTh label="ID"          col="uniqueId"         active={sort} onSort={toggleSort} />
+                    <SortTh label="Name"        col="name"             active={sort} onSort={toggleSort} className="min-w-[160px]" />
+                    <SortTh label="Role"        col="roleName"         active={sort} onSort={toggleSort} className="min-w-[160px]" />
+                    <th className={hCell}>Email</th>
+                    <th className={hCell}>Tel No.</th>
+                    <th className={hCell}>WINDA ID</th>
+                    <SortTh label="DOB"         col="dob"              active={sort} onSort={toggleSort} />
+                    <th className={hCell}>Passport No.</th>
+                    <SortTh label="Airport"     col="preferredAirport" active={sort} onSort={toggleSort} />
+                    <th className={hCell}>Qualifications</th>
+                    <SortTh label="Compliance"  col="complianceStatus" active={sort} onSort={toggleSort} />
+                    <SortTh label="Created"     col="createdAt"        active={sort} onSort={toggleSort} />
+                    <th className="w-8" />
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y">
+                  {displayWorkers.map((w) => {
+                    const cfg = complianceConfig(w.complianceStatus);
+                    const StatusIcon = cfg.icon;
+                    return (
+                      <tr key={w.id} className="hover:bg-muted/20 transition-colors">
+                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                          {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
+                        </td>
+                        <td className={cn(cell, "min-w-[160px]")}>
+                          <Link href={`/workers/${w.id}`}>
+                            <a className="font-medium hover:underline" data-testid={`link-worker-${w.id}`}>
+                              {w.name}
+                            </a>
+                          </Link>
+                        </td>
+                        <td className={cn(cell, "min-w-[160px]")}>
+                          {w.roleName
+                            ? <Badge variant="secondary" className="text-xs font-normal">{w.roleName}</Badge>
+                            : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground min-w-[180px]")}>
+                          {w.email ?? "—"}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground font-mono text-xs")}>
+                          {w.phone ?? "—"}
+                        </td>
+                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                          {w.windaId ?? "—"}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground text-xs")}>
+                          {w.dob ?? "—"}
+                        </td>
+                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                          {w.passportNo ?? "—"}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground text-xs")}>
+                          {w.preferredAirport ?? "—"}
+                        </td>
+                        <td className={cn(cell, "text-xs text-muted-foreground max-w-[180px]")}>
+                          {w.qualifications
+                            ? (
+                              <span className="block truncate" title={w.qualifications}>
+                                {w.qualifications}
+                              </span>
+                            )
+                            : "—"}
+                        </td>
+                        <td className={cell}>
+                          <Badge
+                            variant="outline"
+                            className={cn("text-[10px] flex items-center gap-1 w-fit", cfg.cls)}
+                          >
+                            <StatusIcon className="h-3 w-3" />
+                            {cfg.label}
+                          </Badge>
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground text-xs whitespace-nowrap")}>
+                          {w.createdAt
+                            ? new Date(w.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-2">
+                          <Link href={`/workers/${w.id}`}>
+                            <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Deactivated tab ── */}
+      {workerTab === "inactive" && (
+        <>
+          {/* Search */}
+          <div className="relative max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search name, email, company, WINDA ID…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+              data-testid="input-inactive-search"
+            />
+          </div>
+
+          {inactiveLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+            </div>
+          ) : !filteredInactive.length ? (
+            <div className="border rounded-xl p-10 text-center text-muted-foreground">
+              <UserX className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">
+                {search ? "No deactivated workers match your search" : "No deactivated workers"}
+              </p>
+              {search && <p className="text-sm mt-1">Try a different search term.</p>}
+            </div>
+          ) : (
+            <div className="border rounded-xl overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/60 border-b">
+                    <th className={hCell}>ID</th>
+                    <th className={cn(hCell, "min-w-[180px]")}>Name</th>
+                    <th className={cn(hCell, "min-w-[140px]")}>Role</th>
+                    <th className={cn(hCell, "min-w-[180px]")}>Email</th>
+                    <th className={cn(hCell, "min-w-[140px]")}>Company</th>
+                    <th className={hCell}>WINDA ID</th>
+                    {isAdmin && <th className="w-8" />}
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredInactive.map((w) => {
+                    const isPending = reactivateMutation.isPending && reactivateMutation.variables === w.id;
+                    return (
+                      <tr key={w.id} className="hover:bg-muted/20 transition-colors opacity-75">
+                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                          {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
+                        </td>
+                        <td className={cn(cell, "min-w-[180px]")}>
+                          <Link href={`/workers/${w.id}`}>
+                            <a className="font-medium hover:underline text-muted-foreground" data-testid={`link-inactive-worker-${w.id}`}>
+                              {w.name}
+                            </a>
+                          </Link>
+                        </td>
+                        <td className={cn(cell, "min-w-[140px]")}>
+                          {w.roleName
+                            ? <Badge variant="secondary" className="text-xs font-normal opacity-60">{w.roleName}</Badge>
+                            : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground min-w-[180px]")}>
+                          {w.email ?? "—"}
+                        </td>
+                        <td className={cn(cell, "text-muted-foreground min-w-[140px]")}>
+                          {w.company ?? "—"}
+                        </td>
+                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                          {w.windaId ?? "—"}
+                        </td>
+                        {isAdmin && (
+                          <td className="px-3 py-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1.5"
+                              disabled={isPending}
+                              onClick={() => reactivateMutation.mutate(w.id)}
+                              data-testid={`button-reactivate-${w.id}`}
+                            >
+                              <RotateCcw className={cn("h-3 w-3", isPending && "animate-spin")} />
+                              {isPending ? "Reactivating…" : "Reactivate"}
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {/* Add worker dialog */}
