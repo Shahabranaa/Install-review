@@ -54,4 +54,4 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-WORKER_PORTAL_URL = "https://spx.site/worker-portal"
+WORKER_PORTAL_URL = "https://workforce.spx.site/worker-portal"
