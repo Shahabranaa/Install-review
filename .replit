@@ -50,3 +50,8 @@ externalPort = 80
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+WORKER_PORTAL_URL = "https://spx.site/worker-portal"

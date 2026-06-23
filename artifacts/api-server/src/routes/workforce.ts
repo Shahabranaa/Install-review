@@ -92,6 +92,9 @@ function generateTempPassword(): string {
 }
 
 function buildPortalLoginUrl(req: Request): string {
+  if (process.env.WORKER_PORTAL_URL) {
+    return process.env.WORKER_PORTAL_URL;
+  }
   const proto = Array.isArray(req.headers["x-forwarded-proto"])
     ? req.headers["x-forwarded-proto"][0]
     : (req.headers["x-forwarded-proto"] ?? (req.secure ? "https" : "http"));
