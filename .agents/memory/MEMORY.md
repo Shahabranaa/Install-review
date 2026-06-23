@@ -1,0 +1,1 @@
+- [Wouter routing — dashboard alias](wouter-dashboard.md) — /dashboard route was missing; wouter needs explicit routes for every path alias even if / already handles the same component.

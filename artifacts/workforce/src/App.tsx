@@ -60,6 +60,13 @@ function Router() {
           </AuthGate>
         )}
       </Route>
+      <Route path="/dashboard">
+        {() => (
+          <AuthGate>
+            <DashboardPage />
+          </AuthGate>
+        )}
+      </Route>
       <Route path="/workers">
         {() => (
           <AuthGate>
