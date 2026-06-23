@@ -36,6 +36,7 @@ interface Worker {
   passportNo: string | null;
   preferredAirport: string | null;
   qualifications: string | null;
+  createdAt: string | null;
 }
 
 interface WorkerCompliance {
@@ -64,7 +65,7 @@ const STATUS_FILTERS: { label: string; value: ComplianceStatus | "ALL" }[] = [
   { label: "Unassigned", value: "UNASSIGNED" },
 ];
 
-type SortCol = "uniqueId" | "name" | "roleName" | "dob" | "preferredAirport" | "complianceStatus";
+type SortCol = "uniqueId" | "name" | "roleName" | "dob" | "preferredAirport" | "complianceStatus" | "createdAt";
 type SortDir = "asc" | "desc";
 
 const COMPLIANCE_ORDER: Record<ComplianceStatus, number> = {
@@ -78,7 +79,7 @@ function uidNum(uid: string | null): number {
   return m ? parseInt(m[0]) : Infinity;
 }
 
-function sortWorkers<T extends { uniqueId: string | null; name: string; roleName: string | null; dob: string | null; preferredAirport: string | null; complianceStatus: ComplianceStatus }>(
+function sortWorkers<T extends { uniqueId: string | null; name: string; roleName: string | null; dob: string | null; preferredAirport: string | null; complianceStatus: ComplianceStatus; createdAt: string | null }>(
   workers: T[], col: SortCol, dir: SortDir,
 ): T[] {
   const sign = dir === "asc" ? 1 : -1;
@@ -91,6 +92,7 @@ function sortWorkers<T extends { uniqueId: string | null; name: string; roleName
       case "dob":       cmp = (a.dob ?? "").localeCompare(b.dob ?? ""); break;
       case "preferredAirport": cmp = (a.preferredAirport ?? "").localeCompare(b.preferredAirport ?? ""); break;
       case "complianceStatus": cmp = COMPLIANCE_ORDER[a.complianceStatus] - COMPLIANCE_ORDER[b.complianceStatus]; break;
+      case "createdAt": cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? ""); break;
     }
     return cmp !== 0 ? cmp * sign : uidNum(a.uniqueId) - uidNum(b.uniqueId);
   });
@@ -198,7 +200,7 @@ export default function WorkersPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const worker = await apiPost<{ id: number }>("/api/workforce/workers", {
+      const worker = await apiPost<{ id: number; emailSent?: boolean }>("/api/workforce/workers", {
         name: form.name,
         email: form.email || null,
         company: form.company || null,
@@ -212,9 +214,17 @@ export default function WorkersPage() {
           status: "active",
         });
       }
+      return worker;
     },
-    onSuccess: () => {
-      toast({ title: "Worker added" });
+    onSuccess: (worker) => {
+      toast({
+        title: "Worker added",
+        description: worker.emailSent
+          ? "Login credentials sent to the worker's email"
+          : form.email
+            ? "Worker added (email could not be sent)"
+            : undefined,
+      });
       void qc.invalidateQueries({ queryKey: ["workforce-workers-raw"] });
       void qc.invalidateQueries({ queryKey: ["workforce-compliance-summary"] });
       setShowNew(false);
@@ -320,6 +330,7 @@ export default function WorkersPage() {
                 <SortTh label="Airport"     col="preferredAirport" active={sort} onSort={toggleSort} />
                 <th className={hCell}>Qualifications</th>
                 <SortTh label="Compliance"  col="complianceStatus" active={sort} onSort={toggleSort} />
+                <SortTh label="Created"     col="createdAt"        active={sort} onSort={toggleSort} />
                 <th className="w-8" />
               </tr>
             </thead>
@@ -382,6 +393,11 @@ export default function WorkersPage() {
                         <StatusIcon className="h-3 w-3" />
                         {cfg.label}
                       </Badge>
+                    </td>
+                    <td className={cn(cell, "text-muted-foreground text-xs whitespace-nowrap")}>
+                      {w.createdAt
+                        ? new Date(w.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—"}
                     </td>
                     <td className="px-2 py-2">
                       <Link href={`/workers/${w.id}`}>

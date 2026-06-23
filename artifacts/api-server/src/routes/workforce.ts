@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import {
   db,
   usersTable,
@@ -28,6 +29,7 @@ import {
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
+import { sendEmail, buildLoginInfoHtml } from "../lib/mailjet.js";
 
 const router: IRouter = Router();
 
@@ -68,6 +70,45 @@ function handleRouteError(res: Response, err: unknown): void {
   }
   logger.error({ err }, "Unexpected route error");
   res.status(500).json({ error: "An unexpected error occurred" });
+}
+
+function generatePortalUsername(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim()
+    .replace(/\s+/g, ".");
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return slug ? `${slug}.${suffix}` : `worker.${suffix}`;
+}
+
+function generateTempPassword(): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let pass = "";
+  for (let i = 0; i < 12; i++) {
+    pass += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pass;
+}
+
+function buildPortalLoginUrl(req: Request): string {
+  const proto = Array.isArray(req.headers["x-forwarded-proto"])
+    ? req.headers["x-forwarded-proto"][0]
+    : (req.headers["x-forwarded-proto"] ?? (req.secure ? "https" : "http"));
+  const host = Array.isArray(req.headers["x-forwarded-host"])
+    ? req.headers["x-forwarded-host"][0]
+    : (req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost");
+  return `${proto}://${host}/worker-portal`;
+}
+
+function buildEmailTrackingUrl(req: Request, trackingId: string): string {
+  const proto = Array.isArray(req.headers["x-forwarded-proto"])
+    ? req.headers["x-forwarded-proto"][0]
+    : (req.headers["x-forwarded-proto"] ?? (req.secure ? "https" : "http"));
+  const host = Array.isArray(req.headers["x-forwarded-host"])
+    ? req.headers["x-forwarded-host"][0]
+    : (req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost");
+  return `${proto}://${host}/api/workforce/emails/track/${trackingId}.gif`;
 }
 
 const ALLOWED_CERT_MIME_TYPES = new Set([
@@ -334,8 +375,73 @@ router.post("/workforce/workers", requireAdmin, async (req, res): Promise<void> 
   try {
     const { name, email, company, windaId, roleId, notes } = req.body;
     if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
-    const [worker] = await db.insert(workersTable).values({ name: name.trim(), email, company, windaId, roleId, notes }).returning();
-    res.status(201).json(worker);
+
+    let portalUsername: string | undefined;
+    let portalPasswordHash: string | undefined;
+    let tempPassword: string | undefined;
+
+    if (email?.trim()) {
+      portalUsername = generatePortalUsername(name.trim());
+      tempPassword = generateTempPassword();
+      portalPasswordHash = await bcrypt.hash(tempPassword, 12);
+    }
+
+    const [worker] = await db.insert(workersTable).values({
+      name: name.trim(),
+      email: email || null,
+      company: company || null,
+      windaId: windaId || null,
+      roleId: roleId || null,
+      notes: notes || null,
+      ...(portalUsername ? { portalUsername } : {}),
+      ...(portalPasswordHash ? { portalPasswordHash } : {}),
+    }).returning();
+
+    let emailSent = false;
+
+    if (email?.trim() && tempPassword && portalUsername) {
+      try {
+        const loginUrl = buildPortalLoginUrl(req);
+        const trackingId = randomUUID();
+        const trackingPixelUrl = buildEmailTrackingUrl(req, trackingId);
+        const html = buildLoginInfoHtml({
+          workerName: worker.name,
+          loginUrl,
+          username: portalUsername,
+          temporaryPassword: tempPassword,
+          trackingPixelUrl,
+        });
+        const result = await sendEmail({
+          toEmail: email.trim(),
+          toName: worker.name,
+          subject: "Your Worker Portal Account",
+          htmlBody: html,
+        });
+        emailSent = result.success;
+        await db.insert(emailLogsTable).values({
+          workerId: worker.id,
+          sentBy: req.session!.userId as number,
+          toEmail: email.trim(),
+          toName: worker.name,
+          subject: "Your Worker Portal Account",
+          bodyHtml: html,
+          emailType: "login_info",
+          status: result.success ? "sent" : "failed",
+          error: result.error ?? null,
+          trackingId,
+        }).catch(() => {});
+        await db.insert(workerActivityLogsTable).values({
+          workerId: worker.id,
+          action: "credentials_set",
+          detail: `Portal account created automatically (username: ${portalUsername})`,
+          ipAddress: null,
+        }).catch(() => {});
+      } catch (emailErr) {
+        logger.error({ emailErr }, "Failed to send login info email on worker creation");
+      }
+    }
+
+    res.status(201).json({ ...worker, emailSent });
   } catch (err) {
     handleRouteError(res, err);
   }
@@ -2611,6 +2717,75 @@ router.post("/workforce/workers/:id/set-portal-credentials", requireAdmin, async
   }).catch(() => {});
 
   res.json({ ok: true });
+});
+
+// POST /api/workforce/workers/:id/reset-portal-password
+router.post("/workforce/workers/:id/reset-portal-password", requireAdmin, async (req, res): Promise<void> => {
+  const workerId = parseInt(req.params.id ?? "");
+  if (isNaN(workerId)) { res.status(400).json({ error: "Invalid worker id" }); return; }
+
+  const [worker] = await db.select().from(workersTable).where(eq(workersTable.id, workerId));
+  if (!worker) { res.status(404).json({ error: "Worker not found" }); return; }
+  if (!worker.email) { res.status(400).json({ error: "Worker has no email address" }); return; }
+
+  const username = worker.portalUsername ?? generatePortalUsername(worker.name);
+  const tempPassword = generateTempPassword();
+  const hash = await bcrypt.hash(tempPassword, 12);
+
+  await db.update(workersTable).set({
+    portalPasswordHash: hash,
+    ...(!worker.portalUsername ? { portalUsername: username } : {}),
+    updatedAt: new Date(),
+  }).where(eq(workersTable.id, workerId));
+
+  const loginUrl = buildPortalLoginUrl(req);
+  const trackingId = randomUUID();
+  const trackingPixelUrl = buildEmailTrackingUrl(req, trackingId);
+  const isReset = !!worker.portalUsername;
+  const subject = isReset
+    ? "Your Worker Portal Password Has Been Reset"
+    : "Your Worker Portal Account";
+  const html = buildLoginInfoHtml({
+    workerName: worker.name,
+    loginUrl,
+    username,
+    temporaryPassword: tempPassword,
+    trackingPixelUrl,
+  });
+
+  const sendResult = await sendEmail({
+    toEmail: worker.email,
+    toName: worker.name,
+    subject,
+    htmlBody: html,
+  });
+
+  await db.insert(emailLogsTable).values({
+    workerId,
+    sentBy: req.session!.userId as number,
+    toEmail: worker.email,
+    toName: worker.name,
+    subject,
+    bodyHtml: html,
+    emailType: "login_info",
+    status: sendResult.success ? "sent" : "failed",
+    error: sendResult.error ?? null,
+    trackingId,
+  }).catch(() => {});
+
+  await db.insert(workerActivityLogsTable).values({
+    workerId,
+    action: "credentials_set",
+    detail: `Admin ${isReset ? "reset portal password" : "created portal account"} and sent credentials to ${worker.email}`,
+    ipAddress: null,
+  }).catch(() => {});
+
+  if (!sendResult.success) {
+    res.status(502).json({ error: `Credentials updated but email failed: ${sendResult.error ?? "unknown error"}` });
+    return;
+  }
+
+  res.json({ ok: true, emailSent: true, username });
 });
 
 // PATCH /api/workforce/workers/:id/install-review-access

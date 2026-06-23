@@ -559,8 +559,6 @@ export default function WorkerProfilePage() {
   const [showAddCert, setShowAddCert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editingCert, setEditingCert] = useState<WorkerCert | null>(null);
-  const [showPortalCreds, setShowPortalCreds] = useState(false);
-  const [portalCredsForm, setPortalCredsForm] = useState({ portalUsername: "", password: "", confirm: "" });
   const [certForm, setCertForm] = useState({ certificationIds: [] as number[], dateAchieved: "", expiryDate: "", verified: false });
 
   function toggleCertFormId(id: number) {
@@ -742,17 +740,12 @@ export default function WorkerProfilePage() {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
 
-  const setPortalCredsMutation = useMutation({
+  const resetPasswordMutation = useMutation({
     mutationFn: () =>
-      apiPost(`/api/workforce/workers/${workerId}/set-portal-credentials`, {
-        portalUsername: portalCredsForm.portalUsername.trim() || undefined,
-        password: portalCredsForm.password,
-      }),
+      apiPost(`/api/workforce/workers/${workerId}/reset-portal-password`, {}),
     onSuccess: () => {
-      toast({ title: "Portal access updated" });
+      toast({ title: "Password reset", description: "New login credentials sent to the worker's email" });
       void qc.invalidateQueries({ queryKey: ["worker", workerId] });
-      setShowPortalCreds(false);
-      setPortalCredsForm({ portalUsername: "", password: "", confirm: "" });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   });
@@ -1126,21 +1119,24 @@ export default function WorkerProfilePage() {
               <p className="text-xs text-muted-foreground">
                 {worker.portalUsername
                   ? <>Username: <span className="font-mono">{worker.portalUsername}</span></>
-                  : "No portal credentials set"}
+                  : worker.email
+                    ? "Portal account not yet created"
+                    : "No email address — cannot send credentials"}
               </p>
             </div>
           </div>
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              setPortalCredsForm({ portalUsername: worker.portalUsername ?? "", password: "", confirm: "" });
-              setShowPortalCreds(true);
-            }}
-            data-testid="button-set-portal-creds"
+            disabled={!worker.email || resetPasswordMutation.isPending}
+            onClick={() => resetPasswordMutation.mutate()}
+            data-testid="button-reset-portal-password"
+            title={!worker.email ? "Worker needs an email address to receive credentials" : undefined}
           >
-            <KeyRound className="h-3.5 w-3.5 mr-1" />
-            {worker.portalUsername ? "Update credentials" : "Set credentials"}
+            {resetPasswordMutation.isPending
+              ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Sending…</>
+              : <><KeyRound className="h-3.5 w-3.5 mr-1" />{worker.portalUsername ? "Reset Password & Email" : "Create Account & Email"}</>
+            }
           </Button>
         </div>
       )}
@@ -2031,63 +2027,6 @@ export default function WorkerProfilePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Portal Credentials Dialog */}
-      <Dialog open={showPortalCreds} onOpenChange={setShowPortalCreds}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Set Portal Access</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <Label>Username <span className="text-muted-foreground font-normal">(optional — can use email to log in)</span></Label>
-              <Input
-                value={portalCredsForm.portalUsername}
-                onChange={(e) => setPortalCredsForm((f) => ({ ...f, portalUsername: e.target.value }))}
-                placeholder="e.g. john.smith"
-                autoComplete="off"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>New password</Label>
-              <Input
-                type="password"
-                value={portalCredsForm.password}
-                onChange={(e) => setPortalCredsForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Minimum 8 characters"
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Confirm password</Label>
-              <Input
-                type="password"
-                value={portalCredsForm.confirm}
-                onChange={(e) => setPortalCredsForm((f) => ({ ...f, confirm: e.target.value }))}
-                placeholder="Re-enter password"
-                autoComplete="new-password"
-              />
-            </div>
-            {portalCredsForm.password && portalCredsForm.confirm && portalCredsForm.password !== portalCredsForm.confirm && (
-              <p className="text-xs text-destructive">Passwords do not match</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPortalCreds(false)}>Cancel</Button>
-            <Button
-              disabled={
-                !portalCredsForm.password ||
-                portalCredsForm.password.length < 8 ||
-                portalCredsForm.password !== portalCredsForm.confirm ||
-                setPortalCredsMutation.isPending
-              }
-              onClick={() => setPortalCredsMutation.mutate()}
-              data-testid="button-save-portal-creds"
-            >
-              {setPortalCredsMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving…</> : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Reject certification dialog */}
       <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectComment(""); } }}>
