@@ -790,7 +790,7 @@ export default function ScheduleScreen() {
           <View
             style={[
               styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 24 },
             ]}
           >
             <View style={styles.modalHeader}>
@@ -955,7 +955,7 @@ export default function ScheduleScreen() {
           <View
             style={[
               styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 24 },
             ]}
           >
             <View style={styles.modalHeader}>

@@ -700,7 +700,7 @@ export default function ProfileScreen() {
           <View
             style={[
               styles.sheetBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 20 },
             ]}
           >
             <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
@@ -1110,7 +1110,7 @@ export default function ProfileScreen() {
           <View
             style={[
               styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 24 },
             ]}
           >
             <View style={styles.modalHeader}>
@@ -1190,7 +1190,7 @@ export default function ProfileScreen() {
           <View
             style={[
               styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 24 },
             ]}
           >
             <View style={styles.modalHeader}>
