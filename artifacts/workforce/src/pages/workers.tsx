@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { apiFetch, apiPost, apiPatch } from "@/lib/api";
+import { apiFetch, apiPost, apiPatch, apiDelete } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import {
   Users, Plus, Search, ChevronRight,
   CheckCircle2, AlertTriangle, Clock, HelpCircle,
   ChevronUp, ChevronDown, ChevronsUpDown,
-  UserX, RotateCcw,
+  UserX, RotateCcw, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -138,6 +138,7 @@ export default function WorkersPage() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", company: "", windaId: "", roleId: "", siteId: "" });
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const { data: complianceSummary, isLoading: compLoading } = useQuery<WorkerCompliance[]>({
     queryKey: ["workforce-compliance-summary"],
@@ -267,6 +268,20 @@ export default function WorkersPage() {
       void qc.invalidateQueries({ queryKey: ["workforce-workers-inactive"] });
     },
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  });
+
+  const deletePermanentMutation = useMutation({
+    mutationFn: (workerId: number) =>
+      apiDelete<{ ok: boolean }>(`/api/workforce/workers/${workerId}/permanent`),
+    onSuccess: () => {
+      toast({ title: "Worker permanently deleted" });
+      setDeleteConfirmId(null);
+      void qc.invalidateQueries({ queryKey: ["workforce-workers-inactive"] });
+    },
+    onError: (err) => {
+      toast({ title: "Delete failed", description: String(err), variant: "destructive" });
+      setDeleteConfirmId(null);
+    },
   });
 
   const inactiveCount = inactiveWorkers?.length ?? 0;
@@ -568,17 +583,29 @@ export default function WorkersPage() {
                         </td>
                         {isAdmin && (
                           <td className="px-3 py-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1.5"
-                              disabled={isPending}
-                              onClick={() => reactivateMutation.mutate(w.id)}
-                              data-testid={`button-reactivate-${w.id}`}
-                            >
-                              <RotateCcw className={cn("h-3 w-3", isPending && "animate-spin")} />
-                              {isPending ? "Reactivating…" : "Reactivate"}
-                            </Button>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1.5"
+                                disabled={isPending}
+                                onClick={() => reactivateMutation.mutate(w.id)}
+                                data-testid={`button-reactivate-${w.id}`}
+                              >
+                                <RotateCcw className={cn("h-3 w-3", isPending && "animate-spin")} />
+                                {isPending ? "Reactivating…" : "Reactivate"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteConfirmId(w.id)}
+                                data-testid={`button-delete-${w.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                Delete
+                              </Button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -668,6 +695,36 @@ export default function WorkersPage() {
               data-testid="button-save-worker"
             >
               {createMutation.isPending ? "Saving…" : "Add Worker"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Permanent delete confirmation */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Permanently Delete Worker
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <p className="text-sm">
+              This will <span className="font-semibold">permanently remove</span> the worker and all associated records — certifications, site assignments, and history.
+            </p>
+            <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deletePermanentMutation.isPending}
+              onClick={() => { if (deleteConfirmId !== null) deletePermanentMutation.mutate(deleteConfirmId); }}
+            >
+              {deletePermanentMutation.isPending ? "Deleting…" : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>

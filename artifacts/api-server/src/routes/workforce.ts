@@ -611,6 +611,19 @@ router.delete("/workforce/workers/:id", requireAdmin, async (req, res): Promise<
   }
 });
 
+router.delete("/workforce/workers/:id/permanent", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id ?? "");
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [deleted] = await db.delete(workersTable)
+      .where(eq(workersTable.id, id)).returning();
+    if (!deleted) { res.status(404).json({ error: "Worker not found" }); return; }
+    res.json({ ok: true });
+  } catch (err) {
+    handleRouteError(res, err);
+  }
+});
+
 // ── Roles ────────────────────────────────────────────────────────────────────
 
 router.get("/workforce/roles", requireAuth, async (_req, res): Promise<void> => {
