@@ -14,9 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartprojex.workermobile"
     },
-    "android": {},
+    "android": {
+      "package": "com.smartprojex.workermobile"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
