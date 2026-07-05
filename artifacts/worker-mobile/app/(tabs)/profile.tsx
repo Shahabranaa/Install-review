@@ -176,19 +176,27 @@ export default function ProfileScreen() {
         phone: profile.phone ?? "",
         company: profile.company ?? "",
       });
-      setPassForm({
-        passportNo: profile.passportNo ?? "",
-        passportIssueDate: profile.passportIssueDate ?? "",
-        passportExpiryDate: profile.passportExpiryDate ?? "",
-        passportPlaceOfBirth: profile.passportPlaceOfBirth ?? "",
-      });
+      // Do not clobber the passport form while the review/confirm modal is
+      // open — an in-flight scan can trigger a background profile refetch
+      // (e.g. to pick up the new passportWasabiKey) before the worker has
+      // tapped Save, and extracted values are intentionally never written
+      // to the server until then, so a naive resync here would wipe out
+      // the unsaved, freshly-extracted prefill.
+      if (!editPassport) {
+        setPassForm({
+          passportNo: profile.passportNo ?? "",
+          passportIssueDate: profile.passportIssueDate ?? "",
+          passportExpiryDate: profile.passportExpiryDate ?? "",
+          passportPlaceOfBirth: profile.passportPlaceOfBirth ?? "",
+        });
+      }
       setNokForm({
         nokName: profile.nokName ?? "",
         nokRelationship: profile.nokRelationship ?? "",
         nokPhone: profile.nokPhone ?? "",
       });
     }
-  }, [profile]);
+  }, [profile, editPassport]);
 
   const savePMut = useMutation({
     mutationFn: () => apiPatch("/api/worker-portal/profile", pForm),
