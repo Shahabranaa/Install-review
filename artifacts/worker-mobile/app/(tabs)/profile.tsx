@@ -31,6 +31,7 @@ interface WorkerProfile {
   passportNo: string | null;
   passportIssueDate: string | null;
   passportExpiryDate: string | null;
+  passportPlaceOfBirth: string | null;
   passportWasabiKey: string | null;
   nokName: string | null;
   nokRelationship: string | null;
@@ -140,6 +141,7 @@ export default function ProfileScreen() {
     passportNo: "",
     passportIssueDate: "",
     passportExpiryDate: "",
+    passportPlaceOfBirth: "",
   });
   const [nokForm, setNokForm] = useState({
     nokName: "",
@@ -178,6 +180,7 @@ export default function ProfileScreen() {
         passportNo: profile.passportNo ?? "",
         passportIssueDate: profile.passportIssueDate ?? "",
         passportExpiryDate: profile.passportExpiryDate ?? "",
+        passportPlaceOfBirth: profile.passportPlaceOfBirth ?? "",
       });
       setNokForm({
         nokName: profile.nokName ?? "",
@@ -217,6 +220,7 @@ export default function ProfileScreen() {
       qc.invalidateQueries({ queryKey: ["worker-profile"] });
       setEditPassport(false);
       setPassportExtracted(null);
+      setPassportScanFailed(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (e: Error) => Alert.alert("Error", e.message),
@@ -299,6 +303,7 @@ export default function ProfileScreen() {
           passportNo: ex.passportNo ?? f.passportNo,
           passportIssueDate: ex.passportIssueDate ?? f.passportIssueDate,
           passportExpiryDate: ex.passportExpiryDate ?? f.passportExpiryDate,
+          passportPlaceOfBirth: ex.passportPlaceOfBirth ?? f.passportPlaceOfBirth,
         }));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
@@ -550,6 +555,7 @@ export default function ProfileScreen() {
               <InfoRow label="Passport No." value={profile?.passportNo ?? null} />
               <InfoRow label="Issue date" value={fmtDate(profile?.passportIssueDate ?? null)} />
               <InfoRow label="Expiry date" value={fmtDate(profile?.passportExpiryDate ?? null)} />
+              <InfoRow label="Place of birth" value={profile?.passportPlaceOfBirth ?? null} />
             </SectionCard>
 
             <SectionCard title="Next of Kin" icon="heart" onEdit={() => setEditNok(true)}>
@@ -855,6 +861,7 @@ export default function ProfileScreen() {
                 onPress={() => {
                   setEditPassport(false);
                   setPassportExtracted(null);
+                  setPassportScanFailed(false);
                 }}
               >
                 <Feather name="x" size={20} color={colors.mutedForeground} />
@@ -1005,6 +1012,12 @@ export default function ProfileScreen() {
                 label: "Expiry date",
                 placeholder: "YYYY-MM-DD",
                 caps: "none" as const,
+              },
+              {
+                key: "passportPlaceOfBirth",
+                label: "Place of birth",
+                placeholder: "e.g. London",
+                caps: "words" as const,
               },
             ].map(({ key, label, placeholder, caps }) => (
               <View key={key}>
