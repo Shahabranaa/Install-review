@@ -154,6 +154,7 @@ export default function ProfileScreen() {
 
   const [passportScanning, setPassportScanning] = useState(false);
   const [passportExtracted, setPassportExtracted] = useState<PassportExtracted | null>(null);
+  const [passportScanFailed, setPassportScanFailed] = useState(false);
   const [cvUploading, setCvUploading] = useState(false);
   const [cvExtracted, setCvExtracted] = useState<CvExtracted | null>(null);
   const [showSourcePicker, setShowSourcePicker] = useState(false);
@@ -276,24 +277,41 @@ export default function ProfileScreen() {
   ) {
     setPassportScanning(true);
     setPassportExtracted(null);
+    setPassportScanFailed(false);
     try {
       const fd = new FormData();
       fd.append("file", { uri, name, type } as any);
       const res = await apiUpload<{
         passportWasabiKey: string;
         filename: string;
-        extracted: PassportExtracted;
+        extracted: PassportExtracted | null;
       }>("/api/worker-portal/passport-upload", fd);
 
       const ex = res.extracted ?? {};
-      setPassportExtracted(ex);
-      setPassForm((f) => ({
-        passportNo: ex.passportNo ?? f.passportNo,
-        passportIssueDate: ex.passportIssueDate ?? f.passportIssueDate,
-        passportExpiryDate: ex.passportExpiryDate ?? f.passportExpiryDate,
-      }));
+      const hasExtractedData = Object.values(ex).some(
+        (v) => typeof v === "string" && v.trim().length > 0
+      );
+
+      if (hasExtractedData) {
+        setPassportExtracted(ex);
+        setPassportScanFailed(false);
+        setPassForm((f) => ({
+          passportNo: ex.passportNo ?? f.passportNo,
+          passportIssueDate: ex.passportIssueDate ?? f.passportIssueDate,
+          passportExpiryDate: ex.passportExpiryDate ?? f.passportExpiryDate,
+        }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        setPassportExtracted(null);
+        setPassportScanFailed(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
+
+      // Nothing is saved to the profile yet — the worker must review the fields
+      // below and tap Save to confirm. This only refreshes file-related fields
+      // (e.g. passportWasabiKey) which the upload endpoint does persist.
       qc.invalidateQueries({ queryKey: ["worker-profile"] });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditPassport(true);
     } catch (e) {
       Alert.alert("Upload failed", e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -520,7 +538,7 @@ export default function ProfileScreen() {
                   <Feather name="upload" size={16} color={colors.primary} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.uploadPromptTitle, { color: colors.primary }]}>
-                      Upload passport scan
+                      Scan Passport
                     </Text>
                     <Text style={[styles.uploadPromptSub, { color: colors.mutedForeground }]}>
                       AI will extract your details automatically
@@ -718,71 +736,60 @@ export default function ProfileScreen() {
             ]}
           >
             <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-              Upload Passport
+              Scan Passport
             </Text>
             <Text style={[styles.sheetSub, { color: colors.mutedForeground }]}>
               AI will scan it and extract your details
             </Text>
 
+            <View
+              style={[
+                styles.tipBox,
+                { backgroundColor: colors.accent, borderColor: colors.primary + "30" },
+              ]}
+            >
+              <Feather name="info" size={14} color={colors.primary} />
+              <Text style={[styles.tipText, { color: colors.foreground }]}>
+                Lay the photo page flat in good light, avoid glare, and fill the frame with the whole page.
+              </Text>
+            </View>
+
             <TouchableOpacity
               onPress={handlePassportCamera}
-              style={[styles.sheetOption, { borderColor: colors.border }]}
+              style={[styles.sheetOptionPrimary, { backgroundColor: colors.primary }]}
             >
-              <View
-                style={[styles.sheetIconBox, { backgroundColor: colors.primary + "14" }]}
-              >
-                <Feather name="camera" size={20} color={colors.primary} />
-              </View>
+              <Feather name="camera" size={20} color="#fff" />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.sheetOptionTitle, { color: colors.foreground }]}>
+                <Text style={styles.sheetOptionPrimaryTitle}>
                   Take Photo
                 </Text>
-                <Text style={[styles.sheetOptionSub, { color: colors.mutedForeground }]}>
-                  Use your camera
+                <Text style={styles.sheetOptionPrimarySub}>
+                  Recommended — use your camera
                 </Text>
               </View>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              <Feather name="chevron-right" size={16} color="#ffffffcc" />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handlePassportLibrary}
-              style={[styles.sheetOption, { borderColor: colors.border }]}
-            >
-              <View
-                style={[styles.sheetIconBox, { backgroundColor: colors.primary + "14" }]}
+            <View style={styles.sheetSecondaryRow}>
+              <TouchableOpacity
+                onPress={handlePassportLibrary}
+                style={[styles.sheetSecondaryBtn, { borderColor: colors.border }]}
               >
-                <Feather name="image" size={20} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sheetOptionTitle, { color: colors.foreground }]}>
-                  Choose from Library
+                <Feather name="image" size={16} color={colors.foreground} />
+                <Text style={[styles.sheetSecondaryText, { color: colors.foreground }]}>
+                  Library
                 </Text>
-                <Text style={[styles.sheetOptionSub, { color: colors.mutedForeground }]}>
-                  Pick an existing photo
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handlePassportFile}
-              style={[styles.sheetOption, { borderColor: colors.border }]}
-            >
-              <View
-                style={[styles.sheetIconBox, { backgroundColor: colors.primary + "14" }]}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handlePassportFile}
+                style={[styles.sheetSecondaryBtn, { borderColor: colors.border }]}
               >
-                <Feather name="file" size={20} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sheetOptionTitle, { color: colors.foreground }]}>
-                  Upload File
+                <Feather name="file" size={16} color={colors.foreground} />
+                <Text style={[styles.sheetSecondaryText, { color: colors.foreground }]}>
+                  File
                 </Text>
-                <Text style={[styles.sheetOptionSub, { color: colors.mutedForeground }]}>
-                  PDF or image
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               onPress={() => setShowSourcePicker(false)}
@@ -855,7 +862,7 @@ export default function ProfileScreen() {
             </View>
 
             {/* Upload options inside passport modal */}
-            {!passportExtracted && (
+            {!passportExtracted && !passportScanFailed && (
               <>
                 <Text style={[styles.modalSectionLabel, { color: colors.mutedForeground }]}>
                   Scan to autofill
@@ -901,6 +908,35 @@ export default function ProfileScreen() {
               </>
             )}
 
+            {/* Extraction failed — offer manual entry */}
+            {passportScanFailed && (
+              <View
+                style={[
+                  styles.extractedBox,
+                  { backgroundColor: colors.warningLight, borderColor: colors.warningBorder },
+                ]}
+              >
+                <View style={styles.extractedHeader}>
+                  <Feather name="alert-triangle" size={15} color={colors.warning} />
+                  <Text style={[styles.extractedTitle, { color: colors.warning }]}>
+                    Couldn't read the details automatically
+                  </Text>
+                </View>
+                <Text style={[styles.extractedDetail, { color: colors.warning + "cc" }]}>
+                  Your passport photo was saved. Please enter the details below manually, or try scanning again.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => openPassportUpload()}
+                  style={styles.rescanLink}
+                >
+                  <Feather name="refresh-cw" size={11} color={colors.warning} />
+                  <Text style={[styles.rescanLinkText, { color: colors.warning }]}>
+                    Try again
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Extracted success card */}
             {passportExtracted && (
               <View
@@ -912,7 +948,7 @@ export default function ProfileScreen() {
                 <View style={styles.extractedHeader}>
                   <Feather name="check-circle" size={15} color={colors.success} />
                   <Text style={[styles.extractedTitle, { color: colors.success }]}>
-                    Passport scanned — details pre-filled below
+                    Passport scanned — review the details below
                   </Text>
                 </View>
                 {passportExtracted.name ? (
@@ -925,6 +961,9 @@ export default function ProfileScreen() {
                     Place of birth: {passportExtracted.passportPlaceOfBirth}
                   </Text>
                 ) : null}
+                <Text style={[styles.extractedDetail, { color: colors.success + "cc" }]}>
+                  Check the fields carefully before saving — nothing is saved until you tap Save.
+                </Text>
                 <TouchableOpacity
                   onPress={() => openPassportUpload()}
                   style={styles.rescanLink}
@@ -1446,22 +1485,42 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
   sheetSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 8 },
-  sheetOption: {
+  tipBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  tipText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  sheetOptionPrimary: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    borderRadius: 14,
     paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    marginBottom: 10,
   },
-  sheetIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  sheetOptionPrimaryTitle: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#fff" },
+  sheetOptionPrimarySub: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#ffffffcc", marginTop: 1 },
+  sheetSecondaryRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  sheetSecondaryBtn: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
   },
-  sheetOptionTitle: { fontSize: 15, fontFamily: "Inter_500Medium" },
-  sheetOptionSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
+  sheetSecondaryText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   sheetCancel: {
     marginTop: 8,
     paddingVertical: 14,

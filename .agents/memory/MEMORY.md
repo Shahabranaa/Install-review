@@ -1,1 +1,2 @@
 - [Wouter routing — dashboard alias](wouter-dashboard.md) — /dashboard route was missing; wouter needs explicit routes for every path alias even if / already handles the same component.
+- [Expo web + runTest routing](expo-web-runtest-routing.md) — runTest can hit the wrong artifact on an Expo dev-domain URL even though screenshot works; fall back to screenshot + curl for Expo e2e checks.

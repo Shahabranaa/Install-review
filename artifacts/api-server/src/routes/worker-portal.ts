@@ -1728,22 +1728,20 @@ router.post(
 
       await logActivity(workerId, "passport_uploaded", safeName, getClientIp(req));
 
-      // Run AI extraction immediately after upload — return result in response
-      const extracted = await extractPassportAzure(req.file.buffer, req.file.mimetype);
-
-      // Persist extracted passport fields to DB so the profile re-fetch picks them up
-      if (extracted) {
-        const passUpdate: Record<string, unknown> = { updatedAt: new Date() };
-        if (extracted.passportNo) passUpdate.passportNo = extracted.passportNo;
-        if (extracted.passportPlaceOfBirth) passUpdate.passportPlaceOfBirth = extracted.passportPlaceOfBirth;
-        if (extracted.passportIssueDate) passUpdate.passportIssueDate = extracted.passportIssueDate;
-        if (extracted.passportExpiryDate) passUpdate.passportExpiryDate = extracted.passportExpiryDate;
-        if (Object.keys(passUpdate).length > 1) {
-          await db.update(workersTable).set(passUpdate).where(eq(workersTable.id, workerId));
-        }
+      // Run AI extraction immediately after upload and return the result for the
+      // worker to review. Extraction failures must not fail the upload — the file
+      // is already saved, and the worker can always fall back to manual entry.
+      let extracted: PassportExtractResult | null = null;
+      try {
+        extracted = await extractPassportAzure(req.file.buffer, req.file.mimetype);
+      } catch (err) {
+        logger.warn({ err }, "passport OCR extraction failed — returning upload without extracted data");
       }
 
-      res.json({ passportWasabiKey: key, filename: safeName, extracted: extracted ?? null });
+      // Intentionally NOT persisted here — the worker must explicitly review and
+      // confirm/edit the extracted fields via PATCH /worker-portal/profile before
+      // they are saved to their record.
+      res.json({ passportWasabiKey: key, filename: safeName, extracted });
     } catch (err) {
       logger.error({ err }, "worker-portal passport upload POST error");
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
