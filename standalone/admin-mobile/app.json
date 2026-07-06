@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Admin Mobile App",
+    "slug": "admin-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "admin-mobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartprojex.adminmobile"
+    },
+    "android": {
+      "package": "com.smartprojex.adminmobile"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {}
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
