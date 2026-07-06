@@ -15,11 +15,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
-let hasRegisteredThisSession = false;
+let lastRegisteredWorkerId: number | null = null;
 
-export async function registerForPushNotificationsAsync(): Promise<void> {
+export async function registerForPushNotificationsAsync(workerId: number): Promise<void> {
   if (Platform.OS === "web") return;
-  if (hasRegisteredThisSession) return;
+  // Re-register whenever the logged-in worker changes (e.g. worker A logs
+  // out and worker B logs in on the same device) so the push token always
+  // maps to the currently authenticated worker, not a stale prior session.
+  if (lastRegisteredWorkerId === workerId) return;
 
   try {
     if (!Device.isDevice) {
@@ -58,8 +61,12 @@ export async function registerForPushNotificationsAsync(): Promise<void> {
       platform: Platform.OS,
     });
 
-    hasRegisteredThisSession = true;
+    lastRegisteredWorkerId = workerId;
   } catch (err) {
     console.warn("Push notification registration failed", err);
   }
+}
+
+export function resetPushRegistrationState(): void {
+  lastRegisteredWorkerId = null;
 }

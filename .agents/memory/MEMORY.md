@@ -1,3 +1,3 @@
 - [Wouter routing — dashboard alias](wouter-dashboard.md) — /dashboard route was missing; wouter needs explicit routes for every path alias even if / already handles the same component.
 - [Expo web + runTest routing](expo-web-runtest-routing.md) — runTest can hit the wrong artifact on an Expo dev-domain URL even though screenshot works; fall back to screenshot + curl for Expo e2e checks.
-- [API server dev workflow quirks](api-server-dev-workflow-quirks.md) — new routes may need a restart; no default admin/worker dev passwords, set test creds via psql/bcrypt.
+- [API server dev workflow quirks](api-server-dev-workflow-quirks.md) — routes may need a restart; no default dev passwords; schema changes need a migrate.mjs entry, not just psql/Drizzle.
