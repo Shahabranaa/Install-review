@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   Mail, Send, Clock, CheckCircle2, AlertTriangle, Eye, EyeOff,
   Users, Bell, KeyRound, MessageSquare, RefreshCw, ChevronDown, ChevronRight,
+  Smartphone, MessageCircle, Lock,
 } from "lucide-react";
 import { Redirect } from "wouter";
 
@@ -26,19 +27,25 @@ interface Worker {
   roleName: string | null;
 }
 
-interface EmailLog {
-  id: number;
-  workerId: number | null;
-  workerName: string | null;
-  toEmail: string;
-  toName: string;
-  subject: string;
-  emailType: string;
+type Channel = "email" | "push";
+
+interface ChannelResult {
+  channel: Channel;
   status: string;
   error: string | null;
+  seenAt?: string | null;
+  seenIp?: string | null;
+}
+
+interface MessageLog {
+  id: string;
+  workerId: number | null;
+  workerName: string | null;
+  toEmail: string | null;
+  subject: string;
+  messageType: string;
   sentAt: string;
-  seenAt: string | null;
-  seenIp: string | null;
+  channels: ChannelResult[];
 }
 
 interface ExpiringPreviewWorker {
@@ -50,6 +57,23 @@ interface ExpiringPreviewWorker {
 
 type TabId = "compose" | "logs";
 type EmailType = "custom" | "expiry_notification" | "login_info";
+
+// ── Channel config ────────────────────────────────────────────────────────────
+
+const CHANNEL_OPTIONS: { id: Channel | "sms" | "whatsapp"; label: string; icon: React.ComponentType<{ className?: string }>; enabled: boolean }[] = [
+  { id: "email", label: "Email", icon: Mail, enabled: true },
+  { id: "push", label: "Push Notification", icon: Smartphone, enabled: true },
+  { id: "sms", label: "SMS", icon: MessageCircle, enabled: false },
+  { id: "whatsapp", label: "WhatsApp", icon: MessageSquare, enabled: false },
+];
+
+function channelLabel(c: Channel) {
+  return c === "email" ? "Email" : "Push";
+}
+
+function channelIcon(c: Channel) {
+  return c === "email" ? Mail : Smartphone;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +95,15 @@ function emailTypeBadgeClass(t: string) {
   }
 }
 
+function statusBadgeClass(status: string) {
+  switch (status) {
+    case "sent": return "border-emerald-400 text-emerald-600";
+    case "failed": return "border-red-400 text-red-600";
+    case "skipped": return "border-muted-foreground/40 text-muted-foreground";
+    default: return "text-muted-foreground";
+  }
+}
+
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
@@ -78,9 +111,10 @@ function fmtDate(iso: string | null) {
 
 // ── Log row ───────────────────────────────────────────────────────────────────
 
-function LogRow({ log }: { log: EmailLog }) {
+function LogRow({ log }: { log: MessageLog }) {
   const [open, setOpen] = useState(false);
-  const seen = !!log.seenAt;
+  const emailChannel = log.channels.find(c => c.channel === "email");
+  const seen = !!emailChannel?.seenAt;
 
   return (
     <>
@@ -92,26 +126,34 @@ function LogRow({ log }: { log: EmailLog }) {
           <div className="flex items-center gap-2">
             {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
             <div>
-              <p className="text-sm font-medium">{log.toName}</p>
-              <p className="text-xs text-muted-foreground">{log.toEmail}</p>
+              <p className="text-sm font-medium">{log.workerName ?? "Unknown"}</p>
+              {log.toEmail && <p className="text-xs text-muted-foreground">{log.toEmail}</p>}
             </div>
           </div>
         </td>
         <td className="px-4 py-3 text-sm hidden md:table-cell truncate max-w-[200px]">{log.subject}</td>
         <td className="px-4 py-3">
-          <Badge variant="outline" className={cn("text-[10px]", emailTypeBadgeClass(log.emailType))}>
-            {emailTypeLabel(log.emailType)}
+          <Badge variant="outline" className={cn("text-[10px]", emailTypeBadgeClass(log.messageType))}>
+            {emailTypeLabel(log.messageType)}
           </Badge>
         </td>
         <td className="px-4 py-3">
-          {log.status === "sent"
-            ? <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-600">Sent</Badge>
-            : <Badge variant="outline" className="text-[10px] border-red-400 text-red-600">Failed</Badge>}
+          <div className="flex flex-wrap items-center gap-1">
+            {log.channels.map(c => {
+              const Icon = channelIcon(c.channel);
+              return (
+                <Badge key={c.channel} variant="outline" className={cn("text-[10px] gap-1", statusBadgeClass(c.status))}>
+                  <Icon className="h-3 w-3" />
+                  {channelLabel(c.channel)}
+                </Badge>
+              );
+            })}
+          </div>
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-1.5 text-xs">
             {seen
-              ? <><Eye className="h-3.5 w-3.5 text-emerald-500" /><span className="text-emerald-600 hidden sm:inline">{fmtDate(log.seenAt)}</span></>
+              ? <><Eye className="h-3.5 w-3.5 text-emerald-500" /><span className="text-emerald-600 hidden sm:inline">{fmtDate(emailChannel?.seenAt ?? null)}</span></>
               : <><EyeOff className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground hidden sm:inline">Not seen</span></>}
           </div>
         </td>
@@ -119,10 +161,19 @@ function LogRow({ log }: { log: EmailLog }) {
       </tr>
       {open && (
         <tr>
-          <td colSpan={6} className="bg-muted/10 px-8 py-3 border-b text-xs space-y-1">
+          <td colSpan={6} className="bg-muted/10 px-8 py-3 border-b text-xs space-y-2">
             <p><span className="font-semibold">Sent:</span> {fmtDate(log.sentAt)}</p>
-            {seen && <p><span className="font-semibold">Opened:</span> {fmtDate(log.seenAt)} {log.seenIp ? `(IP: ${log.seenIp})` : ""}</p>}
-            {log.error && <p className="text-red-600"><span className="font-semibold">Error:</span> {log.error}</p>}
+            {log.channels.map(c => (
+              <div key={c.channel} className="flex items-start gap-1.5">
+                <Badge variant="outline" className={cn("text-[10px]", statusBadgeClass(c.status))}>
+                  {channelLabel(c.channel)}: {c.status}
+                </Badge>
+                {c.channel === "email" && c.seenAt && (
+                  <span className="text-muted-foreground">Opened {fmtDate(c.seenAt)}{c.seenIp ? ` (IP: ${c.seenIp})` : ""}</span>
+                )}
+                {c.error && <span className="text-red-600">{c.error}</span>}
+              </div>
+            ))}
           </td>
         </tr>
       )}
@@ -204,6 +255,55 @@ function WorkerSelector({
   );
 }
 
+// ── Channel selector ──────────────────────────────────────────────────────────
+
+function ChannelSelector({
+  selected, onChange,
+}: {
+  selected: Set<Channel>;
+  onChange: (s: Set<Channel>) => void;
+}) {
+  function toggle(id: Channel) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onChange(next);
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {CHANNEL_OPTIONS.map(({ id, label, icon: Icon, enabled }) => {
+        const isSelected = enabled && selected.has(id as Channel);
+        return (
+          <label
+            key={id}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-lg border text-sm select-none",
+              !enabled && "opacity-50 cursor-not-allowed bg-muted/20",
+              enabled && "cursor-pointer",
+              isSelected && "border-primary bg-primary/5",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={isSelected}
+              disabled={!enabled}
+              onChange={() => enabled && toggle(id as Channel)}
+            />
+            <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="flex-1 truncate">{label}</span>
+            {!enabled && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground flex-shrink-0">
+                <Lock className="h-2.5 w-2.5" /> Soon
+              </span>
+            )}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Expiring preview ──────────────────────────────────────────────────────────
 
 function ExpiryPreviewPanel({
@@ -268,6 +368,7 @@ export default function EmailsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("compose");
   const [emailType, setEmailType] = useState<EmailType>("custom");
   const [selectedWorkers, setSelectedWorkers] = useState<Set<number>>(new Set());
+  const [selectedChannels, setSelectedChannels] = useState<Set<Channel>>(new Set(["email", "push"]));
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [loginUrl, setLoginUrl] = useState("");
@@ -284,9 +385,9 @@ export default function EmailsPage() {
     staleTime: 5 * 60_000,
   });
 
-  const { data: logs, isLoading: logsLoading, refetch: refetchLogs } = useQuery<EmailLog[]>({
+  const { data: logs, isLoading: logsLoading, refetch: refetchLogs } = useQuery<MessageLog[]>({
     queryKey: ["email-logs", logTypeFilter],
-    queryFn: () => apiFetch<EmailLog[]>(
+    queryFn: () => apiFetch<MessageLog[]>(
       `/api/workforce/emails/logs${logTypeFilter !== "all" ? `?emailType=${logTypeFilter}` : ""}`,
     ),
     enabled: activeTab === "logs",
@@ -295,7 +396,7 @@ export default function EmailsPage() {
 
   const sendMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      apiPost<{ results: { workerId: number; workerName: string; status: string; error?: string }[] }>(
+      apiPost<{ results: { workerId: number; workerName: string; channel: Channel; status: string; error?: string }[] }>(
         "/api/workforce/emails/send",
         body,
       ),
@@ -304,7 +405,7 @@ export default function EmailsPage() {
       const failed = data.results.filter(r => r.status === "failed").length;
       const skipped = data.results.filter(r => r.status === "skipped").length;
       toast({
-        title: "Email job complete",
+        title: "Message job complete",
         description: `${sent} sent${failed ? `, ${failed} failed` : ""}${skipped ? `, ${skipped} skipped` : ""}`,
       });
       void qc.invalidateQueries({ queryKey: ["email-logs"] });
@@ -315,9 +416,11 @@ export default function EmailsPage() {
 
   function handleSend() {
     if (selectedWorkers.size === 0) { toast({ title: "Select at least one worker" }); return; }
+    if (selectedChannels.size === 0) { toast({ title: "Select at least one channel" }); return; }
     const workerIds = [...selectedWorkers];
+    const channels = [...selectedChannels];
 
-    const base = { emailType, workerIds };
+    const base = { emailType, workerIds, channels };
     if (emailType === "custom") {
       if (!subject.trim() || !bodyHtml.trim()) { toast({ title: "Subject and body are required" }); return; }
       sendMutation.mutate({ ...base, subject, bodyHtml });
@@ -332,7 +435,7 @@ export default function EmailsPage() {
   }
 
   const EMAIL_TYPES: { id: EmailType; label: string; icon: React.ComponentType<{ className?: string }>; description: string }[] = [
-    { id: "custom", label: "Custom Email", icon: MessageSquare, description: "Write a free-form message to selected workers" },
+    { id: "custom", label: "Custom Message", icon: MessageSquare, description: "Write a free-form message to selected workers" },
     { id: "expiry_notification", label: "Expiry Notification", icon: Bell, description: "Notify workers of certifications expiring soon" },
     { id: "login_info", label: "Login Information", icon: KeyRound, description: "Send account credentials to workers" },
   ];
@@ -344,8 +447,9 @@ export default function EmailsPage() {
     { value: "login_info", label: "Login Info" },
   ];
 
-  const seenCount = (logs ?? []).filter(l => l.seenAt).length;
-  const sentCount = (logs ?? []).filter(l => l.status === "sent").length;
+  const emailResults = (logs ?? []).flatMap(l => l.channels.filter(c => c.channel === "email"));
+  const seenCount = emailResults.filter(c => c.seenAt).length;
+  const sentCount = emailResults.filter(c => c.status === "sent").length;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -354,8 +458,8 @@ export default function EmailsPage() {
           <Mail className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">Emails</h1>
-          <p className="text-sm text-muted-foreground">Send notifications and track email delivery</p>
+          <h1 className="text-xl font-bold">Messages</h1>
+          <p className="text-sm text-muted-foreground">Send notifications and track delivery across channels</p>
         </div>
       </div>
 
@@ -363,7 +467,7 @@ export default function EmailsPage() {
       <div className="flex gap-1 border-b">
         {([
           { id: "compose" as TabId, label: "Compose & Send", icon: Send },
-          { id: "logs" as TabId, label: "Email Logs", icon: Clock },
+          { id: "logs" as TabId, label: "Message Logs", icon: Clock },
         ] as const).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -388,7 +492,7 @@ export default function EmailsPage() {
           <div className="space-y-5">
             {/* Email type selector */}
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">Email Type</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">Message Type</Label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {EMAIL_TYPES.map(({ id, label, icon: Icon, description }) => (
                   <button
@@ -412,6 +516,17 @@ export default function EmailsPage() {
               </div>
             </div>
 
+            {/* Channel selector */}
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">Send Via</Label>
+              <ChannelSelector selected={selectedChannels} onChange={setSelectedChannels} />
+              {emailType === "login_info" && selectedChannels.has("push") && (
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> Push notifications for login info will only alert the worker to check their email — the password is never sent via push.
+                </p>
+              )}
+            </div>
+
             {/* Form fields by type */}
             {emailType === "custom" && (
               <div className="space-y-3">
@@ -421,12 +536,12 @@ export default function EmailsPage() {
                     id="email-subject"
                     value={subject}
                     onChange={e => setSubject(e.target.value)}
-                    placeholder="Email subject…"
+                    placeholder="Message subject…"
                     className="mt-1"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="email-body">Message (HTML supported)</Label>
+                  <Label htmlFor="email-body">Message (HTML supported for email)</Label>
                   <Textarea
                     id="email-body"
                     value={bodyHtml}
@@ -501,7 +616,7 @@ export default function EmailsPage() {
 
             <Button
               onClick={handleSend}
-              disabled={sendMutation.isPending || selectedWorkers.size === 0}
+              disabled={sendMutation.isPending || selectedWorkers.size === 0 || selectedChannels.size === 0}
               className="w-full sm:w-auto"
               data-testid="button-send-email"
             >
@@ -537,7 +652,7 @@ export default function EmailsPage() {
           {!logsLoading && logs && logs.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: "Total Sent", value: sentCount, color: "text-foreground", icon: Send },
+                { label: "Emails Sent", value: sentCount, color: "text-foreground", icon: Send },
                 { label: "Opened", value: seenCount, color: "text-emerald-600", icon: Eye },
                 { label: "Open Rate", value: sentCount > 0 ? `${Math.round((seenCount / sentCount) * 100)}%` : "—", color: "text-blue-600", icon: CheckCircle2 },
               ].map(({ label, value, color, icon: Icon }) => (
@@ -581,7 +696,7 @@ export default function EmailsPage() {
             ) : !logs?.length ? (
               <div className="px-4 py-10 text-center text-sm text-muted-foreground">
                 <Mail className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
-                No emails sent yet.
+                No messages sent yet.
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -590,7 +705,7 @@ export default function EmailsPage() {
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Recipient</th>
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden md:table-cell">Subject</th>
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Type</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Status</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Channels</th>
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Opened</th>
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground hidden lg:table-cell">Sent At</th>
                   </tr>

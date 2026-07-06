@@ -21,6 +21,7 @@ import {
   workerUnavailabilityPeriodsTable,
   workforceRolesTable,
   workerRoleHistoryTable,
+  workerPushTokensTable,
 } from "@workspace/db";
 import { getWasabiClientAndCreds } from "../lib/wasabi.js";
 import { logger } from "../lib/logger.js";
@@ -357,6 +358,30 @@ router.get("/worker-portal/me", requireWorkerAuth, async (req, res): Promise<voi
   }
 
   res.json(worker);
+});
+
+// POST /api/worker-portal/push-token — register/refresh this device's Expo push token
+router.post("/worker-portal/push-token", requireWorkerAuth, async (req, res): Promise<void> => {
+  try {
+    const { token, platform } = req.body as { token?: string; platform?: string };
+    if (!token?.trim()) {
+      res.status(400).json({ error: "token is required" });
+      return;
+    }
+
+    await db
+      .insert(workerPushTokensTable)
+      .values({ workerId: req.session.workerId!, token: token.trim(), platform: platform ?? null })
+      .onConflictDoUpdate({
+        target: workerPushTokensTable.token,
+        set: { workerId: req.session.workerId!, platform: platform ?? null, lastSeenAt: new Date() },
+      });
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "worker-portal push-token POST error");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // ── Cert types ────────────────────────────────────────────────────────────────

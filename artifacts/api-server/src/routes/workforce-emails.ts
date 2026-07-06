@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import {
   db,
   emailLogsTable,
+  pushLogsTable,
+  workerPushTokensTable,
   workersTable,
   workerCertificationsTable,
   certificationsTable,
@@ -15,6 +17,15 @@ import {
   buildLoginInfoHtml,
   buildCustomEmailHtml,
 } from "../lib/mailjet.js";
+import {
+  sendPushToTokens,
+  buildExpiryNotificationPush,
+  buildLoginInfoPush,
+  buildCustomPush,
+} from "../lib/push.js";
+
+const CHANNELS = ["email", "push"] as const;
+type Channel = (typeof CHANNELS)[number];
 
 const router: IRouter = Router();
 
@@ -35,26 +46,110 @@ function buildTrackingPixelUrl(req: Request, trackingId: string): string {
 }
 
 // ── GET /workforce/emails/logs ────────────────────────────────────────────────
+// Merges email_logs and push_logs into one list of "messages", grouping rows that
+// share a batchId + workerId (i.e. were sent together from the same admin action)
+// into a single entry with one delivery-status entry per channel.
+interface ChannelResult {
+  channel: Channel;
+  status: string;
+  error: string | null;
+  seenAt?: string | null;
+  seenIp?: string | null;
+}
+interface MessageLog {
+  id: string;
+  workerId: number | null;
+  workerName: string | null;
+  toEmail: string | null;
+  subject: string;
+  messageType: string;
+  sentAt: string;
+  channels: ChannelResult[];
+}
+
 router.get("/workforce/emails/logs", requireAdmin, async (req, res): Promise<void> => {
   try {
     const { workerId, emailType, limit: limitParam } = req.query as Record<string, string>;
     const limit = Math.min(parseInt(limitParam ?? "100") || 100, 500);
 
-    const conditions = [];
-    if (workerId) conditions.push(eq(emailLogsTable.workerId, parseInt(workerId)));
-    if (emailType) conditions.push(eq(emailLogsTable.emailType, emailType));
+    const emailConditions = [];
+    if (workerId) emailConditions.push(eq(emailLogsTable.workerId, parseInt(workerId)));
+    if (emailType) emailConditions.push(eq(emailLogsTable.emailType, emailType));
 
-    const logs = await db.select({
-      log: emailLogsTable,
-      workerName: workersTable.name,
-    })
-      .from(emailLogsTable)
-      .leftJoin(workersTable, eq(emailLogsTable.workerId, workersTable.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(emailLogsTable.sentAt))
-      .limit(limit);
+    const pushConditions = [];
+    if (workerId) pushConditions.push(eq(pushLogsTable.workerId, parseInt(workerId)));
+    if (emailType) pushConditions.push(eq(pushLogsTable.messageType, emailType));
 
-    res.json(logs.map(r => ({ ...r.log, workerName: r.workerName ?? null })));
+    const [emailRows, pushRows] = await Promise.all([
+      db.select({ log: emailLogsTable, workerName: workersTable.name })
+        .from(emailLogsTable)
+        .leftJoin(workersTable, eq(emailLogsTable.workerId, workersTable.id))
+        .where(emailConditions.length > 0 ? and(...emailConditions) : undefined)
+        .orderBy(desc(emailLogsTable.sentAt))
+        .limit(limit * 2),
+      db.select({ log: pushLogsTable, workerName: workersTable.name })
+        .from(pushLogsTable)
+        .leftJoin(workersTable, eq(pushLogsTable.workerId, workersTable.id))
+        .where(pushConditions.length > 0 ? and(...pushConditions) : undefined)
+        .orderBy(desc(pushLogsTable.sentAt))
+        .limit(limit * 2),
+    ]);
+
+    const groups = new Map<string, MessageLog>();
+
+    for (const r of emailRows) {
+      const key = r.log.batchId ? `${r.log.batchId}:${r.log.workerId}` : `email-${r.log.id}`;
+      const existing = groups.get(key);
+      const channelResult: ChannelResult = {
+        channel: "email",
+        status: r.log.status,
+        error: r.log.error,
+        seenAt: r.log.seenAt ? r.log.seenAt.toISOString() : null,
+        seenIp: r.log.seenIp,
+      };
+      if (existing) {
+        existing.channels.push(channelResult);
+        if (r.log.sentAt.toISOString() > existing.sentAt) existing.sentAt = r.log.sentAt.toISOString();
+      } else {
+        groups.set(key, {
+          id: key,
+          workerId: r.log.workerId,
+          workerName: r.workerName ?? null,
+          toEmail: r.log.toEmail,
+          subject: r.log.subject,
+          messageType: r.log.emailType,
+          sentAt: r.log.sentAt.toISOString(),
+          channels: [channelResult],
+        });
+      }
+    }
+
+    for (const r of pushRows) {
+      const key = r.log.batchId ? `${r.log.batchId}:${r.log.workerId}` : `push-${r.log.id}`;
+      const existing = groups.get(key);
+      const channelResult: ChannelResult = { channel: "push", status: r.log.status, error: r.log.error };
+      if (existing) {
+        existing.channels.push(channelResult);
+        if (r.log.sentAt.toISOString() > existing.sentAt) existing.sentAt = r.log.sentAt.toISOString();
+      } else {
+        groups.set(key, {
+          id: key,
+          workerId: r.log.workerId,
+          workerName: r.workerName ?? null,
+          toEmail: null,
+          subject: r.log.title,
+          messageType: r.log.messageType,
+          sentAt: r.log.sentAt.toISOString(),
+          channels: [channelResult],
+        });
+      }
+    }
+
+    const merged = [...groups.values()]
+      .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
+      .slice(0, limit);
+
+    res.json(merged);
   } catch (err) {
     logger.error({ err }, "workforce emails logs GET error");
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -67,7 +162,7 @@ router.get("/workforce/emails/logs", requireAdmin, async (req, res): Promise<voi
 // Body for "login_info":      { emailType: "login_info", workerIds: number[], loginUrl, username, temporaryPassword }
 router.post("/workforce/emails/send", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { emailType, workerIds, subject, bodyHtml, loginUrl, username, temporaryPassword, daysThreshold } = req.body as {
+    const { emailType, workerIds, subject, bodyHtml, loginUrl, username, temporaryPassword, daysThreshold, channels: rawChannels } = req.body as {
       emailType: string;
       workerIds: number[];
       subject?: string;
@@ -76,6 +171,7 @@ router.post("/workforce/emails/send", requireAdmin, async (req, res): Promise<vo
       username?: string;
       temporaryPassword?: string;
       daysThreshold?: number;
+      channels?: string[];
     };
 
     if (!emailType || !Array.isArray(workerIds) || workerIds.length === 0) {
@@ -83,22 +179,51 @@ router.post("/workforce/emails/send", requireAdmin, async (req, res): Promise<vo
       return;
     }
 
+    const channels = (Array.isArray(rawChannels) && rawChannels.length > 0 ? rawChannels : ["email"])
+      .filter((c): c is Channel => (CHANNELS as readonly string[]).includes(c));
+    if (channels.length === 0) {
+      res.status(400).json({ error: "At least one valid channel (email, push) is required" });
+      return;
+    }
+    const wantEmail = channels.includes("email");
+    const wantPush = channels.includes("push");
+    const batchId = randomUUID();
+
     const targetWorkers = await db.select().from(workersTable)
       .where(inArray(workersTable.id, workerIds));
 
-    const results: { workerId: number; workerName: string; email: string | null; status: string; error?: string }[] = [];
+    const workerPushTokens = wantPush
+      ? await db.select().from(workerPushTokensTable).where(inArray(workerPushTokensTable.workerId, workerIds))
+      : [];
+    const tokensByWorker = new Map<number, string[]>();
+    for (const t of workerPushTokens) {
+      const list = tokensByWorker.get(t.workerId) ?? [];
+      list.push(t.token);
+      tokensByWorker.set(t.workerId, list);
+    }
+
+    if (emailType === "login_info" && wantEmail && (!loginUrl || !username || !temporaryPassword)) {
+      res.status(400).json({ error: "loginUrl, username, temporaryPassword are required for login_info emails" });
+      return;
+    }
+    if (emailType === "custom" && (!subject || !bodyHtml)) {
+      res.status(400).json({ error: "subject and bodyHtml are required for custom messages" });
+      return;
+    }
+    if (!["expiry_notification", "login_info", "custom"].includes(emailType)) {
+      res.status(400).json({ error: `Unknown emailType: ${emailType}` });
+      return;
+    }
+
+    const results: { workerId: number; workerName: string; channel: Channel; status: string; error?: string }[] = [];
 
     for (const worker of targetWorkers) {
-      if (!worker.email) {
-        results.push({ workerId: worker.id, workerName: worker.name, email: null, status: "skipped", error: "No email address" });
-        continue;
-      }
-
       const trackingId = randomUUID();
       const trackingPixelUrl = buildTrackingPixelUrl(req, trackingId);
 
       let emailSubject = subject ?? "";
       let finalHtml = "";
+      let pushCopy: { title: string; body: string } | null = null;
 
       if (emailType === "expiry_notification") {
         const threshold = daysThreshold ?? 60;
@@ -121,7 +246,9 @@ router.post("/workforce/emails/send", requireAdmin, async (req, res): Promise<vo
         });
 
         if (expiringSoon.length === 0) {
-          results.push({ workerId: worker.id, workerName: worker.name, email: worker.email, status: "skipped", error: "No expiring certifications" });
+          for (const channel of channels) {
+            results.push({ workerId: worker.id, workerName: worker.name, channel, status: "skipped", error: "No expiring certifications" });
+          }
           continue;
         }
 
@@ -135,51 +262,97 @@ router.post("/workforce/emails/send", requireAdmin, async (req, res): Promise<vo
           })),
           trackingPixelUrl,
         });
+        pushCopy = buildExpiryNotificationPush({ count: expiringSoon.length });
       } else if (emailType === "login_info") {
-        if (!loginUrl || !username || !temporaryPassword) {
-          res.status(400).json({ error: "loginUrl, username, temporaryPassword are required for login_info emails" });
-          return;
-        }
         emailSubject = emailSubject || "Your Workforce Compliance Manager Account";
-        finalHtml = buildLoginInfoHtml({ workerName: worker.name, loginUrl, username, temporaryPassword, trackingPixelUrl });
-      } else if (emailType === "custom") {
-        if (!subject || !bodyHtml) {
-          res.status(400).json({ error: "subject and bodyHtml are required for custom emails" });
-          return;
+        if (wantEmail) {
+          finalHtml = buildLoginInfoHtml({ workerName: worker.name, loginUrl: loginUrl!, username: username!, temporaryPassword: temporaryPassword!, trackingPixelUrl });
         }
-        finalHtml = buildCustomEmailHtml({ bodyHtml, trackingPixelUrl });
+        // Never include the temporary password in the push payload — direct the worker to email instead.
+        pushCopy = buildLoginInfoPush();
       } else {
-        res.status(400).json({ error: `Unknown emailType: ${emailType}` });
-        return;
+        // custom
+        if (wantEmail) finalHtml = buildCustomEmailHtml({ bodyHtml: bodyHtml!, trackingPixelUrl });
+        pushCopy = buildCustomPush({ subject: emailSubject, textBody: (bodyHtml ?? "").replace(/<[^>]+>/g, " ") });
       }
 
-      const sendResult = await sendEmail({
-        toEmail: worker.email,
-        toName: worker.name,
-        subject: emailSubject,
-        htmlBody: finalHtml,
-      });
+      if (wantEmail) {
+        if (!worker.email) {
+          results.push({ workerId: worker.id, workerName: worker.name, channel: "email", status: "skipped", error: "No email address" });
+        } else {
+          const sendResult = await sendEmail({
+            toEmail: worker.email,
+            toName: worker.name,
+            subject: emailSubject,
+            htmlBody: finalHtml,
+          });
 
-      await db.insert(emailLogsTable).values({
-        workerId: worker.id,
-        sentBy: req.session!.userId as number,
-        toEmail: worker.email,
-        toName: worker.name,
-        subject: emailSubject,
-        bodyHtml: finalHtml,
-        emailType,
-        status: sendResult.success ? "sent" : "failed",
-        error: sendResult.error ?? null,
-        trackingId,
-      });
+          await db.insert(emailLogsTable).values({
+            workerId: worker.id,
+            sentBy: req.session!.userId as number,
+            batchId,
+            toEmail: worker.email,
+            toName: worker.name,
+            subject: emailSubject,
+            bodyHtml: finalHtml,
+            emailType,
+            status: sendResult.success ? "sent" : "failed",
+            error: sendResult.error ?? null,
+            trackingId,
+          });
 
-      results.push({
-        workerId: worker.id,
-        workerName: worker.name,
-        email: worker.email,
-        status: sendResult.success ? "sent" : "failed",
-        error: sendResult.error,
-      });
+          results.push({
+            workerId: worker.id,
+            workerName: worker.name,
+            channel: "email",
+            status: sendResult.success ? "sent" : "failed",
+            error: sendResult.error,
+          });
+        }
+      }
+
+      if (wantPush) {
+        const tokens = tokensByWorker.get(worker.id) ?? [];
+        if (tokens.length === 0) {
+          await db.insert(pushLogsTable).values({
+            workerId: worker.id,
+            sentBy: req.session!.userId as number,
+            batchId,
+            title: pushCopy?.title ?? emailSubject,
+            body: pushCopy?.body ?? "",
+            messageType: emailType,
+            status: "skipped",
+            error: "No push token registered",
+          });
+          results.push({ workerId: worker.id, workerName: worker.name, channel: "push", status: "skipped", error: "No push token registered" });
+        } else {
+          const pushResult = await sendPushToTokens({
+            tokens,
+            title: pushCopy?.title ?? emailSubject,
+            body: pushCopy?.body ?? "",
+            data: { messageType: emailType },
+          });
+
+          await db.insert(pushLogsTable).values({
+            workerId: worker.id,
+            sentBy: req.session!.userId as number,
+            batchId,
+            title: pushCopy?.title ?? emailSubject,
+            body: pushCopy?.body ?? "",
+            messageType: emailType,
+            status: pushResult.success ? "sent" : "failed",
+            error: pushResult.error ?? null,
+          });
+
+          results.push({
+            workerId: worker.id,
+            workerName: worker.name,
+            channel: "push",
+            status: pushResult.success ? "sent" : "failed",
+            error: pushResult.error,
+          });
+        }
+      }
     }
 
     res.json({ results });

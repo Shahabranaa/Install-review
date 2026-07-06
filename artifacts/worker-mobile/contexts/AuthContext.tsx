@@ -11,6 +11,7 @@ import {
   getCookieHeaders,
   clearSessionCookie,
 } from "@/lib/api";
+import { registerForPushNotificationsAsync } from "@/lib/push-notifications";
 
 export interface WorkerUser {
   id: number;
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = (await res.json()) as WorkerUser;
         setWorker(data);
+        void registerForPushNotificationsAsync();
       } else {
         setWorker(null);
       }
@@ -88,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (data.worker) {
       setWorker(data.worker);
+      void registerForPushNotificationsAsync();
     } else {
       await refresh();
     }

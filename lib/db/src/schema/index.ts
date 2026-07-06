@@ -34,3 +34,5 @@ export * from "./worker-rotation-periods";
 export * from "./worker-schedule-change-requests";
 export * from "./worker-unavailability-periods";
 export * from "./worker-role-history";
+export * from "./worker-push-tokens";
+export * from "./push-logs";

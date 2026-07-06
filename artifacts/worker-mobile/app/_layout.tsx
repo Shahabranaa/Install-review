@@ -7,9 +7,10 @@ import {
 } from "@expo-google-fonts/inter";
 import { Feather } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -39,6 +40,11 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const router = useRouter();
+  const responseListener = useRef<ReturnType<
+    typeof Notifications.addNotificationResponseReceivedListener
+  > | null>(null);
+
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -52,6 +58,16 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener(() => {
+        router.push("/(tabs)");
+      });
+    return () => {
+      responseListener.current?.remove();
+    };
+  }, [router]);
 
   if (!fontsLoaded && !fontError) return null;
 

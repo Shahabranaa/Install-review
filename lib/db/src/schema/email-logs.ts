@@ -6,6 +6,7 @@ export const emailLogsTable = pgTable("email_logs", {
   id: serial("id").primaryKey(),
   workerId: integer("worker_id").references(() => workersTable.id, { onDelete: "set null" }),
   sentBy: integer("sent_by").references(() => usersTable.id, { onDelete: "set null" }),
+  batchId: text("batch_id"), // groups an email entry with its sibling push entry from the same admin send action
   toEmail: text("to_email").notNull(),
   toName: text("to_name").notNull(),
   subject: text("subject").notNull(),
