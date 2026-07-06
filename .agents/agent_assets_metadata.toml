@@ -6,3 +6,9 @@ id = "CcdPz05viIVawFVQgY7UD"
 uri = "file://artifacts/worker-mobile/assets/images/icon.png"
 type = "image"
 title = "worker portal app icon"
+
+[[generated]]
+id = "smbho_u6Zu7ZH2QkZN8YT"
+uri = "file://standalone/admin-mobile/assets/images/icon.png"
+type = "image"
+title = "admin shield app icon"
