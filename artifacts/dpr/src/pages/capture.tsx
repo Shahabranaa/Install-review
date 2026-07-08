@@ -118,11 +118,7 @@ export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({
-    query: {
-      queryKey: getListDprTimesheetEntriesQueryKey({ stage: "captured" })
-    }
-  });
+  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({ stage: "captured" });
 
   const { data: teams = [] } = useListDprTeams();
   const { data: locations = [] } = useListDprLocations();

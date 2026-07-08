@@ -1,7 +1,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
 import { LogOut, ClipboardList, CheckSquare } from "lucide-react";
-import { useGetDprTimesheetSummary } from "@workspace/api-client-react";
+import { useGetDprTimesheetSummary, getGetDprTimesheetSummaryQueryKey } from "@workspace/api-client-react";
 
 export function Sidebar() {
   const { logout, user } = useAuth();
@@ -9,6 +9,7 @@ export function Sidebar() {
 
   const { data: summary } = useGetDprTimesheetSummary({
     query: {
+      queryKey: getGetDprTimesheetSummaryQueryKey(),
       refetchInterval: 30000,
     }
   });

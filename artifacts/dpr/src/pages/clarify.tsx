@@ -9,6 +9,9 @@ import {
   useListDprJdrCodes,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
+  getListDprActivityGroupsQueryKey,
+  getListDprActivitiesQueryKey,
+  getListDprJdrCodesQueryKey,
   DprTimesheetEntry
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,11 +30,7 @@ export default function ClarifyPage() {
 
   const [activeTab, setActiveTab] = useState<"queue" | "clarified">("queue");
 
-  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({
-    query: {
-      queryKey: getListDprTimesheetEntriesQueryKey()
-    }
-  });
+  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
 
   const queue = useMemo(() => entries.filter(e => e.stage === "captured").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [entries]);
   const clarified = useMemo(() => entries.filter(e => e.stage === "clarified").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [entries]);
@@ -109,9 +108,18 @@ function ClarifyCard({ entry }: { entry: DprTimesheetEntry }) {
   const [genericComment, setGenericComment] = useState(entry.genericComment || "");
 
   const { data: types = [] } = useListDprActivityTypes();
-  const { data: groups = [] } = useListDprActivityGroups({ query: { enabled: !!activityTypeId, queryKey: ['groups', activityTypeId] }, activityTypeId: activityTypeId || undefined });
-  const { data: activities = [] } = useListDprActivities({ query: { enabled: !!activityGroupId, queryKey: ['activities', activityGroupId] }, activityGroupId: activityGroupId || undefined });
-  const { data: jdrCodes = [] } = useListDprJdrCodes({ query: { enabled: !!activityId, queryKey: ['jdrCodes', activityId] }, activityId: activityId || undefined });
+  const { data: groups = [] } = useListDprActivityGroups(
+    { activityTypeId: activityTypeId || undefined },
+    { query: { queryKey: getListDprActivityGroupsQueryKey({ activityTypeId: activityTypeId || undefined }), enabled: !!activityTypeId } }
+  );
+  const { data: activities = [] } = useListDprActivities(
+    { activityGroupId: activityGroupId || undefined },
+    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: activityGroupId || undefined }), enabled: !!activityGroupId } }
+  );
+  const { data: jdrCodes = [] } = useListDprJdrCodes(
+    { activityId: activityId || undefined },
+    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: activityId || undefined }), enabled: !!activityId } }
+  );
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
@@ -283,7 +291,10 @@ function ClarifyCard({ entry }: { entry: DprTimesheetEntry }) {
 }
 
 function ClarifiedCard({ entry }: { entry: DprTimesheetEntry }) {
-  const { data: jdrCodes = [] } = useListDprJdrCodes({ query: { enabled: !!entry.activityId, queryKey: ['jdrCodes', entry.activityId] }, activityId: entry.activityId || undefined });
+  const { data: jdrCodes = [] } = useListDprJdrCodes(
+    { activityId: entry.activityId || undefined },
+    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
+  );
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
 
   return (
