@@ -422,6 +422,8 @@ export interface DprTimesheetEntryInput {
   locationId?: number | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  activityTypeId?: number | null;
 }
 
 export type DprTimesheetEntryUpdateStage = typeof DprTimesheetEntryUpdateStage[keyof typeof DprTimesheetEntryUpdateStage];

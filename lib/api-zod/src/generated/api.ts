@@ -903,7 +903,8 @@ export const CreateDprTimesheetEntryBody = zod.object({
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
   "locationId": zod.number().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "activityTypeId": zod.number().nullish()
 })
 
 

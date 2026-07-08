@@ -1919,6 +1919,8 @@ components:
           type: ["integer", "null"]
         notes:
           type: ["string", "null"]
+        activityTypeId:
+          type: ["integer", "null"]
       required:
         - date
 
