@@ -2,3 +2,4 @@
 - [Expo web + runTest routing](expo-web-runtest-routing.md) — runTest can hit the wrong artifact on an Expo dev-domain URL even though screenshot works; fall back to screenshot + curl for Expo e2e checks.
 - [API server dev workflow quirks](api-server-dev-workflow-quirks.md) — routes may need a restart; no default dev passwords; schema changes need a migrate.mjs entry, not just psql/Drizzle.
 - [Standalone Expo apps outside monorepo](standalone-expo-apps.md) — when a second native mobile app is needed but the artifact slot is taken, build plain source under `standalone/` instead.
+- [Install Review hosting split](install-review-overview.md) — Replit is dev-only, Vercel is production host; don't suggest Replit deploy/publish for this project.
