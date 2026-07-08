@@ -774,3 +774,238 @@ export const GetRecentActivityResponseItem = zod.object({
   "createdAt": zod.string()
 })
 export const GetRecentActivityResponse = zod.array(GetRecentActivityResponseItem)
+
+
+/**
+ * @summary List DPR reference locations
+ */
+export const ListDprLocationsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})
+export const ListDprLocationsResponse = zod.array(ListDprLocationsResponseItem)
+
+
+/**
+ * @summary List DPR activity stream teams
+ */
+export const ListDprTeamsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})
+export const ListDprTeamsResponse = zod.array(ListDprTeamsResponseItem)
+
+
+/**
+ * @summary List DPR activity types
+ */
+export const ListDprActivityTypesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})
+export const ListDprActivityTypesResponse = zod.array(ListDprActivityTypesResponseItem)
+
+
+/**
+ * @summary List DPR activity groups
+ */
+export const ListDprActivityGroupsQueryParams = zod.object({
+  "activityTypeId": zod.coerce.number().optional()
+})
+
+export const ListDprActivityGroupsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "activityTypeId": zod.number().nullish()
+})
+export const ListDprActivityGroupsResponse = zod.array(ListDprActivityGroupsResponseItem)
+
+
+/**
+ * @summary List DPR activities, optionally filtered by activity group
+ */
+export const ListDprActivitiesQueryParams = zod.object({
+  "activityGroupId": zod.coerce.number().optional()
+})
+
+export const ListDprActivitiesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "activityGroupId": zod.number()
+})
+export const ListDprActivitiesResponse = zod.array(ListDprActivitiesResponseItem)
+
+
+/**
+ * @summary List DPR JDR code / generic comment options, optionally filtered by activity
+ */
+export const ListDprJdrCodesQueryParams = zod.object({
+  "activityId": zod.coerce.number().optional()
+})
+
+export const ListDprJdrCodesResponseItem = zod.object({
+  "id": zod.number(),
+  "lautecActivity": zod.string(),
+  "lautecActivityGroup": zod.string(),
+  "jdrWorkActivity": zod.string(),
+  "contractualCode": zod.string(),
+  "genericComment": zod.string(),
+  "activityId": zod.number().nullish()
+})
+export const ListDprJdrCodesResponse = zod.array(ListDprJdrCodesResponseItem)
+
+
+/**
+ * @summary List timesheet entries
+ */
+export const ListDprTimesheetEntriesQueryParams = zod.object({
+  "stage": zod.enum(['captured', 'clarified']).optional(),
+  "teamId": zod.coerce.number().optional(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const ListDprTimesheetEntriesResponseItem = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "teamId": zod.number().nullish(),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).optional(),
+  "startTime": zod.string().nullish(),
+  "endTime": zod.string().nullish(),
+  "locationId": zod.number().nullish(),
+  "location": zod.union([zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),zod.null()]).optional(),
+  "notes": zod.string().nullish(),
+  "activityTypeId": zod.number().nullish(),
+  "activityGroupId": zod.number().nullish(),
+  "activityId": zod.number().nullish(),
+  "jdrCodeIds": zod.array(zod.number()),
+  "genericComment": zod.string().nullish(),
+  "combinedComment": zod.string().nullish(),
+  "stage": zod.enum(['captured', 'clarified']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListDprTimesheetEntriesResponse = zod.array(ListDprTimesheetEntriesResponseItem)
+
+
+/**
+ * @summary Capture a new raw timesheet entry
+ */
+export const CreateDprTimesheetEntryBody = zod.object({
+  "date": zod.string(),
+  "teamId": zod.number().nullish(),
+  "startTime": zod.string().nullish(),
+  "endTime": zod.string().nullish(),
+  "locationId": zod.number().nullish(),
+  "notes": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get counts of timesheet entries by stage
+ */
+export const GetDprTimesheetSummaryResponse = zod.object({
+  "totalEntries": zod.number(),
+  "capturedCount": zod.number(),
+  "clarifiedCount": zod.number()
+})
+
+
+/**
+ * @summary Get a timesheet entry by id
+ */
+export const GetDprTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetDprTimesheetEntryResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "teamId": zod.number().nullish(),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).optional(),
+  "startTime": zod.string().nullish(),
+  "endTime": zod.string().nullish(),
+  "locationId": zod.number().nullish(),
+  "location": zod.union([zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),zod.null()]).optional(),
+  "notes": zod.string().nullish(),
+  "activityTypeId": zod.number().nullish(),
+  "activityGroupId": zod.number().nullish(),
+  "activityId": zod.number().nullish(),
+  "jdrCodeIds": zod.array(zod.number()),
+  "genericComment": zod.string().nullish(),
+  "combinedComment": zod.string().nullish(),
+  "stage": zod.enum(['captured', 'clarified']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Update a timesheet entry (capture edits or clarify categorization)
+ */
+export const UpdateDprTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprTimesheetEntryBody = zod.object({
+  "date": zod.string().optional(),
+  "teamId": zod.number().nullish(),
+  "startTime": zod.string().nullish(),
+  "endTime": zod.string().nullish(),
+  "locationId": zod.number().nullish(),
+  "notes": zod.string().nullish(),
+  "activityTypeId": zod.number().nullish(),
+  "activityGroupId": zod.number().nullish(),
+  "activityId": zod.number().nullish(),
+  "jdrCodeIds": zod.array(zod.number()).optional(),
+  "genericComment": zod.string().nullish(),
+  "combinedComment": zod.string().nullish(),
+  "stage": zod.enum(['captured', 'clarified']).optional()
+})
+
+export const UpdateDprTimesheetEntryResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "teamId": zod.number().nullish(),
+  "team": zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}).optional(),
+  "startTime": zod.string().nullish(),
+  "endTime": zod.string().nullish(),
+  "locationId": zod.number().nullish(),
+  "location": zod.union([zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+}),zod.null()]).optional(),
+  "notes": zod.string().nullish(),
+  "activityTypeId": zod.number().nullish(),
+  "activityGroupId": zod.number().nullish(),
+  "activityId": zod.number().nullish(),
+  "jdrCodeIds": zod.array(zod.number()),
+  "genericComment": zod.string().nullish(),
+  "combinedComment": zod.string().nullish(),
+  "stage": zod.enum(['captured', 'clarified']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a timesheet entry
+ */
+export const DeleteDprTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number()
+})

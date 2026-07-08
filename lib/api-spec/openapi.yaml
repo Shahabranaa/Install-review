@@ -28,6 +28,8 @@ tags:
     description: Document generation operations
   - name: dashboard
     description: Dashboard summary operations
+  - name: dpr
+    description: DPR Timesheet capture and clarify operations
 
 paths:
   /healthz:
@@ -920,6 +922,235 @@ paths:
                 items:
                   $ref: "#/components/schemas/ReviewDecision"
 
+  /dpr/locations:
+    get:
+      operationId: listDprLocations
+      tags: [dpr]
+      summary: List DPR reference locations
+      responses:
+        "200":
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprLocation"
+
+  /dpr/teams:
+    get:
+      operationId: listDprTeams
+      tags: [dpr]
+      summary: List DPR activity stream teams
+      responses:
+        "200":
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprTeam"
+
+  /dpr/activity-types:
+    get:
+      operationId: listDprActivityTypes
+      tags: [dpr]
+      summary: List DPR activity types
+      responses:
+        "200":
+          description: List of activity types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprActivityType"
+
+  /dpr/activity-groups:
+    get:
+      operationId: listDprActivityGroups
+      tags: [dpr]
+      summary: List DPR activity groups
+      parameters:
+        - name: activityTypeId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of activity groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprActivityGroup"
+
+  /dpr/activities:
+    get:
+      operationId: listDprActivities
+      tags: [dpr]
+      summary: List DPR activities, optionally filtered by activity group
+      parameters:
+        - name: activityGroupId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of activities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprActivity"
+
+  /dpr/jdr-codes:
+    get:
+      operationId: listDprJdrCodes
+      tags: [dpr]
+      summary: List DPR JDR code / generic comment options, optionally filtered by activity
+      parameters:
+        - name: activityId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of JDR codes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprJdrCode"
+
+  /dpr/timesheet-entries:
+    get:
+      operationId: listDprTimesheetEntries
+      tags: [dpr]
+      summary: List timesheet entries
+      parameters:
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum: [captured, clarified]
+        - name: teamId
+          in: query
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of timesheet entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprTimesheetEntry"
+    post:
+      operationId: createDprTimesheetEntry
+      tags: [dpr]
+      summary: Capture a new raw timesheet entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprTimesheetEntryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTimesheetEntry"
+
+  /dpr/timesheet-entries/summary:
+    get:
+      operationId: getDprTimesheetSummary
+      tags: [dpr]
+      summary: Get counts of timesheet entries by stage
+      responses:
+        "200":
+          description: Summary counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTimesheetSummary"
+
+  /dpr/timesheet-entries/{id}:
+    get:
+      operationId: getDprTimesheetEntry
+      tags: [dpr]
+      summary: Get a timesheet entry by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Timesheet entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTimesheetEntry"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateDprTimesheetEntry
+      tags: [dpr]
+      summary: Update a timesheet entry (capture edits or clarify categorization)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprTimesheetEntryUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTimesheetEntry"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprTimesheetEntry
+      tags: [dpr]
+      summary: Delete a timesheet entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
 components:
   schemas:
     HealthStatus:
@@ -1535,3 +1766,205 @@ components:
         - incomplete
         - needsReview
         - pending
+
+    DprLocation:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+
+    DprTeam:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+
+    DprActivityType:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+
+    DprActivityGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        activityTypeId:
+          type: ["integer", "null"]
+      required:
+        - id
+        - name
+
+    DprActivity:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        activityGroupId:
+          type: integer
+      required:
+        - id
+        - name
+        - activityGroupId
+
+    DprJdrCode:
+      type: object
+      properties:
+        id:
+          type: integer
+        lautecActivity:
+          type: string
+        lautecActivityGroup:
+          type: string
+        jdrWorkActivity:
+          type: string
+        contractualCode:
+          type: string
+        genericComment:
+          type: string
+        activityId:
+          type: ["integer", "null"]
+      required:
+        - id
+        - lautecActivity
+        - lautecActivityGroup
+        - jdrWorkActivity
+        - contractualCode
+        - genericComment
+
+    DprTimesheetEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+        teamId:
+          type: ["integer", "null"]
+        team:
+          $ref: "#/components/schemas/DprTeam"
+        startTime:
+          type: ["string", "null"]
+        endTime:
+          type: ["string", "null"]
+        locationId:
+          type: ["integer", "null"]
+        location:
+          oneOf:
+            - $ref: "#/components/schemas/DprLocation"
+            - type: "null"
+        notes:
+          type: ["string", "null"]
+        activityTypeId:
+          type: ["integer", "null"]
+        activityGroupId:
+          type: ["integer", "null"]
+        activityId:
+          type: ["integer", "null"]
+        jdrCodeIds:
+          type: array
+          items:
+            type: integer
+        genericComment:
+          type: ["string", "null"]
+        combinedComment:
+          type: ["string", "null"]
+        stage:
+          type: string
+          enum: [captured, clarified]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - date
+        - jdrCodeIds
+        - stage
+        - createdAt
+        - updatedAt
+
+    DprTimesheetEntryInput:
+      type: object
+      properties:
+        date:
+          type: string
+        teamId:
+          type: ["integer", "null"]
+        startTime:
+          type: ["string", "null"]
+        endTime:
+          type: ["string", "null"]
+        locationId:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - date
+
+    DprTimesheetEntryUpdate:
+      type: object
+      properties:
+        date:
+          type: string
+        teamId:
+          type: ["integer", "null"]
+        startTime:
+          type: ["string", "null"]
+        endTime:
+          type: ["string", "null"]
+        locationId:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+        activityTypeId:
+          type: ["integer", "null"]
+        activityGroupId:
+          type: ["integer", "null"]
+        activityId:
+          type: ["integer", "null"]
+        jdrCodeIds:
+          type: array
+          items:
+            type: integer
+        genericComment:
+          type: ["string", "null"]
+        combinedComment:
+          type: ["string", "null"]
+        stage:
+          type: string
+          enum: [captured, clarified]
+
+    DprTimesheetSummary:
+      type: object
+      properties:
+        totalEntries:
+          type: integer
+        capturedCount:
+          type: integer
+        clarifiedCount:
+          type: integer
+      required:
+        - totalEntries
+        - capturedCount
+        - clarifiedCount

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/dpr/"
+title = "DPR Timesheets"
+version = "1.0.0"
+id = "artifacts/dpr"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/dpr/" ]
+localPort = 23694
+
+[services.development]
+run = "pnpm --filter @workspace/dpr run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/dpr", "run", "build" ]
+publicDir = "artifacts/dpr/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23694"
+BASE_PATH = "/dpr/"

@@ -29,6 +29,7 @@ import phaseTemplatesRouter from "./phase-templates";
 import workforceRouter from "./workforce";
 import workforceEmailsRouter from "./workforce-emails";
 import workerPortalRouter from "./worker-portal";
+import dprRouter from "./dpr";
 
 const router: IRouter = Router();
 
@@ -80,5 +81,6 @@ router.use(phaseTemplatesRouter);
 router.use(workforceRouter);
 router.use(workforceEmailsRouter);
 router.use(workerPortalRouter);
+router.use(dprRouter);
 
 export default router;

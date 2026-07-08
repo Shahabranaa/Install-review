@@ -332,6 +332,138 @@ export interface PhaseStatusBreakdown {
   pending: number;
 }
 
+export interface DprLocation {
+  id: number;
+  name: string;
+}
+
+export interface DprTeam {
+  id: number;
+  name: string;
+}
+
+export interface DprActivityType {
+  id: number;
+  name: string;
+}
+
+export interface DprActivityGroup {
+  id: number;
+  name: string;
+  /** @nullable */
+  activityTypeId?: number | null;
+}
+
+export interface DprActivity {
+  id: number;
+  name: string;
+  activityGroupId: number;
+}
+
+export interface DprJdrCode {
+  id: number;
+  lautecActivity: string;
+  lautecActivityGroup: string;
+  jdrWorkActivity: string;
+  contractualCode: string;
+  genericComment: string;
+  /** @nullable */
+  activityId?: number | null;
+}
+
+export type DprTimesheetEntryStage = typeof DprTimesheetEntryStage[keyof typeof DprTimesheetEntryStage];
+
+
+export const DprTimesheetEntryStage = {
+  captured: 'captured',
+  clarified: 'clarified',
+} as const;
+
+export interface DprTimesheetEntry {
+  id: number;
+  date: string;
+  /** @nullable */
+  teamId?: number | null;
+  team?: DprTeam;
+  /** @nullable */
+  startTime?: string | null;
+  /** @nullable */
+  endTime?: string | null;
+  /** @nullable */
+  locationId?: number | null;
+  location?: DprLocation | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  activityTypeId?: number | null;
+  /** @nullable */
+  activityGroupId?: number | null;
+  /** @nullable */
+  activityId?: number | null;
+  jdrCodeIds: number[];
+  /** @nullable */
+  genericComment?: string | null;
+  /** @nullable */
+  combinedComment?: string | null;
+  stage: DprTimesheetEntryStage;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DprTimesheetEntryInput {
+  date: string;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  startTime?: string | null;
+  /** @nullable */
+  endTime?: string | null;
+  /** @nullable */
+  locationId?: number | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type DprTimesheetEntryUpdateStage = typeof DprTimesheetEntryUpdateStage[keyof typeof DprTimesheetEntryUpdateStage];
+
+
+export const DprTimesheetEntryUpdateStage = {
+  captured: 'captured',
+  clarified: 'clarified',
+} as const;
+
+export interface DprTimesheetEntryUpdate {
+  date?: string;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  startTime?: string | null;
+  /** @nullable */
+  endTime?: string | null;
+  /** @nullable */
+  locationId?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  activityTypeId?: number | null;
+  /** @nullable */
+  activityGroupId?: number | null;
+  /** @nullable */
+  activityId?: number | null;
+  jdrCodeIds?: number[];
+  /** @nullable */
+  genericComment?: string | null;
+  /** @nullable */
+  combinedComment?: string | null;
+  stage?: DprTimesheetEntryUpdateStage;
+}
+
+export interface DprTimesheetSummary {
+  totalEntries: number;
+  capturedCount: number;
+  clarifiedCount: number;
+}
+
 export type ListSitesParams = {
 projectId?: number;
 };
@@ -379,4 +511,31 @@ export type GetPhaseStatusesParams = {
 projectId?: number;
 siteId?: number;
 };
+
+export type ListDprActivityGroupsParams = {
+activityTypeId?: number;
+};
+
+export type ListDprActivitiesParams = {
+activityGroupId?: number;
+};
+
+export type ListDprJdrCodesParams = {
+activityId?: number;
+};
+
+export type ListDprTimesheetEntriesParams = {
+stage?: ListDprTimesheetEntriesStage;
+teamId?: number;
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type ListDprTimesheetEntriesStage = typeof ListDprTimesheetEntriesStage[keyof typeof ListDprTimesheetEntriesStage];
+
+
+export const ListDprTimesheetEntriesStage = {
+  captured: 'captured',
+  clarified: 'clarified',
+} as const;
 

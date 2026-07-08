@@ -30,6 +30,16 @@ import type {
   CreateSiteBody,
   DashboardSummary,
   DocumentRecord,
+  DprActivity,
+  DprActivityGroup,
+  DprActivityType,
+  DprJdrCode,
+  DprLocation,
+  DprTeam,
+  DprTimesheetEntry,
+  DprTimesheetEntryInput,
+  DprTimesheetEntryUpdate,
+  DprTimesheetSummary,
   ErrorResponse,
   GenerateDocumentBody,
   GetDashboardSummaryParams,
@@ -40,6 +50,10 @@ import type {
   IssueFlagRecord,
   ListDecisionsParams,
   ListDocumentsParams,
+  ListDprActivitiesParams,
+  ListDprActivityGroupsParams,
+  ListDprJdrCodesParams,
+  ListDprTimesheetEntriesParams,
   ListImagesParams,
   ListIssuesParams,
   ListLocationsParams,
@@ -2961,4 +2975,938 @@ export function useGetRecentActivity<TData = Awaited<ReturnType<typeof getRecent
 
 
 
+
+export const getListDprLocationsUrl = () => {
+
+
+
+
+  return `/api/dpr/locations`
+}
+
+/**
+ * @summary List DPR reference locations
+ */
+export const listDprLocations = async ( options?: RequestInit): Promise<DprLocation[]> => {
+
+  return customFetch<DprLocation[]>(getListDprLocationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprLocationsQueryKey = () => {
+    return [
+    `/api/dpr/locations`
+    ] as const;
+    }
+
+
+export const getListDprLocationsQueryOptions = <TData = Awaited<ReturnType<typeof listDprLocations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprLocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprLocationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprLocations>>> = ({ signal }) => listDprLocations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprLocations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprLocationsQueryResult = NonNullable<Awaited<ReturnType<typeof listDprLocations>>>
+export type ListDprLocationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR reference locations
+ */
+
+export function useListDprLocations<TData = Awaited<ReturnType<typeof listDprLocations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprLocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprLocationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprTeamsUrl = () => {
+
+
+
+
+  return `/api/dpr/teams`
+}
+
+/**
+ * @summary List DPR activity stream teams
+ */
+export const listDprTeams = async ( options?: RequestInit): Promise<DprTeam[]> => {
+
+  return customFetch<DprTeam[]>(getListDprTeamsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprTeamsQueryKey = () => {
+    return [
+    `/api/dpr/teams`
+    ] as const;
+    }
+
+
+export const getListDprTeamsQueryOptions = <TData = Awaited<ReturnType<typeof listDprTeams>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTeams>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprTeamsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprTeams>>> = ({ signal }) => listDprTeams({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprTeams>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprTeamsQueryResult = NonNullable<Awaited<ReturnType<typeof listDprTeams>>>
+export type ListDprTeamsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR activity stream teams
+ */
+
+export function useListDprTeams<TData = Awaited<ReturnType<typeof listDprTeams>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTeams>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprTeamsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprActivityTypesUrl = () => {
+
+
+
+
+  return `/api/dpr/activity-types`
+}
+
+/**
+ * @summary List DPR activity types
+ */
+export const listDprActivityTypes = async ( options?: RequestInit): Promise<DprActivityType[]> => {
+
+  return customFetch<DprActivityType[]>(getListDprActivityTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprActivityTypesQueryKey = () => {
+    return [
+    `/api/dpr/activity-types`
+    ] as const;
+    }
+
+
+export const getListDprActivityTypesQueryOptions = <TData = Awaited<ReturnType<typeof listDprActivityTypes>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivityTypes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprActivityTypesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprActivityTypes>>> = ({ signal }) => listDprActivityTypes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprActivityTypes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprActivityTypesQueryResult = NonNullable<Awaited<ReturnType<typeof listDprActivityTypes>>>
+export type ListDprActivityTypesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR activity types
+ */
+
+export function useListDprActivityTypes<TData = Awaited<ReturnType<typeof listDprActivityTypes>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivityTypes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprActivityTypesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprActivityGroupsUrl = (params?: ListDprActivityGroupsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/activity-groups?${stringifiedParams}` : `/api/dpr/activity-groups`
+}
+
+/**
+ * @summary List DPR activity groups
+ */
+export const listDprActivityGroups = async (params?: ListDprActivityGroupsParams, options?: RequestInit): Promise<DprActivityGroup[]> => {
+
+  return customFetch<DprActivityGroup[]>(getListDprActivityGroupsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprActivityGroupsQueryKey = (params?: ListDprActivityGroupsParams,) => {
+    return [
+    `/api/dpr/activity-groups`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDprActivityGroupsQueryOptions = <TData = Awaited<ReturnType<typeof listDprActivityGroups>>, TError = ErrorType<unknown>>(params?: ListDprActivityGroupsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivityGroups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprActivityGroupsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprActivityGroups>>> = ({ signal }) => listDprActivityGroups(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprActivityGroups>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprActivityGroupsQueryResult = NonNullable<Awaited<ReturnType<typeof listDprActivityGroups>>>
+export type ListDprActivityGroupsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR activity groups
+ */
+
+export function useListDprActivityGroups<TData = Awaited<ReturnType<typeof listDprActivityGroups>>, TError = ErrorType<unknown>>(
+ params?: ListDprActivityGroupsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivityGroups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprActivityGroupsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprActivitiesUrl = (params?: ListDprActivitiesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/activities?${stringifiedParams}` : `/api/dpr/activities`
+}
+
+/**
+ * @summary List DPR activities, optionally filtered by activity group
+ */
+export const listDprActivities = async (params?: ListDprActivitiesParams, options?: RequestInit): Promise<DprActivity[]> => {
+
+  return customFetch<DprActivity[]>(getListDprActivitiesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprActivitiesQueryKey = (params?: ListDprActivitiesParams,) => {
+    return [
+    `/api/dpr/activities`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDprActivitiesQueryOptions = <TData = Awaited<ReturnType<typeof listDprActivities>>, TError = ErrorType<unknown>>(params?: ListDprActivitiesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprActivitiesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprActivities>>> = ({ signal }) => listDprActivities(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprActivities>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprActivitiesQueryResult = NonNullable<Awaited<ReturnType<typeof listDprActivities>>>
+export type ListDprActivitiesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR activities, optionally filtered by activity group
+ */
+
+export function useListDprActivities<TData = Awaited<ReturnType<typeof listDprActivities>>, TError = ErrorType<unknown>>(
+ params?: ListDprActivitiesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprActivities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprActivitiesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprJdrCodesUrl = (params?: ListDprJdrCodesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/jdr-codes?${stringifiedParams}` : `/api/dpr/jdr-codes`
+}
+
+/**
+ * @summary List DPR JDR code / generic comment options, optionally filtered by activity
+ */
+export const listDprJdrCodes = async (params?: ListDprJdrCodesParams, options?: RequestInit): Promise<DprJdrCode[]> => {
+
+  return customFetch<DprJdrCode[]>(getListDprJdrCodesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprJdrCodesQueryKey = (params?: ListDprJdrCodesParams,) => {
+    return [
+    `/api/dpr/jdr-codes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDprJdrCodesQueryOptions = <TData = Awaited<ReturnType<typeof listDprJdrCodes>>, TError = ErrorType<unknown>>(params?: ListDprJdrCodesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprJdrCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprJdrCodesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprJdrCodes>>> = ({ signal }) => listDprJdrCodes(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprJdrCodes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprJdrCodesQueryResult = NonNullable<Awaited<ReturnType<typeof listDprJdrCodes>>>
+export type ListDprJdrCodesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR JDR code / generic comment options, optionally filtered by activity
+ */
+
+export function useListDprJdrCodes<TData = Awaited<ReturnType<typeof listDprJdrCodes>>, TError = ErrorType<unknown>>(
+ params?: ListDprJdrCodesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprJdrCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprJdrCodesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListDprTimesheetEntriesUrl = (params?: ListDprTimesheetEntriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/timesheet-entries?${stringifiedParams}` : `/api/dpr/timesheet-entries`
+}
+
+/**
+ * @summary List timesheet entries
+ */
+export const listDprTimesheetEntries = async (params?: ListDprTimesheetEntriesParams, options?: RequestInit): Promise<DprTimesheetEntry[]> => {
+
+  return customFetch<DprTimesheetEntry[]>(getListDprTimesheetEntriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprTimesheetEntriesQueryKey = (params?: ListDprTimesheetEntriesParams,) => {
+    return [
+    `/api/dpr/timesheet-entries`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDprTimesheetEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listDprTimesheetEntries>>, TError = ErrorType<unknown>>(params?: ListDprTimesheetEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTimesheetEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprTimesheetEntriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprTimesheetEntries>>> = ({ signal }) => listDprTimesheetEntries(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprTimesheetEntries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprTimesheetEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listDprTimesheetEntries>>>
+export type ListDprTimesheetEntriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List timesheet entries
+ */
+
+export function useListDprTimesheetEntries<TData = Awaited<ReturnType<typeof listDprTimesheetEntries>>, TError = ErrorType<unknown>>(
+ params?: ListDprTimesheetEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTimesheetEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprTimesheetEntriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateDprTimesheetEntryUrl = () => {
+
+
+
+
+  return `/api/dpr/timesheet-entries`
+}
+
+/**
+ * @summary Capture a new raw timesheet entry
+ */
+export const createDprTimesheetEntry = async (dprTimesheetEntryInput: DprTimesheetEntryInput, options?: RequestInit): Promise<DprTimesheetEntry> => {
+
+  return customFetch<DprTimesheetEntry>(getCreateDprTimesheetEntryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprTimesheetEntryInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprTimesheetEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprTimesheetEntry>>, TError,{data: BodyType<DprTimesheetEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprTimesheetEntry>>, TError,{data: BodyType<DprTimesheetEntryInput>}, TContext> => {
+
+const mutationKey = ['createDprTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprTimesheetEntry>>, {data: BodyType<DprTimesheetEntryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprTimesheetEntry(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof createDprTimesheetEntry>>>
+    export type CreateDprTimesheetEntryMutationBody = BodyType<DprTimesheetEntryInput>
+    export type CreateDprTimesheetEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Capture a new raw timesheet entry
+ */
+export const useCreateDprTimesheetEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprTimesheetEntry>>, TError,{data: BodyType<DprTimesheetEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprTimesheetEntry>>,
+        TError,
+        {data: BodyType<DprTimesheetEntryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprTimesheetEntryMutationOptions(options));
+    }
+
+export const getGetDprTimesheetSummaryUrl = () => {
+
+
+
+
+  return `/api/dpr/timesheet-entries/summary`
+}
+
+/**
+ * @summary Get counts of timesheet entries by stage
+ */
+export const getDprTimesheetSummary = async ( options?: RequestInit): Promise<DprTimesheetSummary> => {
+
+  return customFetch<DprTimesheetSummary>(getGetDprTimesheetSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDprTimesheetSummaryQueryKey = () => {
+    return [
+    `/api/dpr/timesheet-entries/summary`
+    ] as const;
+    }
+
+
+export const getGetDprTimesheetSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getDprTimesheetSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDprTimesheetSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDprTimesheetSummary>>> = ({ signal }) => getDprTimesheetSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDprTimesheetSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getDprTimesheetSummary>>>
+export type GetDprTimesheetSummaryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get counts of timesheet entries by stage
+ */
+
+export function useGetDprTimesheetSummary<TData = Awaited<ReturnType<typeof getDprTimesheetSummary>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDprTimesheetSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetDprTimesheetEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/timesheet-entries/${id}`
+}
+
+/**
+ * @summary Get a timesheet entry by id
+ */
+export const getDprTimesheetEntry = async (id: number, options?: RequestInit): Promise<DprTimesheetEntry> => {
+
+  return customFetch<DprTimesheetEntry>(getGetDprTimesheetEntryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDprTimesheetEntryQueryKey = (id: number,) => {
+    return [
+    `/api/dpr/timesheet-entries/${id}`
+    ] as const;
+    }
+
+
+export const getGetDprTimesheetEntryQueryOptions = <TData = Awaited<ReturnType<typeof getDprTimesheetEntry>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetEntry>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDprTimesheetEntryQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDprTimesheetEntry>>> = ({ signal }) => getDprTimesheetEntry(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetEntry>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDprTimesheetEntryQueryResult = NonNullable<Awaited<ReturnType<typeof getDprTimesheetEntry>>>
+export type GetDprTimesheetEntryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a timesheet entry by id
+ */
+
+export function useGetDprTimesheetEntry<TData = Awaited<ReturnType<typeof getDprTimesheetEntry>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprTimesheetEntry>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDprTimesheetEntryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateDprTimesheetEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/timesheet-entries/${id}`
+}
+
+/**
+ * @summary Update a timesheet entry (capture edits or clarify categorization)
+ */
+export const updateDprTimesheetEntry = async (id: number,
+    dprTimesheetEntryUpdate: DprTimesheetEntryUpdate, options?: RequestInit): Promise<DprTimesheetEntry> => {
+
+  return customFetch<DprTimesheetEntry>(getUpdateDprTimesheetEntryUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprTimesheetEntryUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateDprTimesheetEntryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprTimesheetEntry>>, TError,{id: number;data: BodyType<DprTimesheetEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprTimesheetEntry>>, TError,{id: number;data: BodyType<DprTimesheetEntryUpdate>}, TContext> => {
+
+const mutationKey = ['updateDprTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprTimesheetEntry>>, {id: number;data: BodyType<DprTimesheetEntryUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprTimesheetEntry(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprTimesheetEntry>>>
+    export type UpdateDprTimesheetEntryMutationBody = BodyType<DprTimesheetEntryUpdate>
+    export type UpdateDprTimesheetEntryMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a timesheet entry (capture edits or clarify categorization)
+ */
+export const useUpdateDprTimesheetEntry = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprTimesheetEntry>>, TError,{id: number;data: BodyType<DprTimesheetEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprTimesheetEntry>>,
+        TError,
+        {id: number;data: BodyType<DprTimesheetEntryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprTimesheetEntryMutationOptions(options));
+    }
+
+export const getDeleteDprTimesheetEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/timesheet-entries/${id}`
+}
+
+/**
+ * @summary Delete a timesheet entry
+ */
+export const deleteDprTimesheetEntry = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprTimesheetEntryUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprTimesheetEntryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprTimesheetEntry>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprTimesheetEntry>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprTimesheetEntry>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprTimesheetEntry(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprTimesheetEntry>>>
+
+    export type DeleteDprTimesheetEntryMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a timesheet entry
+ */
+export const useDeleteDprTimesheetEntry = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprTimesheetEntry>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprTimesheetEntry>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprTimesheetEntryMutationOptions(options));
+    }
 
