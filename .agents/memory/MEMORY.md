@@ -5,3 +5,4 @@
 - [Install Review hosting split](install-review-overview.md) — Replit is dev-only, Vercel is production host; don't suggest Replit deploy/publish for this project.
 - [New artifact missing API proxy](new-artifact-vite-proxy.md) — hand-scaffolded Vite artifacts need an explicit /api proxy in vite.config.ts or all backend calls silently fail (looks like an auth bug).
 - [Seed literals must match column nullability](migrate-seed-null-mismatch.md) — a NOT NULL column with any NULL literal in its seed INSERT breaks migrate.mjs on a fresh DB even if already-applied on the dev DB masks it.
+- [NEON_DATABASE_URL vs DATABASE_URL](neon-vs-database-url.md) — this project's app code prefers NEON_DATABASE_URL over DATABASE_URL; always check both before assuming a psql edit via DATABASE_URL reached the live DB.
