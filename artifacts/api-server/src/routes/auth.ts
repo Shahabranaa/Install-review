@@ -30,6 +30,32 @@ export async function seedAdminUser() {
   console.log(`[SEED] Default admin created — username: admin  password: ${seedPassword}`);
 }
 
+// Keep the "admin" account's password in sync with ADMIN_SEED_PASSWORD on
+// every startup, so updating the secret is the single source of truth for
+// that account's credential (no manual DB patching required). No-op if the
+// secret isn't set, or if there's no "admin" user yet (seedAdminUser handles
+// that case).
+export async function syncAdminSeedPassword() {
+  const seedPassword = process.env["ADMIN_SEED_PASSWORD"];
+  if (!seedPassword) return;
+
+  const [admin] = await db
+    .select({ id: usersTable.id, passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.username, "admin"));
+  if (!admin) return;
+
+  const alreadyMatches = await bcrypt.compare(seedPassword, admin.passwordHash).catch(() => false);
+  if (alreadyMatches) return;
+
+  const passwordHash = await bcrypt.hash(seedPassword, 12);
+  await db
+    .update(usersTable)
+    .set({ passwordHash, active: true })
+    .where(eq(usersTable.id, admin.id));
+  logger.info({ userId: admin.id }, "Synced 'admin' account password from ADMIN_SEED_PASSWORD");
+}
+
 // Detect any admin account still using the compromised default credential and
 // deactivate it immediately. Runs at startup in all environments.
 export async function auditDefaultAdminCredential() {

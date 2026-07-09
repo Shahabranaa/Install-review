@@ -7,7 +7,7 @@ import { Pool } from "pg";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { seedAdminUser, auditDefaultAdminCredential } from "./routes/auth";
+import { seedAdminUser, auditDefaultAdminCredential, syncAdminSeedPassword } from "./routes/auth";
 import { PostgresRateLimitStore } from "./lib/rate-limit-store";
 
 const app: Express = express();
@@ -173,5 +173,12 @@ auditDefaultAdminCredential().catch((err) =>
 if (process.env["NODE_ENV"] !== "production") {
   seedAdminUser().catch((err) => logger.error({ err }, "Failed to seed admin user"));
 }
+
+// Keep the "admin" account's password synced to ADMIN_SEED_PASSWORD in all
+// environments (dev and production) — this makes the secret the single
+// source of truth for that account, no manual DB patching required.
+syncAdminSeedPassword().catch((err) =>
+  logger.error({ err }, "Failed to sync admin seed password"),
+);
 
 export default app;
