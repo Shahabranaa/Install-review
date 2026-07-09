@@ -157,6 +157,20 @@ export default function CapturePage() {
     }
   });
 
+  // Autosave runs silently in the background (no success toast, doesn't close
+  // edit mode) so pasting/tabbing through rows doesn't require an explicit
+  // save click. Errors still surface via toast.
+  const autosaveMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      },
+      onError: (err) => {
+        toast({ title: "Autosave failed", description: err.message, variant: "destructive" });
+      }
+    }
+  });
+
   const deleteMutation = useDeleteDprTimesheetEntry({
     mutation: {
       onSuccess: () => {
@@ -190,6 +204,7 @@ export default function CapturePage() {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<DprTimesheetEntry>>({});
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -294,20 +309,80 @@ export default function CapturePage() {
     });
   };
 
+  const buildUpdatePayload = (draft: Partial<DprTimesheetEntry>) => ({
+    date: draft.date,
+    teamId: draft.teamId || null,
+    startTime: draft.startTime || null,
+    endTime: draft.endTime || null,
+    locationId: draft.locationId || null,
+    notes: draft.notes || null,
+    activityTypeId: draft.activityTypeId || null,
+  });
+
   const handleUpdate = () => {
     if (!editingId) return;
-    updateMutation.mutate({
-      id: editingId,
-      data: {
-        date: editDraft.date,
-        teamId: editDraft.teamId || null,
-        startTime: editDraft.startTime || null,
-        endTime: editDraft.endTime || null,
-        locationId: editDraft.locationId || null,
-        notes: editDraft.notes || null,
-        activityTypeId: editDraft.activityTypeId || null,
-      }
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    updateMutation.mutate({ id: editingId, data: buildUpdatePayload(editDraft) });
+  };
+
+  // Start editing a row, flushing any pending autosave on the previously
+  // edited row first so switching rows never drops an unsaved change.
+  const startEditing = (entry: DprTimesheetEntry) => {
+    flushAutosave();
+    setEditingId(entry.id);
+    setEditDraft({
+      date: entry.date,
+      teamId: entry.teamId,
+      startTime: entry.startTime || "",
+      endTime: entry.endTime || "",
+      locationId: entry.locationId,
+      notes: entry.notes || "",
+      activityTypeId: entry.activityTypeId,
     });
+  };
+
+  // Immediately save the current edit draft in the background (no toast,
+  // doesn't close edit mode). Used on blur/select so the user can paste and
+  // move on without waiting for or clicking a save button.
+  const flushAutosave = () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    if (!editingId || !editDraft.date) return;
+    autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(editDraft) });
+  };
+
+  // Update the draft and immediately autosave with the new value (for
+  // discrete selections like Team/Location where there's no "typing" to
+  // debounce).
+  const commitDraft = (patch: Partial<DprTimesheetEntry>) => {
+    const next = { ...editDraft, ...patch };
+    setEditDraft(next);
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    if (!editingId || !next.date) return;
+    autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(next) });
+  };
+
+  // Update the draft and schedule a debounced autosave (for free-typed
+  // fields like Notes/Date/Times) so rapid keystrokes don't fire a request
+  // per character; blur still flushes immediately via flushAutosave.
+  const updateDraftDebounced = (patch: Partial<DprTimesheetEntry>) => {
+    const next = { ...editDraft, ...patch };
+    setEditDraft(next);
+    if (!editingId) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      if (!next.date) return;
+      autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(next) });
+    }, 700);
   };
 
   const handlePasteChange = (text: string) => {
@@ -543,12 +618,13 @@ export default function CapturePage() {
                         <Input 
                           type="date" 
                           value={editDraft.date || ""} 
-                          onChange={e => setEditDraft({ ...editDraft, date: e.target.value })}
+                          onChange={e => updateDraftDebounced({ date: e.target.value })}
+                          onBlur={flushAutosave}
                           className="h-8 text-sm"
                         />
                       </TableCell>
                       <TableCell>
-                        <Select value={editDraft.teamId?.toString() || ""} onValueChange={v => setEditDraft({ ...editDraft, teamId: parseInt(v) })}>
+                        <Select value={editDraft.teamId?.toString() || ""} onValueChange={v => commitDraft({ teamId: parseInt(v) })}>
                           <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
                           <SelectContent>
                             {teams.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
@@ -559,7 +635,8 @@ export default function CapturePage() {
                         <Input 
                           type="time" 
                           value={editDraft.startTime || ""} 
-                          onChange={e => setEditDraft({ ...editDraft, startTime: e.target.value })}
+                          onChange={e => updateDraftDebounced({ startTime: e.target.value })}
+                          onBlur={flushAutosave}
                           className="h-8 text-sm"
                         />
                       </TableCell>
@@ -567,7 +644,8 @@ export default function CapturePage() {
                         <Input 
                           type="time" 
                           value={editDraft.endTime || ""} 
-                          onChange={e => setEditDraft({ ...editDraft, endTime: e.target.value })}
+                          onChange={e => updateDraftDebounced({ endTime: e.target.value })}
+                          onBlur={flushAutosave}
                           className="h-8 text-sm"
                         />
                       </TableCell>
@@ -575,7 +653,7 @@ export default function CapturePage() {
                         <Combobox
                           options={locationOptions}
                           value={editDraft.locationId?.toString() || ""}
-                          onValueChange={v => setEditDraft({ ...editDraft, locationId: parseInt(v) })}
+                          onValueChange={v => commitDraft({ locationId: parseInt(v) })}
                           placeholder="Select Location"
                           searchPlaceholder="Search locations..."
                         />
@@ -583,17 +661,27 @@ export default function CapturePage() {
                       <TableCell>
                         <Input 
                           value={editDraft.notes || ""} 
-                          onChange={e => setEditDraft({ ...editDraft, notes: e.target.value })}
+                          onChange={e => updateDraftDebounced({ notes: e.target.value })}
+                          onBlur={flushAutosave}
                           className="h-8 text-sm"
                           onKeyDown={e => e.key === 'Enter' && handleUpdate()}
                         />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {autosaveMutation.isPending && !updateMutation.isPending && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground mr-1" aria-label="Saving" />
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-green-500 hover:text-green-600 hover:bg-green-500/10" onClick={handleUpdate} disabled={updateMutation.isPending || !editDraft.date}>
                             {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => setEditingId(null)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => {
+                            if (autosaveTimerRef.current) {
+                              clearTimeout(autosaveTimerRef.current);
+                              autosaveTimerRef.current = null;
+                            }
+                            setEditingId(null);
+                          }}>
                             <X className="w-4 h-4" />
                           </Button>
                         </div>
@@ -616,103 +704,37 @@ export default function CapturePage() {
                     </TableCell>
                     <TableCell
                       className="font-medium cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.date}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.startTime || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.endTime || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="max-w-[300px] truncate cursor-pointer"
-                      onClick={() => {
-                        setEditingId(entry.id);
-                        setEditDraft({
-                          date: entry.date,
-                          teamId: entry.teamId,
-                          startTime: entry.startTime || "",
-                          endTime: entry.endTime || "",
-                          locationId: entry.locationId,
-                          notes: entry.notes || "",
-                          activityTypeId: entry.activityTypeId,
-                        });
-                      }}
+                      onClick={() => startEditing(entry)}
                     >
                       {entry.notes || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
