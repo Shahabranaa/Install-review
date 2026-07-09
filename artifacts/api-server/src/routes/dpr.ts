@@ -40,16 +40,23 @@ function parseId(raw: unknown): number | null {
   return isNaN(n) || n <= 0 ? null : n;
 }
 
+// Sorts names naturally so numeric suffixes order correctly
+// (e.g. "Team 2" before "Team 10" instead of alphabetical "Team 10" before "Team 2").
+function naturalSort<T extends { name: string }>(rows: T[]): T[] {
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  return [...rows].sort((a, b) => collator.compare(a.name, b.name));
+}
+
 // ─── Reference lookups ──────────────────────────────────────────────────────
 
 router.get("/dpr/locations", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(dprLocationsTable).orderBy(dprLocationsTable.name);
-  res.json(ListDprLocationsResponse.parse(serialize(rows)));
+  const rows = await db.select().from(dprLocationsTable);
+  res.json(ListDprLocationsResponse.parse(serialize(naturalSort(rows))));
 });
 
 router.get("/dpr/teams", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(dprTeamsTable).orderBy(dprTeamsTable.name);
-  res.json(ListDprTeamsResponse.parse(serialize(rows)));
+  const rows = await db.select().from(dprTeamsTable);
+  res.json(ListDprTeamsResponse.parse(serialize(naturalSort(rows))));
 });
 
 router.get("/dpr/activity-types", async (_req, res): Promise<void> => {

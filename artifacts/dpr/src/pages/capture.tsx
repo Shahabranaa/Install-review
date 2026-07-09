@@ -13,13 +13,14 @@ import {
   DprTimesheetEntry,
   DprTeam,
   DprLocation,
-  DprActivityType,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -79,24 +80,21 @@ type PendingRow = RowDraft & {
   key: string;
   teamRaw: string;
   locationRaw: string;
-  activityRaw: string;
 };
 
 function parsePastedText(
   text: string,
   teams: DprTeam[],
   locations: DprLocation[],
-  activityTypes: DprActivityType[],
   defaultActivityTypeId: number | null,
 ): PendingRow[] {
   const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
   return lines.map((line, idx) => {
     const cols = line.split("\t");
-    const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = "", rawActivity = ""] = cols;
+    const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = ""] = cols;
 
     const team = findByName(teams, rawTeam);
     const location = findByName(locations, rawLocation);
-    const activityType = rawActivity.trim() ? findByName(activityTypes, rawActivity) : undefined;
 
     return {
       key: `${Date.now()}-${idx}`,
@@ -106,10 +104,9 @@ function parsePastedText(
       endTime: normalizeTime(rawEnd),
       locationId: location?.id ?? null,
       notes: rawNotes.trim(),
-      activityTypeId: activityType?.id ?? defaultActivityTypeId,
+      activityTypeId: defaultActivityTypeId,
       teamRaw: rawTeam.trim(),
       locationRaw: rawLocation.trim(),
-      activityRaw: rawActivity.trim(),
     };
   });
 }
@@ -129,6 +126,11 @@ export default function CapturePage() {
     [activityTypes]
   );
   const defaultActivityTypeId = defaultActivityType?.id ?? null;
+
+  const locationOptions: ComboboxOption[] = useMemo(
+    () => locations.map(l => ({ value: l.id.toString(), label: l.name })),
+    [locations]
+  );
 
   const createMutation = useCreateDprTimesheetEntry({
     mutation: {
@@ -165,6 +167,25 @@ export default function CapturePage() {
     }
   });
 
+  // Bulk variants intentionally skip per-row toasts so a single summary toast
+  // (fired after the whole batch finishes) isn't clobbered by per-row ones.
+  const bulkDeleteMutation = useDeleteDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+      }
+    }
+  });
+
+  const bulkUpdateMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      }
+    }
+  });
+
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -176,7 +197,82 @@ export default function CapturePage() {
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkWorking, setIsBulkWorking] = useState(false);
+  const [bulkLocationId, setBulkLocationId] = useState<string>("");
+
   const capturedEntries = useMemo(() => entries.filter(e => e.stage === "captured"), [entries]);
+
+  const allSelected = capturedEntries.length > 0 && capturedEntries.every(e => selectedIds.has(e.id));
+  const someSelected = capturedEntries.some(e => selectedIds.has(e.id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(capturedEntries.map(e => e.id)));
+    }
+  };
+
+  const toggleSelectRow = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setBulkLocationId("");
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkWorking(true);
+    const ids = Array.from(selectedIds);
+    let succeeded = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await bulkDeleteMutation.mutateAsync({ id });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsBulkWorking(false);
+    clearSelection();
+    if (succeeded > 0) {
+      toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} deleted`, description: failed > 0 ? `${failed} row(s) failed to delete.` : undefined });
+    } else if (failed > 0) {
+      toast({ title: "Delete failed", description: "Check the rows and try again.", variant: "destructive" });
+    }
+  };
+
+  const handleBulkSetLocation = async () => {
+    if (selectedIds.size === 0 || !bulkLocationId) return;
+    setIsBulkWorking(true);
+    const ids = Array.from(selectedIds);
+    let succeeded = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await bulkUpdateMutation.mutateAsync({ id, data: { locationId: parseInt(bulkLocationId) } });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsBulkWorking(false);
+    clearSelection();
+    if (succeeded > 0) {
+      toast({ title: `Location updated on ${succeeded} row${succeeded === 1 ? "" : "s"}`, description: failed > 0 ? `${failed} row(s) failed to update.` : undefined });
+    } else if (failed > 0) {
+      toast({ title: "Update failed", description: "Check the rows and try again.", variant: "destructive" });
+    }
+  };
 
   const handleCreate = () => {
     if (!newRow || !newRow.date) return;
@@ -220,7 +316,7 @@ export default function CapturePage() {
       setPendingRows(null);
       return;
     }
-    setPendingRows(parsePastedText(text, teams, locations, activityTypes, defaultActivityTypeId));
+    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId));
   };
 
   const updatePendingRow = (key: string, patch: Partial<PendingRow>) => {
@@ -299,17 +395,63 @@ export default function CapturePage() {
         </div>
       </header>
 
+      {someSelected && (
+        <div className="px-6 py-2 border-b border-border bg-sidebar-accent/40 flex items-center gap-3 shrink-0">
+          <Badge variant="secondary">{selectedIds.size} selected</Badge>
+          <div className="flex items-center gap-2">
+            <div className="w-[220px]">
+              <Combobox
+                options={locationOptions}
+                value={bulkLocationId}
+                onValueChange={setBulkLocationId}
+                placeholder="Set location..."
+                searchPlaceholder="Search locations..."
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBulkSetLocation}
+              disabled={!bulkLocationId || isBulkWorking}
+              className="gap-1"
+            >
+              {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              Apply Location
+            </Button>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleBulkDelete}
+            disabled={isBulkWorking}
+            className="gap-1 text-destructive hover:text-destructive"
+          >
+            {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Delete Selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearSelection} className="ml-auto">
+            Clear selection
+          </Button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto p-6 bg-background">
         <div className="rounded-md border border-border bg-card overflow-hidden shadow-sm">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                  />
+                </TableHead>
                 <TableHead className="w-[140px]">Date</TableHead>
                 <TableHead className="w-[160px]">Team</TableHead>
                 <TableHead className="w-[110px]">Start Time</TableHead>
                 <TableHead className="w-[110px]">End Time</TableHead>
-                <TableHead className="w-[180px]">Location</TableHead>
-                <TableHead className="w-[200px]">Activity</TableHead>
+                <TableHead className="w-[220px]">Location</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead className="w-[100px] text-right">Actions</TableHead>
               </TableRow>
@@ -325,6 +467,7 @@ export default function CapturePage() {
               
               {newRow && (
                 <TableRow className="bg-primary/5">
+                  <TableCell></TableCell>
                   <TableCell>
                     <Input 
                       type="date" 
@@ -358,26 +501,19 @@ export default function CapturePage() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Select value={newRow.locationId?.toString() || ""} onValueChange={v => setNewRow({ ...newRow, locationId: parseInt(v) })}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Location" /></SelectTrigger>
-                      <SelectContent>
-                        {locations.map(l => <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Select value={newRow.activityTypeId?.toString() || ""} onValueChange={v => setNewRow({ ...newRow, activityTypeId: parseInt(v) })}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Activity" /></SelectTrigger>
-                      <SelectContent>
-                        {activityTypes.map(a => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Combobox
+                      options={locationOptions}
+                      value={newRow.locationId?.toString() || ""}
+                      onValueChange={v => setNewRow({ ...newRow, locationId: parseInt(v) })}
+                      placeholder="Select Location"
+                      searchPlaceholder="Search locations..."
+                    />
                   </TableCell>
                   <TableCell>
                     <Input 
                       value={newRow.notes} 
                       onChange={e => setNewRow({ ...newRow, notes: e.target.value })}
-                      placeholder="Raw notes..."
+                      placeholder="Notes..."
                       className="h-8 text-sm"
                       onKeyDown={e => e.key === 'Enter' && handleCreate()}
                     />
@@ -397,10 +533,12 @@ export default function CapturePage() {
 
               {capturedEntries.map(entry => {
                 const isEditing = editingId === entry.id;
+                const isSelected = selectedIds.has(entry.id);
                 
                 if (isEditing) {
                   return (
                     <TableRow key={entry.id} className="bg-sidebar-accent/30">
+                      <TableCell></TableCell>
                       <TableCell>
                         <Input 
                           type="date" 
@@ -434,20 +572,13 @@ export default function CapturePage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <Select value={editDraft.locationId?.toString() || ""} onValueChange={v => setEditDraft({ ...editDraft, locationId: parseInt(v) })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Location" /></SelectTrigger>
-                          <SelectContent>
-                            {locations.map(l => <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select value={editDraft.activityTypeId?.toString() || ""} onValueChange={v => setEditDraft({ ...editDraft, activityTypeId: parseInt(v) })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Activity" /></SelectTrigger>
-                          <SelectContent>
-                            {activityTypes.map(a => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <Combobox
+                          options={locationOptions}
+                          value={editDraft.locationId?.toString() || ""}
+                          onValueChange={v => setEditDraft({ ...editDraft, locationId: parseInt(v) })}
+                          placeholder="Select Location"
+                          searchPlaceholder="Search locations..."
+                        />
                       </TableCell>
                       <TableCell>
                         <Input 
@@ -472,25 +603,119 @@ export default function CapturePage() {
                 }
 
                 return (
-                  <TableRow key={entry.id} className="group cursor-pointer hover:bg-sidebar-accent/10" onClick={() => {
-                    setEditingId(entry.id);
-                    setEditDraft({
-                      date: entry.date,
-                      teamId: entry.teamId,
-                      startTime: entry.startTime || "",
-                      endTime: entry.endTime || "",
-                      locationId: entry.locationId,
-                      notes: entry.notes || "",
-                      activityTypeId: entry.activityTypeId,
-                    });
-                  }}>
-                    <TableCell className="font-medium">{entry.date}</TableCell>
-                    <TableCell>{entry.team?.name || <span className="text-muted-foreground/50">--</span>}</TableCell>
-                    <TableCell>{entry.startTime || <span className="text-muted-foreground/50">--</span>}</TableCell>
-                    <TableCell>{entry.endTime || <span className="text-muted-foreground/50">--</span>}</TableCell>
-                    <TableCell>{entry.location?.name || <span className="text-muted-foreground/50">--</span>}</TableCell>
-                    <TableCell>{activityTypes.find(a => a.id === entry.activityTypeId)?.name || <span className="text-muted-foreground/50">--</span>}</TableCell>
-                    <TableCell className="max-w-[300px] truncate">{entry.notes || <span className="text-muted-foreground/50">--</span>}</TableCell>
+                  <TableRow
+                    key={entry.id}
+                    className={`group hover:bg-sidebar-accent/10 ${isSelected ? "bg-sidebar-accent/20" : ""}`}
+                  >
+                    <TableCell onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelectRow(entry.id)}
+                        aria-label={`Select row ${entry.id}`}
+                      />
+                    </TableCell>
+                    <TableCell
+                      className="font-medium cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.date}
+                    </TableCell>
+                    <TableCell
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
+                    </TableCell>
+                    <TableCell
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.startTime || <span className="text-muted-foreground/50">--</span>}
+                    </TableCell>
+                    <TableCell
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.endTime || <span className="text-muted-foreground/50">--</span>}
+                    </TableCell>
+                    <TableCell
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
+                    </TableCell>
+                    <TableCell
+                      className="max-w-[300px] truncate cursor-pointer"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setEditDraft({
+                          date: entry.date,
+                          teamId: entry.teamId,
+                          startTime: entry.startTime || "",
+                          endTime: entry.endTime || "",
+                          locationId: entry.locationId,
+                          notes: entry.notes || "",
+                          activityTypeId: entry.activityTypeId,
+                        });
+                      }}
+                    >
+                      {entry.notes || <span className="text-muted-foreground/50">--</span>}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button 
                         variant="ghost" 
@@ -522,7 +747,7 @@ export default function CapturePage() {
           <DialogHeader>
             <DialogTitle>Paste rows from a spreadsheet</DialogTitle>
             <DialogDescription>
-              Copy rows from your source sheet (Date, Team, Start, End, Location, Notes[, Activity]) and paste below. Rows without an Activity default to "{DEFAULT_ACTIVITY_TYPE_NAME}".
+              Copy rows from your source sheet (Date, Team, Start, End, Location, Notes) and paste below.
             </DialogDescription>
           </DialogHeader>
 
@@ -544,8 +769,7 @@ export default function CapturePage() {
                       <TableHead className="w-[140px]">Team</TableHead>
                       <TableHead className="w-[90px]">Start</TableHead>
                       <TableHead className="w-[90px]">End</TableHead>
-                      <TableHead className="w-[140px]">Location</TableHead>
-                      <TableHead className="w-[170px]">Activity</TableHead>
+                      <TableHead className="w-[200px]">Location</TableHead>
                       <TableHead>Notes</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
@@ -591,22 +815,14 @@ export default function CapturePage() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Select value={row.locationId?.toString() || ""} onValueChange={v => updatePendingRow(row.key, { locationId: parseInt(v) })}>
-                              <SelectTrigger className={`h-8 text-sm ${locationUnmatched ? "border-amber-500" : ""}`}>
-                                <SelectValue placeholder={locationUnmatched ? row.locationRaw : "Select Location"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {locations.map(l => <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Select value={row.activityTypeId?.toString() || ""} onValueChange={v => updatePendingRow(row.key, { activityTypeId: parseInt(v) })}>
-                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Activity" /></SelectTrigger>
-                              <SelectContent>
-                                {activityTypes.map(a => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            <Combobox
+                              options={locationOptions}
+                              value={row.locationId?.toString() || ""}
+                              onValueChange={v => updatePendingRow(row.key, { locationId: parseInt(v) })}
+                              placeholder={locationUnmatched ? row.locationRaw : "Select Location"}
+                              searchPlaceholder="Search locations..."
+                              triggerClassName={locationUnmatched ? "border-amber-500" : undefined}
+                            />
                           </TableCell>
                           <TableCell>
                             <Input
