@@ -807,6 +807,39 @@ export const ListDprActivityTypesResponse = zod.array(ListDprActivityTypesRespon
 
 
 /**
+ * @summary Create a DPR activity type
+ */
+export const CreateDprActivityTypeBody = zod.object({
+  "name": zod.string()
+})
+
+
+/**
+ * @summary Update a DPR activity type
+ */
+export const UpdateDprActivityTypeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprActivityTypeBody = zod.object({
+  "name": zod.string()
+})
+
+export const UpdateDprActivityTypeResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})
+
+
+/**
+ * @summary Delete a DPR activity type
+ */
+export const DeleteDprActivityTypeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary List DPR activity groups
  */
 export const ListDprActivityGroupsQueryParams = zod.object({
@@ -822,6 +855,42 @@ export const ListDprActivityGroupsResponse = zod.array(ListDprActivityGroupsResp
 
 
 /**
+ * @summary Create a DPR activity group
+ */
+export const CreateDprActivityGroupBody = zod.object({
+  "name": zod.string(),
+  "activityTypeId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Update a DPR activity group
+ */
+export const UpdateDprActivityGroupParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprActivityGroupBody = zod.object({
+  "name": zod.string(),
+  "activityTypeId": zod.number().nullish()
+})
+
+export const UpdateDprActivityGroupResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "activityTypeId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Delete a DPR activity group
+ */
+export const DeleteDprActivityGroupParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary List DPR activities, optionally filtered by activity group
  */
 export const ListDprActivitiesQueryParams = zod.object({
@@ -834,6 +903,42 @@ export const ListDprActivitiesResponseItem = zod.object({
   "activityGroupId": zod.number()
 })
 export const ListDprActivitiesResponse = zod.array(ListDprActivitiesResponseItem)
+
+
+/**
+ * @summary Create a DPR activity
+ */
+export const CreateDprActivityBody = zod.object({
+  "name": zod.string(),
+  "activityGroupId": zod.number()
+})
+
+
+/**
+ * @summary Update a DPR activity
+ */
+export const UpdateDprActivityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprActivityBody = zod.object({
+  "name": zod.string(),
+  "activityGroupId": zod.number()
+})
+
+export const UpdateDprActivityResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "activityGroupId": zod.number()
+})
+
+
+/**
+ * @summary Delete a DPR activity
+ */
+export const DeleteDprActivityParams = zod.object({
+  "id": zod.coerce.number()
+})
 
 
 /**
@@ -853,6 +958,54 @@ export const ListDprJdrCodesResponseItem = zod.object({
   "activityId": zod.number().nullish()
 })
 export const ListDprJdrCodesResponse = zod.array(ListDprJdrCodesResponseItem)
+
+
+/**
+ * @summary Create a DPR JDR code
+ */
+export const CreateDprJdrCodeBody = zod.object({
+  "lautecActivity": zod.string(),
+  "lautecActivityGroup": zod.string(),
+  "jdrWorkActivity": zod.string(),
+  "contractualCode": zod.string(),
+  "genericComment": zod.string(),
+  "activityId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Update a DPR JDR code
+ */
+export const UpdateDprJdrCodeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprJdrCodeBody = zod.object({
+  "lautecActivity": zod.string(),
+  "lautecActivityGroup": zod.string(),
+  "jdrWorkActivity": zod.string(),
+  "contractualCode": zod.string(),
+  "genericComment": zod.string(),
+  "activityId": zod.number().nullish()
+})
+
+export const UpdateDprJdrCodeResponse = zod.object({
+  "id": zod.number(),
+  "lautecActivity": zod.string(),
+  "lautecActivityGroup": zod.string(),
+  "jdrWorkActivity": zod.string(),
+  "contractualCode": zod.string(),
+  "genericComment": zod.string(),
+  "activityId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Delete a DPR JDR code
+ */
+export const DeleteDprJdrCodeParams = zod.object({
+  "id": zod.coerce.number()
+})
 
 
 /**

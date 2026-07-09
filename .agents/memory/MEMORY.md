@@ -7,3 +7,4 @@
 - [Seed literals must match column nullability](migrate-seed-null-mismatch.md) — a NOT NULL column with any NULL literal in its seed INSERT breaks migrate.mjs on a fresh DB even if already-applied on the dev DB masks it.
 - [NEON_DATABASE_URL vs DATABASE_URL](neon-vs-database-url.md) — this project's app code prefers NEON_DATABASE_URL over DATABASE_URL; always check both before assuming a psql edit via DATABASE_URL reached the live DB.
 - [Admin password auto-lockout on "admin123"](admin-password-compromised-lockout.md) — this project auto-deactivates any admin account whose password is exactly "admin123"; a 401 after a password change often means this, not a bug.
+- [Orval CRUD response schema reuse](orval-crud-schemas.md) — orval dedupes identical response schemas; a new POST endpoint reusing an existing object shape won't get its own `Create*Response` export.

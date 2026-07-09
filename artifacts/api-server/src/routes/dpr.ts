@@ -30,6 +30,26 @@ import {
   UpdateDprTimesheetEntryBody,
   UpdateDprTimesheetEntryResponse,
   DeleteDprTimesheetEntryParams,
+  CreateDprActivityTypeBody,
+  UpdateDprActivityTypeParams,
+  UpdateDprActivityTypeBody,
+  UpdateDprActivityTypeResponse,
+  DeleteDprActivityTypeParams,
+  CreateDprActivityGroupBody,
+  UpdateDprActivityGroupParams,
+  UpdateDprActivityGroupBody,
+  UpdateDprActivityGroupResponse,
+  DeleteDprActivityGroupParams,
+  CreateDprActivityBody,
+  UpdateDprActivityParams,
+  UpdateDprActivityBody,
+  UpdateDprActivityResponse,
+  DeleteDprActivityParams,
+  CreateDprJdrCodeBody,
+  UpdateDprJdrCodeParams,
+  UpdateDprJdrCodeBody,
+  UpdateDprJdrCodeResponse,
+  DeleteDprJdrCodeParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 
@@ -64,6 +84,56 @@ router.get("/dpr/activity-types", async (_req, res): Promise<void> => {
   res.json(ListDprActivityTypesResponse.parse(serialize(rows)));
 });
 
+router.post("/dpr/activity-types", async (req, res): Promise<void> => {
+  const parsed = CreateDprActivityTypeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprActivityTypesTable).values(parsed.data).returning();
+  res.status(201).json(UpdateDprActivityTypeResponse.parse(serialize(row)));
+});
+
+router.patch("/dpr/activity-types/:id", async (req, res): Promise<void> => {
+  const params = UpdateDprActivityTypeParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateDprActivityTypeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db
+    .update(dprActivityTypesTable)
+    .set(parsed.data)
+    .where(eq(dprActivityTypesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity type not found" });
+    return;
+  }
+  res.json(UpdateDprActivityTypeResponse.parse(serialize(row)));
+});
+
+router.delete("/dpr/activity-types/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprActivityTypeParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [row] = await db
+    .delete(dprActivityTypesTable)
+    .where(eq(dprActivityTypesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity type not found" });
+    return;
+  }
+  res.sendStatus(204);
+});
+
 router.get("/dpr/activity-groups", async (req, res): Promise<void> => {
   const queryParams = ListDprActivityGroupsQueryParams.safeParse(req.query);
   if (!queryParams.success) {
@@ -81,6 +151,56 @@ router.get("/dpr/activity-groups", async (req, res): Promise<void> => {
     rows = await db.select().from(dprActivityGroupsTable).orderBy(dprActivityGroupsTable.name);
   }
   res.json(ListDprActivityGroupsResponse.parse(serialize(rows)));
+});
+
+router.post("/dpr/activity-groups", async (req, res): Promise<void> => {
+  const parsed = CreateDprActivityGroupBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprActivityGroupsTable).values(parsed.data).returning();
+  res.status(201).json(UpdateDprActivityGroupResponse.parse(serialize(row)));
+});
+
+router.patch("/dpr/activity-groups/:id", async (req, res): Promise<void> => {
+  const params = UpdateDprActivityGroupParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateDprActivityGroupBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db
+    .update(dprActivityGroupsTable)
+    .set(parsed.data)
+    .where(eq(dprActivityGroupsTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity group not found" });
+    return;
+  }
+  res.json(UpdateDprActivityGroupResponse.parse(serialize(row)));
+});
+
+router.delete("/dpr/activity-groups/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprActivityGroupParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [row] = await db
+    .delete(dprActivityGroupsTable)
+    .where(eq(dprActivityGroupsTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity group not found" });
+    return;
+  }
+  res.sendStatus(204);
 });
 
 router.get("/dpr/activities", async (req, res): Promise<void> => {
@@ -102,6 +222,56 @@ router.get("/dpr/activities", async (req, res): Promise<void> => {
   res.json(ListDprActivitiesResponse.parse(serialize(rows)));
 });
 
+router.post("/dpr/activities", async (req, res): Promise<void> => {
+  const parsed = CreateDprActivityBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprActivitiesTable).values(parsed.data).returning();
+  res.status(201).json(UpdateDprActivityResponse.parse(serialize(row)));
+});
+
+router.patch("/dpr/activities/:id", async (req, res): Promise<void> => {
+  const params = UpdateDprActivityParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateDprActivityBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db
+    .update(dprActivitiesTable)
+    .set(parsed.data)
+    .where(eq(dprActivitiesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity not found" });
+    return;
+  }
+  res.json(UpdateDprActivityResponse.parse(serialize(row)));
+});
+
+router.delete("/dpr/activities/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprActivityParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [row] = await db
+    .delete(dprActivitiesTable)
+    .where(eq(dprActivitiesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Activity not found" });
+    return;
+  }
+  res.sendStatus(204);
+});
+
 router.get("/dpr/jdr-codes", async (req, res): Promise<void> => {
   const queryParams = ListDprJdrCodesQueryParams.safeParse(req.query);
   if (!queryParams.success) {
@@ -119,6 +289,56 @@ router.get("/dpr/jdr-codes", async (req, res): Promise<void> => {
     rows = await db.select().from(dprJdrCodesTable).orderBy(dprJdrCodesTable.jdrWorkActivity);
   }
   res.json(ListDprJdrCodesResponse.parse(serialize(rows)));
+});
+
+router.post("/dpr/jdr-codes", async (req, res): Promise<void> => {
+  const parsed = CreateDprJdrCodeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprJdrCodesTable).values(parsed.data).returning();
+  res.status(201).json(UpdateDprJdrCodeResponse.parse(serialize(row)));
+});
+
+router.patch("/dpr/jdr-codes/:id", async (req, res): Promise<void> => {
+  const params = UpdateDprJdrCodeParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateDprJdrCodeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db
+    .update(dprJdrCodesTable)
+    .set(parsed.data)
+    .where(eq(dprJdrCodesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "JDR code not found" });
+    return;
+  }
+  res.json(UpdateDprJdrCodeResponse.parse(serialize(row)));
+});
+
+router.delete("/dpr/jdr-codes/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprJdrCodeParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [row] = await db
+    .delete(dprJdrCodesTable)
+    .where(eq(dprJdrCodesTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "JDR code not found" });
+    return;
+  }
+  res.sendStatus(204);
 });
 
 // ─── Timesheet entries ──────────────────────────────────────────────────────

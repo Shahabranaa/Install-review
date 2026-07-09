@@ -32,8 +32,12 @@ import type {
   DocumentRecord,
   DprActivity,
   DprActivityGroup,
+  DprActivityGroupInput,
+  DprActivityInput,
   DprActivityType,
+  DprActivityTypeInput,
   DprJdrCode,
+  DprJdrCodeInput,
   DprLocation,
   DprTeam,
   DprTimesheetEntry,
@@ -3207,6 +3211,219 @@ export function useListDprActivityTypes<TData = Awaited<ReturnType<typeof listDp
 
 
 
+export const getCreateDprActivityTypeUrl = () => {
+
+
+
+
+  return `/api/dpr/activity-types`
+}
+
+/**
+ * @summary Create a DPR activity type
+ */
+export const createDprActivityType = async (dprActivityTypeInput: DprActivityTypeInput, options?: RequestInit): Promise<DprActivityType> => {
+
+  return customFetch<DprActivityType>(getCreateDprActivityTypeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityTypeInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprActivityTypeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivityType>>, TError,{data: BodyType<DprActivityTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprActivityType>>, TError,{data: BodyType<DprActivityTypeInput>}, TContext> => {
+
+const mutationKey = ['createDprActivityType'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprActivityType>>, {data: BodyType<DprActivityTypeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprActivityType(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprActivityTypeMutationResult = NonNullable<Awaited<ReturnType<typeof createDprActivityType>>>
+    export type CreateDprActivityTypeMutationBody = BodyType<DprActivityTypeInput>
+    export type CreateDprActivityTypeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a DPR activity type
+ */
+export const useCreateDprActivityType = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivityType>>, TError,{data: BodyType<DprActivityTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprActivityType>>,
+        TError,
+        {data: BodyType<DprActivityTypeInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprActivityTypeMutationOptions(options));
+    }
+
+export const getUpdateDprActivityTypeUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activity-types/${id}`
+}
+
+/**
+ * @summary Update a DPR activity type
+ */
+export const updateDprActivityType = async (id: number,
+    dprActivityTypeInput: DprActivityTypeInput, options?: RequestInit): Promise<DprActivityType> => {
+
+  return customFetch<DprActivityType>(getUpdateDprActivityTypeUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityTypeInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDprActivityTypeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityType>>, TError,{id: number;data: BodyType<DprActivityTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityType>>, TError,{id: number;data: BodyType<DprActivityTypeInput>}, TContext> => {
+
+const mutationKey = ['updateDprActivityType'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprActivityType>>, {id: number;data: BodyType<DprActivityTypeInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprActivityType(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprActivityTypeMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprActivityType>>>
+    export type UpdateDprActivityTypeMutationBody = BodyType<DprActivityTypeInput>
+    export type UpdateDprActivityTypeMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a DPR activity type
+ */
+export const useUpdateDprActivityType = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityType>>, TError,{id: number;data: BodyType<DprActivityTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprActivityType>>,
+        TError,
+        {id: number;data: BodyType<DprActivityTypeInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprActivityTypeMutationOptions(options));
+    }
+
+export const getDeleteDprActivityTypeUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activity-types/${id}`
+}
+
+/**
+ * @summary Delete a DPR activity type
+ */
+export const deleteDprActivityType = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprActivityTypeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprActivityTypeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityType>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityType>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprActivityType'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprActivityType>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprActivityType(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprActivityTypeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprActivityType>>>
+
+    export type DeleteDprActivityTypeMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a DPR activity type
+ */
+export const useDeleteDprActivityType = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityType>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprActivityType>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprActivityTypeMutationOptions(options));
+    }
+
 export const getListDprActivityGroupsUrl = (params?: ListDprActivityGroupsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -3290,6 +3507,219 @@ export function useListDprActivityGroups<TData = Awaited<ReturnType<typeof listD
 
 
 
+
+export const getCreateDprActivityGroupUrl = () => {
+
+
+
+
+  return `/api/dpr/activity-groups`
+}
+
+/**
+ * @summary Create a DPR activity group
+ */
+export const createDprActivityGroup = async (dprActivityGroupInput: DprActivityGroupInput, options?: RequestInit): Promise<DprActivityGroup> => {
+
+  return customFetch<DprActivityGroup>(getCreateDprActivityGroupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityGroupInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprActivityGroupMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivityGroup>>, TError,{data: BodyType<DprActivityGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprActivityGroup>>, TError,{data: BodyType<DprActivityGroupInput>}, TContext> => {
+
+const mutationKey = ['createDprActivityGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprActivityGroup>>, {data: BodyType<DprActivityGroupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprActivityGroup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprActivityGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createDprActivityGroup>>>
+    export type CreateDprActivityGroupMutationBody = BodyType<DprActivityGroupInput>
+    export type CreateDprActivityGroupMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a DPR activity group
+ */
+export const useCreateDprActivityGroup = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivityGroup>>, TError,{data: BodyType<DprActivityGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprActivityGroup>>,
+        TError,
+        {data: BodyType<DprActivityGroupInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprActivityGroupMutationOptions(options));
+    }
+
+export const getUpdateDprActivityGroupUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activity-groups/${id}`
+}
+
+/**
+ * @summary Update a DPR activity group
+ */
+export const updateDprActivityGroup = async (id: number,
+    dprActivityGroupInput: DprActivityGroupInput, options?: RequestInit): Promise<DprActivityGroup> => {
+
+  return customFetch<DprActivityGroup>(getUpdateDprActivityGroupUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityGroupInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDprActivityGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityGroup>>, TError,{id: number;data: BodyType<DprActivityGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityGroup>>, TError,{id: number;data: BodyType<DprActivityGroupInput>}, TContext> => {
+
+const mutationKey = ['updateDprActivityGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprActivityGroup>>, {id: number;data: BodyType<DprActivityGroupInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprActivityGroup(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprActivityGroupMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprActivityGroup>>>
+    export type UpdateDprActivityGroupMutationBody = BodyType<DprActivityGroupInput>
+    export type UpdateDprActivityGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a DPR activity group
+ */
+export const useUpdateDprActivityGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivityGroup>>, TError,{id: number;data: BodyType<DprActivityGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprActivityGroup>>,
+        TError,
+        {id: number;data: BodyType<DprActivityGroupInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprActivityGroupMutationOptions(options));
+    }
+
+export const getDeleteDprActivityGroupUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activity-groups/${id}`
+}
+
+/**
+ * @summary Delete a DPR activity group
+ */
+export const deleteDprActivityGroup = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprActivityGroupUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprActivityGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityGroup>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityGroup>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprActivityGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprActivityGroup>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprActivityGroup(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprActivityGroupMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprActivityGroup>>>
+
+    export type DeleteDprActivityGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a DPR activity group
+ */
+export const useDeleteDprActivityGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivityGroup>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprActivityGroup>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprActivityGroupMutationOptions(options));
+    }
 
 export const getListDprActivitiesUrl = (params?: ListDprActivitiesParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -3375,6 +3805,219 @@ export function useListDprActivities<TData = Awaited<ReturnType<typeof listDprAc
 
 
 
+export const getCreateDprActivityUrl = () => {
+
+
+
+
+  return `/api/dpr/activities`
+}
+
+/**
+ * @summary Create a DPR activity
+ */
+export const createDprActivity = async (dprActivityInput: DprActivityInput, options?: RequestInit): Promise<DprActivity> => {
+
+  return customFetch<DprActivity>(getCreateDprActivityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprActivityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivity>>, TError,{data: BodyType<DprActivityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprActivity>>, TError,{data: BodyType<DprActivityInput>}, TContext> => {
+
+const mutationKey = ['createDprActivity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprActivity>>, {data: BodyType<DprActivityInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprActivity(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprActivityMutationResult = NonNullable<Awaited<ReturnType<typeof createDprActivity>>>
+    export type CreateDprActivityMutationBody = BodyType<DprActivityInput>
+    export type CreateDprActivityMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a DPR activity
+ */
+export const useCreateDprActivity = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprActivity>>, TError,{data: BodyType<DprActivityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprActivity>>,
+        TError,
+        {data: BodyType<DprActivityInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprActivityMutationOptions(options));
+    }
+
+export const getUpdateDprActivityUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activities/${id}`
+}
+
+/**
+ * @summary Update a DPR activity
+ */
+export const updateDprActivity = async (id: number,
+    dprActivityInput: DprActivityInput, options?: RequestInit): Promise<DprActivity> => {
+
+  return customFetch<DprActivity>(getUpdateDprActivityUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprActivityInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDprActivityMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivity>>, TError,{id: number;data: BodyType<DprActivityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprActivity>>, TError,{id: number;data: BodyType<DprActivityInput>}, TContext> => {
+
+const mutationKey = ['updateDprActivity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprActivity>>, {id: number;data: BodyType<DprActivityInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprActivity(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprActivityMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprActivity>>>
+    export type UpdateDprActivityMutationBody = BodyType<DprActivityInput>
+    export type UpdateDprActivityMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a DPR activity
+ */
+export const useUpdateDprActivity = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprActivity>>, TError,{id: number;data: BodyType<DprActivityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprActivity>>,
+        TError,
+        {id: number;data: BodyType<DprActivityInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprActivityMutationOptions(options));
+    }
+
+export const getDeleteDprActivityUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/activities/${id}`
+}
+
+/**
+ * @summary Delete a DPR activity
+ */
+export const deleteDprActivity = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprActivityUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprActivityMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivity>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivity>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprActivity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprActivity>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprActivity(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprActivityMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprActivity>>>
+
+    export type DeleteDprActivityMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a DPR activity
+ */
+export const useDeleteDprActivity = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprActivity>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprActivity>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprActivityMutationOptions(options));
+    }
+
 export const getListDprJdrCodesUrl = (params?: ListDprJdrCodesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -3458,6 +4101,219 @@ export function useListDprJdrCodes<TData = Awaited<ReturnType<typeof listDprJdrC
 
 
 
+
+export const getCreateDprJdrCodeUrl = () => {
+
+
+
+
+  return `/api/dpr/jdr-codes`
+}
+
+/**
+ * @summary Create a DPR JDR code
+ */
+export const createDprJdrCode = async (dprJdrCodeInput: DprJdrCodeInput, options?: RequestInit): Promise<DprJdrCode> => {
+
+  return customFetch<DprJdrCode>(getCreateDprJdrCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprJdrCodeInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprJdrCodeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprJdrCode>>, TError,{data: BodyType<DprJdrCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprJdrCode>>, TError,{data: BodyType<DprJdrCodeInput>}, TContext> => {
+
+const mutationKey = ['createDprJdrCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprJdrCode>>, {data: BodyType<DprJdrCodeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprJdrCode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprJdrCodeMutationResult = NonNullable<Awaited<ReturnType<typeof createDprJdrCode>>>
+    export type CreateDprJdrCodeMutationBody = BodyType<DprJdrCodeInput>
+    export type CreateDprJdrCodeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a DPR JDR code
+ */
+export const useCreateDprJdrCode = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprJdrCode>>, TError,{data: BodyType<DprJdrCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprJdrCode>>,
+        TError,
+        {data: BodyType<DprJdrCodeInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprJdrCodeMutationOptions(options));
+    }
+
+export const getUpdateDprJdrCodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/jdr-codes/${id}`
+}
+
+/**
+ * @summary Update a DPR JDR code
+ */
+export const updateDprJdrCode = async (id: number,
+    dprJdrCodeInput: DprJdrCodeInput, options?: RequestInit): Promise<DprJdrCode> => {
+
+  return customFetch<DprJdrCode>(getUpdateDprJdrCodeUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprJdrCodeInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDprJdrCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprJdrCode>>, TError,{id: number;data: BodyType<DprJdrCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprJdrCode>>, TError,{id: number;data: BodyType<DprJdrCodeInput>}, TContext> => {
+
+const mutationKey = ['updateDprJdrCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprJdrCode>>, {id: number;data: BodyType<DprJdrCodeInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprJdrCode(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprJdrCodeMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprJdrCode>>>
+    export type UpdateDprJdrCodeMutationBody = BodyType<DprJdrCodeInput>
+    export type UpdateDprJdrCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a DPR JDR code
+ */
+export const useUpdateDprJdrCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprJdrCode>>, TError,{id: number;data: BodyType<DprJdrCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprJdrCode>>,
+        TError,
+        {id: number;data: BodyType<DprJdrCodeInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprJdrCodeMutationOptions(options));
+    }
+
+export const getDeleteDprJdrCodeUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/jdr-codes/${id}`
+}
+
+/**
+ * @summary Delete a DPR JDR code
+ */
+export const deleteDprJdrCode = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprJdrCodeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprJdrCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprJdrCode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprJdrCode>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprJdrCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprJdrCode>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprJdrCode(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprJdrCodeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprJdrCode>>>
+
+    export type DeleteDprJdrCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a DPR JDR code
+ */
+export const useDeleteDprJdrCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprJdrCode>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprJdrCode>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprJdrCodeMutationOptions(options));
+    }
 
 export const getListDprTimesheetEntriesUrl = (params?: ListDprTimesheetEntriesParams,) => {
   const normalizedParams = new URLSearchParams();

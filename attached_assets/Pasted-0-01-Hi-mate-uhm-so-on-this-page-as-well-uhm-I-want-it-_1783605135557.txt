@@ -1,0 +1,11 @@
+0:01 Hi mate, uhm, so on this page as well, uhm, I want it more like this, if you like, uhm, but I don't want to see date and team, the first column would be start time, end time, location, and then the notes, uhm, so that would be like here, if you like, like that table format, but then I want to group them
+0:21 by date and, uhm, date and team, if you like, so I'd kind of, like, see a table for each team, so, so that I could look through it.
+0:33 What we should be capturing at this stage is the shift start date, because that's important. Because otherwise it would make no sense, so obviously here, you can kind of see, uhm, that the time starts before 5.30, but what I'd expect to see is kind of a team shift from 5.30 till 7, till 5.30, you know
+0:55 , the whole 12 hour shift covered. So I'd expect to see that in there, and obviously if it goes from the 20, say these guys started at 17.30 for example, then it would go until 5.30 in the morning, so obviously it would cross midnight and it would become the 23rd.
+1:09 We need to be able to group those together in the shift so it makes logical sense to the guys seeing it, but then kind of like, you know, be able to, I don't approve it, but it would pull the data up until midnight for example.
+1:25 But yeah, so that's what I'd want to see in here, like a table format, but for the team, so team and then shift date I guess, shift start date, and then it would bunch them together.
+1:35 We can just go on date for now, just to keep it easy. But I would then want to be able to kind of like, so here I would see, so obviously kind of if we group them together in date and team, I don't need to see those two columns, I just need to see start time, finish time, and then the location and the
+1:54 notes. And then I'd be able to kind of like, just see these columns. Afterwards, that one, that one, that one, and then the additional information.
+2:07 So then I would be able to add to it with those. So I'd select that, then select that, and then select that.
+2:19 Yeah, so yeah, and then fill it in. But obviously this is a bit clunky because I've got, it's kind of laborious.
+2:26 I'm just trying to make it as easy as possible for the guys really. So table format will achieve that. I'll give you another bit of feedback in a minute just talking about these and how they're connected.

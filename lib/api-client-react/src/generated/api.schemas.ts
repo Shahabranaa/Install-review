@@ -347,8 +347,18 @@ export interface DprActivityType {
   name: string;
 }
 
+export interface DprActivityTypeInput {
+  name: string;
+}
+
 export interface DprActivityGroup {
   id: number;
+  name: string;
+  /** @nullable */
+  activityTypeId?: number | null;
+}
+
+export interface DprActivityGroupInput {
   name: string;
   /** @nullable */
   activityTypeId?: number | null;
@@ -360,8 +370,23 @@ export interface DprActivity {
   activityGroupId: number;
 }
 
+export interface DprActivityInput {
+  name: string;
+  activityGroupId: number;
+}
+
 export interface DprJdrCode {
   id: number;
+  lautecActivity: string;
+  lautecActivityGroup: string;
+  jdrWorkActivity: string;
+  contractualCode: string;
+  genericComment: string;
+  /** @nullable */
+  activityId?: number | null;
+}
+
+export interface DprJdrCodeInput {
   lautecActivity: string;
   lautecActivityGroup: string;
   jdrWorkActivity: string;

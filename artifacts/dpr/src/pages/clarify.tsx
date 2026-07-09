@@ -1,5 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
-import { format } from "date-fns";
+import { useState, useMemo } from "react";
 import { 
   useListDprTimesheetEntries, 
   useUpdateDprTimesheetEntry, 
@@ -20,13 +19,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
 export default function ClarifyPage() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const { toast: _toast } = useToast();
 
   const [activeTab, setActiveTab] = useState<"queue" | "clarified">("queue");
 
@@ -34,6 +33,30 @@ export default function ClarifyPage() {
 
   const queue = useMemo(() => entries.filter(e => e.stage === "captured").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [entries]);
   const clarified = useMemo(() => entries.filter(e => e.stage === "clarified").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [entries]);
+
+  const groups = useMemo(() => {
+    const byKey = new Map<string, { teamId: number | null; teamName: string; date: string; entries: DprTimesheetEntry[] }>();
+    for (const entry of queue) {
+      const teamId = entry.teamId ?? null;
+      const key = `${teamId ?? "none"}__${entry.date}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.entries.push(entry);
+      } else {
+        byKey.set(key, {
+          teamId,
+          teamName: entry.team?.name || "Unassigned Team",
+          date: entry.date,
+          entries: [entry],
+        });
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => {
+      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateCompare !== 0) return dateCompare;
+      return a.teamName.localeCompare(b.teamName);
+    });
+  }, [queue]);
 
   return (
     <div className="flex flex-col h-full">
@@ -64,7 +87,7 @@ export default function ClarifyPage() {
           </div>
           
           <div className="flex-1 overflow-hidden relative">
-            <TabsContent value="queue" className="absolute inset-0 m-0 overflow-y-auto space-y-4 pr-2">
+            <TabsContent value="queue" className="absolute inset-0 m-0 overflow-y-auto space-y-6 pr-2">
               {loadingEntries && queue.length === 0 && (
                 <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
               )}
@@ -75,8 +98,8 @@ export default function ClarifyPage() {
                   <p className="text-sm text-muted-foreground mt-1">There are no pending timesheets to clarify.</p>
                 </div>
               )}
-              {queue.map(entry => (
-                <ClarifyCard key={entry.id} entry={entry} />
+              {groups.map(group => (
+                <ClarifyGroup key={`${group.teamId ?? "none"}__${group.date}`} teamName={group.teamName} date={group.date} entries={group.entries} />
               ))}
             </TabsContent>
             
@@ -95,7 +118,43 @@ export default function ClarifyPage() {
   );
 }
 
-function ClarifyCard({ entry }: { entry: DprTimesheetEntry }) {
+function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: string; entries: DprTimesheetEntry[] }) {
+  return (
+    <Card className="border-border shadow-sm bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
+        <Users className="w-4 h-4 text-muted-foreground" />
+        <span className="font-semibold text-sm">{teamName}</span>
+        <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary">{date}</Badge>
+        <span className="text-xs text-muted-foreground ml-auto">{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[80px]">Start</TableHead>
+              <TableHead className="w-[80px]">Finish</TableHead>
+              <TableHead className="w-[130px]">Location</TableHead>
+              <TableHead className="min-w-[160px]">Notes</TableHead>
+              <TableHead className="min-w-[140px]">Activity Type</TableHead>
+              <TableHead className="min-w-[140px]">Activity Group</TableHead>
+              <TableHead className="min-w-[140px]">Activity</TableHead>
+              <TableHead className="min-w-[160px]">JDR Code</TableHead>
+              <TableHead className="min-w-[220px]">Billing Comment</TableHead>
+              <TableHead className="w-[60px] text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map(entry => (
+              <ClarifyRow key={entry.id} entry={entry} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
+  );
+}
+
+function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -108,7 +167,7 @@ function ClarifyCard({ entry }: { entry: DprTimesheetEntry }) {
   const [genericComment, setGenericComment] = useState(entry.genericComment || "");
 
   const { data: types = [] } = useListDprActivityTypes();
-  const { data: groups = [] } = useListDprActivityGroups(
+  const { data: activityGroups = [] } = useListDprActivityGroups(
     { activityTypeId: activityTypeId || undefined },
     { query: { queryKey: getListDprActivityGroupsQueryKey({ activityTypeId: activityTypeId || undefined }), enabled: !!activityTypeId } }
   );
@@ -162,131 +221,104 @@ function ClarifyCard({ entry }: { entry: DprTimesheetEntry }) {
   const canSave = activityTypeId && activityGroupId && activityId && jdrCodeId;
 
   return (
-    <Card className="border-border shadow-sm overflow-visible bg-card">
-      <div className="flex border-b border-border bg-muted/20">
-        <div className="w-1/3 p-4 border-r border-border shrink-0">
-          <div className="flex items-center gap-2 mb-3">
-            <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary">{entry.date}</Badge>
-            {entry.startTime && entry.endTime && (
-              <div className="flex items-center text-xs text-muted-foreground font-medium">
-                <Clock className="w-3.5 h-3.5 mr-1" />
-                {entry.startTime} - {entry.endTime}
-              </div>
-            )}
-          </div>
-          
-          <div className="space-y-2 text-sm">
-            {entry.team && (
-              <div className="flex items-start gap-2">
-                <Users className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                <span className="font-medium">{entry.team.name}</span>
-              </div>
-            )}
-            {entry.location && (
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">{entry.location.name}</span>
-              </div>
-            )}
-          </div>
-          
-          {entry.notes && (
-            <div className="mt-4 p-3 bg-muted rounded-md text-sm border border-border/50">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Raw Notes</span>
-              <span className="text-foreground/90 whitespace-pre-wrap">{entry.notes}</span>
-            </div>
-          )}
-        </div>
-        
-        <div className="w-2/3 p-4 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Activity Type</label>
-              <Select 
-                value={activityTypeId?.toString() || ""} 
-                onValueChange={v => {
-                  setActivityTypeId(parseInt(v));
-                  setActivityGroupId(null);
-                  setActivityId(null);
-                  setJdrCodeId(null);
-                }}
-              >
-                <SelectTrigger className="bg-background"><SelectValue placeholder="Select Type" /></SelectTrigger>
-                <SelectContent>
-                  {types.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Activity Group</label>
-              <Select 
-                disabled={!activityTypeId}
-                value={activityGroupId?.toString() || ""} 
-                onValueChange={v => {
-                  setActivityGroupId(parseInt(v));
-                  setActivityId(null);
-                  setJdrCodeId(null);
-                }}
-              >
-                <SelectTrigger className="bg-background"><SelectValue placeholder="Select Group" /></SelectTrigger>
-                <SelectContent>
-                  {groups.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Activity</label>
-              <Select 
-                disabled={!activityGroupId}
-                value={activityId?.toString() || ""} 
-                onValueChange={v => {
-                  setActivityId(parseInt(v));
-                  setJdrCodeId(null);
-                }}
-              >
-                <SelectTrigger className="bg-background"><SelectValue placeholder="Select Activity" /></SelectTrigger>
-                <SelectContent>
-                  {activities.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">JDR Code</label>
-              <Select 
-                disabled={!activityId}
-                value={jdrCodeId?.toString() || ""} 
-                onValueChange={v => handleJdrSelect(parseInt(v))}
-              >
-                <SelectTrigger className="bg-background"><SelectValue placeholder="Select Code" /></SelectTrigger>
-                <SelectContent>
-                  {jdrCodes.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.contractualCode} - {t.jdrWorkActivity}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5 pt-2 border-t border-border">
-            <label className="text-xs font-medium text-muted-foreground">Additional Information (Billing Comment)</label>
-            <Textarea 
-              className="h-20 resize-none bg-background text-sm" 
-              value={combinedComment}
-              onChange={(e) => setCombinedComment(e.target.value)}
-              placeholder="Will appear on the invoice..."
-            />
-          </div>
-          
-          <div className="flex justify-end pt-2">
-            <Button onClick={handleSave} disabled={!canSave || updateMutation.isPending} className="gap-2">
-              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Mark as Clarified
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Card>
+    <TableRow className="align-top">
+      <TableCell className="whitespace-nowrap text-sm">
+        {entry.startTime ? (
+          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{entry.startTime}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-sm">
+        {entry.endTime || <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm">
+        {entry.location ? (
+          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="text-sm max-w-[220px]">
+        {entry.notes ? (
+          <span className="text-foreground/80 whitespace-pre-wrap line-clamp-3">{entry.notes}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <Select 
+          value={activityTypeId?.toString() || ""} 
+          onValueChange={v => {
+            setActivityTypeId(parseInt(v));
+            setActivityGroupId(null);
+            setActivityId(null);
+            setJdrCodeId(null);
+          }}
+        >
+          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Type" /></SelectTrigger>
+          <SelectContent>
+            {types.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Select 
+          disabled={!activityTypeId}
+          value={activityGroupId?.toString() || ""} 
+          onValueChange={v => {
+            setActivityGroupId(parseInt(v));
+            setActivityId(null);
+            setJdrCodeId(null);
+          }}
+        >
+          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Group" /></SelectTrigger>
+          <SelectContent>
+            {activityGroups.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Select 
+          disabled={!activityGroupId}
+          value={activityId?.toString() || ""} 
+          onValueChange={v => {
+            setActivityId(parseInt(v));
+            setJdrCodeId(null);
+          }}
+        >
+          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Activity" /></SelectTrigger>
+          <SelectContent>
+            {activities.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Select 
+          disabled={!activityId}
+          value={jdrCodeId?.toString() || ""} 
+          onValueChange={v => handleJdrSelect(parseInt(v))}
+        >
+          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Code" /></SelectTrigger>
+          <SelectContent>
+            {jdrCodes.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.contractualCode} - {t.jdrWorkActivity}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Textarea 
+          className="h-16 resize-none bg-background text-xs min-w-[200px]" 
+          value={combinedComment}
+          onChange={(e) => setCombinedComment(e.target.value)}
+          placeholder="Will appear on the invoice..."
+        />
+      </TableCell>
+      <TableCell className="text-right">
+        <Button size="icon" onClick={handleSave} disabled={!canSave || updateMutation.isPending} title="Mark as Clarified">
+          {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }
 

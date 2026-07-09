@@ -966,6 +966,65 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DprActivityType"
+    post:
+      operationId: createDprActivityType
+      tags: [dpr]
+      summary: Create a DPR activity type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityTypeInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivityType"
+
+  /dpr/activity-types/{id}:
+    patch:
+      operationId: updateDprActivityType
+      tags: [dpr]
+      summary: Update a DPR activity type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityTypeInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivityType"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprActivityType
+      tags: [dpr]
+      summary: Delete a DPR activity type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
 
   /dpr/activity-groups:
     get:
@@ -986,6 +1045,65 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DprActivityGroup"
+    post:
+      operationId: createDprActivityGroup
+      tags: [dpr]
+      summary: Create a DPR activity group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityGroupInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivityGroup"
+
+  /dpr/activity-groups/{id}:
+    patch:
+      operationId: updateDprActivityGroup
+      tags: [dpr]
+      summary: Update a DPR activity group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityGroupInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivityGroup"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprActivityGroup
+      tags: [dpr]
+      summary: Delete a DPR activity group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
 
   /dpr/activities:
     get:
@@ -1006,6 +1124,65 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DprActivity"
+    post:
+      operationId: createDprActivity
+      tags: [dpr]
+      summary: Create a DPR activity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivity"
+
+  /dpr/activities/{id}:
+    patch:
+      operationId: updateDprActivity
+      tags: [dpr]
+      summary: Update a DPR activity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprActivityInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprActivity"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprActivity
+      tags: [dpr]
+      summary: Delete a DPR activity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
 
   /dpr/jdr-codes:
     get:
@@ -1026,6 +1203,65 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DprJdrCode"
+    post:
+      operationId: createDprJdrCode
+      tags: [dpr]
+      summary: Create a DPR JDR code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprJdrCodeInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprJdrCode"
+
+  /dpr/jdr-codes/{id}:
+    patch:
+      operationId: updateDprJdrCode
+      tags: [dpr]
+      summary: Update a DPR JDR code
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprJdrCodeInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprJdrCode"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprJdrCode
+      tags: [dpr]
+      summary: Delete a DPR JDR code
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
 
   /dpr/timesheet-entries:
     get:
@@ -1800,6 +2036,14 @@ components:
         - id
         - name
 
+    DprActivityTypeInput:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
     DprActivityGroup:
       type: object
       properties:
@@ -1813,6 +2057,16 @@ components:
         - id
         - name
 
+    DprActivityGroupInput:
+      type: object
+      properties:
+        name:
+          type: string
+        activityTypeId:
+          type: ["integer", "null"]
+      required:
+        - name
+
     DprActivity:
       type: object
       properties:
@@ -1824,6 +2078,17 @@ components:
           type: integer
       required:
         - id
+        - name
+        - activityGroupId
+
+    DprActivityInput:
+      type: object
+      properties:
+        name:
+          type: string
+        activityGroupId:
+          type: integer
+      required:
         - name
         - activityGroupId
 
@@ -1846,6 +2111,28 @@ components:
           type: ["integer", "null"]
       required:
         - id
+        - lautecActivity
+        - lautecActivityGroup
+        - jdrWorkActivity
+        - contractualCode
+        - genericComment
+
+    DprJdrCodeInput:
+      type: object
+      properties:
+        lautecActivity:
+          type: string
+        lautecActivityGroup:
+          type: string
+        jdrWorkActivity:
+          type: string
+        contractualCode:
+          type: string
+        genericComment:
+          type: string
+        activityId:
+          type: ["integer", "null"]
+      required:
         - lautecActivity
         - lautecActivityGroup
         - jdrWorkActivity

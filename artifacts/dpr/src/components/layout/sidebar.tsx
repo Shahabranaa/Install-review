@@ -1,10 +1,10 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { Link, useLocation } from "wouter";
-import { LogOut, ClipboardList, CheckSquare } from "lucide-react";
+import { LogOut, ClipboardList, CheckSquare, Settings2 } from "lucide-react";
 import { useGetDprTimesheetSummary, getGetDprTimesheetSummaryQueryKey } from "@workspace/api-client-react";
 
 export function Sidebar() {
-  const { logout, user } = useAuth();
+  const { logout, user, isAdmin } = useAuth();
   const [location] = useLocation();
 
   const { data: summary } = useGetDprTimesheetSummary({
@@ -59,6 +59,19 @@ export function Sidebar() {
             </span>
           ) : null}
         </Link>
+        {isAdmin && (
+          <Link 
+            href="/jdr-mapping" 
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              location === "/jdr-mapping" 
+                ? "bg-sidebar-accent text-sidebar-accent-foreground" 
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            }`}
+          >
+            <Settings2 className="w-4 h-4" />
+            JDR Mapping
+          </Link>
+        )}
       </nav>
 
       <div className="p-4 border-t border-border">
