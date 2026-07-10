@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { formatTimeDisplay } from "@/lib/utils";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 
@@ -73,6 +74,45 @@ function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange
       >
         Allstead
       </button>
+    </div>
+  );
+}
+
+const QUICK_TYPE_NAMES = ["Effective Working Time", "Non-Working Time", "Weather Down Time"];
+const QUICK_TYPE_LABELS: Record<string, string> = {
+  "Effective Working Time": "EWT",
+  "Non-Working Time": "Non-Working",
+  "Weather Down Time": "Weather",
+};
+
+function QuickTypeButtons({
+  activityTypes,
+  value,
+  onChange,
+}: {
+  activityTypes: { id: number; name: string }[];
+  value: number | null;
+  onChange: (id: number) => void;
+}) {
+  const options = QUICK_TYPE_NAMES
+    .map(name => activityTypes.find(t => t.name.trim().toLowerCase() === name.toLowerCase()))
+    .filter((t): t is { id: number; name: string } => !!t);
+
+  if (options.length === 0) return null;
+
+  return (
+    <div className="inline-flex rounded-md border border-border overflow-hidden">
+      {options.map((type, idx) => (
+        <button
+          key={type.id}
+          type="button"
+          title={type.name}
+          onClick={() => onChange(type.id)}
+          className={`px-2 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${idx > 0 ? "border-l border-border" : ""} ${value === type.id ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+        >
+          {QUICK_TYPE_LABELS[type.name] ?? type.name}
+        </button>
+      ))}
     </div>
   );
 }
@@ -227,6 +267,20 @@ export default function CapturePage() {
     }
   });
 
+  // Dedicated mutation for the one-click quick-classify buttons on display
+  // rows, kept separate from the editing autosave path since it fires
+  // outside of edit mode.
+  const quickTypeMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      },
+      onError: (err) => {
+        toast({ title: "Failed to set Activity Type", description: err.message, variant: "destructive" });
+      }
+    }
+  });
+
   const approveMutation = useUpdateDprTimesheetEntry({
     mutation: {
       onSuccess: () => {
@@ -322,16 +376,11 @@ export default function CapturePage() {
     if (selectedIds.size === 0) return;
     setIsBulkWorking(true);
     const ids = Array.from(selectedIds);
-    let succeeded = 0;
-    let failed = 0;
-    for (const id of ids) {
-      try {
-        await bulkDeleteMutation.mutateAsync({ id });
-        succeeded++;
-      } catch {
-        failed++;
-      }
-    }
+    // Fire all requests in parallel instead of awaiting them one at a time —
+    // cuts perceived bulk-action latency roughly proportional to batch size.
+    const results = await Promise.allSettled(ids.map(id => bulkDeleteMutation.mutateAsync({ id })));
+    const succeeded = results.filter(r => r.status === "fulfilled").length;
+    const failed = results.length - succeeded;
     setIsBulkWorking(false);
     clearSelection();
     if (succeeded > 0) {
@@ -348,16 +397,9 @@ export default function CapturePage() {
   const handleApproveGroup = async (ids: number[]) => {
     if (ids.length === 0) return;
     setIsBulkWorking(true);
-    let succeeded = 0;
-    let failed = 0;
-    for (const id of ids) {
-      try {
-        await bulkApproveMutation.mutateAsync({ id, data: { stage: "captured" } });
-        succeeded++;
-      } catch {
-        failed++;
-      }
-    }
+    const results = await Promise.allSettled(ids.map(id => bulkApproveMutation.mutateAsync({ id, data: { stage: "captured" } })));
+    const succeeded = results.filter(r => r.status === "fulfilled").length;
+    const failed = results.length - succeeded;
     setIsBulkWorking(false);
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -381,16 +423,9 @@ export default function CapturePage() {
     if (selectedIds.size === 0 || !bulkLocationId) return;
     setIsBulkWorking(true);
     const ids = Array.from(selectedIds);
-    let succeeded = 0;
-    let failed = 0;
-    for (const id of ids) {
-      try {
-        await bulkUpdateMutation.mutateAsync({ id, data: { locationId: parseInt(bulkLocationId) } });
-        succeeded++;
-      } catch {
-        failed++;
-      }
-    }
+    const results = await Promise.allSettled(ids.map(id => bulkUpdateMutation.mutateAsync({ id, data: { locationId: parseInt(bulkLocationId) } })));
+    const succeeded = results.filter(r => r.status === "fulfilled").length;
+    const failed = results.length - succeeded;
     setIsBulkWorking(false);
     clearSelection();
     if (succeeded > 0) {
@@ -431,6 +466,12 @@ export default function CapturePage() {
     activityTypeId: draft.activityTypeId || null,
     billingParty: draft.billingParty ?? null,
   });
+
+  // Quick-classify a display row's Activity Type in one click without
+  // entering the full inline edit mode.
+  const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) => {
+    quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityTypeId }) });
+  };
 
   const handleUpdate = () => {
     if (!editingId) return;
@@ -525,28 +566,25 @@ export default function CapturePage() {
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
     setIsSavingBulk(true);
-    let succeeded = 0;
-    let failed = 0;
-    for (const row of pendingRows) {
-      if (!row.date) { failed++; continue; }
-      try {
-        await createMutation.mutateAsync({
-          data: {
-            date: row.date,
-            teamId: row.teamId || undefined,
-            startTime: row.startTime || undefined,
-            endTime: row.endTime || undefined,
-            locationId: row.locationId || undefined,
-            notes: row.notes || undefined,
-            activityTypeId: row.activityTypeId || undefined,
-            billingParty: row.billingParty || undefined,
-          }
-        });
-        succeeded++;
-      } catch {
-        failed++;
+    const rowsToSave = pendingRows.filter(row => row.date);
+    const skipped = pendingRows.length - rowsToSave.length;
+    // Save all pasted rows in parallel rather than one request at a time —
+    // this is the main lever for the "paste feels slow" complaint since a
+    // batch of 20+ rows previously took 20+ sequential round trips.
+    const results = await Promise.allSettled(rowsToSave.map(row => createMutation.mutateAsync({
+      data: {
+        date: row.date,
+        teamId: row.teamId || undefined,
+        startTime: row.startTime || undefined,
+        endTime: row.endTime || undefined,
+        locationId: row.locationId || undefined,
+        notes: row.notes || undefined,
+        activityTypeId: row.activityTypeId || undefined,
+        billingParty: row.billingParty || undefined,
       }
-    }
+    })));
+    const succeeded = results.filter(r => r.status === "fulfilled").length;
+    const failed = results.length - succeeded + skipped;
     setIsSavingBulk(false);
     if (succeeded > 0) {
       toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} added`, description: failed > 0 ? `${failed} row(s) failed to save.` : undefined });
@@ -652,6 +690,7 @@ export default function CapturePage() {
                 <TableHead className="w-[110px]">End Time</TableHead>
                 <TableHead className="w-[220px]">Location</TableHead>
                 <TableHead className="w-[160px]">Billing</TableHead>
+                <TableHead className="w-[190px]">Activity Type</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead className="w-[100px] text-right">Actions</TableHead>
               </TableRow>
@@ -705,6 +744,13 @@ export default function CapturePage() {
                     <BillingPartyToggle
                       value={newRow.billingParty}
                       onChange={v => setNewRow({ ...newRow, billingParty: v })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <QuickTypeButtons
+                      activityTypes={activityTypes}
+                      value={newRow.activityTypeId}
+                      onChange={id => setNewRow({ ...newRow, activityTypeId: id })}
                     />
                   </TableCell>
                   <TableCell>
@@ -782,6 +828,7 @@ export default function CapturePage() {
                     <TableHead className="w-[110px]">End Time</TableHead>
                     <TableHead className="w-[220px]">Location</TableHead>
                     <TableHead className="w-[160px]">Billing</TableHead>
+                    <TableHead className="w-[190px]">Activity Type</TableHead>
                     <TableHead>Notes</TableHead>
                     <TableHead className="w-[130px] text-right">Actions</TableHead>
                   </TableRow>
@@ -846,6 +893,13 @@ export default function CapturePage() {
                         />
                       </TableCell>
                       <TableCell>
+                        <QuickTypeButtons
+                          activityTypes={activityTypes}
+                          value={editDraft.activityTypeId ?? null}
+                          onChange={id => commitDraft({ activityTypeId: id })}
+                        />
+                      </TableCell>
+                      <TableCell>
                         <Input 
                           value={editDraft.notes || ""} 
                           onChange={e => updateDraftDebounced({ notes: e.target.value })}
@@ -905,13 +959,13 @@ export default function CapturePage() {
                       className="cursor-pointer"
                       onClick={() => startEditing(entry)}
                     >
-                      {entry.startTime || <span className="text-muted-foreground/50">--</span>}
+                      {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
                       onClick={() => startEditing(entry)}
                     >
-                      {entry.endTime || <span className="text-muted-foreground/50">--</span>}
+                      {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
                       className="cursor-pointer"
@@ -930,6 +984,13 @@ export default function CapturePage() {
                       ) : (
                         <span className="text-muted-foreground/50">--</span>
                       )}
+                    </TableCell>
+                    <TableCell onClick={e => e.stopPropagation()}>
+                      <QuickTypeButtons
+                        activityTypes={activityTypes}
+                        value={entry.activityTypeId ?? null}
+                        onChange={id => handleQuickSetType(entry, id)}
+                      />
                     </TableCell>
                     <TableCell
                       className="max-w-[300px] truncate cursor-pointer"
@@ -1004,6 +1065,7 @@ export default function CapturePage() {
                       <TableHead className="w-[90px]">End</TableHead>
                       <TableHead className="w-[200px]">Location</TableHead>
                       <TableHead className="w-[160px]">Billing</TableHead>
+                      <TableHead className="w-[190px]">Activity Type</TableHead>
                       <TableHead>Notes</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
@@ -1062,6 +1124,13 @@ export default function CapturePage() {
                             <BillingPartyToggle
                               value={row.billingParty}
                               onChange={v => updatePendingRow(row.key, { billingParty: v })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <QuickTypeButtons
+                              activityTypes={activityTypes}
+                              value={row.activityTypeId}
+                              onChange={id => updatePendingRow(row.key, { activityTypeId: id })}
                             />
                           </TableCell>
                           <TableCell>

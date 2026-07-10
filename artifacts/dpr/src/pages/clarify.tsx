@@ -34,6 +34,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatTimeDisplay } from "@/lib/utils";
 
 export default function ClarifyPage() {
   const { toast: _toast } = useToast();
@@ -151,11 +152,10 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[80px]">Start</TableHead>
-              <TableHead className="w-[80px]">Finish</TableHead>
+              <TableHead className="w-[90px]">Start</TableHead>
+              <TableHead className="w-[90px]">Finish</TableHead>
               <TableHead className="w-[130px]">Location</TableHead>
-              <TableHead className="min-w-[160px]">Notes</TableHead>
-              <TableHead className="min-w-[240px]">Quick Fill</TableHead>
+              <TableHead className="w-[130px]">Quick Fill</TableHead>
               <TableHead className="min-w-[140px]">Activity Group</TableHead>
               <TableHead className="min-w-[140px]">Activity</TableHead>
               <TableHead className="min-w-[160px]">JDR Code</TableHead>
@@ -190,13 +190,13 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
     <TableRow className="align-top bg-muted/30 opacity-60">
       <TableCell className="whitespace-nowrap text-sm">
         {entry.startTime ? (
-          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{entry.startTime}</span>
+          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
-        {entry.endTime || <span className="text-muted-foreground">—</span>}
+        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
       </TableCell>
       <TableCell className="text-sm">
         {entry.location ? (
@@ -205,14 +205,7 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="text-sm max-w-[220px]">
-        {entry.notes ? (
-          <span className="text-foreground/80 whitespace-pre-wrap line-clamp-3">{entry.notes}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell colSpan={2} className="text-sm text-muted-foreground">
+      <TableCell className="text-sm text-muted-foreground">
         <span className="italic">Clarified</span>
       </TableCell>
       <TableCell className="text-sm">
@@ -355,13 +348,13 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     <TableRow className="align-top">
       <TableCell className="whitespace-nowrap text-sm">
         {entry.startTime ? (
-          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{entry.startTime}</span>
+          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
-        {entry.endTime || <span className="text-muted-foreground">—</span>}
+        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
       </TableCell>
       <TableCell className="text-sm">
         {entry.location ? (
@@ -370,35 +363,26 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="text-sm max-w-[220px]">
-        {entry.notes ? (
-          <span className="text-foreground/80 whitespace-pre-wrap line-clamp-3">{entry.notes}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="min-w-[240px]">
+      <TableCell className="w-[130px]">
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
               aria-expanded={searchOpen}
-              className={`h-auto min-h-8 w-full justify-start text-xs font-normal bg-background py-1.5 ${resolvedSelectedCode ? "border-primary/50" : ""}`}
+              title={resolvedSelectedCode ? `${resolvedSelectedCode.contractualCode} — ${resolvedSelectedCode.jdrWorkActivity}` : "Search JDR code or activity"}
+              className={`h-8 w-full justify-start text-xs font-normal bg-background px-2 ${resolvedSelectedCode ? "border-primary/50" : ""}`}
             >
               {resolvedSelectedCode ? (
-                <div className="flex items-center gap-1.5 min-w-0">
+                <span className="flex items-center gap-1 min-w-0">
                   <Check className="w-3 h-3 shrink-0 text-primary" />
-                  <div className="flex flex-col items-start min-w-0">
-                    <span className="truncate font-medium">{resolvedSelectedCode.contractualCode} — {resolvedSelectedCode.jdrWorkActivity}</span>
-                    <span className="truncate text-[10px] text-muted-foreground">{resolvedSelectedCode.genericComment}</span>
-                  </div>
-                </div>
+                  <span className="truncate font-medium">{resolvedSelectedCode.contractualCode}</span>
+                </span>
               ) : (
-                <>
-                  <Search className="w-3 h-3 mr-1.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-muted-foreground">Search JDR code or activity…</span>
-                </>
+                <span className="flex items-center gap-1 min-w-0 text-muted-foreground">
+                  <Search className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Quick Fill</span>
+                </span>
               )}
             </Button>
           </PopoverTrigger>
