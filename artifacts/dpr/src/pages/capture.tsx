@@ -30,6 +30,8 @@ import { useToast } from "@/hooks/use-toast";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 
+type BillingParty = "jdr" | "allstead" | null;
+
 type RowDraft = {
   date: string;
   teamId: number | null;
@@ -38,6 +40,7 @@ type RowDraft = {
   locationId: number | null;
   notes: string;
   activityTypeId: number | null;
+  billingParty: BillingParty;
 };
 
 function emptyDraft(defaultActivityTypeId: number | null): RowDraft {
@@ -49,7 +52,29 @@ function emptyDraft(defaultActivityTypeId: number | null): RowDraft {
     locationId: null,
     notes: "",
     activityTypeId: defaultActivityTypeId,
+    billingParty: null,
   };
+}
+
+function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange: (v: BillingParty) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-border overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onChange(value === "jdr" ? null : "jdr")}
+        className={`px-2 py-1 text-xs font-medium transition-colors ${value === "jdr" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+      >
+        JDR
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(value === "allstead" ? null : "allstead")}
+        className={`px-2 py-1 text-xs font-medium border-l border-border transition-colors ${value === "allstead" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+      >
+        Allstead
+      </button>
+    </div>
+  );
 }
 
 function findByName<T extends { id: number; name: string }>(list: T[], name: string): T | undefined {
@@ -106,6 +131,7 @@ function parsePastedText(
       locationId: location?.id ?? null,
       notes: rawNotes.trim(),
       activityTypeId: defaultActivityTypeId,
+      billingParty: null,
       teamRaw: rawTeam.trim(),
       locationRaw: rawLocation.trim(),
     };
@@ -385,6 +411,7 @@ export default function CapturePage() {
         locationId: newRow.locationId || undefined,
         notes: newRow.notes || undefined,
         activityTypeId: newRow.activityTypeId || undefined,
+        billingParty: newRow.billingParty || undefined,
       }
     }, {
       onSuccess: () => {
@@ -402,6 +429,7 @@ export default function CapturePage() {
     locationId: draft.locationId || null,
     notes: draft.notes || null,
     activityTypeId: draft.activityTypeId || null,
+    billingParty: draft.billingParty ?? null,
   });
 
   const handleUpdate = () => {
@@ -426,6 +454,7 @@ export default function CapturePage() {
       locationId: entry.locationId,
       notes: entry.notes || "",
       activityTypeId: entry.activityTypeId,
+      billingParty: entry.billingParty ?? null,
     });
   };
 
@@ -510,6 +539,7 @@ export default function CapturePage() {
             locationId: row.locationId || undefined,
             notes: row.notes || undefined,
             activityTypeId: row.activityTypeId || undefined,
+            billingParty: row.billingParty || undefined,
           }
         });
         succeeded++;
@@ -621,6 +651,7 @@ export default function CapturePage() {
                 <TableHead className="w-[110px]">Start Time</TableHead>
                 <TableHead className="w-[110px]">End Time</TableHead>
                 <TableHead className="w-[220px]">Location</TableHead>
+                <TableHead className="w-[160px]">Billing</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead className="w-[100px] text-right">Actions</TableHead>
               </TableRow>
@@ -668,6 +699,12 @@ export default function CapturePage() {
                       onValueChange={v => setNewRow({ ...newRow, locationId: parseInt(v) })}
                       placeholder="Select Location"
                       searchPlaceholder="Search locations..."
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <BillingPartyToggle
+                      value={newRow.billingParty}
+                      onChange={v => setNewRow({ ...newRow, billingParty: v })}
                     />
                   </TableCell>
                   <TableCell>
@@ -744,6 +781,7 @@ export default function CapturePage() {
                     <TableHead className="w-[110px]">Start Time</TableHead>
                     <TableHead className="w-[110px]">End Time</TableHead>
                     <TableHead className="w-[220px]">Location</TableHead>
+                    <TableHead className="w-[160px]">Billing</TableHead>
                     <TableHead>Notes</TableHead>
                     <TableHead className="w-[130px] text-right">Actions</TableHead>
                   </TableRow>
@@ -799,6 +837,12 @@ export default function CapturePage() {
                           onValueChange={v => commitDraft({ locationId: parseInt(v) })}
                           placeholder="Select Location"
                           searchPlaceholder="Search locations..."
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <BillingPartyToggle
+                          value={(editDraft.billingParty ?? null) as BillingParty}
+                          onChange={v => commitDraft({ billingParty: v })}
                         />
                       </TableCell>
                       <TableCell>
@@ -876,6 +920,18 @@ export default function CapturePage() {
                       {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell
+                      className="cursor-pointer"
+                      onClick={() => startEditing(entry)}
+                    >
+                      {entry.billingParty ? (
+                        <Badge variant={entry.billingParty === "jdr" ? "default" : "secondary"} className="capitalize">
+                          {entry.billingParty}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground/50">--</span>
+                      )}
+                    </TableCell>
+                    <TableCell
                       className="max-w-[300px] truncate cursor-pointer"
                       onClick={() => startEditing(entry)}
                     >
@@ -947,6 +1003,7 @@ export default function CapturePage() {
                       <TableHead className="w-[90px]">Start</TableHead>
                       <TableHead className="w-[90px]">End</TableHead>
                       <TableHead className="w-[200px]">Location</TableHead>
+                      <TableHead className="w-[160px]">Billing</TableHead>
                       <TableHead>Notes</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
@@ -999,6 +1056,12 @@ export default function CapturePage() {
                               placeholder={locationUnmatched ? row.locationRaw : "Select Location"}
                               searchPlaceholder="Search locations..."
                               triggerClassName={locationUnmatched ? "border-amber-500" : undefined}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <BillingPartyToggle
+                              value={row.billingParty}
+                              onChange={v => updatePendingRow(row.key, { billingParty: v })}
                             />
                           </TableCell>
                           <TableCell>

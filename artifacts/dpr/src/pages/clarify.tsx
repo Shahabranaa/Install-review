@@ -2,13 +2,12 @@ import { useState, useMemo } from "react";
 import { 
   useListDprTimesheetEntries, 
   useUpdateDprTimesheetEntry, 
-  useListDprActivityTypes,
   useListDprActivityGroups,
   useListDprActivities,
+  getListDprActivityGroupsQueryKey,
   useListDprJdrCodes,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
-  getListDprActivityGroupsQueryKey,
   getListDprActivitiesQueryKey,
   getListDprJdrCodesQueryKey,
   DprTimesheetEntry,
@@ -23,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search } from "lucide-react";
+import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -46,9 +45,15 @@ export default function ClarifyPage() {
   const queue = useMemo(() => entries.filter(e => e.stage === "captured").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [entries]);
   const clarified = useMemo(() => entries.filter(e => e.stage === "clarified").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [entries]);
 
+  // Groups keep the whole shift (team + date) visible together — including
+  // rows that have already been clarified — until every row in the group is
+  // clarified. This way the group doesn't shrink/disappear row-by-row while
+  // someone is working through it; clarified rows are shown greyed-out and
+  // locked instead of vanishing immediately.
   const groups = useMemo(() => {
+    const relevant = entries.filter(e => e.stage === "captured" || e.stage === "clarified");
     const byKey = new Map<string, { teamId: number | null; teamName: string; date: string; entries: DprTimesheetEntry[] }>();
-    for (const entry of queue) {
+    for (const entry of relevant) {
       const teamId = entry.teamId ?? null;
       const key = `${teamId ?? "none"}__${entry.date}`;
       const existing = byKey.get(key);
@@ -63,12 +68,14 @@ export default function ClarifyPage() {
         });
       }
     }
-    return Array.from(byKey.values()).sort((a, b) => {
-      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
-      if (dateCompare !== 0) return dateCompare;
-      return a.teamName.localeCompare(b.teamName);
-    });
-  }, [queue]);
+    return Array.from(byKey.values())
+      .filter(group => group.entries.some(e => e.stage === "captured"))
+      .sort((a, b) => {
+        const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        return a.teamName.localeCompare(b.teamName);
+      });
+  }, [entries]);
 
   return (
     <div className="flex flex-col h-full">
@@ -131,13 +138,14 @@ export default function ClarifyPage() {
 }
 
 function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: string; entries: DprTimesheetEntry[] }) {
+  const remaining = entries.filter(e => e.stage === "captured").length;
   return (
     <Card className="border-border shadow-sm bg-card overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
         <Users className="w-4 h-4 text-muted-foreground" />
         <span className="font-semibold text-sm">{teamName}</span>
         <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary">{date}</Badge>
-        <span className="text-xs text-muted-foreground ml-auto">{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
+        <span className="text-xs text-muted-foreground ml-auto">{remaining} of {entries.length} remaining</span>
       </div>
       <div className="overflow-x-auto">
         <Table>
@@ -147,8 +155,7 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
               <TableHead className="w-[80px]">Finish</TableHead>
               <TableHead className="w-[130px]">Location</TableHead>
               <TableHead className="min-w-[160px]">Notes</TableHead>
-              <TableHead className="min-w-[220px]">Quick Fill</TableHead>
-              <TableHead className="min-w-[140px]">Activity Type</TableHead>
+              <TableHead className="min-w-[240px]">Quick Fill</TableHead>
               <TableHead className="min-w-[140px]">Activity Group</TableHead>
               <TableHead className="min-w-[140px]">Activity</TableHead>
               <TableHead className="min-w-[160px]">JDR Code</TableHead>
@@ -158,7 +165,9 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
           </TableHeader>
           <TableBody>
             {entries.map(entry => (
-              <ClarifyRow key={entry.id} entry={entry} />
+              entry.stage === "clarified"
+                ? <ClarifiedRow key={entry.id} entry={entry} />
+                : <ClarifyRow key={entry.id} entry={entry} />
             ))}
           </TableBody>
         </Table>
@@ -167,21 +176,74 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
   );
 }
 
+// A locked, read-only rendering of an already-clarified row within a group
+// that still has other rows pending. Kept visible (greyed out) instead of
+// disappearing so the whole shift stays together until the group is done.
+function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
+  const { data: jdrCodes = [] } = useListDprJdrCodes(
+    { activityId: entry.activityId || undefined },
+    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
+  );
+  const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
+
+  return (
+    <TableRow className="align-top bg-muted/30 opacity-60">
+      <TableCell className="whitespace-nowrap text-sm">
+        {entry.startTime ? (
+          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{entry.startTime}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-sm">
+        {entry.endTime || <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm">
+        {entry.location ? (
+          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="text-sm max-w-[220px]">
+        {entry.notes ? (
+          <span className="text-foreground/80 whitespace-pre-wrap line-clamp-3">{entry.notes}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell colSpan={2} className="text-sm text-muted-foreground">
+        <span className="italic">Clarified</span>
+      </TableCell>
+      <TableCell className="text-sm">
+        {code ? `${code.contractualCode} — ${code.jdrWorkActivity}` : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm max-w-[220px] truncate">
+        {entry.combinedComment || <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-right">
+        <Lock className="w-4 h-4 text-muted-foreground inline-block" />
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [activityTypeId, setActivityTypeId] = useState<number | null>(entry.activityTypeId || null);
   const [activityGroupId, setActivityGroupId] = useState<number | null>(entry.activityGroupId || null);
   const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   
   const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
 
-  const { data: types = [] } = useListDprActivityTypes();
+  // Activity Type is no longer chosen directly by the user — it's superseded
+  // by JDR/Allstead classification at Capture. We derive it automatically
+  // from whichever Activity Group gets picked, unfiltered by type.
   const { data: activityGroups = [] } = useListDprActivityGroups(
-    { activityTypeId: activityTypeId || undefined },
-    { query: { queryKey: getListDprActivityGroupsQueryKey({ activityTypeId: activityTypeId || undefined }), enabled: !!activityTypeId } }
+    {},
+    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
   );
   const { data: activities = [] } = useListDprActivities(
     { activityGroupId: activityGroupId || undefined },
@@ -194,10 +256,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
 
   // Unfiltered lookups used to build the combined quick-fill search index,
   // independent of the cascading dropdown state above.
-  const { data: allActivityGroups = [] } = useListDprActivityGroups(
-    {},
-    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
-  );
   const { data: allActivities = [] } = useListDprActivities(
     {},
     { query: { queryKey: getListDprActivitiesQueryKey({}) } }
@@ -209,7 +267,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
 
   const searchIndex = useMemo(() => {
     const activityById = new Map<number, DprActivity>(allActivities.map(a => [a.id, a]));
-    const groupById = new Map<number, DprActivityGroup>(allActivityGroups.map(g => [g.id, g]));
+    const groupById = new Map<number, DprActivityGroup>(activityGroups.map(g => [g.id, g]));
     return allJdrCodes.map(code => {
       const activity = code.activityId != null ? activityById.get(code.activityId) : undefined;
       const group = activity?.activityGroupId != null ? groupById.get(activity.activityGroupId) : undefined;
@@ -220,7 +278,17 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         label: `${code.contractualCode} - ${code.jdrWorkActivity} (${code.lautecActivity} / ${code.lautecActivityGroup})`,
       } as { code: DprJdrCode; activity: DprActivity | undefined; group: DprActivityGroup | undefined; label: string };
     });
-  }, [allJdrCodes, allActivities, allActivityGroups]);
+  }, [allJdrCodes, allActivities, activityGroups]);
+
+  // Once something has been selected via Quick Fill, remember which match it
+  // was so we can show clear, visible confirmation in the trigger itself.
+  const [selectedMatch, setSelectedMatch] = useState<{ code: DprJdrCode } | null>(null);
+
+  const resolvedSelectedCode = useMemo(() => {
+    if (selectedMatch) return selectedMatch.code;
+    if (!jdrCodeId) return null;
+    return allJdrCodes.find(c => c.id === jdrCodeId) || null;
+  }, [selectedMatch, jdrCodeId, allJdrCodes]);
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
@@ -244,6 +312,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     setJdrCodeId(codeId);
     const code = jdrCodes.find(c => c.id === codeId);
     if (code) {
+      setSelectedMatch({ code });
       seedCommentFromCode(code);
     }
   };
@@ -254,19 +323,23 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     const match = searchIndex.find(m => m.code.id === codeId);
     if (!match) return;
     const { code, activity, group } = match;
-    if (group?.activityTypeId != null) setActivityTypeId(group.activityTypeId);
     if (activity?.activityGroupId != null) setActivityGroupId(activity.activityGroupId);
     if (code.activityId != null) setActivityId(code.activityId);
     setJdrCodeId(code.id);
+    setSelectedMatch({ code });
     seedCommentFromCode(code);
     setSearchOpen(false);
+    toast({ title: "Quick Fill applied", description: `${code.contractualCode} — ${code.jdrWorkActivity}` });
   };
 
   const handleSave = () => {
+    // Derive activityTypeId from the chosen Activity Group behind the
+    // scenes — the user no longer picks it directly.
+    const group = activityGroups.find(g => g.id === activityGroupId);
     updateMutation.mutate({
       id: entry.id,
       data: {
-        activityTypeId,
+        activityTypeId: group?.activityTypeId ?? null,
         activityGroupId,
         activityId,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
@@ -276,7 +349,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     });
   };
 
-  const canSave = activityTypeId && activityGroupId && activityId && jdrCodeId;
+  const canSave = activityGroupId && activityId && jdrCodeId;
 
   return (
     <TableRow className="align-top">
@@ -304,27 +377,39 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="min-w-[220px]">
+      <TableCell className="min-w-[240px]">
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
               aria-expanded={searchOpen}
-              className="h-8 w-full justify-start text-xs font-normal bg-background"
+              className={`h-auto min-h-8 w-full justify-start text-xs font-normal bg-background py-1.5 ${resolvedSelectedCode ? "border-primary/50" : ""}`}
             >
-              <Search className="w-3 h-3 mr-1.5 shrink-0 text-muted-foreground" />
-              <span className="truncate text-muted-foreground">Search JDR code or activity…</span>
+              {resolvedSelectedCode ? (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Check className="w-3 h-3 shrink-0 text-primary" />
+                  <div className="flex flex-col items-start min-w-0">
+                    <span className="truncate font-medium">{resolvedSelectedCode.contractualCode} — {resolvedSelectedCode.jdrWorkActivity}</span>
+                    <span className="truncate text-[10px] text-muted-foreground">{resolvedSelectedCode.genericComment}</span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Search className="w-3 h-3 mr-1.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-muted-foreground">Search JDR code or activity…</span>
+                </>
+              )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[360px] p-0" align="start">
+          <PopoverContent className="w-[400px] p-0" align="start">
             <Command filter={(value, search) => {
               const item = searchIndex.find(m => m.code.id.toString() === value);
               if (!item) return 0;
-              const haystack = `${item.code.contractualCode} ${item.code.jdrWorkActivity} ${item.code.lautecActivity} ${item.code.lautecActivityGroup}`.toLowerCase();
+              const haystack = `${item.code.contractualCode} ${item.code.jdrWorkActivity} ${item.code.lautecActivity} ${item.code.lautecActivityGroup} ${item.code.genericComment}`.toLowerCase();
               return haystack.includes(search.toLowerCase()) ? 1 : 0;
             }}>
-              <CommandInput placeholder="Search by JDR code or activity..." />
+              <CommandInput placeholder="Search by JDR code, activity, or comment..." />
               <CommandList>
                 <CommandEmpty>No matches found.</CommandEmpty>
                 <CommandGroup>
@@ -334,9 +419,10 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
                       value={match.code.id.toString()}
                       onSelect={() => handleQuickFillSelect(match.code.id)}
                     >
-                      <div className="flex flex-col">
+                      <div className="flex flex-col min-w-0">
                         <span className="text-xs font-medium">{match.code.contractualCode} — {match.code.jdrWorkActivity}</span>
                         <span className="text-[11px] text-muted-foreground">{match.code.lautecActivity} / {match.code.lautecActivityGroup}</span>
+                        <span className="text-[11px] text-primary/80 truncate">{match.code.genericComment}</span>
                       </div>
                     </CommandItem>
                   ))}
@@ -348,28 +434,12 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
       </TableCell>
       <TableCell>
         <Select 
-          value={activityTypeId?.toString() || ""} 
-          onValueChange={v => {
-            setActivityTypeId(parseInt(v));
-            setActivityGroupId(null);
-            setActivityId(null);
-            setJdrCodeId(null);
-          }}
-        >
-          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Type" /></SelectTrigger>
-          <SelectContent>
-            {types.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Select 
-          disabled={!activityTypeId}
           value={activityGroupId?.toString() || ""} 
           onValueChange={v => {
             setActivityGroupId(parseInt(v));
             setActivityId(null);
             setJdrCodeId(null);
+            setSelectedMatch(null);
           }}
         >
           <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Group" /></SelectTrigger>
@@ -385,6 +455,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           onValueChange={v => {
             setActivityId(parseInt(v));
             setJdrCodeId(null);
+            setSelectedMatch(null);
           }}
         >
           <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Activity" /></SelectTrigger>

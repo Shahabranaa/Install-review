@@ -2172,6 +2172,9 @@ components:
           type: array
           items:
             type: integer
+        billingParty:
+          type: ["string", "null"]
+          enum: [jdr, allstead, null]
         combinedComment:
           type: ["string", "null"]
         stage:
@@ -2206,6 +2209,9 @@ components:
           type: ["string", "null"]
         activityTypeId:
           type: ["integer", "null"]
+        billingParty:
+          type: ["string", "null"]
+          enum: [jdr, allstead, null]
       required:
         - date
 
@@ -2234,6 +2240,9 @@ components:
           type: array
           items:
             type: integer
+        billingParty:
+          type: ["string", "null"]
+          enum: [jdr, allstead, null]
         combinedComment:
           type: ["string", "null"]
         stage:

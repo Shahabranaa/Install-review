@@ -10,3 +10,4 @@
 - [Orval CRUD response schema reuse](orval-crud-schemas.md) — orval dedupes identical response schemas; a new POST endpoint reusing an existing object shape won't get its own `Create*Response` export.
 - [DPR timesheet stage lifecycle](dpr-timesheet-stages.md) — 3-stage flow (draft/captured/clarified); Capture page=draft, Clarify queue=captured, Clarify history=clarified.
 - [DPR JDR code has two genericComment columns](dpr-jdr-generic-comment.md) — dpr_jdr_codes.genericComment (admin reference data, keep) vs dpr_timesheet_entries.genericComment (removed, was never user-editable) — don't confuse the two when touching either table.
+- [DPR billing party & api-server restart](dpr-billing-party-and-api-restart.md) — JDR/Allstead is a standalone field on timesheet entries; restart api-server after schema/codegen changes before verifying via API.

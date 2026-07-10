@@ -396,6 +396,17 @@ export interface DprJdrCodeInput {
   activityId?: number | null;
 }
 
+/**
+ * @nullable
+ */
+export type DprTimesheetEntryBillingParty = typeof DprTimesheetEntryBillingParty[keyof typeof DprTimesheetEntryBillingParty] | null;
+
+
+export const DprTimesheetEntryBillingParty = {
+  jdr: 'jdr',
+  allstead: 'allstead',
+} as const;
+
 export type DprTimesheetEntryStage = typeof DprTimesheetEntryStage[keyof typeof DprTimesheetEntryStage];
 
 
@@ -428,11 +439,24 @@ export interface DprTimesheetEntry {
   activityId?: number | null;
   jdrCodeIds: number[];
   /** @nullable */
+  billingParty?: DprTimesheetEntryBillingParty;
+  /** @nullable */
   combinedComment?: string | null;
   stage: DprTimesheetEntryStage;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * @nullable
+ */
+export type DprTimesheetEntryInputBillingParty = typeof DprTimesheetEntryInputBillingParty[keyof typeof DprTimesheetEntryInputBillingParty] | null;
+
+
+export const DprTimesheetEntryInputBillingParty = {
+  jdr: 'jdr',
+  allstead: 'allstead',
+} as const;
 
 export interface DprTimesheetEntryInput {
   date: string;
@@ -448,7 +472,20 @@ export interface DprTimesheetEntryInput {
   notes?: string | null;
   /** @nullable */
   activityTypeId?: number | null;
+  /** @nullable */
+  billingParty?: DprTimesheetEntryInputBillingParty;
 }
+
+/**
+ * @nullable
+ */
+export type DprTimesheetEntryUpdateBillingParty = typeof DprTimesheetEntryUpdateBillingParty[keyof typeof DprTimesheetEntryUpdateBillingParty] | null;
+
+
+export const DprTimesheetEntryUpdateBillingParty = {
+  jdr: 'jdr',
+  allstead: 'allstead',
+} as const;
 
 export type DprTimesheetEntryUpdateStage = typeof DprTimesheetEntryUpdateStage[keyof typeof DprTimesheetEntryUpdateStage];
 
@@ -478,6 +515,8 @@ export interface DprTimesheetEntryUpdate {
   /** @nullable */
   activityId?: number | null;
   jdrCodeIds?: number[];
+  /** @nullable */
+  billingParty?: DprTimesheetEntryUpdateBillingParty;
   /** @nullable */
   combinedComment?: string | null;
   stage?: DprTimesheetEntryUpdateStage;
