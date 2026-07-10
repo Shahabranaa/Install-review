@@ -6,6 +6,7 @@ import {
   useListDprActivities,
   getListDprActivityGroupsQueryKey,
   useListDprJdrCodes,
+  useListDprActivityTypes,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
   getListDprActivitiesQueryKey,
@@ -184,7 +185,19 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
   );
+  const { data: activities = [] } = useListDprActivities(
+    { activityGroupId: entry.activityGroupId || undefined },
+    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: entry.activityGroupId || undefined }), enabled: !!entry.activityGroupId } }
+  );
+  const { data: activityGroups = [] } = useListDprActivityGroups(
+    {},
+    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
+  );
+  const { data: activityTypes = [] } = useListDprActivityTypes();
+  const capturedActivityType = activityTypes.find(t => t.id === entry.activityTypeId);
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
+  const group = activityGroups.find(g => g.id === entry.activityGroupId);
+  const activity = activities.find(a => a.id === entry.activityId);
 
   return (
     <TableRow className="align-top bg-muted/30 opacity-60">
@@ -204,9 +217,22 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
+        {capturedActivityType && (
+          <div className="mt-1">
+            <Badge variant="secondary" className="text-[10px] font-normal" title="Activity Type set at Capture">
+              {capturedActivityType.name}
+            </Badge>
+          </div>
+        )}
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         <span className="italic">Clarified</span>
+      </TableCell>
+      <TableCell className="text-sm">
+        {group?.name || <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm">
+        {activity?.name || <span className="text-muted-foreground">—</span>}
       </TableCell>
       <TableCell className="text-sm">
         {code ? `${code.contractualCode} — ${code.jdrWorkActivity}` : <span className="text-muted-foreground">—</span>}
@@ -257,6 +283,8 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     {},
     { query: { queryKey: getListDprJdrCodesQueryKey({}) } }
   );
+  const { data: activityTypes = [] } = useListDprActivityTypes();
+  const capturedActivityType = activityTypes.find(t => t.id === entry.activityTypeId);
 
   const searchIndex = useMemo(() => {
     const activityById = new Map<number, DprActivity>(allActivities.map(a => [a.id, a]));
@@ -285,13 +313,20 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onSuccess: (updated) => {
+        // Patch the cached list in place instead of a full refetch — the
+        // clarify queue can have a lot of rows, and re-fetching everything
+        // on every single save is the main source of perceived save lag.
+        queryClient.setQueriesData<DprTimesheetEntry[] | undefined>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map(e => (e.id === updated.id ? updated : e))
+        );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         toast({ title: "Entry clarified" });
       },
       onError: (err) => {
         toast({ title: "Save failed", description: err.message, variant: "destructive" });
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
       }
     }
   });
@@ -361,6 +396,13 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
+        )}
+        {capturedActivityType && (
+          <div className="mt-1">
+            <Badge variant="secondary" className="text-[10px] font-normal" title="Activity Type set at Capture">
+              {capturedActivityType.name}
+            </Badge>
+          </div>
         )}
       </TableCell>
       <TableCell className="w-[130px]">
