@@ -244,25 +244,27 @@ export default function CapturePage() {
   const capturedEntries = useMemo(() => entries.filter(e => e.stage === "draft"), [entries]);
 
   const teamGroups = useMemo(() => {
-    const byTeam = new Map<string, { teamId: number | null; teamName: string; entries: DprTimesheetEntry[] }>();
+    const byKey = new Map<string, { teamId: number | null; teamName: string; date: string; entries: DprTimesheetEntry[] }>();
     for (const entry of capturedEntries) {
       const teamId = entry.teamId ?? null;
-      const key = teamId === null ? "none" : teamId.toString();
-      const existing = byTeam.get(key);
+      const key = `${teamId ?? "none"}__${entry.date}`;
+      const existing = byKey.get(key);
       if (existing) {
         existing.entries.push(entry);
       } else {
-        byTeam.set(key, {
+        byKey.set(key, {
           teamId,
           teamName: entry.team?.name || "Unassigned Team",
+          date: entry.date,
           entries: [entry],
         });
       }
     }
-    for (const group of byTeam.values()) {
-      group.entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    }
-    return Array.from(byTeam.values()).sort((a, b) => a.teamName.localeCompare(b.teamName));
+    return Array.from(byKey.values()).sort((a, b) => {
+      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateCompare !== 0) return dateCompare;
+      return a.teamName.localeCompare(b.teamName);
+    });
   }, [capturedEntries]);
 
   const allSelected = capturedEntries.length > 0 && capturedEntries.every(e => selectedIds.has(e.id));
@@ -698,10 +700,11 @@ export default function CapturePage() {
           const groupIds = group.entries.map(e => e.id);
           const groupAllSelected = groupIds.length > 0 && groupIds.every(id => selectedIds.has(id));
           return (
-          <Card key={group.teamId ?? "none"} className="overflow-hidden py-0">
+          <Card key={`${group.teamId ?? "none"}__${group.date}`} className="overflow-hidden py-0">
             <CardHeader className="flex flex-row items-center justify-between gap-3 bg-muted/50 border-b border-border py-3 px-4">
               <div className="flex items-center gap-3">
                 <h3 className="font-semibold text-sm">{group.teamName}</h3>
+                <span className="text-sm text-muted-foreground">{format(new Date(group.date), "MMM d, yyyy")}</span>
                 <Badge variant="secondary">{group.entries.length} row{group.entries.length === 1 ? "" : "s"}</Badge>
               </div>
               <Button
@@ -733,7 +736,7 @@ export default function CapturePage() {
                             return next;
                           });
                         }}
-                        aria-label={`Select all rows for ${group.teamName}`}
+                        aria-label={`Select all rows for ${group.teamName} on ${group.date}`}
                       />
                     </TableHead>
                     <TableHead className="w-[140px]">Date</TableHead>
