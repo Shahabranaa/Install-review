@@ -9,3 +9,4 @@
 - [Admin password auto-lockout on "admin123"](admin-password-compromised-lockout.md) — this project auto-deactivates any admin account whose password is exactly "admin123"; a 401 after a password change often means this, not a bug.
 - [Orval CRUD response schema reuse](orval-crud-schemas.md) — orval dedupes identical response schemas; a new POST endpoint reusing an existing object shape won't get its own `Create*Response` export.
 - [DPR timesheet stage lifecycle](dpr-timesheet-stages.md) — 3-stage flow (draft/captured/clarified); Capture page=draft, Clarify queue=captured, Clarify history=clarified.
+- [DPR JDR code has two genericComment columns](dpr-jdr-generic-comment.md) — dpr_jdr_codes.genericComment (admin reference data, keep) vs dpr_timesheet_entries.genericComment (removed, was never user-editable) — don't confuse the two when touching either table.

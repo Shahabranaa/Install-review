@@ -11,7 +11,10 @@ import {
   getListDprActivityGroupsQueryKey,
   getListDprActivitiesQueryKey,
   getListDprJdrCodesQueryKey,
-  DprTimesheetEntry
+  DprTimesheetEntry,
+  DprActivity,
+  DprActivityGroup,
+  DprJdrCode,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -20,9 +23,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check } from "lucide-react";
+import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function ClarifyPage() {
   const { toast: _toast } = useToast();
@@ -135,6 +147,7 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
               <TableHead className="w-[80px]">Finish</TableHead>
               <TableHead className="w-[130px]">Location</TableHead>
               <TableHead className="min-w-[160px]">Notes</TableHead>
+              <TableHead className="min-w-[220px]">Quick Fill</TableHead>
               <TableHead className="min-w-[140px]">Activity Type</TableHead>
               <TableHead className="min-w-[140px]">Activity Group</TableHead>
               <TableHead className="min-w-[140px]">Activity</TableHead>
@@ -164,7 +177,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   
   const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
-  const [genericComment, setGenericComment] = useState(entry.genericComment || "");
 
   const { data: types = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups(
@@ -180,6 +192,36 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: activityId || undefined }), enabled: !!activityId } }
   );
 
+  // Unfiltered lookups used to build the combined quick-fill search index,
+  // independent of the cascading dropdown state above.
+  const { data: allActivityGroups = [] } = useListDprActivityGroups(
+    {},
+    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
+  );
+  const { data: allActivities = [] } = useListDprActivities(
+    {},
+    { query: { queryKey: getListDprActivitiesQueryKey({}) } }
+  );
+  const { data: allJdrCodes = [] } = useListDprJdrCodes(
+    {},
+    { query: { queryKey: getListDprJdrCodesQueryKey({}) } }
+  );
+
+  const searchIndex = useMemo(() => {
+    const activityById = new Map<number, DprActivity>(allActivities.map(a => [a.id, a]));
+    const groupById = new Map<number, DprActivityGroup>(allActivityGroups.map(g => [g.id, g]));
+    return allJdrCodes.map(code => {
+      const activity = code.activityId != null ? activityById.get(code.activityId) : undefined;
+      const group = activity?.activityGroupId != null ? groupById.get(activity.activityGroupId) : undefined;
+      return {
+        code,
+        activity,
+        group,
+        label: `${code.contractualCode} - ${code.jdrWorkActivity} (${code.lautecActivity} / ${code.lautecActivityGroup})`,
+      } as { code: DprJdrCode; activity: DprActivity | undefined; group: DprActivityGroup | undefined; label: string };
+    });
+  }, [allJdrCodes, allActivities, allActivityGroups]);
+
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
       onSuccess: () => {
@@ -193,14 +235,31 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     }
   });
 
+  const seedCommentFromCode = (code: DprJdrCode) => {
+    const baseNotes = entry.notes ? entry.notes + "\n\n" : "";
+    setCombinedComment(baseNotes + "Generic Comment: " + code.genericComment);
+  };
+
   const handleJdrSelect = (codeId: number) => {
     setJdrCodeId(codeId);
     const code = jdrCodes.find(c => c.id === codeId);
     if (code) {
-      setGenericComment(code.genericComment);
-      const baseNotes = entry.notes ? entry.notes + "\n\n" : "";
-      setCombinedComment(baseNotes + "Generic Comment: " + code.genericComment);
+      seedCommentFromCode(code);
     }
+  };
+
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const handleQuickFillSelect = (codeId: number) => {
+    const match = searchIndex.find(m => m.code.id === codeId);
+    if (!match) return;
+    const { code, activity, group } = match;
+    if (group?.activityTypeId != null) setActivityTypeId(group.activityTypeId);
+    if (activity?.activityGroupId != null) setActivityGroupId(activity.activityGroupId);
+    if (code.activityId != null) setActivityId(code.activityId);
+    setJdrCodeId(code.id);
+    seedCommentFromCode(code);
+    setSearchOpen(false);
   };
 
   const handleSave = () => {
@@ -211,7 +270,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         activityGroupId,
         activityId,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
-        genericComment,
         combinedComment,
         stage: "clarified"
       }
@@ -245,6 +303,48 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
+      </TableCell>
+      <TableCell className="min-w-[220px]">
+        <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={searchOpen}
+              className="h-8 w-full justify-start text-xs font-normal bg-background"
+            >
+              <Search className="w-3 h-3 mr-1.5 shrink-0 text-muted-foreground" />
+              <span className="truncate text-muted-foreground">Search JDR code or activity…</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[360px] p-0" align="start">
+            <Command filter={(value, search) => {
+              const item = searchIndex.find(m => m.code.id.toString() === value);
+              if (!item) return 0;
+              const haystack = `${item.code.contractualCode} ${item.code.jdrWorkActivity} ${item.code.lautecActivity} ${item.code.lautecActivityGroup}`.toLowerCase();
+              return haystack.includes(search.toLowerCase()) ? 1 : 0;
+            }}>
+              <CommandInput placeholder="Search by JDR code or activity..." />
+              <CommandList>
+                <CommandEmpty>No matches found.</CommandEmpty>
+                <CommandGroup>
+                  {searchIndex.map(match => (
+                    <CommandItem
+                      key={match.code.id}
+                      value={match.code.id.toString()}
+                      onSelect={() => handleQuickFillSelect(match.code.id)}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium">{match.code.contractualCode} — {match.code.jdrWorkActivity}</span>
+                        <span className="text-[11px] text-muted-foreground">{match.code.lautecActivity} / {match.code.lautecActivityGroup}</span>
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </TableCell>
       <TableCell>
         <Select 

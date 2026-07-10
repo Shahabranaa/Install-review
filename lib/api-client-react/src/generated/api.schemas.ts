@@ -428,8 +428,6 @@ export interface DprTimesheetEntry {
   activityId?: number | null;
   jdrCodeIds: number[];
   /** @nullable */
-  genericComment?: string | null;
-  /** @nullable */
   combinedComment?: string | null;
   stage: DprTimesheetEntryStage;
   createdAt: string;
@@ -480,8 +478,6 @@ export interface DprTimesheetEntryUpdate {
   /** @nullable */
   activityId?: number | null;
   jdrCodeIds?: number[];
-  /** @nullable */
-  genericComment?: string | null;
   /** @nullable */
   combinedComment?: string | null;
   stage?: DprTimesheetEntryUpdateStage;

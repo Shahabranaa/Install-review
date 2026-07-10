@@ -2172,8 +2172,6 @@ components:
           type: array
           items:
             type: integer
-        genericComment:
-          type: ["string", "null"]
         combinedComment:
           type: ["string", "null"]
         stage:
@@ -2236,8 +2234,6 @@ components:
           type: array
           items:
             type: integer
-        genericComment:
-          type: ["string", "null"]
         combinedComment:
           type: ["string", "null"]
         stage:

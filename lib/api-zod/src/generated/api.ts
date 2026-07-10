@@ -1038,7 +1038,6 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1098,7 +1097,6 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1124,7 +1122,6 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()).optional(),
-  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
@@ -1149,7 +1146,6 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),

@@ -19,7 +19,6 @@ export const dprTimesheetEntriesTable = pgTable("dpr_timesheet_entries", {
   activityGroupId: integer("activity_group_id").references(() => dprActivityGroupsTable.id, { onDelete: "set null" }),
   activityId: integer("activity_id").references(() => dprActivitiesTable.id, { onDelete: "set null" }),
   jdrCodeIds: jsonb("jdr_code_ids").$type<number[]>().notNull().default([]),
-  genericComment: text("generic_comment"),
   combinedComment: text("combined_comment"),
   stage: text("stage", { enum: ["draft", "captured", "clarified"] }).notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
