@@ -24,7 +24,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
@@ -115,7 +116,7 @@ export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({ stage: "captured" });
+  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({ stage: "draft" });
 
   const { data: teams = [] } = useListDprTeams();
   const { data: locations = [] } = useListDprLocations();
@@ -200,6 +201,30 @@ export default function CapturePage() {
     }
   });
 
+  const approveMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+        toast({ title: "Row approved", description: "Sent to Clarify." });
+      },
+      onError: (err) => {
+        toast({ title: "Failed to approve", description: err.message, variant: "destructive" });
+      }
+    }
+  });
+
+  // Bulk approve intentionally skips per-row toasts so a single summary toast
+  // (fired after the whole batch finishes) isn't clobbered by per-row ones.
+  const bulkApproveMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+      }
+    }
+  });
+
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -216,7 +241,29 @@ export default function CapturePage() {
   const [isBulkWorking, setIsBulkWorking] = useState(false);
   const [bulkLocationId, setBulkLocationId] = useState<string>("");
 
-  const capturedEntries = useMemo(() => entries.filter(e => e.stage === "captured"), [entries]);
+  const capturedEntries = useMemo(() => entries.filter(e => e.stage === "draft"), [entries]);
+
+  const teamGroups = useMemo(() => {
+    const byTeam = new Map<string, { teamId: number | null; teamName: string; entries: DprTimesheetEntry[] }>();
+    for (const entry of capturedEntries) {
+      const teamId = entry.teamId ?? null;
+      const key = teamId === null ? "none" : teamId.toString();
+      const existing = byTeam.get(key);
+      if (existing) {
+        existing.entries.push(entry);
+      } else {
+        byTeam.set(key, {
+          teamId,
+          teamName: entry.team?.name || "Unassigned Team",
+          entries: [entry],
+        });
+      }
+    }
+    for (const group of byTeam.values()) {
+      group.entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+    return Array.from(byTeam.values()).sort((a, b) => a.teamName.localeCompare(b.teamName));
+  }, [capturedEntries]);
 
   const allSelected = capturedEntries.length > 0 && capturedEntries.every(e => selectedIds.has(e.id));
   const someSelected = capturedEntries.some(e => selectedIds.has(e.id));
@@ -264,6 +311,42 @@ export default function CapturePage() {
     } else if (failed > 0) {
       toast({ title: "Delete failed", description: "Check the rows and try again.", variant: "destructive" });
     }
+  };
+
+  const handleApprove = (id: number) => {
+    approveMutation.mutate({ id, data: { stage: "captured" } });
+  };
+
+  const handleApproveGroup = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    setIsBulkWorking(true);
+    let succeeded = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await bulkApproveMutation.mutateAsync({ id, data: { stage: "captured" } });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsBulkWorking(false);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+    if (succeeded > 0) {
+      toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} approved`, description: failed > 0 ? `${failed} row(s) failed to approve.` : "Sent to Clarify." });
+    } else if (failed > 0) {
+      toast({ title: "Approve failed", description: "Check the rows and try again.", variant: "destructive" });
+    }
+  };
+
+  const handleBulkApproveSelected = async () => {
+    if (selectedIds.size === 0) return;
+    await handleApproveGroup(Array.from(selectedIds));
+    setBulkLocationId("");
   };
 
   const handleBulkSetLocation = async () => {
@@ -497,6 +580,16 @@ export default function CapturePage() {
           <Button
             size="sm"
             variant="outline"
+            onClick={handleBulkApproveSelected}
+            disabled={isBulkWorking}
+            className="gap-1 text-primary hover:text-primary"
+          >
+            {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+            Approve Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={handleBulkDelete}
             disabled={isBulkWorking}
             className="gap-1 text-destructive hover:text-destructive"
@@ -510,18 +603,17 @@ export default function CapturePage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-6 bg-background">
+      <div className="flex-1 overflow-auto p-6 bg-background space-y-6">
+        {loadingEntries && !newRow && teamGroups.length === 0 && (
+          <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
+        )}
+
+        {newRow && (
         <div className="rounded-md border border-border bg-card overflow-hidden shadow-sm">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead className="w-[40px]">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={toggleSelectAll}
-                    aria-label="Select all"
-                  />
-                </TableHead>
+                <TableHead className="w-[40px]"></TableHead>
                 <TableHead className="w-[140px]">Date</TableHead>
                 <TableHead className="w-[160px]">Team</TableHead>
                 <TableHead className="w-[110px]">Start Time</TableHead>
@@ -532,14 +624,6 @@ export default function CapturePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loadingEntries && !newRow && (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-24 text-center">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                  </TableCell>
-                </TableRow>
-              )}
-              
               {newRow && (
                 <TableRow className="bg-primary/5">
                   <TableCell></TableCell>
@@ -605,8 +689,64 @@ export default function CapturePage() {
                   </TableCell>
                 </TableRow>
               )}
+            </TableBody>
+          </Table>
+        </div>
+        )}
 
-              {capturedEntries.map(entry => {
+        {teamGroups.map(group => {
+          const groupIds = group.entries.map(e => e.id);
+          const groupAllSelected = groupIds.length > 0 && groupIds.every(id => selectedIds.has(id));
+          return (
+          <Card key={group.teamId ?? "none"} className="overflow-hidden py-0">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 bg-muted/50 border-b border-border py-3 px-4">
+              <div className="flex items-center gap-3">
+                <h3 className="font-semibold text-sm">{group.teamName}</h3>
+                <Badge variant="secondary">{group.entries.length} row{group.entries.length === 1 ? "" : "s"}</Badge>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-primary hover:text-primary"
+                disabled={isBulkWorking}
+                onClick={() => handleApproveGroup(groupIds)}
+              >
+                {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                Approve All
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead className="w-[40px]">
+                      <Checkbox
+                        checked={groupAllSelected}
+                        onCheckedChange={() => {
+                          setSelectedIds(prev => {
+                            const next = new Set(prev);
+                            if (groupAllSelected) {
+                              groupIds.forEach(id => next.delete(id));
+                            } else {
+                              groupIds.forEach(id => next.add(id));
+                            }
+                            return next;
+                          });
+                        }}
+                        aria-label={`Select all rows for ${group.teamName}`}
+                      />
+                    </TableHead>
+                    <TableHead className="w-[140px]">Date</TableHead>
+                    <TableHead className="w-[160px]">Team</TableHead>
+                    <TableHead className="w-[110px]">Start Time</TableHead>
+                    <TableHead className="w-[110px]">End Time</TableHead>
+                    <TableHead className="w-[220px]">Location</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead className="w-[130px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+              {group.entries.map(entry => {
                 const isEditing = editingId === entry.id;
                 const isSelected = selectedIds.has(entry.id);
                 
@@ -739,29 +879,41 @@ export default function CapturePage() {
                       {entry.notes || <span className="text-muted-foreground/50">--</span>}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10" 
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate({ id: entry.id }); }}
-                      >
-                        {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10"
+                          onClick={(e) => { e.stopPropagation(); handleApprove(entry.id); }}
+                          title="Approve row"
+                        >
+                          {approveMutation.isPending && approveMutation.variables?.id === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate({ id: entry.id }); }}
+                        >
+                          {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
               })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+          );
+        })}
 
-              {!loadingEntries && capturedEntries.length === 0 && !newRow && (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
-                    No captured entries. Click "Add Row" or "Paste Rows" to start.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        {!loadingEntries && teamGroups.length === 0 && !newRow && (
+          <div className="text-center p-12 border border-dashed rounded-lg border-border text-muted-foreground">
+            No captured entries. Click "Add Row" or "Paste Rows" to start.
+          </div>
+        )}
       </div>
 
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else setPasteOpen(true); }}>

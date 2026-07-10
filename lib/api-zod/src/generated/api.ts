@@ -1012,7 +1012,7 @@ export const DeleteDprJdrCodeParams = zod.object({
  * @summary List timesheet entries
  */
 export const ListDprTimesheetEntriesQueryParams = zod.object({
-  "stage": zod.enum(['captured', 'clarified']).optional(),
+  "stage": zod.enum(['draft', 'captured', 'clarified']).optional(),
   "teamId": zod.coerce.number().optional(),
   "dateFrom": zod.coerce.string().optional(),
   "dateTo": zod.coerce.string().optional()
@@ -1040,7 +1040,7 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "jdrCodeIds": zod.array(zod.number()),
   "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
-  "stage": zod.enum(['captured', 'clarified']),
+  "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -1100,7 +1100,7 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "jdrCodeIds": zod.array(zod.number()),
   "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
-  "stage": zod.enum(['captured', 'clarified']),
+  "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -1126,7 +1126,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "jdrCodeIds": zod.array(zod.number()).optional(),
   "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
-  "stage": zod.enum(['captured', 'clarified']).optional()
+  "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
 
 export const UpdateDprTimesheetEntryResponse = zod.object({
@@ -1151,7 +1151,7 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "jdrCodeIds": zod.array(zod.number()),
   "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
-  "stage": zod.enum(['captured', 'clarified']),
+  "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })

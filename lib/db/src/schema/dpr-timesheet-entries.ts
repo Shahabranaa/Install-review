@@ -21,7 +21,7 @@ export const dprTimesheetEntriesTable = pgTable("dpr_timesheet_entries", {
   jdrCodeIds: jsonb("jdr_code_ids").$type<number[]>().notNull().default([]),
   genericComment: text("generic_comment"),
   combinedComment: text("combined_comment"),
-  stage: text("stage", { enum: ["captured", "clarified"] }).notNull().default("captured"),
+  stage: text("stage", { enum: ["draft", "captured", "clarified"] }).notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

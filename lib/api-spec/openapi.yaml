@@ -1273,7 +1273,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [captured, clarified]
+            enum: [draft, captured, clarified]
         - name: teamId
           in: query
           schema:
@@ -2178,7 +2178,7 @@ components:
           type: ["string", "null"]
         stage:
           type: string
-          enum: [captured, clarified]
+          enum: [draft, captured, clarified]
         createdAt:
           type: string
         updatedAt:
@@ -2242,7 +2242,7 @@ components:
           type: ["string", "null"]
         stage:
           type: string
-          enum: [captured, clarified]
+          enum: [draft, captured, clarified]
 
     DprTimesheetSummary:
       type: object

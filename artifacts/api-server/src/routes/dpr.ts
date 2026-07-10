@@ -388,7 +388,7 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
   }
   const [entry] = await db
     .insert(dprTimesheetEntriesTable)
-    .values({ ...parsed.data, stage: "captured" })
+    .values({ ...parsed.data, stage: "draft" })
     .returning();
   const withJoins = await withRelations(entry);
   res.status(201).json(GetDprTimesheetEntryResponse.parse(serialize(withJoins)));
@@ -396,8 +396,8 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
 
 router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> => {
   const rows = await db.select({ stage: dprTimesheetEntriesTable.stage }).from(dprTimesheetEntriesTable);
-  const capturedCount = rows.filter((r) => r.stage === "captured").length;
-  const clarifiedCount = rows.filter((r) => r.stage === "clarified").length;
+  const capturedCount = rows.filter((r) => r.stage === "draft").length;
+  const clarifiedCount = rows.filter((r) => r.stage === "captured").length;
   res.json(
     GetDprTimesheetSummaryResponse.parse({
       totalEntries: rows.length,

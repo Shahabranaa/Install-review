@@ -400,6 +400,7 @@ export type DprTimesheetEntryStage = typeof DprTimesheetEntryStage[keyof typeof 
 
 
 export const DprTimesheetEntryStage = {
+  draft: 'draft',
   captured: 'captured',
   clarified: 'clarified',
 } as const;
@@ -455,6 +456,7 @@ export type DprTimesheetEntryUpdateStage = typeof DprTimesheetEntryUpdateStage[k
 
 
 export const DprTimesheetEntryUpdateStage = {
+  draft: 'draft',
   captured: 'captured',
   clarified: 'clarified',
 } as const;
@@ -562,6 +564,7 @@ export type ListDprTimesheetEntriesStage = typeof ListDprTimesheetEntriesStage[k
 
 
 export const ListDprTimesheetEntriesStage = {
+  draft: 'draft',
   captured: 'captured',
   clarified: 'clarified',
 } as const;
