@@ -1038,7 +1038,7 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "billingParty": zod.union([zod.literal('jdr'),zod.literal('allstead'),zod.literal(null)]).nullish(),
+  "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1058,7 +1058,7 @@ export const CreateDprTimesheetEntryBody = zod.object({
   "locationId": zod.number().nullish(),
   "notes": zod.string().nullish(),
   "activityTypeId": zod.number().nullish(),
-  "billingParty": zod.union([zod.literal('jdr'),zod.literal('allstead'),zod.literal(null)]).nullish()
+  "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish()
 })
 
 
@@ -1099,7 +1099,7 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "billingParty": zod.union([zod.literal('jdr'),zod.literal('allstead'),zod.literal(null)]).nullish(),
+  "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1125,7 +1125,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()).optional(),
-  "billingParty": zod.union([zod.literal('jdr'),zod.literal('allstead'),zod.literal(null)]).nullish(),
+  "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
@@ -1150,7 +1150,7 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
-  "billingParty": zod.union([zod.literal('jdr'),zod.literal('allstead'),zod.literal(null)]).nullish(),
+  "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),

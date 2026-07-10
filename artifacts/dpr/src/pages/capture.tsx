@@ -31,7 +31,7 @@ import { formatTimeDisplay } from "@/lib/utils";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 
-type BillingParty = "jdr" | "allstead" | null;
+type BillingParty = "jdr" | "orsted" | null;
 
 type RowDraft = {
   date: string;
@@ -69,10 +69,10 @@ function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange
       </button>
       <button
         type="button"
-        onClick={() => onChange(value === "allstead" ? null : "allstead")}
-        className={`px-2 py-1 text-xs font-medium border-l border-border transition-colors ${value === "allstead" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+        onClick={() => onChange(value === "orsted" ? null : "orsted")}
+        className={`px-2 py-1 text-xs font-medium border-l border-border transition-colors ${value === "orsted" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
       >
-        Allstead
+        Orsted
       </button>
     </div>
   );

@@ -258,7 +258,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
 
   // Activity Type is no longer chosen directly by the user — it's superseded
-  // by JDR/Allstead classification at Capture. We derive it automatically
+  // by JDR/Orsted classification at Capture. We derive it automatically
   // from whichever Activity Group gets picked, unfiltered by type.
   const { data: activityGroups = [] } = useListDprActivityGroups(
     {},

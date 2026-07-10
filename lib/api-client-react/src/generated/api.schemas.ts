@@ -404,7 +404,7 @@ export type DprTimesheetEntryBillingParty = typeof DprTimesheetEntryBillingParty
 
 export const DprTimesheetEntryBillingParty = {
   jdr: 'jdr',
-  allstead: 'allstead',
+  orsted: 'orsted',
 } as const;
 
 export type DprTimesheetEntryStage = typeof DprTimesheetEntryStage[keyof typeof DprTimesheetEntryStage];
@@ -455,7 +455,7 @@ export type DprTimesheetEntryInputBillingParty = typeof DprTimesheetEntryInputBi
 
 export const DprTimesheetEntryInputBillingParty = {
   jdr: 'jdr',
-  allstead: 'allstead',
+  orsted: 'orsted',
 } as const;
 
 export interface DprTimesheetEntryInput {
@@ -484,7 +484,7 @@ export type DprTimesheetEntryUpdateBillingParty = typeof DprTimesheetEntryUpdate
 
 export const DprTimesheetEntryUpdateBillingParty = {
   jdr: 'jdr',
-  allstead: 'allstead',
+  orsted: 'orsted',
 } as const;
 
 export type DprTimesheetEntryUpdateStage = typeof DprTimesheetEntryUpdateStage[keyof typeof DprTimesheetEntryUpdateStage];

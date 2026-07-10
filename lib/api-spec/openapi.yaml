@@ -2174,7 +2174,7 @@ components:
             type: integer
         billingParty:
           type: ["string", "null"]
-          enum: [jdr, allstead, null]
+          enum: [jdr, orsted, null]
         combinedComment:
           type: ["string", "null"]
         stage:
@@ -2211,7 +2211,7 @@ components:
           type: ["integer", "null"]
         billingParty:
           type: ["string", "null"]
-          enum: [jdr, allstead, null]
+          enum: [jdr, orsted, null]
       required:
         - date
 
@@ -2242,7 +2242,7 @@ components:
             type: integer
         billingParty:
           type: ["string", "null"]
-          enum: [jdr, allstead, null]
+          enum: [jdr, orsted, null]
         combinedComment:
           type: ["string", "null"]
         stage:
