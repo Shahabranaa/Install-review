@@ -37,6 +37,29 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatTimeDisplay } from "@/lib/utils";
 
+type BillingParty = "jdr" | "orsted" | null;
+
+function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange: (v: BillingParty) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-border overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onChange(value === "jdr" ? null : "jdr")}
+        className={`px-2 py-1 text-xs font-medium transition-colors ${value === "jdr" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+      >
+        JDR
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(value === "orsted" ? null : "orsted")}
+        className={`px-2 py-1 text-xs font-medium border-l border-border transition-colors ${value === "orsted" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+      >
+        Orsted
+      </button>
+    </div>
+  );
+}
+
 export default function ClarifyPage() {
   const { toast: _toast } = useToast();
 
@@ -156,6 +179,7 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
               <TableHead className="w-[90px]">Start</TableHead>
               <TableHead className="w-[90px]">Finish</TableHead>
               <TableHead className="w-[130px]">Location</TableHead>
+              <TableHead className="w-[120px]">Billing</TableHead>
               <TableHead className="w-[130px]">Quick Fill</TableHead>
               <TableHead className="min-w-[140px]">Activity Group</TableHead>
               <TableHead className="min-w-[140px]">Activity</TableHead>
@@ -225,6 +249,11 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
           </div>
         )}
       </TableCell>
+      <TableCell className="text-sm">
+        {entry.billingParty
+          ? <Badge variant="secondary" className="text-[10px] font-normal capitalize">{entry.billingParty}</Badge>
+          : <span className="text-muted-foreground">—</span>}
+      </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         <span className="italic">Clarified</span>
       </TableCell>
@@ -254,6 +283,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const [activityGroupId, setActivityGroupId] = useState<number | null>(entry.activityGroupId || null);
   const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
+  const [billingParty, setBillingParty] = useState<BillingParty>((entry.billingParty as BillingParty) || null);
   
   const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
 
@@ -352,6 +382,36 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     }
   });
 
+  const billingMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprTimesheetEntry[]>({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map(e => e.id === id ? { ...e, billingParty: data.billingParty } : e)
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map(e => e.id === updated.id ? updated : e)
+        );
+      },
+      onError: (err, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        setBillingParty((entry.billingParty as BillingParty) || null);
+        toast({ title: "Failed to update billing", description: err.message, variant: "destructive" });
+      }
+    }
+  });
+
+  const handleBillingChange = (next: BillingParty) => {
+    setBillingParty(next);
+    billingMutation.mutate({ id: entry.id, data: { billingParty: next ?? undefined } });
+  };
+
   const seedCommentFromCode = (code: DprJdrCode) => {
     const baseNotes = entry.notes ? entry.notes + "\n\n" : "";
     setCombinedComment(baseNotes + "Generic Comment: " + code.genericComment);
@@ -425,6 +485,9 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
             </Badge>
           </div>
         )}
+      </TableCell>
+      <TableCell className="w-[120px]">
+        <BillingPartyToggle value={billingParty} onChange={handleBillingChange} />
       </TableCell>
       <TableCell className="w-[130px]">
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
