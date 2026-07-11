@@ -295,6 +295,7 @@ export default function CapturePage() {
       },
       onError: (_, __, ctx) => {
         if (ctx?.snapshot) restoreEntries(ctx.snapshot);
+        toast({ title: "Failed to delete", variant: "destructive" });
       }
     }
   });
