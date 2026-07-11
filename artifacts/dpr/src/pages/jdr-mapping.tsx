@@ -135,15 +135,28 @@ export default function JdrMappingPage() {
   // ── Type CRUD ──
   const createType = useCreateDprActivityType({
     mutation: {
-      onSuccess: (created) => {
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
+        const tempId = -(Date.now());
         queryClient.setQueriesData<DprActivityType[]>(
           { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => (old ? [...old, created] : [created])
+          (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (created, _, ctx) => {
+        queryClient.setQueriesData<DprActivityType[]>(
+          { queryKey: getListDprActivityTypesQueryKey() },
+          (old) => old ? [...old.filter(t => t.id !== ctx?.tempId), created] : [created]
         );
         toast({ title: "Activity type created" });
         setTypeDialog(null);
       },
-      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
+      },
     },
   });
   const updateType = useUpdateDprActivityType({
@@ -193,15 +206,29 @@ export default function JdrMappingPage() {
   // ── Group CRUD ──
   const createGroup = useCreateDprActivityGroup({
     mutation: {
-      onSuccess: (created) => {
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityGroupsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
+        const tempId = -(Date.now());
+        const tempEntry: DprActivityGroup = { id: tempId, name: data.name, activityTypeId: data.activityTypeId ?? null };
         queryClient.setQueriesData<DprActivityGroup[]>(
           { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => (old ? [...old, created] : [created])
+          (old) => (old ? [...old, tempEntry] : [tempEntry])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (created, _, ctx) => {
+        queryClient.setQueriesData<DprActivityGroup[]>(
+          { queryKey: getListDprActivityGroupsQueryKey() },
+          (old) => old ? [...old.filter(g => g.id !== ctx?.tempId), created] : [created]
         );
         toast({ title: "Activity group created" });
         setGroupDialog(null);
       },
-      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
+      },
     },
   });
   const updateGroup = useUpdateDprActivityGroup({
@@ -251,15 +278,29 @@ export default function JdrMappingPage() {
   // ── Activity CRUD ──
   const createActivity = useCreateDprActivity({
     mutation: {
-      onSuccess: (created) => {
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
+        const tempId = -(Date.now());
+        const tempEntry: DprActivity = { id: tempId, name: data.name, activityGroupId: data.activityGroupId };
         queryClient.setQueriesData<DprActivity[]>(
           { queryKey: getListDprActivitiesQueryKey() },
-          (old) => (old ? [...old, created] : [created])
+          (old) => (old ? [...old, tempEntry] : [tempEntry])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (created, _, ctx) => {
+        queryClient.setQueriesData<DprActivity[]>(
+          { queryKey: getListDprActivitiesQueryKey() },
+          (old) => old ? [...old.filter(a => a.id !== ctx?.tempId), created] : [created]
         );
         toast({ title: "Activity created" });
         setActivityDialog(null);
       },
-      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
+      },
     },
   });
   const updateActivity = useUpdateDprActivity({
@@ -309,15 +350,37 @@ export default function JdrMappingPage() {
   // ── JDR Code CRUD ──
   const createJdrCode = useCreateDprJdrCode({
     mutation: {
-      onSuccess: (created) => {
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
+        const tempId = -(Date.now());
+        const tempEntry: DprJdrCode = {
+          id: tempId,
+          lautecActivity: data.lautecActivity,
+          lautecActivityGroup: data.lautecActivityGroup,
+          jdrWorkActivity: data.jdrWorkActivity,
+          contractualCode: data.contractualCode,
+          genericComment: data.genericComment,
+          activityId: data.activityId ?? null,
+        };
         queryClient.setQueriesData<DprJdrCode[]>(
           { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => (old ? [...old, created] : [created])
+          (old) => (old ? [...old, tempEntry] : [tempEntry])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (created, _, ctx) => {
+        queryClient.setQueriesData<DprJdrCode[]>(
+          { queryKey: getListDprJdrCodesQueryKey() },
+          (old) => old ? [...old.filter(c => c.id !== ctx?.tempId), created] : [created]
         );
         toast({ title: "JDR code created" });
         setJdrDialog(null);
       },
-      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
+      },
     },
   });
   const updateJdrCode = useUpdateDprJdrCode({

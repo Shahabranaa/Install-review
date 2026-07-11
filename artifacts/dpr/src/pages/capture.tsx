@@ -216,16 +216,46 @@ export default function CapturePage() {
 
   const createMutation = useCreateDprTimesheetEntry({
     mutation: {
-      onSuccess: (newEntry) => {
-        // Append the server-confirmed entry to every cached list instead of
-        // invalidating, so the row appears instantly with its real ID.
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        const tempId = -(Date.now());
+        const tempEntry: DprTimesheetEntry = {
+          id: tempId,
+          date: data.date ?? format(new Date(), "yyyy-MM-dd"),
+          teamId: data.teamId,
+          team: teams.find(t => t.id === data.teamId),
+          startTime: data.startTime,
+          endTime: data.endTime,
+          locationId: data.locationId,
+          location: locations.find(l => l.id === data.locationId),
+          notes: data.notes,
+          activityTypeId: data.activityTypeId,
+          billingParty: data.billingParty as DprTimesheetEntry["billingParty"],
+          jdrCodeIds: [],
+          combinedComment: null,
+          stage: "draft",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        // Only patch the stage:"draft" cache — never touch the clarify page's
+        // stage-filtered cache or it would incorrectly show a draft entry there.
         queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey() },
-          (old) => (old ? [...old, newEntry] : [newEntry])
+          { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
+          (old) => (old ? [...old, tempEntry] : [tempEntry])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (newEntry, _, ctx) => {
+        // Replace the temp entry with the server-confirmed entry in the draft cache.
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
+          (old) => old ? [...old.filter(e => e.id !== ctx?.tempId), newEntry] : [newEntry]
         );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
       },
-      onError: (err) => {
+      onError: (err, _, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
         toast({ title: "Failed to create", description: err.message, variant: "destructive" });
       }
     }
