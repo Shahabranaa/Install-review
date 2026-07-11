@@ -133,51 +133,235 @@ export default function JdrMappingPage() {
   }
 
   // ── Type CRUD ──
-  const invalidateTypes = () => queryClient.invalidateQueries({ queryKey: getListDprActivityTypesQueryKey() });
   const createType = useCreateDprActivityType({
-    mutation: { onSuccess: () => { invalidateTypes(); toast({ title: "Activity type created" }); setTypeDialog(null); }, onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onSuccess: (created) => {
+        queryClient.setQueriesData<DprActivityType[]>(
+          { queryKey: getListDprActivityTypesQueryKey() },
+          (old) => (old ? [...old, created] : [created])
+        );
+        toast({ title: "Activity type created" });
+        setTypeDialog(null);
+      },
+      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+    },
   });
   const updateType = useUpdateDprActivityType({
-    mutation: { onSuccess: () => { invalidateTypes(); toast({ title: "Activity type updated" }); setTypeDialog(null); }, onError: (e) => toast({ title: "Failed to update", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
+        queryClient.setQueriesData<DprActivityType[]>(
+          { queryKey: getListDprActivityTypesQueryKey() },
+          (old) => old?.map((t) => (t.id === id ? { ...t, ...data } : t))
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprActivityType[]>(
+          { queryKey: getListDprActivityTypesQueryKey() },
+          (old) => old?.map((t) => (t.id === updated.id ? updated : t))
+        );
+        toast({ title: "Activity type updated" });
+        setTypeDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      },
+    },
   });
   const deleteType = useDeleteDprActivityType({
-    mutation: { onSuccess: () => { invalidateTypes(); toast({ title: "Activity type deleted" }); }, onError: (e) => toast({ title: "Failed to delete", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
+        queryClient.setQueriesData<DprActivityType[]>(
+          { queryKey: getListDprActivityTypesQueryKey() },
+          (old) => old?.filter((t) => t.id !== id)
+        );
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "Activity type deleted" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
+      },
+    },
   });
 
   // ── Group CRUD ──
-  const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: getListDprActivityGroupsQueryKey({}) });
   const createGroup = useCreateDprActivityGroup({
-    mutation: { onSuccess: () => { invalidateGroups(); toast({ title: "Activity group created" }); setGroupDialog(null); }, onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onSuccess: (created) => {
+        queryClient.setQueriesData<DprActivityGroup[]>(
+          { queryKey: getListDprActivityGroupsQueryKey() },
+          (old) => (old ? [...old, created] : [created])
+        );
+        toast({ title: "Activity group created" });
+        setGroupDialog(null);
+      },
+      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+    },
   });
   const updateGroup = useUpdateDprActivityGroup({
-    mutation: { onSuccess: () => { invalidateGroups(); toast({ title: "Activity group updated" }); setGroupDialog(null); }, onError: (e) => toast({ title: "Failed to update", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityGroupsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
+        queryClient.setQueriesData<DprActivityGroup[]>(
+          { queryKey: getListDprActivityGroupsQueryKey() },
+          (old) => old?.map((g) => (g.id === id ? { ...g, ...data } : g))
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprActivityGroup[]>(
+          { queryKey: getListDprActivityGroupsQueryKey() },
+          (old) => old?.map((g) => (g.id === updated.id ? updated : g))
+        );
+        toast({ title: "Activity group updated" });
+        setGroupDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      },
+    },
   });
   const deleteGroup = useDeleteDprActivityGroup({
-    mutation: { onSuccess: () => { invalidateGroups(); toast({ title: "Activity group deleted" }); }, onError: (e) => toast({ title: "Failed to delete", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivityGroupsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
+        queryClient.setQueriesData<DprActivityGroup[]>(
+          { queryKey: getListDprActivityGroupsQueryKey() },
+          (old) => old?.filter((g) => g.id !== id)
+        );
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "Activity group deleted" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
+      },
+    },
   });
 
   // ── Activity CRUD ──
-  const invalidateActivities = () => queryClient.invalidateQueries({ queryKey: getListDprActivitiesQueryKey({}) });
   const createActivity = useCreateDprActivity({
-    mutation: { onSuccess: () => { invalidateActivities(); toast({ title: "Activity created" }); setActivityDialog(null); }, onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onSuccess: (created) => {
+        queryClient.setQueriesData<DprActivity[]>(
+          { queryKey: getListDprActivitiesQueryKey() },
+          (old) => (old ? [...old, created] : [created])
+        );
+        toast({ title: "Activity created" });
+        setActivityDialog(null);
+      },
+      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+    },
   });
   const updateActivity = useUpdateDprActivity({
-    mutation: { onSuccess: () => { invalidateActivities(); toast({ title: "Activity updated" }); setActivityDialog(null); }, onError: (e) => toast({ title: "Failed to update", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
+        queryClient.setQueriesData<DprActivity[]>(
+          { queryKey: getListDprActivitiesQueryKey() },
+          (old) => old?.map((a) => (a.id === id ? { ...a, ...data } : a))
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprActivity[]>(
+          { queryKey: getListDprActivitiesQueryKey() },
+          (old) => old?.map((a) => (a.id === updated.id ? updated : a))
+        );
+        toast({ title: "Activity updated" });
+        setActivityDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      },
+    },
   });
   const deleteActivity = useDeleteDprActivity({
-    mutation: { onSuccess: () => { invalidateActivities(); toast({ title: "Activity deleted" }); }, onError: (e) => toast({ title: "Failed to delete", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
+        queryClient.setQueriesData<DprActivity[]>(
+          { queryKey: getListDprActivitiesQueryKey() },
+          (old) => old?.filter((a) => a.id !== id)
+        );
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "Activity deleted" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
+      },
+    },
   });
 
   // ── JDR Code CRUD ──
-  const invalidateJdrCodes = () => queryClient.invalidateQueries({ queryKey: getListDprJdrCodesQueryKey({}) });
   const createJdrCode = useCreateDprJdrCode({
-    mutation: { onSuccess: () => { invalidateJdrCodes(); toast({ title: "JDR code created" }); setJdrDialog(null); }, onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onSuccess: (created) => {
+        queryClient.setQueriesData<DprJdrCode[]>(
+          { queryKey: getListDprJdrCodesQueryKey() },
+          (old) => (old ? [...old, created] : [created])
+        );
+        toast({ title: "JDR code created" });
+        setJdrDialog(null);
+      },
+      onError: (e) => toast({ title: "Failed to create", description: e.message, variant: "destructive" }),
+    },
   });
   const updateJdrCode = useUpdateDprJdrCode({
-    mutation: { onSuccess: () => { invalidateJdrCodes(); toast({ title: "JDR code updated" }); setJdrDialog(null); }, onError: (e) => toast({ title: "Failed to update", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
+        queryClient.setQueriesData<DprJdrCode[]>(
+          { queryKey: getListDprJdrCodesQueryKey() },
+          (old) => old?.map((c) => (c.id === id ? { ...c, ...data } : c))
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprJdrCode[]>(
+          { queryKey: getListDprJdrCodesQueryKey() },
+          (old) => old?.map((c) => (c.id === updated.id ? updated : c))
+        );
+        toast({ title: "JDR code updated" });
+        setJdrDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      },
+    },
   });
   const deleteJdrCode = useDeleteDprJdrCode({
-    mutation: { onSuccess: () => { invalidateJdrCodes(); toast({ title: "JDR code deleted" }); }, onError: (e) => toast({ title: "Failed to delete", description: e.message, variant: "destructive" }) },
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
+        queryClient.setQueriesData<DprJdrCode[]>(
+          { queryKey: getListDprJdrCodesQueryKey() },
+          (old) => old?.filter((c) => c.id !== id)
+        );
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "JDR code deleted" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
+      },
+    },
   });
 
   const [typeDialog, setTypeDialog] = useState<{ editing: DprActivityType | null } | null>(null);

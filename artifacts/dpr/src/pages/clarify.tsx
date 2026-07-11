@@ -313,6 +313,21 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
+      onMutate: async ({ id }) => {
+        // Optimistically update the summary badge: one fewer pending row,
+        // one more clarified — so the sidebar count drops instantly.
+        await queryClient.cancelQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+        const summarySnapshot = queryClient.getQueryData<{ capturedCount: number; clarifiedCount: number }>(
+          getGetDprTimesheetSummaryQueryKey()
+        );
+        queryClient.setQueryData<{ capturedCount: number; clarifiedCount: number }>(
+          getGetDprTimesheetSummaryQueryKey(),
+          (old) => old
+            ? { ...old, capturedCount: Math.max(0, old.capturedCount - 1), clarifiedCount: old.clarifiedCount + 1 }
+            : old
+        );
+        return { summarySnapshot };
+      },
       onSuccess: (updated) => {
         // Patch the cached list in place instead of a full refetch — the
         // clarify queue can have a lot of rows, and re-fetching everything
@@ -321,10 +336,16 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           { queryKey: getListDprTimesheetEntriesQueryKey() },
           (old) => old?.map(e => (e.id === updated.id ? updated : e))
         );
+        // Summary was already patched optimistically; do a background
+        // invalidation to confirm the server agrees.
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         toast({ title: "Entry clarified" });
       },
-      onError: (err) => {
+      onError: (err, _, ctx) => {
+        // Restore the summary optimistic update on failure.
+        if (ctx?.summarySnapshot !== undefined) {
+          queryClient.setQueryData(getGetDprTimesheetSummaryQueryKey(), ctx.summarySnapshot);
+        }
         toast({ title: "Save failed", description: err.message, variant: "destructive" });
         queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
       }

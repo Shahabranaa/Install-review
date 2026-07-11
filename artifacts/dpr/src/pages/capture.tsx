@@ -199,10 +199,30 @@ export default function CapturePage() {
     [locations]
   );
 
+  // Helper: snapshot all timesheet-entry caches so any mutation can roll back.
+  const snapshotEntries = () =>
+    queryClient.getQueriesData<DprTimesheetEntry[]>({ queryKey: getListDprTimesheetEntriesQueryKey() });
+
+  // Helper: restore a previously snapshotted set of caches.
+  const restoreEntries = (snap: ReturnType<typeof snapshotEntries>) =>
+    snap.forEach(([key, data]) => queryClient.setQueryData(key, data));
+
+  // Helper: patch a single entry across all cached entry lists.
+  const patchEntry = (updated: DprTimesheetEntry) =>
+    queryClient.setQueriesData<DprTimesheetEntry[]>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.map((e) => (e.id === updated.id ? updated : e))
+    );
+
   const createMutation = useCreateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onSuccess: (newEntry) => {
+        // Append the server-confirmed entry to every cached list instead of
+        // invalidating, so the row appears instantly with its real ID.
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => (old ? [...old, newEntry] : [newEntry])
+        );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
       },
       onError: (err) => {
@@ -213,12 +233,22 @@ export default function CapturePage() {
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map((e) => e.id === id ? { ...e, ...data } : e)
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        patchEntry(updated);
         toast({ title: "Entry updated" });
         setEditingId(null);
       },
-      onError: (err) => {
+      onError: (err, _, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
         toast({ title: "Failed to update", description: err.message, variant: "destructive" });
       }
     }
@@ -229,10 +259,20 @@ export default function CapturePage() {
   // save click. Errors still surface via toast.
   const autosaveMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map((e) => e.id === id ? { ...e, ...data } : e)
+        );
+        return { snapshot };
       },
-      onError: (err) => {
+      onSuccess: (updated) => {
+        patchEntry(updated);
+      },
+      onError: (err, _, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
         toast({ title: "Autosave failed", description: err.message, variant: "destructive" });
       }
     }
@@ -240,42 +280,53 @@ export default function CapturePage() {
 
   const deleteMutation = useDeleteDprTimesheetEntry({
     mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.filter((e) => e.id !== id)
+        );
+        return { snapshot };
+      },
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         toast({ title: "Entry deleted" });
+      },
+      onError: (_, __, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
       }
     }
   });
 
   // Bulk variants intentionally skip per-row toasts so a single summary toast
   // (fired after the whole batch finishes) isn't clobbered by per-row ones.
-  const bulkDeleteMutation = useDeleteDprTimesheetEntry({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
-      }
-    }
-  });
+  // They have no onSuccess — the handler patches the cache after Promise.allSettled
+  // so we get one cache update per batch, not N invalidations.
+  const bulkDeleteMutation = useDeleteDprTimesheetEntry({ mutation: {} });
 
-  const bulkUpdateMutation = useUpdateDprTimesheetEntry({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-      }
-    }
-  });
+  const bulkUpdateMutation = useUpdateDprTimesheetEntry({ mutation: {} });
 
   // Dedicated mutation for the one-click quick-classify buttons on display
   // rows, kept separate from the editing autosave path since it fires
-  // outside of edit mode.
+  // outside of edit mode. Uses optimistic cache update so the badge flips
+  // instantly without waiting for the server round-trip.
   const quickTypeMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map((e) => e.id === id ? { ...e, ...data } : e)
+        );
+        return { snapshot };
       },
-      onError: (err) => {
+      onSuccess: (updated) => {
+        patchEntry(updated);
+      },
+      onError: (err, _, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
         toast({ title: "Failed to set Activity Type", description: err.message, variant: "destructive" });
       }
     }
@@ -283,27 +334,32 @@ export default function CapturePage() {
 
   const approveMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        const snapshot = snapshotEntries();
+        // Move the entry to stage "captured" so it disappears from the draft
+        // view immediately without waiting for a refetch.
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map((e) => e.id === id ? { ...e, stage: "captured" as const } : e)
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        patchEntry(updated);
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         toast({ title: "Row approved", description: "Sent to Clarify." });
       },
-      onError: (err) => {
+      onError: (err, _, ctx) => {
+        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
         toast({ title: "Failed to approve", description: err.message, variant: "destructive" });
       }
     }
   });
 
-  // Bulk approve intentionally skips per-row toasts so a single summary toast
-  // (fired after the whole batch finishes) isn't clobbered by per-row ones.
-  const bulkApproveMutation = useUpdateDprTimesheetEntry({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
-      }
-    }
-  });
+  // Bulk approve — no per-mutation side effects; the handler does one cache
+  // patch + one summary invalidation after the whole batch resolves.
+  const bulkApproveMutation = useUpdateDprTimesheetEntry({ mutation: {} });
 
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
 
@@ -376,15 +432,24 @@ export default function CapturePage() {
     if (selectedIds.size === 0) return;
     setIsBulkWorking(true);
     const ids = Array.from(selectedIds);
-    // Fire all requests in parallel instead of awaiting them one at a time —
-    // cuts perceived bulk-action latency roughly proportional to batch size.
+    // Optimistically remove all selected rows from the cache immediately so
+    // the table clears without waiting for any server round-trip.
+    queryClient.setQueriesData<DprTimesheetEntry[]>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.filter((e) => !ids.includes(e.id))
+    );
     const results = await Promise.allSettled(ids.map(id => bulkDeleteMutation.mutateAsync({ id })));
-    const succeeded = results.filter(r => r.status === "fulfilled").length;
-    const failed = results.length - succeeded;
+    const succeededIds = ids.filter((_, i) => results[i].status === "fulfilled");
+    const failed = results.length - succeededIds.length;
+    // Restore any rows whose deletes actually failed.
+    if (failed > 0) {
+      queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+    }
+    queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
     setIsBulkWorking(false);
     clearSelection();
-    if (succeeded > 0) {
-      toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} deleted`, description: failed > 0 ? `${failed} row(s) failed to delete.` : undefined });
+    if (succeededIds.length > 0) {
+      toast({ title: `${succeededIds.length} row${succeededIds.length === 1 ? "" : "s"} deleted`, description: failed > 0 ? `${failed} row(s) failed to delete.` : undefined });
     } else if (failed > 0) {
       toast({ title: "Delete failed", description: "Check the rows and try again.", variant: "destructive" });
     }
@@ -397,9 +462,19 @@ export default function CapturePage() {
   const handleApproveGroup = async (ids: number[]) => {
     if (ids.length === 0) return;
     setIsBulkWorking(true);
+    // Optimistically flip all rows to "captured" so they vanish from the draft
+    // view immediately; any individual failures get restored by the invalidate.
+    queryClient.setQueriesData<DprTimesheetEntry[]>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.map((e) => ids.includes(e.id) ? { ...e, stage: "captured" as const } : e)
+    );
     const results = await Promise.allSettled(ids.map(id => bulkApproveMutation.mutateAsync({ id, data: { stage: "captured" } })));
     const succeeded = results.filter(r => r.status === "fulfilled").length;
     const failed = results.length - succeeded;
+    if (failed > 0) {
+      queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+    }
+    queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
     setIsBulkWorking(false);
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -423,9 +498,27 @@ export default function CapturePage() {
     if (selectedIds.size === 0 || !bulkLocationId) return;
     setIsBulkWorking(true);
     const ids = Array.from(selectedIds);
-    const results = await Promise.allSettled(ids.map(id => bulkUpdateMutation.mutateAsync({ id, data: { locationId: parseInt(bulkLocationId) } })));
+    const locationId = parseInt(bulkLocationId);
+    const locationObj = locations.find(l => l.id === locationId);
+    // Optimistically patch location on all selected rows immediately.
+    queryClient.setQueriesData<DprTimesheetEntry[]>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.map((e) =>
+        ids.includes(e.id)
+          ? { ...e, locationId, location: locationObj ? { id: locationObj.id, name: locationObj.name } : e.location }
+          : e
+      )
+    );
+    const results = await Promise.allSettled(ids.map(id => bulkUpdateMutation.mutateAsync({ id, data: { locationId } })));
     const succeeded = results.filter(r => r.status === "fulfilled").length;
     const failed = results.length - succeeded;
+    // Confirm each succeeded row with actual server data; restore on any failure.
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") patchEntry(r.value);
+    });
+    if (failed > 0) {
+      queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+    }
     setIsBulkWorking(false);
     clearSelection();
     if (succeeded > 0) {
