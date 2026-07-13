@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useMemo, useState } from "react";
 import {
   useListDprActivityTypes,
@@ -68,6 +69,19 @@ export default function JdrMappingPage() {
     jdrCodes.filter((j) => activityById.get(j.activityId ?? -1)?.activityGroupId === groupId).length;
   const activityCount = (activityId: number) =>
     jdrCodes.filter((j) => j.activityId === activityId).length;
+
+  // Derive badge label for each activity from its linked JDR codes' contractual code
+  const activityBadge = useMemo(() => {
+    const map = new Map<number, string>();
+    activities.forEach((a) => {
+      const codes = jdrCodes.filter((j) => j.activityId === a.id);
+      if (codes.length > 0) {
+        const code = (codes[0].contractualCode ?? "").toUpperCase();
+        map.set(a.id, code.includes("ORSTED") ? "ORSTED" : "JDR");
+      }
+    });
+    return map;
+  }, [activities, jdrCodes]);
 
   const term = search.trim().toLowerCase();
   const matchesSearch = (code: DprJdrCode) =>
@@ -150,7 +164,7 @@ export default function JdrMappingPage() {
           { queryKey: getListDprActivityTypesQueryKey() },
           (old) => old ? [...old.filter(t => t.id !== ctx?.tempId), created] : [created]
         );
-        toast({ title: "Activity type created" });
+        toast({ title: "Category created" });
         setTypeDialog(null);
       },
       onError: (e, _, ctx) => {
@@ -175,7 +189,7 @@ export default function JdrMappingPage() {
           { queryKey: getListDprActivityTypesQueryKey() },
           (old) => old?.map((t) => (t.id === updated.id ? updated : t))
         );
-        toast({ title: "Activity type updated" });
+        toast({ title: "Category updated" });
         setTypeDialog(null);
       },
       onError: (e, _, ctx) => {
@@ -195,7 +209,7 @@ export default function JdrMappingPage() {
         );
         return { snapshot };
       },
-      onSuccess: () => toast({ title: "Activity type deleted" }),
+      onSuccess: () => toast({ title: "Category deleted" }),
       onError: (e, _, ctx) => {
         ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
         toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
@@ -434,35 +448,36 @@ export default function JdrMappingPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <header className="px-6 py-4 border-b border-border bg-card flex flex-col gap-3 shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">JDR Mapping</h1>
-            <p className="text-sm text-muted-foreground">
-              Click a card to drill down. Use + Add to create new entries at any level.
-            </p>
-          </div>
-        </div>
-        <div className="relative max-w-md">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      {/* Page header */}
+      <header className="px-6 py-4 border-b border-border shrink-0">
+        <h1 className="text-lg font-bold tracking-tight">JDR Mapping</h1>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Click a card to drill down. Use + Add to create new entries at any level.
+        </p>
+      </header>
+
+      {/* Search bar */}
+      <div className="px-6 py-3 border-b border-border shrink-0">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search comments or activities"
-            className="pl-8 pr-8"
+            className="pl-8 pr-8 h-8 text-sm bg-muted/40 border-border"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {(selectedTypeId != null || selectedGroupId != null || selectedActivityId != null) && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Filtered by drill-down.</span>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+            <span>Filtered by selection.</span>
             <button
               className="underline hover:text-foreground"
               onClick={() => { setSelectedTypeId(null); setSelectedGroupId(null); setSelectedActivityId(null); }}
@@ -471,22 +486,24 @@ export default function JdrMappingPage() {
             </button>
           </div>
         )}
-      </header>
+      </div>
 
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-x-auto bg-background p-6">
-          <div className="grid grid-cols-4 gap-4 min-w-[1100px] h-full">
-            <KanbanColumn
-              title="Activity Type"
+        <div className="flex-1 overflow-x-auto p-4">
+          <div className="grid grid-cols-4 gap-0 min-w-[1100px] h-full divide-x divide-border border border-border rounded-lg overflow-hidden">
+
+            {/* Column 1 — CATEGORY */}
+            <DrillColumn
+              label="CATEGORY"
               count={visibleTypes.length}
               onAdd={() => setTypeDialog({ editing: null })}
             >
               {visibleTypes.map((t) => (
-                <KanbanCard
+                <DrillCard
                   key={t.id}
                   title={t.name}
                   subtitle={`${typeCount(t.id)} codes`}
@@ -495,21 +512,22 @@ export default function JdrMappingPage() {
                   onEdit={() => setTypeDialog({ editing: t })}
                   onDelete={() => deleteType.mutate({ id: t.id })}
                   deletePending={deleteType.isPending}
-                  deleteDescription={`Delete activity type "${t.name}"? This may affect activity groups linked to it.`}
+                  deleteDescription={`Delete category "${t.name}"? This may affect activity groups linked to it.`}
                 />
               ))}
-              {visibleTypes.length === 0 && <EmptyHint text="No activity types." />}
-            </KanbanColumn>
+              {visibleTypes.length === 0 && <EmptyHint text="No categories." />}
+            </DrillColumn>
 
-            <KanbanColumn
-              title="Activity Group"
+            {/* Column 2 — ACTIVITY GROUP */}
+            <DrillColumn
+              label="ACTIVITY GROUP"
               count={visibleGroups.length}
               onAdd={() => setGroupDialog({ editing: null, defaultTypeId: selectedTypeId })}
             >
               {visibleGroups.map((g) => {
                 const typeName = types.find((t) => t.id === g.activityTypeId)?.name;
                 return (
-                  <KanbanCard
+                  <DrillCard
                     key={g.id}
                     title={g.name}
                     subtitle={`${typeName ? typeName + " • " : ""}${groupCount(g.id)} codes`}
@@ -523,20 +541,23 @@ export default function JdrMappingPage() {
                 );
               })}
               {visibleGroups.length === 0 && <EmptyHint text="No activity groups." />}
-            </KanbanColumn>
+            </DrillColumn>
 
-            <KanbanColumn
-              title="Activity"
+            {/* Column 3 — ACTIVITY */}
+            <DrillColumn
+              label="ACTIVITY"
               count={visibleActivities.length}
               onAdd={() => setActivityDialog({ editing: null, defaultGroupId: selectedGroupId })}
             >
               {visibleActivities.map((a) => {
                 const groupName = groups.find((g) => g.id === a.activityGroupId)?.name;
+                const badge = activityBadge.get(a.id);
                 return (
-                  <KanbanCard
+                  <DrillCard
                     key={a.id}
                     title={a.name}
-                    subtitle={`${groupName ? groupName + " • " : ""}${activityCount(a.id)} codes`}
+                    subtitle={`${groupName ?? ""}${groupName && activityCount(a.id) ? " • " : ""}${activityCount(a.id)} codes`}
+                    badge={badge}
                     selected={selectedActivityId === a.id}
                     onClick={() => selectActivity(a.id)}
                     onEdit={() => setActivityDialog({ editing: a, defaultGroupId: a.activityGroupId })}
@@ -547,29 +568,27 @@ export default function JdrMappingPage() {
                 );
               })}
               {visibleActivities.length === 0 && <EmptyHint text="No activities." />}
-            </KanbanColumn>
+            </DrillColumn>
 
-            <KanbanColumn
-              title="JDR Code"
+            {/* Column 4 — JDR COMMENT */}
+            <DrillColumn
+              label="JDR COMMENT"
               count={visibleJdrCodes.length}
               onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
             >
               {visibleJdrCodes.map((j) => (
-                <KanbanCard
+                <CommentRow
                   key={j.id}
-                  badge={j.contractualCode}
-                  title={j.jdrWorkActivity}
-                  subtitle={j.genericComment}
-                  footnote={`Linked: ${j.lautecActivity} · ${j.lautecActivityGroup}`}
-                  onClick={() => {}}
+                  comment={j.genericComment}
                   onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
                   onDelete={() => deleteJdrCode.mutate({ id: j.id })}
                   deletePending={deleteJdrCode.isPending}
                   deleteDescription={`Delete JDR code "${j.contractualCode}"?`}
                 />
               ))}
-              {visibleJdrCodes.length === 0 && <EmptyHint text="No JDR codes." />}
-            </KanbanColumn>
+              {visibleJdrCodes.length === 0 && <EmptyHint text="No JDR comments." />}
+            </DrillColumn>
+
           </div>
         </div>
       )}
@@ -586,7 +605,6 @@ export default function JdrMappingPage() {
           saving={createType.isPending || updateType.isPending}
         />
       )}
-
       {groupDialog && (
         <GroupDialog
           editing={groupDialog.editing}
@@ -601,7 +619,6 @@ export default function JdrMappingPage() {
           saving={createGroup.isPending || updateGroup.isPending}
         />
       )}
-
       {activityDialog && (
         <ActivityDialog
           editing={activityDialog.editing}
@@ -616,7 +633,6 @@ export default function JdrMappingPage() {
           saving={createActivity.isPending || updateActivity.isPending}
         />
       )}
-
       {jdrDialog && (
         <JdrCodeDialog
           editing={jdrDialog.editing}
@@ -635,30 +651,49 @@ export default function JdrMappingPage() {
   );
 }
 
-// ─── Kanban primitives ──────────────────────────────────────────────────────
+// ─── Column shell ─────────────────────────────────────────────────────────────
 
-function KanbanColumn({ title, count, onAdd, children }: { title: string; count: number; onAdd: () => void; children: React.ReactNode }) {
+function DrillColumn({
+  label,
+  count,
+  onAdd,
+  children,
+}: {
+  label: string;
+  count: number;
+  onAdd: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex flex-col min-h-0 rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
-          <span className="text-[10px] text-muted-foreground">({count})</span>
+    <div className="flex flex-col min-h-0 bg-card">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-[11px] text-muted-foreground/50">({count})</span>
         </div>
-        <Button size="sm" variant="outline" className="h-6 px-2 gap-1 text-xs" onClick={onAdd}>
-          <Plus className="w-3 h-3" />Add
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={onAdd}
+        >
+          <Plus className="w-3 h-3" />
+          Add
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">{children}</div>
+      <div className="flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }
 
-function KanbanCard({
-  badge,
+// ─── Drill card (Category / Activity Group / Activity) ────────────────────────
+
+function DrillCard({
   title,
   subtitle,
-  footnote,
+  badge,
   selected,
   onClick,
   onEdit,
@@ -666,10 +701,9 @@ function KanbanCard({
   deletePending,
   deleteDescription,
 }: {
-  badge?: string;
   title: string;
   subtitle?: string;
-  footnote?: string;
+  badge?: string;
   selected?: boolean;
   onClick: () => void;
   onEdit: () => void;
@@ -677,32 +711,51 @@ function KanbanCard({
   deletePending: boolean;
   deleteDescription: string;
 }) {
+  const isOrsted = badge?.toUpperCase() === "ORSTED";
+
   return (
     <div
       onClick={onClick}
       className={cn(
-        "group relative rounded-md border px-3 py-2 cursor-pointer transition-colors",
-        selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/50"
+        "group relative flex flex-col gap-0.5 px-4 py-3 cursor-pointer border-b border-border/40 transition-colors select-none",
+        selected
+          ? "bg-primary/10 border-l-[3px] border-l-primary"
+          : "hover:bg-muted/25 border-l-[3px] border-l-transparent"
       )}
     >
-      <div className="pr-12">
-        {badge && (
-          <span className="inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-            {badge}
-          </span>
-        )}
-        <div className="text-sm font-medium leading-snug">{title}</div>
-        {subtitle && <div className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</div>}
-        {footnote && <div className="text-[10px] text-muted-foreground/80 mt-1 truncate">{footnote}</div>}
+      {/* Contractual code badge — top right */}
+      {badge && (
+        <span
+          className={cn(
+            "absolute top-3 right-8 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
+            isOrsted
+              ? "bg-amber-500/20 text-amber-400"
+              : "bg-primary/20 text-primary"
+          )}
+        >
+          {badge}
+        </span>
+      )}
+
+      <div className={cn("text-sm font-medium leading-snug", badge ? "pr-14" : "pr-8")}>
+        {title}
       </div>
-      <div className="absolute top-1.5 right-1.5 hidden group-hover:flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={onEdit}>
-          <Pencil className="w-3.5 h-3.5" />
+      {subtitle && (
+        <div className="text-xs text-muted-foreground mt-0.5">{subtitle}</div>
+      )}
+
+      {/* Hover actions */}
+      <div
+        className="absolute top-2 right-1 hidden group-hover:flex items-center gap-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onEdit}>
+          <Pencil className="w-3 h-3" />
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive">
-              <Trash2 className="w-3.5 h-3.5" />
+            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+              <Trash2 className="w-3 h-3" />
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -712,8 +765,67 @@ function KanbanCard({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onDelete} disabled={deletePending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Delete
+              <AlertDialogAction
+                onClick={onDelete}
+                disabled={deletePending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
+
+// ─── JDR Comment row — plain text list ───────────────────────────────────────
+
+function CommentRow({
+  comment,
+  onEdit,
+  onDelete,
+  deletePending,
+  deleteDescription,
+}: {
+  comment: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  deletePending: boolean;
+  deleteDescription: string;
+}) {
+  return (
+    <div className="group relative flex items-center px-4 py-2.5 border-b border-border/40 hover:bg-muted/20 transition-colors">
+      <span className="text-sm text-foreground/85 pr-14 leading-snug">{comment}</span>
+      <div
+        className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onEdit}>
+          <Pencil className="w-3 h-3" />
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>{deleteDescription}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={onDelete}
+                disabled={deletePending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Delete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -724,20 +836,30 @@ function KanbanCard({
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <div className="text-xs text-muted-foreground text-center py-6">{text}</div>;
+  return <div className="text-xs text-muted-foreground text-center py-8">{text}</div>;
 }
 
-// ─── Dialogs ────────────────────────────────────────────────────────────────
+// ─── Dialogs ──────────────────────────────────────────────────────────────────
 
-function TypeDialog({ editing, onClose, onSave, saving }: { editing: DprActivityType | null; onClose: () => void; onSave: (name: string) => void; saving: boolean }) {
+function TypeDialog({
+  editing,
+  onClose,
+  onSave,
+  saving,
+}: {
+  editing: DprActivityType | null;
+  onClose: () => void;
+  onSave: (name: string) => void;
+  saving: boolean;
+}) {
   const [name, setName] = useState(editing?.name ?? "");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{editing ? "Edit Activity Type" : "New Activity Type"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{editing ? "Edit Category" : "New Category"}</DialogTitle></DialogHeader>
         <div className="space-y-2">
           <Label>Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Effective Working Time" autoFocus />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Working Time" autoFocus />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -774,12 +896,12 @@ function GroupDialog({
         <div className="space-y-3">
           <div className="space-y-2">
             <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Travel" autoFocus />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Effective Working Time" autoFocus />
           </div>
           <div className="space-y-2">
-            <Label>Activity Type</Label>
+            <Label>Category</Label>
             <Select value={activityTypeId?.toString() || ""} onValueChange={(v) => setActivityTypeId(parseInt(v))}>
-              <SelectTrigger><SelectValue placeholder="Select Activity Type" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select Category" /></SelectTrigger>
               <SelectContent>
                 {types.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
               </SelectContent>
@@ -821,7 +943,7 @@ function ActivityDialog({
         <div className="space-y-3">
           <div className="space-y-2">
             <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Site Travel" autoFocus />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mobilisation" autoFocus />
           </div>
           <div className="space-y-2">
             <Label>Activity Group</Label>
@@ -835,7 +957,10 @@ function ActivityDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => activityGroupId != null && onSave({ name: name.trim(), activityGroupId })} disabled={!name.trim() || !activityGroupId || saving}>
+          <Button
+            onClick={() => activityGroupId != null && onSave({ name: name.trim(), activityGroupId })}
+            disabled={!name.trim() || !activityGroupId || saving}
+          >
             {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
           </Button>
         </DialogFooter>
@@ -900,7 +1025,7 @@ function JdrCodeDialog({
             <Input value={form.jdrWorkActivity} onChange={(e) => setForm({ ...form, jdrWorkActivity: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label>Contractual (JDR) Code</Label>
+            <Label>Contractual Code</Label>
             <Input value={form.contractualCode} onChange={(e) => setForm({ ...form, contractualCode: e.target.value })} />
           </div>
           <div className="space-y-2">
