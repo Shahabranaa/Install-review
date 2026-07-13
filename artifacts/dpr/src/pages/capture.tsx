@@ -30,10 +30,21 @@ import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_ACTIVITY_TYPE_NAME = "Working Time";
-const DEFAULT_GROUP_NAME = "Standard";
-const ALLOWED_TYPE_NAMES = ["Working Time", "Non-Working Time"];
-const ALLOWED_GROUP_NAMES = ["Standard", "Extra", "Re Work"];
+const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
+const DEFAULT_GROUP_NAME = "Effective Working Time";
+const ALLOWED_TYPE_NAMES = ["Effective Working Time", "Non-Working Time"];
+const ALLOWED_GROUP_NAMES = ["Effective Working Time", "Extra Work", "Re-Work"];
+
+// Display labels — DB name → label shown in the UI
+const TYPE_LABELS: Record<string, string> = {
+  "Effective Working Time": "Working Time",
+  "Non-Working Time": "Non-Working Time",
+};
+const GROUP_LABELS: Record<string, string> = {
+  "Effective Working Time": "Effective",
+  "Extra Work": "Extra Work",
+  "Re-Work": "Re-Work",
+};
 
 type BillingParty = "jdr" | "orsted" | null;
 
@@ -100,7 +111,7 @@ function ActivityGroupPicker({
                 : "bg-muted/60 text-muted-foreground hover:bg-muted"
             )}
           >
-            {type.name}
+            {TYPE_LABELS[type.name] ?? type.name}
           </button>
         ))}
       </div>
@@ -119,14 +130,14 @@ function ActivityGroupPicker({
                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
               )}
             >
-              {group.name}
+              {GROUP_LABELS[group.name] ?? group.name}
             </button>
           ) : (
             <span
               key={group.id}
               className="px-2 py-0.5 text-[11px] font-medium rounded whitespace-nowrap bg-muted/30 text-muted-foreground/40"
             >
-              {group.name}
+              {GROUP_LABELS[group.name] ?? group.name}
             </span>
           )
         )}
