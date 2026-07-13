@@ -20,34 +20,6 @@ integrations = ["sendgrid:1.0.0"]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
-[[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 19059
-externalPort = 3000
-
-[[ports]]
-localPort = 19060
-externalPort = 4200
-
-[[ports]]
-localPort = 20171
-externalPort = 3002
-
-[[ports]]
-localPort = 21728
-externalPort = 3001
-
-[[ports]]
-localPort = 25230
-externalPort = 80
-
 [nix]
 channel = "stable-25_05"
 
