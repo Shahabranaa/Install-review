@@ -30,7 +30,10 @@ import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
+const DEFAULT_ACTIVITY_TYPE_NAME = "Working Time";
+const DEFAULT_GROUP_NAME = "Standard";
+const ALLOWED_TYPE_NAMES = ["Working Time", "Non-Working Time"];
+const ALLOWED_GROUP_NAMES = ["Standard", "Extra", "Re Work"];
 
 type BillingParty = "jdr" | "orsted" | null;
 
@@ -42,10 +45,11 @@ type RowDraft = {
   locationId: number | null;
   notes: string;
   activityTypeId: number | null;
+  activityGroupId: number | null;
   billingParty: BillingParty;
 };
 
-function emptyDraft(defaultActivityTypeId: number | null): RowDraft {
+function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number | null): RowDraft {
   return {
     date: format(new Date(), "yyyy-MM-dd"),
     teamId: null,
@@ -54,6 +58,7 @@ function emptyDraft(defaultActivityTypeId: number | null): RowDraft {
     locationId: null,
     notes: "",
     activityTypeId: defaultActivityTypeId,
+    activityGroupId: defaultGroupId,
     billingParty: null,
   };
 }
@@ -61,29 +66,29 @@ function emptyDraft(defaultActivityTypeId: number | null): RowDraft {
 // ─── Two-level Activity Group picker ─────────────────────────────────────────
 
 function ActivityGroupPicker({
-  activityTypes,
-  activityGroups,
+  allowedTypes,
+  allowedGroups,
+  workingTypeId,
   typeValue,
+  groupValue,
   onTypeChange,
+  onGroupChange,
 }: {
-  activityTypes: { id: number; name: string }[];
-  activityGroups: { id: number; name: string; activityTypeId?: number | null }[];
+  allowedTypes: { id: number; name: string }[];
+  allowedGroups: { id: number; name: string }[];
+  workingTypeId: number | null;
   typeValue: number | null;
+  groupValue: number | null;
   onTypeChange: (id: number) => void;
+  onGroupChange: (id: number) => void;
 }) {
-  const filteredGroups = useMemo(
-    () =>
-      typeValue != null
-        ? activityGroups.filter((g) => g.activityTypeId === typeValue)
-        : [],
-    [activityGroups, typeValue]
-  );
+  const isWorking = typeValue === workingTypeId;
 
   return (
     <div className="flex flex-col gap-1 min-w-[200px]">
-      {/* Row 1: Activity Types */}
+      {/* Row 1: Activity Types — always both visible */}
       <div className="flex flex-wrap gap-1">
-        {activityTypes.map((type) => (
+        {allowedTypes.map((type) => (
           <button
             key={type.id}
             type="button"
@@ -99,19 +104,33 @@ function ActivityGroupPicker({
           </button>
         ))}
       </div>
-      {/* Row 2: Activity Groups filtered by selected type */}
-      {filteredGroups.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {filteredGroups.map((group) => (
+      {/* Row 2: Activity Groups — always all three visible; active only when Working Time */}
+      <div className="flex flex-wrap gap-1">
+        {allowedGroups.map((group) =>
+          isWorking ? (
+            <button
+              key={group.id}
+              type="button"
+              onClick={() => onGroupChange(group.id)}
+              className={cn(
+                "px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap",
+                groupValue === group.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {group.name}
+            </button>
+          ) : (
             <span
               key={group.id}
-              className="px-2 py-0.5 text-[11px] font-medium rounded bg-primary/15 text-primary whitespace-nowrap"
+              className="px-2 py-0.5 text-[11px] font-medium rounded whitespace-nowrap bg-muted/30 text-muted-foreground/40"
             >
               {group.name}
             </span>
-          ))}
-        </div>
-      )}
+          )
+        )}
+      </div>
     </div>
   );
 }
@@ -152,7 +171,8 @@ function parsePastedText(
   text: string,
   teams: DprTeam[],
   locations: DprLocation[],
-  defaultActivityTypeId: number | null
+  defaultActivityTypeId: number | null,
+  defaultGroupId: number | null
 ): PendingRow[] {
   const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
   return lines.map((line, idx) => {
@@ -169,6 +189,7 @@ function parsePastedText(
       locationId: location?.id ?? null,
       notes: rawNotes.trim(),
       activityTypeId: defaultActivityTypeId,
+      activityGroupId: defaultGroupId,
       billingParty: null,
       teamRaw: rawTeam.trim(),
       locationRaw: rawLocation.trim(),
@@ -198,11 +219,27 @@ export default function CapturePage() {
   const { data: activityTypes = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups({});
 
-  const defaultActivityType = useMemo(
-    () => findByName(activityTypes, DEFAULT_ACTIVITY_TYPE_NAME),
+  const allowedTypes = useMemo(
+    () => activityTypes.filter((t) => ALLOWED_TYPE_NAMES.includes(t.name)),
     [activityTypes]
   );
+  const allowedGroups = useMemo(
+    () => activityGroups.filter((g) => ALLOWED_GROUP_NAMES.includes(g.name)),
+    [activityGroups]
+  );
+
+  const defaultActivityType = useMemo(
+    () => findByName(allowedTypes, DEFAULT_ACTIVITY_TYPE_NAME),
+    [allowedTypes]
+  );
   const defaultActivityTypeId = defaultActivityType?.id ?? null;
+  const workingTypeId = defaultActivityTypeId;
+
+  const defaultGroup = useMemo(
+    () => findByName(allowedGroups, DEFAULT_GROUP_NAME),
+    [allowedGroups]
+  );
+  const defaultGroupId = defaultGroup?.id ?? null;
 
   const locationOptions: ComboboxOption[] = useMemo(
     () => locations.map((l) => ({ value: l.id.toString(), label: l.name })),
@@ -498,6 +535,9 @@ export default function CapturePage() {
   const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) =>
     quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityTypeId }) });
 
+  const handleQuickSetGroup = (entry: DprTimesheetEntry, activityGroupId: number) =>
+    quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityGroupId }) });
+
   const handleUpdate = () => {
     if (!editingId) return;
     if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
@@ -507,7 +547,7 @@ export default function CapturePage() {
   const startEditing = (entry: DprTimesheetEntry) => {
     flushAutosave();
     setEditingId(entry.id);
-    setEditDraft({ date: entry.date, teamId: entry.teamId, startTime: entry.startTime || "", endTime: entry.endTime || "", locationId: entry.locationId, notes: entry.notes || "", activityTypeId: entry.activityTypeId, billingParty: entry.billingParty ?? null });
+    setEditDraft({ date: entry.date, teamId: entry.teamId, startTime: entry.startTime || "", endTime: entry.endTime || "", locationId: entry.locationId, notes: entry.notes || "", activityTypeId: entry.activityTypeId, activityGroupId: entry.activityGroupId ?? null, billingParty: entry.billingParty ?? null });
   };
 
   const flushAutosave = () => {
@@ -540,7 +580,7 @@ export default function CapturePage() {
   const handlePasteChange = (text: string) => {
     setPasteText(text);
     if (!text.trim()) { setPendingRows(null); return; }
-    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId));
+    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId));
   };
 
   const updatePendingRow = (key: string, patch: Partial<PendingRow>) =>
@@ -616,7 +656,7 @@ export default function CapturePage() {
             <ClipboardPaste className="w-4 h-4" />
             Paste Rows
           </Button>
-          <Button onClick={() => setNewRow(emptyDraft(defaultActivityTypeId))} disabled={newRow !== null} className="gap-2">
+          <Button onClick={() => setNewRow(emptyDraft(defaultActivityTypeId, defaultGroupId))} disabled={newRow !== null} className="gap-2">
             <Plus className="w-4 h-4" />
             Add Row
           </Button>
@@ -689,10 +729,13 @@ export default function CapturePage() {
                     </TableCell>
                     <TableCell className={COL.group}>
                       <ActivityGroupPicker
-                        activityTypes={activityTypes}
-                        activityGroups={activityGroups}
+                        allowedTypes={allowedTypes}
+                        allowedGroups={allowedGroups}
+                        workingTypeId={workingTypeId}
                         typeValue={newRow.activityTypeId}
+                        groupValue={newRow.activityGroupId}
                         onTypeChange={(id) => setNewRow({ ...newRow, activityTypeId: id })}
+                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
                       />
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
@@ -739,10 +782,13 @@ export default function CapturePage() {
                         </TableCell>
                         <TableCell className={COL.group}>
                           <ActivityGroupPicker
-                            activityTypes={activityTypes}
-                            activityGroups={activityGroups}
+                            allowedTypes={allowedTypes}
+                            allowedGroups={allowedGroups}
+                            workingTypeId={workingTypeId}
                             typeValue={editDraft.activityTypeId ?? null}
+                            groupValue={editDraft.activityGroupId ?? null}
                             onTypeChange={(id) => commitDraft({ activityTypeId: id })}
+                            onGroupChange={(id) => commitDraft({ activityGroupId: id })}
                           />
                         </TableCell>
                         <TableCell className={cn(COL.actions, "text-right")}>
@@ -787,10 +833,13 @@ export default function CapturePage() {
                       </TableCell>
                       <TableCell className={COL.group} onClick={(e) => e.stopPropagation()}>
                         <ActivityGroupPicker
-                          activityTypes={activityTypes}
-                          activityGroups={activityGroups}
+                          allowedTypes={allowedTypes}
+                          allowedGroups={allowedGroups}
+                          workingTypeId={workingTypeId}
                           typeValue={entry.activityTypeId ?? null}
+                          groupValue={entry.activityGroupId ?? null}
                           onTypeChange={(id) => handleQuickSetType(entry, id)}
+                          onGroupChange={(id) => handleQuickSetGroup(entry, id)}
                         />
                       </TableCell>
                       <TableCell className={cn(COL.actions, "text-right")} onClick={(e) => e.stopPropagation()}>
@@ -896,10 +945,13 @@ export default function CapturePage() {
                           </TableCell>
                           <TableCell>
                             <ActivityGroupPicker
-                              activityTypes={activityTypes}
-                              activityGroups={activityGroups}
+                              allowedTypes={allowedTypes}
+                              allowedGroups={allowedGroups}
+                              workingTypeId={workingTypeId}
                               typeValue={row.activityTypeId}
+                              groupValue={row.activityGroupId}
                               onTypeChange={(id) => updatePendingRow(row.key, { activityTypeId: id })}
+                              onGroupChange={(id) => updatePendingRow(row.key, { activityGroupId: id })}
                             />
                           </TableCell>
                           <TableCell>
