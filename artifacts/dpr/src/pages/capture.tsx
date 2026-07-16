@@ -155,6 +155,21 @@ function findByName<T extends { id: number; name: string }>(
   return list.find((item) => item.name.trim().toLowerCase() === normalized);
 }
 
+// Fuzzy match: exact first, then substring in either direction
+function findByNameFuzzy<T extends { id: number; name: string }>(
+  list: T[],
+  name: string
+): T | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const exact = list.find((item) => item.name.trim().toLowerCase() === normalized);
+  if (exact) return exact;
+  return list.find((item) => {
+    const dbName = item.name.trim().toLowerCase();
+    return dbName.includes(normalized) || normalized.includes(dbName);
+  });
+}
+
 function normalizeTime(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -163,19 +178,39 @@ function normalizeTime(raw: string): string {
   return trimmed;
 }
 
-function normalizeDate(raw: string): string {
+function normalizeDate(raw: string): string | null {
   const trimmed = raw.trim();
-  if (!trimmed) return format(new Date(), "yyyy-MM-dd");
+  if (!trimmed) return null;
+  // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // DD.MM.YY or DD.MM.YYYY (common in EU/field spreadsheets, e.g. "14.06.26")
+  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (dotMatch) {
+    const day = dotMatch[1].padStart(2, "0");
+    const month = dotMatch[2].padStart(2, "0");
+    const year = dotMatch[3].length === 2 ? `20${dotMatch[3]}` : dotMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Generic fallback
   const parsed = new Date(trimmed);
   if (!isNaN(parsed.getTime())) return format(parsed, "yyyy-MM-dd");
-  return trimmed;
+  return null; // unparseable — caller must handle
 }
 
-type PendingRow = RowDraft & {
+type PendingRow = {
   key: string;
+  date: string | null;
+  dateRaw: string;
+  teamId: number | null;
   teamRaw: string;
+  startTime: string;
+  endTime: string;
+  locationId: number | null;
   locationRaw: string;
+  notes: string;
+  activityTypeId: number | null;
+  activityGroupId: number | null;
+  billingParty: BillingParty;
 };
 
 function parsePastedText(
@@ -190,20 +225,22 @@ function parsePastedText(
     const cols = line.split("\t");
     const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = ""] = cols;
     const team = findByName(teams, rawTeam);
-    const location = findByName(locations, rawLocation);
+    const location = findByNameFuzzy(locations, rawLocation);
+    const parsedDate = normalizeDate(rawDate);
     return {
       key: `${Date.now()}-${idx}`,
-      date: normalizeDate(rawDate),
+      date: parsedDate,
+      dateRaw: rawDate.trim(),
       teamId: team?.id ?? null,
+      teamRaw: rawTeam.trim(),
       startTime: normalizeTime(rawStart),
       endTime: normalizeTime(rawEnd),
       locationId: location?.id ?? null,
+      locationRaw: rawLocation.trim(),
       notes: rawNotes.trim(),
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       billingParty: null,
-      teamRaw: rawTeam.trim(),
-      locationRaw: rawLocation.trim(),
     };
   });
 }
@@ -543,11 +580,15 @@ export default function CapturePage() {
     billingParty: draft.billingParty ?? null,
   });
 
-  const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) =>
+  const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) => {
+    if (entry.id < 0) return; // temp ID — row not yet persisted, skip
     quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityTypeId }) });
+  };
 
-  const handleQuickSetGroup = (entry: DprTimesheetEntry, activityGroupId: number) =>
+  const handleQuickSetGroup = (entry: DprTimesheetEntry, activityGroupId: number) => {
+    if (entry.id < 0) return; // temp ID — row not yet persisted, skip
     quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityGroupId }) });
+  };
 
   const handleUpdate = () => {
     if (!editingId) return;
@@ -605,7 +646,7 @@ export default function CapturePage() {
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
     setIsSavingBulk(true);
-    const rowsToSave = pendingRows.filter((row) => row.date);
+    const rowsToSave = pendingRows.filter((row): row is PendingRow & { date: string } => !!row.date);
     const skipped = pendingRows.length - rowsToSave.length;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
@@ -935,7 +976,19 @@ export default function CapturePage() {
                       return (
                         <TableRow key={row.key}>
                           <TableCell>
-                            <Input type="date" value={row.date} onChange={(e) => updatePendingRow(row.key, { date: e.target.value })} className="h-8 text-sm" />
+                            <div className="flex flex-col gap-0.5">
+                              <Input
+                                type="date"
+                                value={row.date ?? ""}
+                                onChange={(e) => updatePendingRow(row.key, { date: e.target.value || null, dateRaw: e.target.value })}
+                                className={cn("h-8 text-sm", !row.date && row.dateRaw && "border-red-500 focus-visible:ring-red-500")}
+                              />
+                              {!row.date && row.dateRaw && (
+                                <span className="text-[10px] text-red-500 truncate max-w-[110px]" title={row.dateRaw}>
+                                  Can't parse: {row.dateRaw}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Select value={row.teamId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { teamId: parseInt(v) })}>
@@ -981,10 +1034,16 @@ export default function CapturePage() {
               </div>
             )}
 
+            {pendingRows && pendingRows.some((r) => r.dateRaw && !r.date) && (
+              <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Some dates couldn't be parsed — fix them before saving (try YYYY-MM-DD or DD.MM.YY format).
+              </div>
+            )}
             {pendingRows && pendingRows.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) && (
               <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Some rows have a team or location that didn't match reference data — pick a value from the dropdown before saving.
+                Some rows have a team or location that didn't match — pick a value from the dropdown before saving.
               </div>
             )}
           </div>
@@ -994,7 +1053,7 @@ export default function CapturePage() {
               <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || (pendingRows?.some((r) => r.dateRaw && !r.date) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>
