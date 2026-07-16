@@ -473,6 +473,8 @@ export interface DprTimesheetEntryInput {
   /** @nullable */
   activityTypeId?: number | null;
   /** @nullable */
+  activityGroupId?: number | null;
+  /** @nullable */
   billingParty?: DprTimesheetEntryInputBillingParty;
 }
 
