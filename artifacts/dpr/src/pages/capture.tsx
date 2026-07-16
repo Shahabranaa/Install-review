@@ -183,7 +183,7 @@ function normalizeDate(raw: string): string | null {
   if (!trimmed) return null;
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // DD.MM.YY or DD.MM.YYYY (common in EU/field spreadsheets, e.g. "14.06.26")
+  // DD.MM.YY or DD.MM.YYYY (dot-separated, e.g. "14.06.26")
   const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
   if (dotMatch) {
     const day = dotMatch[1].padStart(2, "0");
@@ -191,7 +191,15 @@ function normalizeDate(raw: string): string | null {
     const year = dotMatch[3].length === 2 ? `20${dotMatch[3]}` : dotMatch[3];
     return `${year}-${month}-${day}`;
   }
-  // Generic fallback
+  // DD/MM/YY or DD/MM/YYYY (slash-separated UK format, e.g. "14/06/2026")
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashMatch) {
+    const day = slashMatch[1].padStart(2, "0");
+    const month = slashMatch[2].padStart(2, "0");
+    const year = slashMatch[3].length === 2 ? `20${slashMatch[3]}` : slashMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  // Generic fallback (avoid for ambiguous formats — JS Date treats M/D/YYYY as US)
   const parsed = new Date(trimmed);
   if (!isNaN(parsed.getTime())) return format(parsed, "yyyy-MM-dd");
   return null; // unparseable — caller must handle
@@ -939,7 +947,7 @@ export default function CapturePage() {
 
       {/* ── Paste Rows dialog (unchanged behaviour) ── */}
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else setPasteOpen(true); }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-[95vw] w-full max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Paste rows from a spreadsheet</DialogTitle>
             <DialogDescription>
@@ -958,17 +966,27 @@ export default function CapturePage() {
 
             {pendingRows && pendingRows.length > 0 && (
               <div className="rounded-md border border-border overflow-auto flex-1 min-h-0">
-                <Table>
-                  <TableHeader className="bg-muted/50 sticky top-0">
+                <Table className="table-fixed w-full min-w-[1100px]">
+                  <colgroup>
+                    <col className="w-[130px]" />
+                    <col className="w-[140px]" />
+                    <col className="w-[100px]" />
+                    <col className="w-[100px]" />
+                    <col className="w-[180px]" />
+                    <col className="w-[220px]" />
+                    <col />
+                    <col className="w-[44px]" />
+                  </colgroup>
+                  <TableHeader className="bg-muted/50 sticky top-0 z-10">
                     <TableRow>
-                      <TableHead className="w-[120px]">Date</TableHead>
-                      <TableHead className="w-[140px]">Team</TableHead>
-                      <TableHead className="w-[90px]">Start</TableHead>
-                      <TableHead className="w-[90px]">End</TableHead>
-                      <TableHead className="w-[200px]">Location</TableHead>
-                      <TableHead className="w-[160px]">Activity Type</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Team</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>End</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Activity Type</TableHead>
                       <TableHead>Notes</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
+                      <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -976,23 +994,24 @@ export default function CapturePage() {
                       const teamUnmatched = row.teamRaw && !row.teamId;
                       const locationUnmatched = row.locationRaw && !row.locationId;
                       return (
-                        <TableRow key={row.key}>
-                          <TableCell>
+                        <TableRow key={row.key} className="align-top">
+                          <TableCell className="pt-3">
                             <div className="flex flex-col gap-0.5">
                               <Input
                                 type="date"
+                                lang="en-GB"
                                 value={row.date ?? ""}
                                 onChange={(e) => updatePendingRow(row.key, { date: e.target.value || null, dateRaw: e.target.value })}
                                 className={cn("h-8 text-sm", !row.date && row.dateRaw && "border-red-500 focus-visible:ring-red-500")}
                               />
                               {!row.date && row.dateRaw && (
-                                <span className="text-[10px] text-red-500 truncate max-w-[110px]" title={row.dateRaw}>
+                                <span className="text-[10px] text-red-500 truncate" title={row.dateRaw}>
                                   Can't parse: {row.dateRaw}
                                 </span>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <Select value={row.teamId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { teamId: parseInt(v) })}>
                               <SelectTrigger className={`h-8 text-sm ${teamUnmatched ? "border-amber-500" : ""}`}>
                                 <SelectValue placeholder={teamUnmatched ? row.teamRaw : "Select Team"} />
@@ -1000,16 +1019,16 @@ export default function CapturePage() {
                               <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                             </Select>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <Input type="time" value={row.startTime} onChange={(e) => updatePendingRow(row.key, { startTime: e.target.value })} className="h-8 text-sm" />
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <Input type="time" value={row.endTime} onChange={(e) => updatePendingRow(row.key, { endTime: e.target.value })} className="h-8 text-sm" />
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <Combobox options={locationOptions} value={row.locationId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { locationId: parseInt(v) })} placeholder={locationUnmatched ? row.locationRaw : "Select Location"} searchPlaceholder="Search locations..." triggerClassName={locationUnmatched ? "border-amber-500" : undefined} />
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <ActivityGroupPicker
                               allowedTypes={allowedTypes}
                               allowedGroups={allowedGroups}
@@ -1020,10 +1039,15 @@ export default function CapturePage() {
                               onGroupChange={(id) => updatePendingRow(row.key, { activityGroupId: id })}
                             />
                           </TableCell>
-                          <TableCell>
-                            <Input value={row.notes} onChange={(e) => updatePendingRow(row.key, { notes: e.target.value })} className="h-8 text-sm" />
+                          <TableCell className="pt-2">
+                            <Textarea
+                              value={row.notes}
+                              onChange={(e) => updatePendingRow(row.key, { notes: e.target.value })}
+                              className="text-sm min-h-[56px] resize-none leading-snug"
+                              rows={2}
+                            />
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="pt-3">
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removePendingRow(row.key)}>
                               <X className="w-4 h-4" />
                             </Button>
@@ -1039,7 +1063,7 @@ export default function CapturePage() {
             {pendingRows && pendingRows.some((r) => r.dateRaw && !r.date) && (
               <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Some dates couldn't be parsed — fix them before saving (try YYYY-MM-DD or DD.MM.YY format).
+                Some dates couldn't be parsed — fix them before saving (accepted: DD/MM/YYYY, DD.MM.YY, YYYY-MM-DD).
               </div>
             )}
             {pendingRows && pendingRows.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) && (
