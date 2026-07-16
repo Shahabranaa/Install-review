@@ -75,29 +75,29 @@ function getDateBreakdown(summary: DateSummary): DateBreakdown {
 }
 
 // ─── Colour maps ──────────────────────────────────────────────────────────────
-// Active (selected) pill — filled with status colour
+// Active (selected) pill — double-thickness outline, subtle tint, no solid fill
 const ACTIVE_PILL: Record<TeamStatus, string> = {
-  full:    "bg-green-600  border-green-500  text-white",
-  partial: "bg-amber-500  border-amber-400  text-white",
-  none:    "bg-red-600    border-red-500    text-white",
+  full:    "border-[3px] border-green-500  bg-green-500/10  text-white",
+  partial: "border-[3px] border-amber-400  bg-amber-400/10  text-white",
+  none:    "border-[3px] border-red-500    bg-red-500/10    text-white",
 };
 // Inactive pill border
 const INACTIVE_BORDER: Record<TeamStatus, string> = {
-  full:    "border-green-500  text-white/70",
-  partial: "border-amber-400  text-white/70",
-  none:    "border-red-500    text-white/70",
+  full:    "border border-green-500  text-white/70",
+  partial: "border border-amber-400  text-white/70",
+  none:    "border border-red-500    text-white/70",
 };
-// Team pill active fill
+// Team pill active — double-thickness outline, no fill
 const TEAM_ACTIVE_FILL: Record<TeamStatus, string> = {
-  full:    "bg-green-700  border-green-500  text-white",
-  partial: "bg-amber-600  border-amber-400  text-white",
-  none:    "bg-red-700    border-red-500    text-white",
+  full:    "border-[3px] border-green-500  bg-green-500/10  text-white",
+  partial: "border-[3px] border-amber-400  bg-amber-400/10  text-white",
+  none:    "border-[3px] border-red-500    bg-red-500/10    text-white",
 };
 // Team pill inactive border
 const TEAM_BORDER: Record<TeamStatus, string> = {
-  full:    "border-green-500  text-white/75",
-  partial: "border-amber-400  text-white/75",
-  none:    "border-red-500    text-white/75",
+  full:    "border-2 border-green-500  text-white/75",
+  partial: "border-2 border-amber-400  text-white/75",
+  none:    "border-2 border-red-500    text-white/75",
 };
 
 // ─── Segmented status bar ─────────────────────────────────────────────────────
@@ -289,18 +289,18 @@ export function FilterPillsStatus() {
 
             {/* Selected state */}
             <div className="flex items-center gap-3">
-              <div className="shrink-0 flex flex-col items-start rounded-lg px-3 py-1.5 text-xs font-medium border border-red-500 bg-red-600 min-w-[80px]">
+              <div className="shrink-0 flex flex-col items-start rounded-lg px-3 py-1.5 text-xs font-medium border-[3px] border-red-500 bg-red-500/10 min-w-[80px]">
                 <div className="flex items-center justify-between w-full gap-2">
                   <span className="font-semibold text-white">16/06</span>
-                  <span className="text-[10px] font-bold text-white/70">10/12</span>
+                  <span className="text-[10px] font-bold text-red-400">10/12</span>
                 </div>
                 <div className="mt-1.5 w-full flex rounded-full overflow-hidden h-1.5 gap-px">
-                  <div style={{ width: "67%" }} className="bg-white/50 rounded-l-full" />
-                  <div style={{ width: "16%" }} className="bg-white/30" />
-                  <div style={{ width: "17%" }} className="bg-white/20 rounded-r-full" />
+                  <div style={{ width: "67%" }} className="bg-green-500 rounded-l-full" />
+                  <div style={{ width: "16%" }} className="bg-amber-400" />
+                  <div style={{ width: "17%" }} className="bg-red-500 rounded-r-full" />
                 </div>
               </div>
-              <span className="text-white/50">Selected — filled with status colour; bar visible in white tones</span>
+              <span className="text-white/50">Selected — double-thickness border, faint tint, bar unchanged</span>
             </div>
 
           </div>
