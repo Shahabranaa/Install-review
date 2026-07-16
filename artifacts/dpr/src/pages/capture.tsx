@@ -253,6 +253,95 @@ function parsePastedText(
   });
 }
 
+// ─── Filter pills component ───────────────────────────────────────────────────
+interface FilterPillsProps {
+  distinctDates: string[];
+  teams: DprTeam[];
+  activeDate: string | null;
+  activeTeamId: number | null;
+  onDateClick: (d: string) => void;
+  onTeamClick: (id: number) => void;
+}
+
+function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick }: FilterPillsProps) {
+  const [visibleDateRows, setVisibleDateRows] = useState(1);
+  useEffect(() => { setVisibleDateRows(1); }, [distinctDates]);
+
+  const pageSize = Math.max(teams.length, 1);
+  const visibleDates = distinctDates.slice(0, visibleDateRows * pageSize);
+  const hasMoreDates = distinctDates.length > visibleDates.length;
+  const dateRows: string[][] = [];
+  for (let i = 0; i < visibleDates.length; i += pageSize) {
+    dateRows.push(visibleDates.slice(i, i + pageSize));
+  }
+
+  return (
+    <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
+      {distinctDates.length > 0 && dateRows.map((row, rowIdx) => {
+        const isLastRow = rowIdx === dateRows.length - 1;
+        return (
+          <div key={rowIdx} className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0 w-8" style={{ visibility: rowIdx === 0 ? "visible" : "hidden" }}>
+              Date
+            </span>
+            {row.map((d) => {
+              const label = (() => { try { return format(parseISO(d), "dd/MM"); } catch { return d; } })();
+              const isActive = activeDate === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  data-testid={`date-pill-${d}`}
+                  onClick={() => onDateClick(d)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {isLastRow && hasMoreDates && (
+              <button
+                type="button"
+                onClick={() => setVisibleDateRows((n) => n + 1)}
+                className="text-xs text-primary hover:text-primary/80 transition-colors shrink-0 ml-1 underline underline-offset-2"
+              >
+                show more
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
+        {teams.map((team) => {
+          const isActive = activeTeamId === team.id;
+          return (
+            <button
+              key={team.id}
+              type="button"
+              data-testid={`team-pill-${team.id}`}
+              onClick={() => onTeamClick(team.id)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
+                isActive
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+              )}
+            >
+              {team.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Column widths ────────────────────────────────────────────────────────────
 const COL = {
   date: "w-[130px]",
@@ -497,18 +586,17 @@ export default function CapturePage() {
   // Date / team filter pills
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
-  const [visibleDateRows, setVisibleDateRows] = useState(1);
 
   const distinctDates = useMemo(() => {
     const dates = Array.from(new Set(sortedEntries.map((e) => e.date)));
     return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
   }, [sortedEntries]);
 
-  // Reset row count when the date list changes (entries added/removed)
-  useEffect(() => { setVisibleDateRows(1); }, [distinctDates]);
-
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
+
+  const handleDateClick = (d: string) => setActiveDate((prev) => prev === d ? null : d);
+  const handleTeamClick = (id: number) => setActiveTeamId((prev) => prev === id ? null : id);
 
   const filteredEntries = useMemo(
     () =>
@@ -775,78 +863,14 @@ export default function CapturePage() {
       )}
 
       {/* Date & team filter pills */}
-      {(() => {
-        const pageSize = Math.max(teams.length, 1);
-        const visibleDates = distinctDates.slice(0, visibleDateRows * pageSize);
-        const hasMoreDates = distinctDates.length > visibleDates.length;
-        // Split visible dates into rows of pageSize
-        const dateRows: string[][] = [];
-        for (let i = 0; i < visibleDates.length; i += pageSize) {
-          dateRows.push(visibleDates.slice(i, i + pageSize));
-        }
-        return (
-          <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-            {/* Date rows — paginated, one row = pageSize pills */}
-            {distinctDates.length > 0 && dateRows.map((row, rowIdx) => {
-              const isLastRow = rowIdx === dateRows.length - 1;
-              return (
-                <div key={rowIdx} className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground shrink-0 w-8" style={{ visibility: rowIdx === 0 ? "visible" : "hidden" }}>
-                    Date
-                  </span>
-                  {row.map((d) => {
-                    const label = (() => { try { return format(parseISO(d), "dd/MM"); } catch { return d; } })();
-                    const active = activeDate === d;
-                    return (
-                      <button
-                        key={d}
-                        onClick={() => setActiveDate(active ? null : d)}
-                        className={cn(
-                          "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
-                          active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                  {isLastRow && hasMoreDates && (
-                    <button
-                      onClick={() => setVisibleDateRows((n) => n + 1)}
-                      className="text-xs text-primary hover:text-primary/80 transition-colors shrink-0 ml-1 underline underline-offset-2"
-                    >
-                      show more
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {/* Team row — always visible */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
-              {teams.map((team) => {
-                const active = activeTeamId === team.id;
-                return (
-                  <button
-                    key={team.id}
-                    onClick={() => setActiveTeamId(active ? null : team.id)}
-                    className={cn(
-                      "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
-                      active
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
-                    )}
-                  >
-                    {team.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
+      <FilterPills
+        distinctDates={distinctDates}
+        teams={teams}
+        activeDate={activeDate}
+        activeTeamId={activeTeamId}
+        onDateClick={handleDateClick}
+        onTeamClick={handleTeamClick}
+      />
 
       {/* Main content */}
       <div className="flex-1 overflow-auto">
