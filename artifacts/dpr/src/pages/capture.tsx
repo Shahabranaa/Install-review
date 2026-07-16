@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useCreateDprTimesheetEntry,
@@ -759,7 +759,7 @@ export default function CapturePage() {
                   <TableRow className="bg-primary/5">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
-                      <Input type="date" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
+                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
                     </TableCell>
                     <TableCell className={COL.team}>
                       <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, teamId: parseInt(v) })}>
@@ -812,7 +812,7 @@ export default function CapturePage() {
                       <TableRow key={entry.id} className="bg-muted/20">
                         <TableCell className="w-[36px]" />
                         <TableCell className={COL.date}>
-                          <Input type="date" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
                         </TableCell>
                         <TableCell className={COL.team}>
                           <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
@@ -867,7 +867,9 @@ export default function CapturePage() {
                       <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
                         <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectRow(entry.id)} aria-label={`Select row ${entry.id}`} />
                       </TableCell>
-                      <TableCell className={cn(COL.date, "font-medium")}>{entry.date}</TableCell>
+                      <TableCell className={cn(COL.date, "font-medium")}>
+                        {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                      </TableCell>
                       <TableCell className={COL.team}>
                         {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
