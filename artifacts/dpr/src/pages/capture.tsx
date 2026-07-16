@@ -253,6 +253,68 @@ function parsePastedText(
   });
 }
 
+// ─── Status helpers ───────────────────────────────────────────────────────────
+type TeamStatus = "none" | "partial" | "full";
+
+function parseMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function hoursForEntry(startTime: string | null | undefined, endTime: string | null | undefined): number {
+  if (!startTime || !endTime) return 0;
+  const start = parseMinutes(startTime);
+  let end = parseMinutes(endTime);
+  if (end <= start) end += 24 * 60; // overnight shift
+  return (end - start) / 60;
+}
+function getTeamStatus(hours: number): TeamStatus {
+  if (hours === 0) return "none";
+  if (hours < 12) return "partial";
+  return "full";
+}
+interface DateBreakdown { full: number; partial: number; none: number; total: number; worstStatus: TeamStatus; }
+function getDateBreakdown(date: string, teams: DprTeam[], teamHoursMap: Map<string, Map<number, number>>): DateBreakdown {
+  const dm = teamHoursMap.get(date) ?? new Map<number, number>();
+  let full = 0, partial = 0, none = 0;
+  for (const team of teams) {
+    const s = getTeamStatus(dm.get(team.id) ?? 0);
+    if (s === "full") full++;
+    else if (s === "partial") partial++;
+    else none++;
+  }
+  const worstStatus: TeamStatus = none > 0 ? "none" : partial > 0 ? "partial" : "full";
+  return { full, partial, none, total: teams.length, worstStatus };
+}
+
+const STATUS_BORDER: Record<TeamStatus, string> = {
+  full:    "border-green-500",
+  partial: "border-amber-400",
+  none:    "border-red-500",
+};
+const STATUS_TEXT: Record<TeamStatus, string> = {
+  full:    "text-green-400",
+  partial: "text-amber-400",
+  none:    "text-red-400",
+};
+const STATUS_TINT: Record<TeamStatus, string> = {
+  full:    "bg-green-500/10",
+  partial: "bg-amber-400/10",
+  none:    "bg-red-500/10",
+};
+
+// Segmented bar showing green / amber / red proportions
+function StatusBar({ bd, isActive }: { bd: DateBreakdown; isActive: boolean }) {
+  const pct = (n: number) => `${(n / Math.max(bd.total, 1)) * 100}%`;
+  const base = isActive ? "opacity-60" : "";
+  return (
+    <div className="mt-1 w-full flex rounded-full overflow-hidden h-1 gap-px">
+      {bd.full    > 0 && <div style={{ width: pct(bd.full)    }} className={cn("bg-green-500", base, bd.partial === 0 && bd.none === 0 ? "rounded-full" : "rounded-l-full")} />}
+      {bd.partial > 0 && <div style={{ width: pct(bd.partial) }} className={cn("bg-amber-400", base, bd.full === 0 ? "rounded-l-full" : "", bd.none === 0 ? "rounded-r-full" : "")} />}
+      {bd.none    > 0 && <div style={{ width: pct(bd.none)    }} className={cn("bg-red-500",   base, bd.full === 0 && bd.partial === 0 ? "rounded-full" : "rounded-r-full")} />}
+    </div>
+  );
+}
+
 // ─── Filter pills component ───────────────────────────────────────────────────
 interface FilterPillsProps {
   distinctDates: string[];
@@ -261,9 +323,10 @@ interface FilterPillsProps {
   activeTeamId: number | null;
   onDateClick: (d: string) => void;
   onTeamClick: (id: number) => void;
+  teamHoursMap: Map<string, Map<number, number>>;
 }
 
-function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick }: FilterPillsProps) {
+function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick, teamHoursMap }: FilterPillsProps) {
   const [visibleDateRows, setVisibleDateRows] = useState(1);
   useEffect(() => { setVisibleDateRows(1); }, [distinctDates]);
 
@@ -275,18 +338,23 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
     dateRows.push(visibleDates.slice(i, i + pageSize));
   }
 
+  // Team status for active date
+  const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
+
   return (
     <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
       {distinctDates.length > 0 && dateRows.map((row, rowIdx) => {
         const isLastRow = rowIdx === dateRows.length - 1;
         return (
-          <div key={rowIdx} className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground shrink-0 w-8" style={{ visibility: rowIdx === 0 ? "visible" : "hidden" }}>
+          <div key={rowIdx} className="flex items-start gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0 w-8 mt-1.5" style={{ visibility: rowIdx === 0 ? "visible" : "hidden" }}>
               Date
             </span>
             {row.map((d) => {
               const label = (() => { try { return format(parseISO(d), "dd/MM"); } catch { return d; } })();
               const isActive = activeDate === d;
+              const bd = getDateBreakdown(d, teams, teamHoursMap);
+              const ws = bd.worstStatus;
               return (
                 <button
                   key={d}
@@ -294,13 +362,19 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
                   data-testid={`date-pill-${d}`}
                   onClick={() => onDateClick(d)}
                   className={cn(
-                    "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
+                    "shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-xs font-medium transition-colors min-w-[64px]",
                     isActive
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                      ? cn("border-[3px]", STATUS_BORDER[ws], STATUS_TINT[ws], "text-foreground")
+                      : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
                   )}
                 >
-                  {label}
+                  <div className="flex items-center justify-between w-full gap-1.5">
+                    <span className="font-semibold">{label}</span>
+                    <span className={cn("text-[10px] font-bold tabular-nums", STATUS_TEXT[ws])}>
+                      {bd.full + bd.partial}/{bd.total}
+                    </span>
+                  </div>
+                  <StatusBar bd={bd} isActive={isActive} />
                 </button>
               );
             })}
@@ -308,7 +382,7 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
               <button
                 type="button"
                 onClick={() => setVisibleDateRows((n) => n + 1)}
-                className="text-xs text-primary hover:text-primary/80 transition-colors shrink-0 ml-1 underline underline-offset-2"
+                className="text-xs text-primary hover:text-primary/80 transition-colors shrink-0 ml-1 underline underline-offset-2 mt-1.5"
               >
                 show more
               </button>
@@ -320,6 +394,8 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
         <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
         {teams.map((team) => {
           const isActive = activeTeamId === team.id;
+          const status: TeamStatus = activeDm ? getTeamStatus(activeDm.get(team.id) ?? 0) : null!;
+          const hasStatus = activeDm !== null;
           return (
             <button
               key={team.id}
@@ -327,10 +403,14 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
               data-testid={`team-pill-${team.id}`}
               onClick={() => onTeamClick(team.id)}
               className={cn(
-                "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
+                hasStatus
+                  ? isActive
+                    ? cn("border-[3px]", STATUS_BORDER[status], STATUS_TINT[status], "text-foreground")
+                    : cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
+                  : isActive
+                    ? "border bg-primary text-primary-foreground border-primary"
+                    : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
               )}
             >
               {team.name}
@@ -608,6 +688,19 @@ export default function CapturePage() {
     [sortedEntries, activeDate, activeTeamId]
   );
 
+  // Hours per team per date — drives filter pill status indicators
+  const teamHoursMap = useMemo(() => {
+    const map = new Map<string, Map<number, number>>();
+    for (const e of sortedEntries) {
+      if (!e.teamId) continue;
+      const h = hoursForEntry(e.startTime, e.endTime);
+      if (!map.has(e.date)) map.set(e.date, new Map());
+      const dm = map.get(e.date)!;
+      dm.set(e.teamId, (dm.get(e.teamId) ?? 0) + h);
+    }
+    return map;
+  }, [sortedEntries]);
+
   // Bulk select — kept for power users; toolbar visible when something is selected
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkWorking, setIsBulkWorking] = useState(false);
@@ -870,6 +963,7 @@ export default function CapturePage() {
         activeTeamId={activeTeamId}
         onDateClick={handleDateClick}
         onTeamClick={handleTeamClick}
+        teamHoursMap={teamHoursMap}
       />
 
       {/* Main content */}
