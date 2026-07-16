@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import {
   useListDprTimesheetEntries,
@@ -494,11 +494,33 @@ export default function CapturePage() {
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Date / team filter pills
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
+
+  const distinctDates = useMemo(() => {
+    const dates = Array.from(new Set(sortedEntries.map((e) => e.date)));
+    return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  }, [sortedEntries]);
+
+  // Clear selection whenever filters change so the bulk toolbar stays accurate
+  useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
+
+  const filteredEntries = useMemo(
+    () =>
+      sortedEntries.filter((e) => {
+        if (activeDate && e.date !== activeDate) return false;
+        if (activeTeamId !== null && e.teamId !== activeTeamId) return false;
+        return true;
+      }),
+    [sortedEntries, activeDate, activeTeamId]
+  );
+
   // Bulk select — kept for power users; toolbar visible when something is selected
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkWorking, setIsBulkWorking] = useState(false);
   const [bulkLocationId, setBulkLocationId] = useState<string>("");
-  const someSelected = sortedEntries.some((e) => selectedIds.has(e.id));
+  const someSelected = filteredEntries.some((e) => selectedIds.has(e.id));
 
   const clearSelection = () => { setSelectedIds(new Set()); setBulkLocationId(""); };
 
@@ -670,11 +692,11 @@ export default function CapturePage() {
   };
 
   // ── Shared table header ───────────────────────────────────────────────────
-  const allSelected = sortedEntries.length > 0 && sortedEntries.every(e => selectedIds.has(e.id));
+  const allSelected = filteredEntries.length > 0 && filteredEntries.every(e => selectedIds.has(e.id));
 
   const toggleSelectAll = () => {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(sortedEntries.map(e => e.id)));
+    else setSelectedIds(new Set(filteredEntries.map(e => e.id)));
   };
 
   const toggleSelectRow = (id: number) => {
@@ -748,6 +770,55 @@ export default function CapturePage() {
         </div>
       )}
 
+      {/* Date & team filter pills */}
+      <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
+        {/* Date row — only when there are entries */}
+        {distinctDates.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <span className="text-xs text-muted-foreground shrink-0 mr-1">Date</span>
+            {distinctDates.map((d) => {
+              const label = (() => { try { return format(parseISO(d), "dd/MM"); } catch { return d; } })();
+              const active = activeDate === d;
+              return (
+                <button
+                  key={d}
+                  onClick={() => setActiveDate(active ? null : d)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {/* Team row — always visible */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          <span className="text-xs text-muted-foreground shrink-0 mr-1">Team</span>
+          {teams.map((team) => {
+            const active = activeTeamId === team.id;
+            return (
+              <button
+                key={team.id}
+                onClick={() => setActiveTeamId(active ? null : team.id)}
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium border transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                )}
+              >
+                {team.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main content */}
       <div className="flex-1 overflow-auto">
         {loadingEntries && sortedEntries.length === 0 && !newRow ? (
@@ -812,7 +883,7 @@ export default function CapturePage() {
                 )}
 
                 {/* ── Existing entries ── */}
-                {sortedEntries.map((entry) => {
+                {filteredEntries.map((entry) => {
                   const isEditing = editingId === entry.id;
 
                   if (isEditing) {
@@ -932,10 +1003,12 @@ export default function CapturePage() {
                 })}
 
                 {/* Empty state */}
-                {!loadingEntries && sortedEntries.length === 0 && !newRow && (
+                {!loadingEntries && filteredEntries.length === 0 && !newRow && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-16 text-muted-foreground">
-                      No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.
+                      {sortedEntries.length === 0
+                        ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
+                        : <span>No entries match the selected filters.</span>}
                     </TableCell>
                   </TableRow>
                 )}
