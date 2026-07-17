@@ -986,25 +986,25 @@ export default function CapturePage() {
                   <TableRow className="bg-primary/5 [&>td]:py-1">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
-                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-7 text-sm" />
+                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow(prev => ({ ...prev!, date: e.target.value }))} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.team}>
-                      <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, teamId: parseInt(v) })}>
+                      <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow(prev => ({ ...prev!, teamId: parseInt(v) }))}>
                         <SelectTrigger className="h-7 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
                         <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell className={COL.start}>
-                      <Input type="time" step="60" value={newRow.startTime} onChange={(e) => setNewRow({ ...newRow, startTime: e.target.value })} className="h-7 text-sm" />
+                      <Input type="time" step="60" value={newRow.startTime} onChange={(e) => setNewRow(prev => ({ ...prev!, startTime: e.target.value }))} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.end}>
-                      <Input type="time" step="60" value={newRow.endTime} onChange={(e) => setNewRow({ ...newRow, endTime: e.target.value })} className="h-7 text-sm" />
+                      <Input type="time" step="60" value={newRow.endTime} onChange={(e) => setNewRow(prev => ({ ...prev!, endTime: e.target.value }))} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.location}>
-                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
+                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow(prev => ({ ...prev!, locationId: parseInt(v) }))} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
                     </TableCell>
                     <TableCell className={COL.notes}>
-                      <Input value={newRow.notes} onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })} placeholder="Notes..." className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
+                      <Input value={newRow.notes} onChange={(e) => setNewRow(prev => ({ ...prev!, notes: e.target.value }))} placeholder="Notes..." className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
                     </TableCell>
                     <TableCell className={COL.group}>
                       <ActivityGroupPicker
@@ -1013,8 +1013,8 @@ export default function CapturePage() {
                         workingTypeId={workingTypeId}
                         typeValue={newRow.activityTypeId}
                         groupValue={newRow.activityGroupId}
-                        onTypeChange={(id) => setNewRow({ ...newRow, activityTypeId: id })}
-                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
+                        onTypeChange={(id) => setNewRow(prev => ({ ...prev!, activityTypeId: id }))}
+                        onGroupChange={(id) => setNewRow(prev => ({ ...prev!, activityGroupId: id }))}
                       />
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
