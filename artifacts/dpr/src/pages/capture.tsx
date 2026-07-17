@@ -1036,29 +1036,29 @@ export default function CapturePage() {
                   if (isEditing) {
                     return (
                       <TableRow key={entry.id} className="bg-muted/20">
-                        <TableCell className="w-[36px]" />
-                        <TableCell className={COL.date}>
-                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                        <TableCell className="w-[36px] py-1" />
+                        <TableCell className={cn(COL.date, "py-1")}>
+                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
                         </TableCell>
-                        <TableCell className={COL.team}>
+                        <TableCell className={cn(COL.team, "py-1")}>
                           <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
-                            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
+                            <SelectTrigger className="h-7 text-xs px-2"><SelectValue placeholder="Team" /></SelectTrigger>
                             <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className={COL.start}>
-                          <Input type="time" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                        <TableCell className={cn(COL.start, "py-1")}>
+                          <Input type="time" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
                         </TableCell>
-                        <TableCell className={COL.end}>
-                          <Input type="time" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                        <TableCell className={cn(COL.end, "py-1")}>
+                          <Input type="time" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
                         </TableCell>
-                        <TableCell className={COL.location}>
-                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." />
+                        <TableCell className={cn(COL.location, "py-1")}>
+                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Location" searchPlaceholder="Search locations..." triggerClassName="h-7 text-xs px-2" />
                         </TableCell>
-                        <TableCell className={COL.notes}>
-                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
+                        <TableCell className={cn(COL.notes, "py-1")}>
+                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
                         </TableCell>
-                        <TableCell className={COL.group}>
+                        <TableCell className={cn(COL.group, "py-1")}>
                           <ActivityGroupPicker
                             allowedTypes={allowedTypes}
                             allowedGroups={allowedGroups}
@@ -1069,13 +1069,10 @@ export default function CapturePage() {
                             onGroupChange={(id) => commitDraft({ activityGroupId: id })}
                           />
                         </TableCell>
-                        <TableCell className={cn(COL.actions, "text-right")}>
+                        <TableCell className={cn(COL.actions, "text-right py-1")}>
                           <div className="flex items-center justify-end gap-1">
-                            {autosaveMutation.isPending && !updateMutation.isPending && (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground mr-1" />
-                            )}
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/10" onClick={handleUpdate} disabled={updateMutation.isPending || !editDraft.date}>
-                              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                              <Save className="w-4 h-4" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => { if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; } setEditingId(null); }}>
                               <X className="w-4 h-4" />
