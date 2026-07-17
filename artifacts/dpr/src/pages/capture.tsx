@@ -435,13 +435,6 @@ const COL = {
   actions: "w-[80px]",
 };
 
-// Ghost styles for inline-editing inputs — transparent at rest, text starts at the
-// exact same x-position as view-mode cell text (px-0: no extra internal padding;
-// the cell's own px-2 already provides the left offset).
-const GHOST_INPUT = "h-7 bg-transparent border-0 shadow-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none text-sm";
-const GHOST_SELECT = "h-7 w-full bg-transparent border-0 shadow-none px-0 py-0 hover:bg-muted/20 focus:ring-0 focus-visible:ring-0 text-sm font-normal";
-const GHOST_COMBOBOX = "h-7 bg-transparent border-0 shadow-none px-0 py-0 hover:bg-transparent";
-
 export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -784,35 +777,10 @@ export default function CapturePage() {
   const handleApprove = (id: number) => approveMutation.mutate({ id, data: { stage: "captured" } });
 
   // ── Create / edit helpers ──
-  const exitEditing = () => {
-    flushAutosave(); // flush any pending debounced save before closing
-    setEditingId(null);
-  };
-
-  // Close the editing row or new row when the user clicks outside it
-  useEffect(() => {
-    if (!editingId && !newRow) return;
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      // Stay open if click is inside the active editing row
-      const activeRow = document.querySelector("[data-editing-active]");
-      if (activeRow?.contains(target)) return;
-      // Stay open if click is inside a Radix portal (Select / Combobox dropdown)
-      const portals = document.querySelectorAll("[data-radix-popper-content-wrapper]");
-      for (const portal of portals) { if (portal.contains(target)) return; }
-      if (editingId) exitEditing();
-      // For the new row: auto-save if the minimum required field (date) is present,
-      // otherwise leave it open so the user isn't forced to re-enter data.
-      if (newRow) { if (newRow.date) handleCreate(); }
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [editingId, newRow]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleCreate = () => {
     if (!newRow || !newRow.date) return;
     createMutation.mutate(
-      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
+      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, billingParty: newRow.billingParty || undefined } },
       { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); } }
     );
   };
@@ -1011,35 +979,43 @@ export default function CapturePage() {
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
               </TableHeader>
-              <TableBody className="[&>tr>td]:py-1 leading-7">
+              <TableBody>
 
-                {/* ── New row (inline ghost style) ── */}
+                {/* ── New row form ── */}
                 {newRow && (
-                  <TableRow className="border-l-2 border-primary bg-primary/5" data-editing-active="true">
+                  <TableRow className="bg-primary/5 [&>td]:py-1">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
-                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow(prev => ({ ...prev!, date: e.target.value }))} onKeyDown={(e) => e.key === "Escape" && setNewRow(null)} className={GHOST_INPUT} />
+                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.team}>
-                      <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow(prev => ({ ...prev!, teamId: parseInt(v) }))}>
-                        <SelectTrigger className={GHOST_SELECT}><SelectValue placeholder="Team" /></SelectTrigger>
+                      <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, teamId: parseInt(v) })}>
+                        <SelectTrigger className="h-7 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
                         <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell className={COL.start}>
-                      <Input type="time" step="60" value={newRow.startTime} onChange={(e) => setNewRow(prev => ({ ...prev!, startTime: e.target.value }))} onKeyDown={(e) => e.key === "Escape" && setNewRow(null)} className={GHOST_INPUT} />
+                      <Input type="time" step="60" value={newRow.startTime} onChange={(e) => setNewRow({ ...newRow, startTime: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.end}>
-                      <Input type="time" step="60" value={newRow.endTime} onChange={(e) => setNewRow(prev => ({ ...prev!, endTime: e.target.value }))} onKeyDown={(e) => e.key === "Escape" && setNewRow(null)} className={GHOST_INPUT} />
+                      <Input type="time" step="60" value={newRow.endTime} onChange={(e) => setNewRow({ ...newRow, endTime: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.location}>
-                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow(prev => ({ ...prev!, locationId: parseInt(v) }))} placeholder="Location" searchPlaceholder="Search locations..." triggerClassName={GHOST_COMBOBOX} />
+                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
                     </TableCell>
                     <TableCell className={COL.notes}>
-                      <Input value={newRow.notes} onChange={(e) => setNewRow(prev => ({ ...prev!, notes: e.target.value }))} placeholder="Notes..." className={GHOST_INPUT} onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") setNewRow(null); }} />
+                      <Input value={newRow.notes} onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })} placeholder="Notes..." className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
                     </TableCell>
                     <TableCell className={COL.group}>
-                      <ActivityGroupPicker allowedTypes={allowedTypes} allowedGroups={allowedGroups} workingTypeId={workingTypeId} typeValue={newRow.activityTypeId} groupValue={newRow.activityGroupId} onTypeChange={(id) => setNewRow(prev => ({ ...prev!, activityTypeId: id }))} onGroupChange={(id) => setNewRow(prev => ({ ...prev!, activityGroupId: id }))} />
+                      <ActivityGroupPicker
+                        allowedTypes={allowedTypes}
+                        allowedGroups={allowedGroups}
+                        workingTypeId={workingTypeId}
+                        typeValue={newRow.activityTypeId}
+                        groupValue={newRow.activityGroupId}
+                        onTypeChange={(id) => setNewRow({ ...newRow, activityTypeId: id })}
+                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
+                      />
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
                       <div className="flex items-center justify-end gap-1">
@@ -1058,106 +1034,117 @@ export default function CapturePage() {
                 {filteredEntries.map((entry) => {
                   const isEditing = editingId === entry.id;
 
-                  // ── Unified row: view + inline edit ──
+                  if (isEditing) {
+                    return (
+                      <TableRow key={entry.id} className="bg-muted/20 [&>td]:py-1">
+                        <TableCell className="w-[36px]" />
+                        <TableCell className={COL.date}>
+                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
+                        </TableCell>
+                        <TableCell className={COL.team}>
+                          <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
+                            <SelectTrigger className="h-7 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
+                            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className={COL.start}>
+                          <Input type="time" step="60" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
+                        </TableCell>
+                        <TableCell className={COL.end}>
+                          <Input type="time" step="60" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
+                        </TableCell>
+                        <TableCell className={COL.location}>
+                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
+                        </TableCell>
+                        <TableCell className={COL.notes}>
+                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
+                        </TableCell>
+                        <TableCell className={COL.group}>
+                          <ActivityGroupPicker
+                            allowedTypes={allowedTypes}
+                            allowedGroups={allowedGroups}
+                            workingTypeId={workingTypeId}
+                            typeValue={editDraft.activityTypeId ?? null}
+                            groupValue={editDraft.activityGroupId ?? null}
+                            onTypeChange={(id) => commitDraft({ activityTypeId: id })}
+                            onGroupChange={(id) => commitDraft({ activityGroupId: id })}
+                          />
+                        </TableCell>
+                        <TableCell className={cn(COL.actions, "text-right")}>
+                          <div className="flex items-center justify-end gap-1">
+                            {autosaveMutation.isPending && !updateMutation.isPending && (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground mr-1" />
+                            )}
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/10" onClick={handleUpdate} disabled={updateMutation.isPending || !editDraft.date}>
+                              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => { if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; } setEditingId(null); }}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  // ── Display row ──
                   const isSelected = selectedIds.has(entry.id);
                   return (
-                    <TableRow
-                      key={entry.id}
-                      className={cn(
-                        isEditing
-                          ? "border-l-2 border-primary bg-primary/5 cursor-default"
-                          : cn("hover:bg-muted/20 cursor-pointer", isSelected && "bg-muted/30")
-                      )}
-                      data-editing-active={isEditing ? "true" : undefined}
-                      onClick={!isEditing ? () => startEditing(entry) : undefined}
-                    >
+                    <TableRow key={entry.id} className={cn("hover:bg-muted/20 cursor-pointer", isSelected && "bg-muted/30")} onClick={() => startEditing(entry)}>
                       <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
                         <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectRow(entry.id)} aria-label={`Select row ${entry.id}`} />
                       </TableCell>
-
-                      <TableCell className={cn(COL.date, !isEditing && "font-medium")}>
-                        {isEditing ? (
-                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} onKeyDown={(e) => e.key === "Escape" && exitEditing()} className={GHOST_INPUT} />
-                        ) : (
-                          (() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()
-                        )}
+                      <TableCell className={cn(COL.date, "font-medium")}>
+                        {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
                       </TableCell>
-
                       <TableCell className={COL.team}>
-                        {isEditing ? (
-                          <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
-                            <SelectTrigger className={GHOST_SELECT}><SelectValue placeholder="Team" /></SelectTrigger>
-                            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                        ) : (
-                          entry.team?.name || <span className="text-muted-foreground/50">--</span>
-                        )}
+                        {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-
                       <TableCell className={COL.start}>
-                        {isEditing ? (
-                          <Input type="time" step="60" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} onKeyDown={(e) => e.key === "Escape" && exitEditing()} className={GHOST_INPUT} />
-                        ) : (
-                          entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">--</span>
-                        )}
+                        {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-
                       <TableCell className={COL.end}>
-                        {isEditing ? (
-                          <Input type="time" step="60" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} onKeyDown={(e) => e.key === "Escape" && exitEditing()} className={GHOST_INPUT} />
-                        ) : (
-                          entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">--</span>
-                        )}
+                        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-
                       <TableCell className={COL.location}>
-                        {isEditing ? (
-                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Location" searchPlaceholder="Search locations..." triggerClassName={GHOST_COMBOBOX} />
-                        ) : (
-                          entry.location?.name || <span className="text-muted-foreground/50">--</span>
-                        )}
+                        {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-
-                      <TableCell className={cn(COL.notes, !isEditing && "max-w-[300px] truncate")}>
-                        {isEditing ? (
-                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} onKeyDown={(e) => { if (e.key === "Escape") exitEditing(); if (e.key === "Enter") handleUpdate(); }} className={GHOST_INPUT} />
-                        ) : (
-                          entry.notes || <span className="text-muted-foreground/50">--</span>
-                        )}
+                      <TableCell className={cn(COL.notes, "max-w-[300px] truncate")}>
+                        {entry.notes || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-
                       <TableCell className={COL.group} onClick={(e) => e.stopPropagation()}>
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
                           allowedGroups={allowedGroups}
                           workingTypeId={workingTypeId}
-                          typeValue={isEditing ? (editDraft.activityTypeId ?? null) : (entry.activityTypeId ?? null)}
-                          groupValue={isEditing ? (editDraft.activityGroupId ?? null) : (entry.activityGroupId ?? null)}
-                          onTypeChange={(id) => isEditing ? commitDraft({ activityTypeId: id }) : handleQuickSetType(entry, id)}
-                          onGroupChange={(id) => isEditing ? commitDraft({ activityGroupId: id }) : handleQuickSetGroup(entry, id)}
+                          typeValue={entry.activityTypeId ?? null}
+                          groupValue={entry.activityGroupId ?? null}
+                          onTypeChange={(id) => handleQuickSetType(entry, id)}
+                          onGroupChange={(id) => handleQuickSetGroup(entry, id)}
                         />
                       </TableCell>
-
                       <TableCell className={cn(COL.actions, "text-right")} onClick={(e) => e.stopPropagation()}>
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            {autosaveMutation.isPending && !updateMutation.isPending && (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground mr-1" />
-                            )}
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={exitEditing} title="Close">
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10" title="Approve — send to Clarify" onClick={() => handleApprove(entry.id)}>
-                              {approveMutation.isPending && approveMutation.variables?.id === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Info className="w-4 h-4" />}
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => deleteMutation.mutate({ id: entry.id })}>
-                              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                            title="Approve — send to Clarify"
+                            onClick={() => handleApprove(entry.id)}
+                          >
+                            {approveMutation.isPending && approveMutation.variables?.id === entry.id
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <Info className="w-4 h-4" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => deleteMutation.mutate({ id: entry.id })}
+                          >
+                            {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
