@@ -64,8 +64,8 @@ function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number
   return {
     date: format(new Date(), "yyyy-MM-dd"),
     teamId: null,
-    startTime: "",
-    endTime: "",
+    startTime: "00:00", // defaults to 12:00 AM so the AM/PM picker opens in AM
+    endTime: "00:00",
     locationId: null,
     notes: "",
     activityTypeId: defaultActivityTypeId,
@@ -653,6 +653,7 @@ export default function CapturePage() {
 
   // ── UI state ──
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
+  const [newRowErrors, setNewRowErrors] = useState<Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<DprTimesheetEntry>>({});
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -777,10 +778,17 @@ export default function CapturePage() {
 
   // ── Create / edit helpers ──
   const handleCreate = () => {
-    if (!newRow || !newRow.date) return;
+    if (!newRow) return;
+    const errors: Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>> = {};
+    if (!newRow.teamId) errors.teamId = "Team is required";
+    if (!newRow.startTime) errors.startTime = "Start time is required";
+    if (!newRow.endTime) errors.endTime = "End time is required";
+    if (!newRow.locationId) errors.locationId = "Location is required";
+    if (Object.keys(errors).length) { setNewRowErrors(errors); return; }
+    setNewRowErrors({});
     createMutation.mutate(
-      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, billingParty: newRow.billingParty || undefined } },
-      { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); } }
+      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
+      { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); setNewRowErrors({}); } }
     );
   };
 
@@ -983,28 +991,60 @@ export default function CapturePage() {
 
                 {/* ── New row form ── */}
                 {newRow && (
-                  <TableRow className="bg-primary/5">
+                  <TableRow className="bg-primary/5 align-top">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
                       <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
                     </TableCell>
                     <TableCell className={COL.team}>
-                      <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, teamId: parseInt(v) })}>
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
+                      <Select
+                        value={newRow.teamId?.toString() || ""}
+                        onValueChange={(v) => { setNewRow({ ...newRow, teamId: parseInt(v) }); setNewRowErrors((e) => ({ ...e, teamId: undefined })); }}
+                      >
+                        <SelectTrigger className={cn("h-8 text-sm", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
+                          <SelectValue placeholder="Select Team" />
+                        </SelectTrigger>
                         <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                       </Select>
+                      {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
                     </TableCell>
                     <TableCell className={COL.start}>
-                      <Input type="time" value={newRow.startTime} onChange={(e) => setNewRow({ ...newRow, startTime: e.target.value })} className="h-8 text-sm" />
+                      <Input
+                        type="time"
+                        value={newRow.startTime}
+                        onChange={(e) => { setNewRow({ ...newRow, startTime: e.target.value }); setNewRowErrors((e) => ({ ...e, startTime: undefined })); }}
+                        className={cn("h-8 text-sm", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
+                      />
+                      {newRowErrors.startTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.startTime}</p>}
                     </TableCell>
                     <TableCell className={COL.end}>
-                      <Input type="time" value={newRow.endTime} onChange={(e) => setNewRow({ ...newRow, endTime: e.target.value })} className="h-8 text-sm" />
+                      <Input
+                        type="time"
+                        value={newRow.endTime}
+                        onChange={(e) => { setNewRow({ ...newRow, endTime: e.target.value }); setNewRowErrors((e) => ({ ...e, endTime: undefined })); }}
+                        className={cn("h-8 text-sm", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
+                      />
+                      {newRowErrors.endTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.endTime}</p>}
                     </TableCell>
                     <TableCell className={COL.location}>
-                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." />
+                      <Combobox
+                        options={locationOptions}
+                        value={newRow.locationId?.toString() || ""}
+                        onValueChange={(v) => { setNewRow({ ...newRow, locationId: parseInt(v) }); setNewRowErrors((e) => ({ ...e, locationId: undefined })); }}
+                        placeholder="Select Location"
+                        searchPlaceholder="Search locations..."
+                        triggerClassName={newRowErrors.locationId ? "border-destructive" : undefined}
+                      />
+                      {newRowErrors.locationId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.locationId}</p>}
                     </TableCell>
                     <TableCell className={COL.notes}>
-                      <Input value={newRow.notes} onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })} placeholder="Notes..." className="h-8 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
+                      <Input
+                        value={newRow.notes}
+                        onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })}
+                        placeholder="Notes..."
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                      />
                     </TableCell>
                     <TableCell className={COL.group}>
                       <ActivityGroupPicker
@@ -1019,10 +1059,10 @@ export default function CapturePage() {
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/10" onClick={handleCreate} disabled={createMutation.isPending || !newRow.date}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/10" onClick={handleCreate} disabled={createMutation.isPending}>
                           {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => setNewRow(null)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => { setNewRow(null); setNewRowErrors({}); }}>
                           <X className="w-4 h-4" />
                         </Button>
                       </div>
