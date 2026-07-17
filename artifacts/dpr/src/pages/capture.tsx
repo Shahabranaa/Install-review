@@ -785,7 +785,7 @@ export default function CapturePage() {
 
   // ── Create / edit helpers ──
   const exitEditing = () => {
-    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
+    flushAutosave(); // flush any pending debounced save before closing
     setEditingId(null);
   };
 
@@ -801,7 +801,9 @@ export default function CapturePage() {
       const portals = document.querySelectorAll("[data-radix-popper-content-wrapper]");
       for (const portal of portals) { if (portal.contains(target)) return; }
       if (editingId) exitEditing();
-      if (newRow) setNewRow(null);
+      // For the new row: auto-save if the minimum required field (date) is present,
+      // otherwise leave it open so the user isn't forced to re-enter data.
+      if (newRow) { if (newRow.date) handleCreate(); }
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
