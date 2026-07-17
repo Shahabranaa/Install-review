@@ -792,6 +792,7 @@ export default function CapturePage() {
     locationId: draft.locationId || null,
     notes: draft.notes || null,
     activityTypeId: draft.activityTypeId || null,
+    activityGroupId: draft.activityGroupId ?? null,
     billingParty: draft.billingParty ?? null,
   });
 
