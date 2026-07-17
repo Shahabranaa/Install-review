@@ -423,15 +423,16 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
 }
 
 // ─── Column widths ────────────────────────────────────────────────────────────
+// COL holds only non-width classes; widths are controlled by <colgroup> below.
 const COL = {
-  date: "w-[130px]",
-  team: "w-[150px]",
-  start: "w-[110px]",
-  end: "w-[110px]",
-  location: "w-[200px]",
-  notes: "w-[180px]",
-  group: "w-[260px]",
-  actions: "w-[80px]",
+  date: "",
+  team: "",
+  start: "",
+  end: "",
+  location: "",
+  notes: "",   // gets all remaining space — widest column
+  group: "",
+  actions: "text-right",
 };
 
 export default function CapturePage() {
@@ -983,7 +984,19 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table>
+            <Table className="table-fixed w-full min-w-[900px]">
+              {/* Column widths — notes gets all unclaimed space */}
+              <colgroup>
+                <col className="w-[36px]" />   {/* checkbox */}
+                <col className="w-[9%]" />      {/* date */}
+                <col className="w-[9%]" />      {/* team */}
+                <col className="w-[7%]" />      {/* start */}
+                <col className="w-[7%]" />      {/* end */}
+                <col className="w-[11%]" />     {/* location */}
+                <col />                         {/* notes — remainder */}
+                <col className="w-[19%]" />     {/* group */}
+                <col className="w-[5%]" />      {/* actions */}
+              </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
               </TableHeader>
