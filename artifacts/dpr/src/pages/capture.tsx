@@ -435,10 +435,12 @@ const COL = {
   actions: "w-[80px]",
 };
 
-// Ghost styles for inline-editing inputs — transparent at rest, subtle focus ring
-const GHOST_INPUT = "h-7 bg-transparent border-0 shadow-none px-1 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-primary/5 rounded-sm transition-colors text-sm";
-const GHOST_SELECT = "h-7 w-full bg-transparent border-0 shadow-none hover:bg-muted/20 focus:ring-0 focus:outline-none text-sm font-normal";
-const GHOST_COMBOBOX = "h-7 bg-transparent border-0 shadow-none hover:bg-muted/20";
+// Ghost styles for inline-editing inputs — transparent at rest, text starts at the
+// exact same x-position as view-mode cell text (px-0: no extra internal padding;
+// the cell's own px-2 already provides the left offset).
+const GHOST_INPUT = "h-7 bg-transparent border-0 shadow-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none text-sm";
+const GHOST_SELECT = "h-7 w-full bg-transparent border-0 shadow-none px-0 py-0 hover:bg-muted/20 focus:ring-0 focus-visible:ring-0 text-sm font-normal";
+const GHOST_COMBOBOX = "h-7 bg-transparent border-0 shadow-none px-0 py-0 hover:bg-transparent";
 
 export default function CapturePage() {
   const queryClient = useQueryClient();
@@ -787,10 +789,28 @@ export default function CapturePage() {
     setEditingId(null);
   };
 
+  // Close the editing row or new row when the user clicks outside it
+  useEffect(() => {
+    if (!editingId && !newRow) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // Stay open if click is inside the active editing row
+      const activeRow = document.querySelector("[data-editing-active]");
+      if (activeRow?.contains(target)) return;
+      // Stay open if click is inside a Radix portal (Select / Combobox dropdown)
+      const portals = document.querySelectorAll("[data-radix-popper-content-wrapper]");
+      for (const portal of portals) { if (portal.contains(target)) return; }
+      if (editingId) exitEditing();
+      if (newRow) setNewRow(null);
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [editingId, newRow]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleCreate = () => {
     if (!newRow || !newRow.date) return;
     createMutation.mutate(
-      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, billingParty: newRow.billingParty || undefined } },
+      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
       { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); } }
     );
   };
@@ -989,11 +1009,11 @@ export default function CapturePage() {
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&>tr>td]:py-1 leading-7">
 
                 {/* ── New row (inline ghost style) ── */}
                 {newRow && (
-                  <TableRow className="[&>td]:py-1 outline outline-1 outline-primary/25 bg-primary/[0.03]">
+                  <TableRow className="border-l-2 border-primary bg-primary/5" data-editing-active="true">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
                       <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow(prev => ({ ...prev!, date: e.target.value }))} onKeyDown={(e) => e.key === "Escape" && setNewRow(null)} className={GHOST_INPUT} />
@@ -1043,9 +1063,10 @@ export default function CapturePage() {
                       key={entry.id}
                       className={cn(
                         isEditing
-                          ? "[&>td]:py-1 outline outline-1 outline-primary/25 bg-primary/[0.03] cursor-default"
+                          ? "border-l-2 border-primary bg-primary/5 cursor-default"
                           : cn("hover:bg-muted/20 cursor-pointer", isSelected && "bg-muted/30")
                       )}
+                      data-editing-active={isEditing ? "true" : undefined}
                       onClick={!isEditing ? () => startEditing(entry) : undefined}
                     >
                       <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
