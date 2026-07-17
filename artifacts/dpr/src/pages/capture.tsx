@@ -173,7 +173,8 @@ function findByNameFuzzy<T extends { id: number; name: string }>(
 function normalizeTime(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})/);
+  // Accept HH:mm or HH:mm:ss — strip seconds if present
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?/);
   if (match) return `${match[1].padStart(2, "0")}:${match[2]}`;
   return trimmed;
 }
@@ -424,12 +425,12 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
 
 // ─── Column widths ────────────────────────────────────────────────────────────
 const COL = {
-  date: "w-[130px]",
-  team: "w-[150px]",
-  start: "w-[110px]",
-  end: "w-[110px]",
-  location: "w-[200px]",
-  notes: "w-[180px]",
+  date: "w-[100px]",
+  team: "w-[110px]",
+  start: "w-[100px]",
+  end: "w-[100px]",
+  location: "w-[130px]",
+  notes: "w-[300px]",
   group: "w-[260px]",
   actions: "w-[80px]",
 };
@@ -982,28 +983,28 @@ export default function CapturePage() {
 
                 {/* ── New row form ── */}
                 {newRow && (
-                  <TableRow className="bg-primary/5">
+                  <TableRow className="bg-primary/5 [&>td]:py-1">
                     <TableCell className="w-[36px]" />
                     <TableCell className={COL.date}>
-                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
+                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.team}>
                       <Select value={newRow.teamId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, teamId: parseInt(v) })}>
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
+                        <SelectTrigger className="h-7 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
                         <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell className={COL.start}>
-                      <Input type="time" value={newRow.startTime} onChange={(e) => setNewRow({ ...newRow, startTime: e.target.value })} className="h-8 text-sm" />
+                      <Input type="time" step="60" value={newRow.startTime} onChange={(e) => setNewRow({ ...newRow, startTime: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.end}>
-                      <Input type="time" value={newRow.endTime} onChange={(e) => setNewRow({ ...newRow, endTime: e.target.value })} className="h-8 text-sm" />
+                      <Input type="time" step="60" value={newRow.endTime} onChange={(e) => setNewRow({ ...newRow, endTime: e.target.value })} className="h-7 text-sm" />
                     </TableCell>
                     <TableCell className={COL.location}>
-                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." />
+                      <Combobox options={locationOptions} value={newRow.locationId?.toString() || ""} onValueChange={(v) => setNewRow({ ...newRow, locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
                     </TableCell>
                     <TableCell className={COL.notes}>
-                      <Input value={newRow.notes} onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })} placeholder="Notes..." className="h-8 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
+                      <Input value={newRow.notes} onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })} placeholder="Notes..." className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleCreate()} />
                     </TableCell>
                     <TableCell className={COL.group}>
                       <ActivityGroupPicker
@@ -1035,28 +1036,28 @@ export default function CapturePage() {
 
                   if (isEditing) {
                     return (
-                      <TableRow key={entry.id} className="bg-muted/20">
+                      <TableRow key={entry.id} className="bg-muted/20 [&>td]:py-1">
                         <TableCell className="w-[36px]" />
                         <TableCell className={COL.date}>
-                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
                         </TableCell>
                         <TableCell className={COL.team}>
                           <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
-                            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
+                            <SelectTrigger className="h-7 text-sm"><SelectValue placeholder="Select Team" /></SelectTrigger>
                             <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </TableCell>
                         <TableCell className={COL.start}>
-                          <Input type="time" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                          <Input type="time" step="60" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
                         </TableCell>
                         <TableCell className={COL.end}>
-                          <Input type="time" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" />
+                          <Input type="time" step="60" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" />
                         </TableCell>
                         <TableCell className={COL.location}>
-                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." />
+                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Select Location" searchPlaceholder="Search locations..." triggerClassName="h-7" />
                         </TableCell>
                         <TableCell className={COL.notes}>
-                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-8 text-sm" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
+                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-7 text-sm" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
                         </TableCell>
                         <TableCell className={COL.group}>
                           <ActivityGroupPicker
@@ -1108,7 +1109,7 @@ export default function CapturePage() {
                       <TableCell className={COL.location}>
                         {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
-                      <TableCell className={cn(COL.notes, "max-w-[180px] truncate")}>
+                      <TableCell className={cn(COL.notes, "max-w-[300px] truncate")}>
                         {entry.notes || <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
                       <TableCell className={COL.group} onClick={(e) => e.stopPropagation()}>
