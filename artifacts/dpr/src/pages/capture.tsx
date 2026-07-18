@@ -373,13 +373,13 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
                   className={cn(
                     "shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-xs font-medium transition-colors min-w-[64px]",
                     isActive
-                      ? cn("border-[3px]", STATUS_BORDER[ws], STATUS_TINT[ws], "text-foreground")
+                      ? "border-2 border-primary bg-primary text-primary-foreground"
                       : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
                   )}
                 >
                   <div className="flex items-center justify-between w-full gap-1.5">
                     <span className="font-semibold">{label}</span>
-                    <span className={cn("text-[10px] font-bold tabular-nums", STATUS_TEXT[ws])}>
+                    <span className={cn("text-[10px] font-bold tabular-nums", isActive ? "text-primary-foreground/70" : STATUS_TEXT[ws])}>
                       {bd.full + bd.partial}/{bd.total}
                     </span>
                   </div>
@@ -413,12 +413,10 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
               onClick={() => onTeamClick(team.id)}
               className={cn(
                 "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
-                hasStatus
-                  ? isActive
-                    ? cn("border-[3px]", STATUS_BORDER[status], STATUS_TINT[status], "text-foreground")
-                    : cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
-                  : isActive
-                    ? "border bg-primary text-primary-foreground border-primary"
+                isActive
+                  ? "border-2 border-primary bg-primary text-primary-foreground"
+                  : hasStatus
+                    ? cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
                     : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
               )}
             >
