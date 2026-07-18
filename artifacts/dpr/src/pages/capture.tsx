@@ -267,6 +267,15 @@ function hoursForEntry(startTime: string | null | undefined, endTime: string | n
   if (end <= start) end += 24 * 60; // overnight shift
   return (end - start) / 60;
 }
+function formatDuration(startTime: string | null | undefined, endTime: string | null | undefined): string {
+  const hours = hoursForEntry(startTime, endTime);
+  if (hours === 0) return "—";
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (m === 0) return `${h}h`;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
 function getTeamStatus(hours: number): TeamStatus {
   if (hours === 0) return "none";
   if (hours < 12) return "partial";
@@ -777,7 +786,24 @@ export default function CapturePage() {
 
   const handleApprove = (id: number) => approveMutation.mutate({ id, data: { stage: "captured" } });
 
+  // ── Derived display flags ──
+  const showDateCol = !activeDate;
+  const showTeamCol = !activeTeamId;
+
+  // Total hours for the current filtered view (drives context bar)
+  const filteredTotalHours = useMemo(
+    () => filteredEntries.reduce((acc, e) => acc + hoursForEntry(e.startTime, e.endTime), 0),
+    [filteredEntries]
+  );
+
   // ── Create / edit helpers ──
+  const handleAddRow = () => {
+    const draft = emptyDraft(defaultActivityTypeId, defaultGroupId);
+    if (activeDate) draft.date = activeDate;
+    if (activeTeamId) draft.teamId = activeTeamId;
+    setNewRow(draft);
+  };
+
   const handleCreate = () => {
     if (!newRow) return;
     const errors: Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>> = {};
@@ -907,10 +933,11 @@ export default function CapturePage() {
       <TableHead className="w-[36px]">
         <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
       </TableHead>
-      <TableHead className={COL.date}>Date</TableHead>
-      <TableHead className={COL.team}>Team</TableHead>
-      <TableHead className={COL.start}>Start Time</TableHead>
-      <TableHead className={COL.end}>End Time</TableHead>
+      {showDateCol && <TableHead className={COL.date}>Date</TableHead>}
+      {showTeamCol && <TableHead className={COL.team}>Team</TableHead>}
+      <TableHead className={COL.start}>Start</TableHead>
+      <TableHead className={COL.end}>End</TableHead>
+      <TableHead className="text-emerald-600 dark:text-emerald-400">Duration</TableHead>
       <TableHead className={COL.location}>Location</TableHead>
       <TableHead className={COL.notes}>Notes</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
@@ -932,10 +959,6 @@ export default function CapturePage() {
           <Button variant="outline" onClick={() => setPasteOpen(true)} className="gap-2">
             <ClipboardPaste className="w-4 h-4" />
             Paste Rows
-          </Button>
-          <Button onClick={() => setNewRow(emptyDraft(defaultActivityTypeId, defaultGroupId))} disabled={newRow !== null} className="gap-2">
-            <Plus className="w-4 h-4" />
-            Add Row
           </Button>
         </div>
       </header>
@@ -976,6 +999,55 @@ export default function CapturePage() {
         teamHoursMap={teamHoursMap}
       />
 
+      {/* Context bar — shows active date+team, running total, and Add Row */}
+      <div className="px-6 py-2 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          {activeDate || activeTeamId ? (
+            <>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span>Showing:</span>
+                {activeDate && (
+                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                    {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
+                  </span>
+                )}
+                {activeDate && activeTeamId && <span className="text-muted-foreground/50">·</span>}
+                {activeTeamId && (
+                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                    {teams.find((t) => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
+                  </span>
+                )}
+              </div>
+              {filteredEntries.length > 0 && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>Total:</span>
+                  <span className="font-semibold text-emerald-500 tabular-nums">{filteredTotalHours.toFixed(2)}h</span>
+                  {filteredTotalHours < 12 && <span className="text-muted-foreground/60">/ 12h expected</span>}
+                  {filteredTotalHours >= 12 && <span className="text-emerald-500/70">✓</span>}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground/60 italic">Select a date or team above to filter</span>
+          )}
+        </div>
+        <Button
+          size="sm"
+          onClick={handleAddRow}
+          disabled={newRow !== null}
+          className="gap-1.5 h-7 text-xs"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Row
+          {(activeDate || activeTeamId) && (
+            <span className="opacity-60 font-normal">
+              ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
+              {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
+            </span>
+          )}
+        </Button>
+      </div>
+
       {/* Main content */}
       <div className="flex-1 overflow-auto">
         {loadingEntries && sortedEntries.length === 0 && !newRow ? (
@@ -984,18 +1056,19 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[900px]">
+            <Table className="table-fixed w-full min-w-[800px]">
               {/* Column widths — notes gets all unclaimed space */}
               <colgroup>
-                <col className="w-[36px]" />   {/* checkbox */}
-                <col className="w-[9%]" />      {/* date */}
-                <col className="w-[9%]" />      {/* team */}
-                <col className="w-[7%]" />      {/* start */}
-                <col className="w-[7%]" />      {/* end */}
-                <col className="w-[11%]" />     {/* location */}
-                <col />                         {/* notes — remainder */}
-                <col className="w-[19%]" />     {/* group */}
-                <col className="w-[5%]" />      {/* actions */}
+                <col className="w-[36px]" />                               {/* checkbox */}
+                {showDateCol && <col className="w-[9%]" />}                {/* date */}
+                {showTeamCol && <col className="w-[9%]" />}                {/* team */}
+                <col className="w-[7%]" />                                 {/* start */}
+                <col className="w-[7%]" />                                 {/* end */}
+                <col className="w-[6%]" />                                 {/* duration */}
+                <col className="w-[11%]" />                                {/* location */}
+                <col />                                                    {/* notes — remainder */}
+                <col className="w-[19%]" />                                {/* group */}
+                <col className="w-[5%]" />                                 {/* actions */}
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
@@ -1006,21 +1079,25 @@ export default function CapturePage() {
                 {newRow && (
                   <TableRow className="bg-primary/5 align-top">
                     <TableCell className="w-[36px]" />
-                    <TableCell className={COL.date}>
-                      <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
-                    </TableCell>
-                    <TableCell className={COL.team}>
-                      <Select
-                        value={newRow.teamId?.toString() || ""}
-                        onValueChange={(v) => { setNewRow({ ...newRow, teamId: parseInt(v) }); setNewRowErrors((e) => ({ ...e, teamId: undefined })); }}
-                      >
-                        <SelectTrigger className={cn("h-8 text-sm", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
-                          <SelectValue placeholder="Select Team" />
-                        </SelectTrigger>
-                        <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
-                      </Select>
-                      {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
-                    </TableCell>
+                    {showDateCol && (
+                      <TableCell className={COL.date}>
+                        <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
+                      </TableCell>
+                    )}
+                    {showTeamCol && (
+                      <TableCell className={COL.team}>
+                        <Select
+                          value={newRow.teamId?.toString() || ""}
+                          onValueChange={(v) => { setNewRow({ ...newRow, teamId: parseInt(v) }); setNewRowErrors((e) => ({ ...e, teamId: undefined })); }}
+                        >
+                          <SelectTrigger className={cn("h-8 text-sm", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
+                            <SelectValue placeholder="Select Team" />
+                          </SelectTrigger>
+                          <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                        {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
+                      </TableCell>
+                    )}
                     <TableCell className={COL.start}>
                       <Input
                         type="time"
@@ -1038,6 +1115,11 @@ export default function CapturePage() {
                         className={cn("h-8 text-sm", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.endTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.endTime}</p>}
+                    </TableCell>
+                    <TableCell>
+                      <span className={cn("text-sm font-medium tabular-nums", formatDuration(newRow.startTime, newRow.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
+                        {formatDuration(newRow.startTime, newRow.endTime)}
+                      </span>
                     </TableCell>
                     <TableCell className={COL.location}>
                       <Combobox
@@ -1091,20 +1173,29 @@ export default function CapturePage() {
                     return (
                       <TableRow key={entry.id} className="bg-muted/20">
                         <TableCell className="w-[36px] py-1" />
-                        <TableCell className={cn(COL.date, "py-1")}>
-                          <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
-                        </TableCell>
-                        <TableCell className={cn(COL.team, "py-1")}>
-                          <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
-                            <SelectTrigger className="h-7 text-xs px-2"><SelectValue placeholder="Team" /></SelectTrigger>
-                            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </TableCell>
+                        {showDateCol && (
+                          <TableCell className={cn(COL.date, "py-1")}>
+                            <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
+                          </TableCell>
+                        )}
+                        {showTeamCol && (
+                          <TableCell className={cn(COL.team, "py-1")}>
+                            <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
+                              <SelectTrigger className="h-7 text-xs px-2"><SelectValue placeholder="Team" /></SelectTrigger>
+                              <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </TableCell>
+                        )}
                         <TableCell className={cn(COL.start, "py-1")}>
                           <Input type="time" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
                         </TableCell>
                         <TableCell className={cn(COL.end, "py-1")}>
                           <Input type="time" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <span className={cn("text-xs font-medium tabular-nums", formatDuration(editDraft.startTime, editDraft.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
+                            {formatDuration(editDraft.startTime, editDraft.endTime)}
+                          </span>
                         </TableCell>
                         <TableCell className={cn(COL.location, "py-1")}>
                           <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Location" searchPlaceholder="Search locations..." triggerClassName="h-7 text-xs px-2" />
@@ -1144,17 +1235,26 @@ export default function CapturePage() {
                       <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
                         <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectRow(entry.id)} aria-label={`Select row ${entry.id}`} />
                       </TableCell>
-                      <TableCell className={cn(COL.date, "font-medium")}>
-                        {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
-                      </TableCell>
-                      <TableCell className={COL.team}>
-                        {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
-                      </TableCell>
+                      {showDateCol && (
+                        <TableCell className={cn(COL.date, "font-medium")}>
+                          {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                        </TableCell>
+                      )}
+                      {showTeamCol && (
+                        <TableCell className={COL.team}>
+                          {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
+                        </TableCell>
+                      )}
                       <TableCell className={COL.start}>
                         {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">--</span>}
                       </TableCell>
                       <TableCell className={COL.end}>
                         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">--</span>}
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("text-sm font-medium tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/30")}>
+                          {formatDuration(entry.startTime, entry.endTime)}
+                        </span>
                       </TableCell>
                       <TableCell className={COL.location}>
                         {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
@@ -1200,10 +1300,34 @@ export default function CapturePage() {
                   );
                 })}
 
+                {/* ── Duration footer — only when entries are visible ── */}
+                {filteredEntries.length > 0 && (
+                  <TableRow className="bg-muted/10 border-t-2 border-border">
+                    <TableCell colSpan={2 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
+                      Total
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <span className={cn("text-sm font-bold tabular-nums", filteredTotalHours > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
+                        {filteredTotalHours > 0
+                          ? `${Math.floor(filteredTotalHours)}h ${Math.round((filteredTotalHours % 1) * 60)}m`
+                          : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell colSpan={4} className="py-1.5 text-xs text-muted-foreground">
+                      {filteredTotalHours > 0 && filteredTotalHours < 12 && (
+                        <span>{(12 - filteredTotalHours).toFixed(2)}h remaining of 12h expected</span>
+                      )}
+                      {filteredTotalHours >= 12 && (
+                        <span className="text-emerald-600 dark:text-emerald-400">✓ Full day covered</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+
                 {/* Empty state */}
                 {!loadingEntries && filteredEntries.length === 0 && !newRow && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-16 text-muted-foreground">
+                    <TableCell colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0)} className="text-center py-16 text-muted-foreground">
                       {sortedEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}
