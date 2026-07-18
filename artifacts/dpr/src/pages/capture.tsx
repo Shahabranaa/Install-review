@@ -537,7 +537,9 @@ export default function CapturePage() {
       onSuccess: (newEntry, _, ctx) => {
         queryClient.setQueriesData<DprTimesheetEntry[]>(
           { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
-          (old) => (old ? [...old.filter((e) => e.id !== ctx?.tempId), newEntry] : [newEntry])
+          // Filter out BOTH the temp optimistic entry AND any copy the background refetch
+          // may have already inserted — then append the authoritative server entry once.
+          (old) => (old ? [...old.filter((e) => e.id !== ctx?.tempId && e.id !== newEntry.id), newEntry] : [newEntry])
         );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
       },
