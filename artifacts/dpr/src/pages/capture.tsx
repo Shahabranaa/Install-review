@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { formatTimeDisplay } from "@/lib/utils";
+import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
@@ -256,26 +256,7 @@ function parsePastedText(
 // ─── Status helpers ───────────────────────────────────────────────────────────
 type TeamStatus = "none" | "partial" | "full";
 
-function parseMinutes(t: string): number {
-  const [h, m] = t.split(":").map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-function hoursForEntry(startTime: string | null | undefined, endTime: string | null | undefined): number {
-  if (!startTime || !endTime) return 0;
-  const start = parseMinutes(startTime);
-  let end = parseMinutes(endTime);
-  if (end <= start) end += 24 * 60; // overnight shift
-  return (end - start) / 60;
-}
-function formatDuration(startTime: string | null | undefined, endTime: string | null | undefined): string {
-  const hours = hoursForEntry(startTime, endTime);
-  if (hours === 0) return "—";
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  if (m === 0) return `${h}h`;
-  if (h === 0) return `${m}m`;
-  return `${h}h ${m}m`;
-}
+
 function getTeamStatus(hours: number): TeamStatus {
   if (hours === 0) return "none";
   if (hours < 12) return "partial";

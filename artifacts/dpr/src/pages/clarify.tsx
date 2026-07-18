@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search, Lock } from "lucide-react";
+import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search, Lock, Timer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,7 +35,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatTimeDisplay } from "@/lib/utils";
+import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 
 type BillingParty = "jdr" | "orsted" | null;
 
@@ -164,12 +164,23 @@ export default function ClarifyPage() {
 
 function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: string; entries: DprTimesheetEntry[] }) {
   const remaining = entries.filter(e => e.stage === "captured").length;
+  const totalHours = entries.reduce((acc, e) => acc + hoursForEntry(e.startTime, e.endTime), 0);
+  const totalLabel = totalHours === 0 ? null : (() => {
+    const h = Math.floor(totalHours);
+    const m = Math.round((totalHours - h) * 60);
+    return m === 0 ? `${h}h total` : `${h}h ${m}m total`;
+  })();
   return (
     <Card className="border-border shadow-sm bg-card overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
         <Users className="w-4 h-4 text-muted-foreground" />
         <span className="font-semibold text-sm">{teamName}</span>
         <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary">{date}</Badge>
+        {totalLabel && (
+          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+            <Timer className="w-3 h-3" />{totalLabel}
+          </span>
+        )}
         <span className="text-xs text-muted-foreground ml-auto">{remaining} of {entries.length} remaining</span>
       </div>
       <div className="overflow-x-auto">
@@ -178,6 +189,7 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
             <TableRow>
               <TableHead className="w-[90px]">Start</TableHead>
               <TableHead className="w-[90px]">Finish</TableHead>
+              <TableHead className="w-[70px]">Duration</TableHead>
               <TableHead className="w-[130px]">Location</TableHead>
               <TableHead className="w-[120px]">Billing</TableHead>
               <TableHead className="w-[130px]">Quick Fill</TableHead>
@@ -234,6 +246,9 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+        {formatDuration(entry.startTime, entry.endTime)}
       </TableCell>
       <TableCell className="text-sm">
         {entry.location ? (
@@ -471,6 +486,9 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm">
         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+        {formatDuration(entry.startTime, entry.endTime)}
       </TableCell>
       <TableCell className="text-sm">
         {entry.location ? (
