@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, CalendarDays, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -74,7 +74,10 @@ function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number
   };
 }
 
-// ─── Two-level Activity Group picker ─────────────────────────────────────────
+// ─── Two-button Activity Group picker (client redesign) ─────────────────────
+// Button 1 — toggles between Working Time / Non-Working Time
+// Button 2 — cycles sub-group (Effective / Extra Work / Re-Work) when Working;
+//             shows an inactive "—" placeholder when Non-Working
 
 function ActivityGroupPicker({
   allowedTypes,
@@ -94,54 +97,46 @@ function ActivityGroupPicker({
   onGroupChange: (id: number) => void;
 }) {
   const isWorking = typeValue === workingTypeId;
+  const activeType = allowedTypes.find((t) => t.id === typeValue);
+  const activeGroup = allowedGroups.find((g) => g.id === groupValue);
+  const kindLabel = activeType ? (TYPE_LABELS[activeType.name] ?? activeType.name) : "Working Time";
+  const groupLabel = isWorking && activeGroup ? (GROUP_LABELS[activeGroup.name] ?? activeGroup.name) : null;
+
+  const handleTypeClick = () => {
+    const nonWorking = allowedTypes.find((t) => t.id !== workingTypeId);
+    if (isWorking && nonWorking) {
+      onTypeChange(nonWorking.id);
+    } else if (workingTypeId) {
+      onTypeChange(workingTypeId);
+    }
+  };
+
+  const handleGroupClick = () => {
+    if (!isWorking || allowedGroups.length === 0) return;
+    const idx = allowedGroups.findIndex((g) => g.id === groupValue);
+    const next = allowedGroups[(idx + 1) % allowedGroups.length];
+    onGroupChange(next.id);
+  };
+
+  const btnCls =
+    "flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center whitespace-nowrap " +
+    "border-primary/70 bg-primary/10 text-primary hover:bg-primary/20";
+  const placeholderCls =
+    "flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded border text-center whitespace-nowrap select-none " +
+    "border-border/40 bg-muted/20 text-muted-foreground/40";
 
   return (
-    <div className="flex flex-col gap-1 min-w-[200px]">
-      {/* Row 1: Activity Types — always both visible */}
-      <div className="flex flex-wrap gap-1">
-        {allowedTypes.map((type) => (
-          <button
-            key={type.id}
-            type="button"
-            onClick={() => onTypeChange(type.id)}
-            className={cn(
-              "px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap",
-              typeValue === type.id
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted"
-            )}
-          >
-            {TYPE_LABELS[type.name] ?? type.name}
-          </button>
-        ))}
-      </div>
-      {/* Row 2: Activity Groups — always all three visible; active only when Working Time */}
-      <div className="flex flex-wrap gap-1">
-        {allowedGroups.map((group) =>
-          isWorking ? (
-            <button
-              key={group.id}
-              type="button"
-              onClick={() => onGroupChange(group.id)}
-              className={cn(
-                "px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap",
-                groupValue === group.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
-              )}
-            >
-              {GROUP_LABELS[group.name] ?? group.name}
-            </button>
-          ) : (
-            <span
-              key={group.id}
-              className="px-2 py-0.5 text-[11px] font-medium rounded whitespace-nowrap bg-muted/30 text-muted-foreground/40"
-            >
-              {GROUP_LABELS[group.name] ?? group.name}
-            </span>
-          )
-        )}
-      </div>
+    <div className="flex gap-1.5 min-w-[200px]">
+      <button type="button" onClick={handleTypeClick} className={btnCls}>
+        {kindLabel}
+      </button>
+      {isWorking ? (
+        <button type="button" onClick={handleGroupClick} className={btnCls}>
+          {groupLabel ?? "Effective"}
+        </button>
+      ) : (
+        <div className={placeholderCls}>—</div>
+      )}
     </div>
   );
 }
@@ -693,11 +688,15 @@ export default function CapturePage() {
     return map;
   }, [sortedEntries]);
 
-  // Bulk select — kept for power users; toolbar visible when something is selected
+  // Bulk select
+  const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isBulkWorking, setIsBulkWorking] = useState(false);
   const [bulkLocationId, setBulkLocationId] = useState<string>("");
   const someSelected = filteredEntries.some((e) => selectedIds.has(e.id));
+
+  const enterSelectMode = () => { setSelectMode(true); setSelectedIds(new Set()); };
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); setBulkLocationId(""); };
 
   const clearSelection = () => { setSelectedIds(new Set()); setBulkLocationId(""); };
 
@@ -714,7 +713,7 @@ export default function CapturePage() {
     if (failed > 0) queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
     setIsBulkWorking(false);
-    clearSelection();
+    exitSelectMode();
     const succeeded = ids.length - failed;
     if (succeeded > 0) toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} deleted` });
     else toast({ title: "Delete failed", variant: "destructive" });
@@ -758,8 +757,7 @@ export default function CapturePage() {
     if (failed > 0) queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
     setIsBulkWorking(false);
-    setSelectedIds((prev) => { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; });
-    setBulkLocationId("");
+    exitSelectMode();
     const succeeded = ids.length - failed;
     if (succeeded > 0) toast({ title: `${succeeded} row${succeeded === 1 ? "" : "s"} approved`, description: "Sent to Clarify." });
     else toast({ title: "Approve failed", variant: "destructive" });
@@ -911,9 +909,17 @@ export default function CapturePage() {
 
   const TableCols = () => (
     <TableRow>
-      <TableHead className="w-[36px]">
-        <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
-      </TableHead>
+      {selectMode && (
+        <TableHead className="w-[36px]">
+          <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+            {allSelected
+              ? <CheckCheck className="w-4 h-4 text-primary" />
+              : someSelected
+              ? <Minus className="w-4 h-4 text-primary" />
+              : <Square className="w-4 h-4" />}
+          </button>
+        </TableHead>
+      )}
       {showDateCol && <TableHead className={COL.date}>Date</TableHead>}
       {showTeamCol && <TableHead className={COL.team}>Team</TableHead>}
       <TableHead className={COL.start}>Start</TableHead>
@@ -933,41 +939,24 @@ export default function CapturePage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">Timesheet Capture</h1>
           <p className="text-sm text-muted-foreground">
-            Enter raw field hours to be clarified. Paste directly from a spreadsheet or add rows one at a time.
+            Click any cell to edit inline. Use Activity Group buttons to set type and sub-group.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
+            className={cn("gap-2", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
+          >
+            <CheckSquare className="w-4 h-4" />
+            {selectMode ? "Cancel Select" : "Select"}
+          </Button>
           <Button variant="outline" onClick={() => setPasteOpen(true)} className="gap-2">
             <ClipboardPaste className="w-4 h-4" />
             Paste Rows
           </Button>
         </div>
       </header>
-
-      {/* Bulk toolbar — only shown when rows are selected */}
-      {someSelected && (
-        <div className="px-6 py-2 border-b border-border bg-muted/30 flex items-center gap-3 shrink-0">
-          <Badge variant="secondary">{selectedIds.size} selected</Badge>
-          <div className="flex items-center gap-2">
-            <div className="w-[220px]">
-              <Combobox options={locationOptions} value={bulkLocationId} onValueChange={setBulkLocationId} placeholder="Set location..." searchPlaceholder="Search locations..." />
-            </div>
-            <Button size="sm" variant="outline" onClick={handleBulkSetLocation} disabled={!bulkLocationId || isBulkWorking} className="gap-1">
-              {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              Apply Location
-            </Button>
-          </div>
-          <Button size="sm" variant="outline" onClick={handleBulkApproveSelected} disabled={isBulkWorking} className="gap-1 text-primary hover:text-primary">
-            {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
-            Approve Selected
-          </Button>
-          <Button size="sm" variant="outline" onClick={handleBulkDelete} disabled={isBulkWorking} className="gap-1 text-destructive hover:text-destructive">
-            {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-            Delete Selected
-          </Button>
-          <Button size="sm" variant="ghost" onClick={clearSelection} className="ml-auto">Clear selection</Button>
-        </div>
-      )}
 
       {/* Date & team filter pills */}
       <FilterPills
@@ -980,54 +969,101 @@ export default function CapturePage() {
         teamHoursMap={teamHoursMap}
       />
 
-      {/* Context bar — shows active date+team, running total, and Add Row */}
-      <div className="px-6 py-2 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          {activeDate || activeTeamId ? (
-            <>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Showing:</span>
-                {activeDate && (
-                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                    {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
-                  </span>
-                )}
-                {activeDate && activeTeamId && <span className="text-muted-foreground/50">·</span>}
-                {activeTeamId && (
-                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                    {teams.find((t) => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
-                  </span>
-                )}
-              </div>
-              {filteredEntries.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span>Total:</span>
-                  <span className="font-semibold text-emerald-500 tabular-nums">{filteredTotalHours.toFixed(2)}h</span>
-                  {filteredTotalHours < 12 && <span className="text-muted-foreground/60">/ 12h expected</span>}
-                  {filteredTotalHours >= 12 && <span className="text-emerald-500/70">✓</span>}
-                </div>
-              )}
-            </>
-          ) : (
-            <span className="text-xs text-muted-foreground/60 italic">Select a date or team above to filter</span>
-          )}
+      {/* Context bar — bulk action bar when selectMode, normal context bar otherwise */}
+      {selectMode ? (
+        <div className="px-6 py-2 border-b border-primary/30 bg-primary/5 flex items-center gap-3 shrink-0">
+          <span className="text-xs font-semibold text-primary">
+            {selectedIds.size === 0
+              ? "Select rows below"
+              : `${selectedIds.size} row${selectedIds.size !== 1 ? "s" : ""} selected`}
+          </span>
+          <span className="text-border text-muted-foreground/40">·</span>
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {allSelected
+              ? <CheckCheck className="w-3.5 h-3.5 text-primary" />
+              : someSelected
+              ? <Minus className="w-3.5 h-3.5 text-primary" />
+              : <Square className="w-3.5 h-3.5" />}
+            {allSelected ? "Deselect all" : "Select all"}
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || isBulkWorking}
+              onClick={handleBulkDelete}
+              className={cn("gap-1.5", selectedIds.size > 0 && "border-red-500/60 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-400")}
+            >
+              {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || isBulkWorking}
+              onClick={handleBulkApproveSelected}
+              className={cn("gap-1.5", selectedIds.size > 0 && "border-emerald-500/60 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-400")}
+            >
+              {isBulkWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
+              Approve{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+            </Button>
+          </div>
         </div>
-        <Button
-          size="sm"
-          onClick={handleAddRow}
-          disabled={newRow !== null}
-          className="gap-1.5 h-7 text-xs"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Row
-          {(activeDate || activeTeamId) && (
-            <span className="opacity-60 font-normal">
-              ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
-              {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
-            </span>
-          )}
-        </Button>
-      </div>
+      ) : (
+        <div className="px-6 py-2 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            {activeDate || activeTeamId ? (
+              <>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>Showing:</span>
+                  {activeDate && (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                      {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
+                    </span>
+                  )}
+                  {activeDate && activeTeamId && <span className="text-muted-foreground/50">·</span>}
+                  {activeTeamId && (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                      {teams.find((t) => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
+                    </span>
+                  )}
+                </div>
+                {filteredEntries.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-semibold text-emerald-500 tabular-nums">
+                      {Math.floor(filteredTotalHours)}h {Math.round((filteredTotalHours % 1) * 60)}m
+                    </span>
+                    <span>· {filteredEntries.length} rows</span>
+                    {filteredTotalHours < 12 && <span className="text-muted-foreground/60">/ 12h expected</span>}
+                    {filteredTotalHours >= 12 && <span className="text-emerald-500/70">✓</span>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground/60 italic">Select a date and team above to filter</span>
+            )}
+          </div>
+          <Button
+            size="sm"
+            onClick={handleAddRow}
+            disabled={newRow !== null}
+            className="gap-1.5 h-7 text-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Row
+            {(activeDate || activeTeamId) && (
+              <span className="opacity-60 font-normal">
+                ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
+                {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
+              </span>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 overflow-auto">
@@ -1040,7 +1076,7 @@ export default function CapturePage() {
             <Table className="table-fixed w-full min-w-[800px]">
               {/* Column widths — notes gets all unclaimed space */}
               <colgroup>
-                <col className="w-[36px]" />                               {/* checkbox */}
+                {selectMode && <col className="w-[36px]" />}               {/* checkbox — only in select mode */}
                 {showDateCol && <col className="w-[9%]" />}                {/* date */}
                 {showTeamCol && <col className="w-[9%]" />}                {/* team */}
                 <col className="w-[7%]" />                                 {/* start */}
@@ -1059,7 +1095,7 @@ export default function CapturePage() {
                 {/* ── New row form ── */}
                 {newRow && (
                   <TableRow className="bg-primary/5 align-top">
-                    <TableCell className="w-[36px]" />
+                    {selectMode && <TableCell className="w-[36px]" />}
                     {showDateCol && (
                       <TableCell className={COL.date}>
                         <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
@@ -1153,7 +1189,7 @@ export default function CapturePage() {
                   if (isEditing) {
                     return (
                       <TableRow key={entry.id} className="bg-muted/20">
-                        <TableCell className="w-[36px] py-1" />
+                        {selectMode && <TableCell className="w-[36px] py-1" />}
                         {showDateCol && (
                           <TableCell className={cn(COL.date, "py-1")}>
                             <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
@@ -1212,10 +1248,21 @@ export default function CapturePage() {
                   // ── Display row ──
                   const isSelected = selectedIds.has(entry.id);
                   return (
-                    <TableRow key={entry.id} className={cn("hover:bg-muted/20 cursor-pointer", isSelected && "bg-muted/30")} onClick={() => startEditing(entry)}>
-                      <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
-                        <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectRow(entry.id)} aria-label={`Select row ${entry.id}`} />
-                      </TableCell>
+                    <TableRow
+                      key={entry.id}
+                      className={cn(
+                        "cursor-pointer transition-colors",
+                        isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/20"
+                      )}
+                      onClick={() => selectMode ? toggleSelectRow(entry.id) : startEditing(entry)}
+                    >
+                      {selectMode && (
+                        <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
+                          {isSelected
+                            ? <CheckSquare className="w-4 h-4 text-primary" />
+                            : <Square className="w-4 h-4 text-muted-foreground/50" />}
+                        </TableCell>
+                      )}
                       {showDateCol && (
                         <TableCell className={cn(COL.date, "font-medium")}>
                           {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
@@ -1284,7 +1331,7 @@ export default function CapturePage() {
                 {/* ── Duration footer — only when entries are visible ── */}
                 {filteredEntries.length > 0 && (
                   <TableRow className="bg-muted/10 border-t-2 border-border">
-                    <TableCell colSpan={2 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
+                    <TableCell colSpan={2 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
                       Total
                     </TableCell>
                     <TableCell className="py-1.5">
@@ -1308,7 +1355,7 @@ export default function CapturePage() {
                 {/* Empty state */}
                 {!loadingEntries && filteredEntries.length === 0 && !newRow && (
                   <TableRow>
-                    <TableCell colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0)} className="text-center py-16 text-muted-foreground">
+                    <TableCell colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
                       {sortedEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}
