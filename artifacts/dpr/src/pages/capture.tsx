@@ -422,7 +422,7 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
           </div>
         );
       })}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center flex-wrap gap-1.5">
         <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
         {teams.map((team) => {
           const isActive = activeTeamId === team.id;
@@ -1274,7 +1274,7 @@ export default function CapturePage() {
                         selectMode ? "cursor-pointer" : ""
                       )}
                       onClick={selectMode ? () => toggleSelectRow(entry.id) : undefined}
-                      style={{ height: 52 }}
+                      style={{ minHeight: 52 }}
                     >
                       {/* Checkbox — select mode only */}
                       {selectMode && (
@@ -1332,7 +1332,7 @@ export default function CapturePage() {
                           ) : (
                             <span
                               onClick={() => activateCell(entry.id, "teamId", entry.teamId?.toString() || "")}
-                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm"
+                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
                             >
                               {entry.team?.name || <span className="text-muted-foreground/50">—</span>}
                             </span>
@@ -1384,7 +1384,7 @@ export default function CapturePage() {
                         )}
                       </TableCell>
                       {/* Duration */}
-                      <TableCell>
+                      <TableCell className="tabular-nums">
                         <span className={cn("text-sm font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
                           {formatDuration(entry.startTime, entry.endTime)}
                         </span>
@@ -1411,7 +1411,7 @@ export default function CapturePage() {
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "locationId", entry.location?.name || "")}
-                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm"
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
                           >
                             {entry.location?.name || <span className="text-muted-foreground/50">—</span>}
                           </span>
@@ -1421,7 +1421,7 @@ export default function CapturePage() {
                         </datalist>
                       </TableCell>
                       {/* Notes — inline editable */}
-                      <TableCell className={cn(COL.notes, "max-w-[180px]")} onClick={onCellClick}>
+                      <TableCell className={COL.notes} onClick={onCellClick}>
                         {isCellEditing("notes") ? (
                           <input
                             autoFocus
