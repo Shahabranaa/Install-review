@@ -461,7 +461,7 @@ const COL = {
   end: "",
   location: "",
   notes: "",   // gets all remaining space — widest column
-  group: "",
+  group: "pr-4",
   actions: "text-right",
 };
 
