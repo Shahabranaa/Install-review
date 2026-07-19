@@ -1260,6 +1260,8 @@ export default function CapturePage() {
                     editingCell?.entryId === entry.id && editingCell?.field === field;
                   const isCellFailed = (field: string) =>
                     failedCell?.entryId === entry.id && failedCell?.field === field;
+                  // In select mode let the click bubble to the row; otherwise block it so cell edits don't toggle selection
+                  const onCellClick = (e: React.MouseEvent) => selectMode ? toggleSelectRow(entry.id) : e.stopPropagation();
 
                   return (
                     <TableRow
@@ -1282,7 +1284,7 @@ export default function CapturePage() {
                       )}
                       {/* Date — inline editable */}
                       {showDateCol && (
-                        <TableCell className={cn(COL.date, "font-medium")} onClick={(e) => e.stopPropagation()}>
+                        <TableCell className={cn(COL.date, "font-medium")} onClick={onCellClick}>
                           {isCellEditing("date") ? (
                             <input
                               autoFocus
@@ -1306,7 +1308,7 @@ export default function CapturePage() {
                       )}
                       {/* Team — inline select */}
                       {showTeamCol && (
-                        <TableCell className={COL.team} onClick={(e) => e.stopPropagation()}>
+                        <TableCell className={COL.team} onClick={onCellClick}>
                           {isCellEditing("teamId") ? (
                             <Select
                               value={editingValue}
@@ -1336,7 +1338,7 @@ export default function CapturePage() {
                         </TableCell>
                       )}
                       {/* Start — inline editable */}
-                      <TableCell className={cn(COL.start, isCellFailed("startTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.start, isCellFailed("startTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={onCellClick}>
                         {isCellEditing("startTime") ? (
                           <input
                             autoFocus
@@ -1358,7 +1360,7 @@ export default function CapturePage() {
                         )}
                       </TableCell>
                       {/* End — inline editable */}
-                      <TableCell className={cn(COL.end, isCellFailed("endTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.end, isCellFailed("endTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={onCellClick}>
                         {isCellEditing("endTime") ? (
                           <input
                             autoFocus
@@ -1386,7 +1388,7 @@ export default function CapturePage() {
                         </span>
                       </TableCell>
                       {/* Location — inline text input */}
-                      <TableCell className={COL.location} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={COL.location} onClick={onCellClick}>
                         {isCellEditing("locationId") ? (
                           <input
                             autoFocus
@@ -1417,7 +1419,7 @@ export default function CapturePage() {
                         </datalist>
                       </TableCell>
                       {/* Notes — inline editable */}
-                      <TableCell className={cn(COL.notes, "max-w-[180px]")} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.notes, "max-w-[180px]")} onClick={onCellClick}>
                         {isCellEditing("notes") ? (
                           <input
                             autoFocus
@@ -1437,7 +1439,7 @@ export default function CapturePage() {
                         )}
                       </TableCell>
                       {/* Activity Group — instant toggle, no editing mode needed */}
-                      <TableCell className={COL.group} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={COL.group} onClick={onCellClick}>
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
                           allowedGroups={allowedGroups}
@@ -1450,7 +1452,7 @@ export default function CapturePage() {
                         />
                       </TableCell>
                       {/* Actions */}
-                      <TableCell className={cn(COL.actions, "text-right")} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.actions, "text-right")} onClick={onCellClick}>
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
