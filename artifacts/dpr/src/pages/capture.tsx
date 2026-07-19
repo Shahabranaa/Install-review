@@ -1118,6 +1118,7 @@ export default function CapturePage() {
             size="sm"
             onClick={handleAddRow}
             disabled={newRow !== null}
+            title={newRow !== null ? "Finish or cancel the open row first" : undefined}
             className="gap-1.5 h-7 text-xs"
           >
             <Plus className="w-3.5 h-3.5" />
