@@ -118,20 +118,25 @@ function ActivityGroupPicker({
     onGroupChange(next.id);
   };
 
-  const btnCls =
-    "flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center whitespace-nowrap " +
-    "border-primary/70 bg-primary/10 text-primary hover:bg-primary/20";
+  const baseBtnCls =
+    "flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center leading-tight break-words";
+  const workingCls  = "border-green-600  bg-green-500/10  text-green-400  hover:bg-green-500/20";
+  const nonWorkingCls = "border-yellow-500 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20";
   const placeholderCls =
-    "flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded border text-center whitespace-nowrap select-none " +
+    "flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded border text-center leading-tight select-none " +
     "border-border/40 bg-muted/20 text-muted-foreground/40";
 
   return (
     <div className="flex gap-1.5 min-w-[200px]">
-      <button type="button" onClick={handleTypeClick} className={btnCls}>
+      <button
+        type="button"
+        onClick={handleTypeClick}
+        className={cn(baseBtnCls, isWorking ? workingCls : nonWorkingCls)}
+      >
         {kindLabel}
       </button>
       {isWorking ? (
-        <button type="button" onClick={handleGroupClick} className={btnCls}>
+        <button type="button" onClick={handleGroupClick} className={cn(baseBtnCls, workingCls)}>
           {groupLabel ?? "Effective"}
         </button>
       ) : (
