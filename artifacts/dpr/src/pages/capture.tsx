@@ -1125,6 +1125,7 @@ export default function CapturePage() {
                     <TableCell className={COL.start}>
                       <Input
                         type="time"
+                            lang="en-GB"
                         value={newRow.startTime}
                         onChange={(e) => { setNewRow({ ...newRow, startTime: e.target.value }); setNewRowErrors((e) => ({ ...e, startTime: undefined })); }}
                         className={cn("h-8 text-sm", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
@@ -1134,6 +1135,7 @@ export default function CapturePage() {
                     <TableCell className={COL.end}>
                       <Input
                         type="time"
+                            lang="en-GB"
                         value={newRow.endTime}
                         onChange={(e) => { setNewRow({ ...newRow, endTime: e.target.value }); setNewRowErrors((e) => ({ ...e, endTime: undefined })); }}
                         className={cn("h-8 text-sm", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
@@ -1275,6 +1277,7 @@ export default function CapturePage() {
                           <input
                             autoFocus
                             type="time"
+                            lang="en-GB"
                             value={editingValue}
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "startTime")}
@@ -1296,6 +1299,7 @@ export default function CapturePage() {
                           <input
                             autoFocus
                             type="time"
+                            lang="en-GB"
                             value={editingValue}
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "endTime")}
@@ -1532,10 +1536,10 @@ export default function CapturePage() {
                             </Select>
                           </TableCell>
                           <TableCell className="pt-3">
-                            <Input type="time" value={row.startTime} onChange={(e) => updatePendingRow(row.key, { startTime: e.target.value })} className="h-8 text-sm" />
+                            <Input type="time" lang="en-GB" value={row.startTime} onChange={(e) => updatePendingRow(row.key, { startTime: e.target.value })} className="h-8 text-sm" />
                           </TableCell>
                           <TableCell className="pt-3">
-                            <Input type="time" value={row.endTime} onChange={(e) => updatePendingRow(row.key, { endTime: e.target.value })} className="h-8 text-sm" />
+                            <Input type="time" lang="en-GB" value={row.endTime} onChange={(e) => updatePendingRow(row.key, { endTime: e.target.value })} className="h-8 text-sm" />
                           </TableCell>
                           <TableCell className="pt-3">
                             <Combobox options={locationOptions} value={row.locationId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { locationId: parseInt(v) })} placeholder={locationUnmatched ? row.locationRaw : "Select Location"} searchPlaceholder="Search locations..." triggerClassName={locationUnmatched ? "border-amber-500" : undefined} />
