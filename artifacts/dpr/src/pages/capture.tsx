@@ -1276,10 +1276,10 @@ export default function CapturePage() {
                     >
                       {/* Checkbox — select mode only */}
                       {selectMode && (
-                        <TableCell className="w-[36px]" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="w-[36px]" onClick={(e) => { e.stopPropagation(); toggleSelectRow(entry.id); }}>
                           {isSelected
-                            ? <CheckSquare className="w-4 h-4 text-primary" />
-                            : <Square className="w-4 h-4 text-muted-foreground/50" />}
+                            ? <CheckSquare className="w-4 h-4 text-primary cursor-pointer" />
+                            : <Square className="w-4 h-4 text-muted-foreground/50 cursor-pointer" />}
                         </TableCell>
                       )}
                       {/* Date — inline editable */}
