@@ -361,6 +361,7 @@ interface FilterPillsProps {
 function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick, teamHoursMap }: FilterPillsProps) {
   // activeDate may be outside the 10-day window (picked via "Other date")
   const isOtherDate = activeDate !== null && !distinctDates.includes(activeDate);
+  const otherDateInputRef = useRef<HTMLInputElement>(null);
 
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
@@ -398,9 +399,11 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
           );
         })}
         {/* "Other date" picker — shown highlighted when a date outside the 10-day window is active */}
-        <label
+        <button
+          type="button"
+          onClick={() => otherDateInputRef.current?.showPicker()}
           className={cn(
-            "shrink-0 relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors cursor-pointer",
+            "shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors",
             isOtherDate
               ? "border-2 border-primary bg-primary text-primary-foreground"
               : "border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
@@ -409,13 +412,14 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
         >
           <CalendarDays className="w-3 h-3 shrink-0" />
           <span>{isOtherDate ? (() => { try { return format(parseISO(activeDate!), "dd/MM/yy"); } catch { return activeDate; } })() : "Other date"}</span>
-          <input
-            type="date"
-            className="absolute inset-0 opacity-0 cursor-pointer w-full"
-            value={isOtherDate ? activeDate! : ""}
-            onChange={(e) => { if (e.target.value) onDateClick(e.target.value); }}
-          />
-        </label>
+        </button>
+        <input
+          ref={otherDateInputRef}
+          type="date"
+          className="sr-only"
+          value={isOtherDate ? activeDate! : ""}
+          onChange={(e) => { if (e.target.value) onDateClick(e.target.value); }}
+        />
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5">
