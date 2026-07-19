@@ -1317,31 +1317,36 @@ export default function CapturePage() {
                           {formatDuration(entry.startTime, entry.endTime)}
                         </span>
                       </TableCell>
-                      {/* Location — inline combobox */}
+                      {/* Location — inline text input */}
                       <TableCell className={COL.location} onClick={(e) => e.stopPropagation()}>
                         {isCellEditing("locationId") ? (
-                          <Combobox
-                            options={locationOptions}
-                            value={entry.locationId?.toString() || ""}
-                            onValueChange={(v) => {
-                              const locationId = parseInt(v);
-                              const locationObj = locations.find((l) => l.id === locationId);
-                              autosaveMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, locationId, location: locationObj ? { id: locationObj.id, name: locationObj.name } : entry.location }) });
+                          <input
+                            autoFocus
+                            list={`location-list-${entry.id}`}
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onBlur={() => {
+                              const matched = findByNameFuzzy(locations, editingValue);
+                              if (matched) {
+                                autosaveMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, locationId: matched.id, location: { id: matched.id, name: matched.name } }) });
+                              }
                               setEditingCell(null);
                               setEditingValue("");
                             }}
-                            placeholder="Select Location"
-                            searchPlaceholder="Search locations..."
-                            triggerClassName="h-8 text-sm"
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
-                            onClick={() => activateCell(entry.id, "locationId", entry.locationId?.toString() || "")}
+                            onClick={() => activateCell(entry.id, "locationId", entry.location?.name || "")}
                             className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm"
                           >
                             {entry.location?.name || <span className="text-muted-foreground/50">—</span>}
                           </span>
                         )}
+                        <datalist id={`location-list-${entry.id}`}>
+                          {locations.map((l) => <option key={l.id} value={l.name} />)}
+                        </datalist>
                       </TableCell>
                       {/* Notes — inline editable */}
                       <TableCell className={cn(COL.notes, "max-w-[180px]")} onClick={(e) => e.stopPropagation()}>
