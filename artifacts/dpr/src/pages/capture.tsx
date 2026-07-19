@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useCreateDprTimesheetEntry,
@@ -359,69 +359,66 @@ interface FilterPillsProps {
 }
 
 function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick, teamHoursMap }: FilterPillsProps) {
-  const [visibleDateRows, setVisibleDateRows] = useState(1);
-  useEffect(() => { setVisibleDateRows(1); }, [distinctDates]);
-
-  const pageSize = Math.max(teams.length, 1);
-  const visibleDates = distinctDates.slice(0, visibleDateRows * pageSize);
-  const hasMoreDates = distinctDates.length > visibleDates.length;
-  const dateRows: string[][] = [];
-  for (let i = 0; i < visibleDates.length; i += pageSize) {
-    dateRows.push(visibleDates.slice(i, i + pageSize));
-  }
+  // activeDate may be outside the 10-day window (picked via "Other date")
+  const isOtherDate = activeDate !== null && !distinctDates.includes(activeDate);
 
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
 
   return (
     <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-      {distinctDates.length > 0 && dateRows.map((row, rowIdx) => {
-        const isLastRow = rowIdx === dateRows.length - 1;
-        return (
-          <div key={rowIdx} className="flex items-start gap-1.5">
-            <span className="text-xs text-muted-foreground shrink-0 w-8 mt-1.5" style={{ visibility: rowIdx === 0 ? "visible" : "hidden" }}>
-              Date
-            </span>
-            {row.map((d) => {
-              const label = (() => { try { return format(parseISO(d), "dd/MM/yy"); } catch { return d; } })();
-              const isActive = activeDate === d;
-              const bd = getDateBreakdown(d, teams, teamHoursMap);
-              const ws = bd.worstStatus;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  data-testid={`date-pill-${d}`}
-                  onClick={() => onDateClick(d)}
-                  className={cn(
-                    "shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-xs font-medium transition-colors min-w-[64px]",
-                    isActive
-                      ? "border-2 border-primary bg-primary text-primary-foreground"
-                      : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
-                  )}
-                >
-                  <div className="flex items-center justify-between w-full gap-1.5">
-                    <span className="font-semibold">{label}</span>
-                    <span className={cn("text-[10px] font-bold tabular-nums", isActive ? "text-primary-foreground/70" : STATUS_TEXT[ws])}>
-                      {bd.full + bd.partial}/{bd.total}
-                    </span>
-                  </div>
-                  <StatusBar bd={bd} isActive={isActive} />
-                </button>
-              );
-            })}
-            {isLastRow && hasMoreDates && (
-              <button
-                type="button"
-                onClick={() => setVisibleDateRows((n) => n + 1)}
-                className="text-xs text-primary hover:text-primary/80 transition-colors shrink-0 ml-1 underline underline-offset-2 mt-1.5"
-              >
-                show more
-              </button>
-            )}
-          </div>
-        );
-      })}
+      {/* Date row — always 10 fixed pills + "Other date" picker */}
+      <div className="flex items-start flex-wrap gap-1.5">
+        <span className="text-xs text-muted-foreground shrink-0 w-8 mt-1.5">Date</span>
+        {distinctDates.map((d) => {
+          const label = (() => { try { return format(parseISO(d), "dd/MM/yy"); } catch { return d; } })();
+          const isActive = activeDate === d;
+          const bd = getDateBreakdown(d, teams, teamHoursMap);
+          const ws = bd.worstStatus;
+          return (
+            <button
+              key={d}
+              type="button"
+              data-testid={`date-pill-${d}`}
+              onClick={() => onDateClick(d)}
+              className={cn(
+                "shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-xs font-medium transition-colors min-w-[64px]",
+                isActive
+                  ? "border-2 border-primary bg-primary text-primary-foreground"
+                  : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
+              )}
+            >
+              <div className="flex items-center justify-between w-full gap-1.5">
+                <span className="font-semibold">{label}</span>
+                <span className={cn("text-[10px] font-bold tabular-nums", isActive ? "text-primary-foreground/70" : STATUS_TEXT[ws])}>
+                  {bd.full + bd.partial}/{bd.total}
+                </span>
+              </div>
+              <StatusBar bd={bd} isActive={isActive} />
+            </button>
+          );
+        })}
+        {/* "Other date" picker — shown highlighted when a date outside the 10-day window is active */}
+        <label
+          className={cn(
+            "shrink-0 relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors cursor-pointer",
+            isOtherDate
+              ? "border-2 border-primary bg-primary text-primary-foreground"
+              : "border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
+          )}
+          title="Select any date"
+        >
+          <CalendarDays className="w-3 h-3 shrink-0" />
+          <span>{isOtherDate ? (() => { try { return format(parseISO(activeDate!), "dd/MM/yy"); } catch { return activeDate; } })() : "Other date"}</span>
+          <input
+            type="date"
+            className="absolute inset-0 opacity-0 cursor-pointer w-full"
+            value={isOtherDate ? activeDate! : ""}
+            onChange={(e) => { if (e.target.value) onDateClick(e.target.value); }}
+          />
+        </label>
+      </div>
+
       <div className="flex items-center flex-wrap gap-1.5">
         <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
         {teams.map((team) => {
@@ -675,20 +672,20 @@ export default function CapturePage() {
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
 
-  const distinctDates = useMemo(() => {
-    const dates = Array.from(new Set(sortedEntries.map((e) => e.date)));
-    return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-  }, [sortedEntries]);
+  // Fixed 10-day window: today → 9 days ago, regardless of what's in the DB
+  const distinctDates = useMemo(() =>
+    Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"))
+  , []);
 
-  // Auto-select first date + first team on initial data load
+  // Auto-select today + first team on initial data load
   const defaultsApplied = useRef(false);
   useEffect(() => {
     if (defaultsApplied.current) return;
-    if (distinctDates.length === 0 || teams.length === 0) return;
+    if (teams.length === 0) return;
     defaultsApplied.current = true;
-    setActiveDate(distinctDates[0]);
+    setActiveDate(format(new Date(), "yyyy-MM-dd"));
     setActiveTeamId(teams[0].id);
-  }, [distinctDates, teams]);
+  }, [teams]);
 
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
