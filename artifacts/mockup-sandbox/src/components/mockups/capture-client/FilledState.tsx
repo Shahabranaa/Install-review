@@ -1,3 +1,4 @@
+import "./_group.css";
 import { useState } from "react";
 import { Info, X, ClipboardPaste, Plus } from "lucide-react";
 import { ActivityToggle } from "./_ActivityToggle";

@@ -1,3 +1,4 @@
+import "./_group.css";
 import { useState } from "react";
 import { CalendarDays, Users, ClipboardPaste } from "lucide-react";
 
