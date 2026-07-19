@@ -388,13 +388,12 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
                   : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
               )}
             >
-              <div className="flex items-center justify-between w-full gap-1.5">
+              <div className="flex items-center gap-1.5">
                 <span className="font-semibold">{label}</span>
                 <span className={cn("text-[10px] font-bold tabular-nums", isActive ? "text-primary-foreground/70" : STATUS_TEXT[ws])}>
                   {bd.full + bd.partial}/{bd.total}
                 </span>
               </div>
-              <StatusBar bd={bd} isActive={isActive} />
             </button>
           );
         })}
