@@ -87,6 +87,7 @@ function ActivityGroupPicker({
   groupValue,
   onTypeChange,
   onGroupChange,
+  onError,
 }: {
   allowedTypes: { id: number; name: string }[];
   allowedGroups: { id: number; name: string }[];
@@ -95,14 +96,21 @@ function ActivityGroupPicker({
   groupValue: number | null;
   onTypeChange: (id: number) => void;
   onGroupChange: (id: number) => void;
+  onError?: (msg: string) => void;
 }) {
   const isWorking = typeValue === workingTypeId;
   const activeType = allowedTypes.find((t) => t.id === typeValue);
   const activeGroup = allowedGroups.find((g) => g.id === groupValue);
   const kindLabel = activeType ? (TYPE_LABELS[activeType.name] ?? activeType.name) : "Working Time";
   const groupLabel = isWorking && activeGroup ? (GROUP_LABELS[activeGroup.name] ?? activeGroup.name) : null;
+  const canToggleType = allowedTypes.length > 1;
+  const canCycleGroup = isWorking && allowedGroups.length > 0;
 
   const handleTypeClick = () => {
+    if (!canToggleType) {
+      onError?.("Only one activity type is configured — cannot switch.");
+      return;
+    }
     const nonWorking = allowedTypes.find((t) => t.id !== workingTypeId);
     if (isWorking && nonWorking) {
       onTypeChange(nonWorking.id);
@@ -112,7 +120,11 @@ function ActivityGroupPicker({
   };
 
   const handleGroupClick = () => {
-    if (!isWorking || allowedGroups.length === 0) return;
+    if (!isWorking) return; // placeholder shown, nothing to do
+    if (allowedGroups.length === 0) {
+      onError?.("No sub-groups are configured for this activity type.");
+      return;
+    }
     const idx = allowedGroups.findIndex((g) => g.id === groupValue);
     const next = allowedGroups[(idx + 1) % allowedGroups.length];
     onGroupChange(next.id);
@@ -125,21 +137,21 @@ function ActivityGroupPicker({
       <button
         type="button"
         onClick={handleTypeClick}
-        title="Toggle Working / Non-Working Time"
+        title={canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
         className={cn(
           "flex items-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
           isWorking
-            ? "bg-green-500/10 text-green-400 hover:bg-green-500/20 border-r-green-600/30"
-            : "bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border-r-yellow-500/30"
+            ? "bg-green-500/10 text-green-400 border-r-green-600/30"
+            : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
+          canToggleType ? (isWorking ? "hover:bg-green-500/20" : "hover:bg-yellow-500/20") : "opacity-60 cursor-not-allowed"
         )}
       >
-        {/* Status dot */}
         <span className={cn(
           "w-1.5 h-1.5 rounded-full shrink-0 ring-1",
           isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
         )} />
         <span className="leading-none whitespace-nowrap">{kindLabel}</span>
-        <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />
+        {canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
       </button>
 
       {/* Right — sub-group cycler */}
@@ -147,11 +159,14 @@ function ActivityGroupPicker({
         <button
           type="button"
           onClick={handleGroupClick}
-          title="Cycle sub-group"
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 hover:bg-green-500/15 hover:text-green-300 transition-all duration-150"
+          title={canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
+          className={cn(
+            "flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
+            canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
+          )}
         >
-          <span className="leading-none whitespace-nowrap">{groupLabel ?? "Effective"}</span>
-          <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />
+          <span className="leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
+          {canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
         </button>
       ) : (
         <div className="flex items-center px-2.5 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
@@ -562,9 +577,10 @@ export default function CapturePage() {
         );
         return { snapshot };
       },
-      onSuccess: (updated) => { patchEntry(updated); },
+      onSuccess: (updated) => { patchEntry(updated); setFailedCell(null); },
       onError: (err, _, ctx) => {
         if (ctx?.snapshot) restoreEntries(ctx.snapshot);
+        setFailedCell(lastSavedCellRef.current);
         toast({ title: "Autosave failed", description: err.message, variant: "destructive" });
       },
     },
@@ -645,6 +661,9 @@ export default function CapturePage() {
   // Per-cell inline editing — tracks which cell is active and its current typed value
   const [editingCell, setEditingCell] = useState<{ entryId: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+  // Tracks cells that failed to autosave (shows red ring until next successful edit)
+  const [failedCell, setFailedCell] = useState<{ entryId: number; field: string } | null>(null);
+  const lastSavedCellRef = useRef<{ entryId: number; field: string } | null>(null);
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -758,8 +777,20 @@ export default function CapturePage() {
 
   const handleBulkApproveSelected = async () => {
     if (selectedIds.size === 0) return;
-    setIsBulkWorking(true);
     const ids = Array.from(selectedIds);
+    const incomplete = ids.filter((id) => {
+      const e = entries.find((en) => en.id === id);
+      return !e || !e.startTime || !e.endTime || !e.locationId || !e.activityTypeId;
+    });
+    if (incomplete.length > 0) {
+      toast({
+        title: `${incomplete.length} row${incomplete.length !== 1 ? "s" : ""} cannot be approved`,
+        description: "Fill in Start, End, Location, and Activity Group before approving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsBulkWorking(true);
     queryClient.setQueriesData<DprTimesheetEntry[]>(
       { queryKey: getListDprTimesheetEntriesQueryKey() },
       (old) => old?.map((e) => ids.includes(e.id) ? { ...e, stage: "captured" as const } : e)
@@ -775,7 +806,24 @@ export default function CapturePage() {
     else toast({ title: "Approve failed", variant: "destructive" });
   };
 
-  const handleApprove = (id: number) => approveMutation.mutate({ id, data: { stage: "captured" } });
+  const handleApprove = (id: number) => {
+    const entry = entries.find((e) => e.id === id);
+    if (!entry) return;
+    const missing: string[] = [];
+    if (!entry.startTime) missing.push("Start time");
+    if (!entry.endTime) missing.push("End time");
+    if (!entry.locationId) missing.push("Location");
+    if (!entry.activityTypeId) missing.push("Activity Group");
+    if (missing.length > 0) {
+      toast({
+        title: "Row is incomplete — cannot approve",
+        description: `Missing: ${missing.join(", ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    approveMutation.mutate({ id, data: { stage: "captured" } });
+  };
 
   // ── Derived display flags ──
   const showDateCol = !activeDate;
@@ -838,17 +886,28 @@ export default function CapturePage() {
   const saveCell = (entryId: number, field: string, value: string) => {
     const entry = entries.find((e) => e.id === entryId);
     if (!entry) return;
+    // Validate time fields before saving
+    if ((field === "startTime" || field === "endTime") && value) {
+      const err = validate48hTime(value);
+      if (err) {
+        toast({ title: `Invalid ${field === "startTime" ? "start" : "end"} time`, description: err, variant: "destructive" });
+        setFailedCell({ entryId, field });
+        return;
+      }
+    }
     const patch: Partial<DprTimesheetEntry> = {};
     if (field === "startTime") patch.startTime = value || undefined;
     else if (field === "endTime") patch.endTime = value || undefined;
     else if (field === "notes") patch.notes = value || undefined;
     else if (field === "date") patch.date = value || entry.date;
     else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
+    lastSavedCellRef.current = { entryId, field };
     autosaveMutation.mutate({ id: entryId, data: buildUpdatePayload({ ...entry, ...patch }) });
   };
 
   const activateCell = (entryId: number, field: string, currentValue: string) => {
     if (selectMode) return;
+    setFailedCell(null);
     // Flush any currently-active cell before switching
     if (editingCell && (editingCell.entryId !== entryId || editingCell.field !== field)) {
       saveCell(editingCell.entryId, editingCell.field, editingValue);
@@ -1178,6 +1237,7 @@ export default function CapturePage() {
                         groupValue={newRow.activityGroupId}
                         onTypeChange={(id) => setNewRow({ ...newRow, activityTypeId: id })}
                         onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
+                        onError={(msg) => toast({ title: msg, variant: "destructive" })}
                       />
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
@@ -1198,6 +1258,8 @@ export default function CapturePage() {
                   const isSelected = selectedIds.has(entry.id);
                   const isCellEditing = (field: string) =>
                     editingCell?.entryId === entry.id && editingCell?.field === field;
+                  const isCellFailed = (field: string) =>
+                    failedCell?.entryId === entry.id && failedCell?.field === field;
 
                   return (
                     <TableRow
@@ -1274,7 +1336,7 @@ export default function CapturePage() {
                         </TableCell>
                       )}
                       {/* Start — inline editable */}
-                      <TableCell className={COL.start} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.start, isCellFailed("startTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={(e) => e.stopPropagation()}>
                         {isCellEditing("startTime") ? (
                           <input
                             autoFocus
@@ -1289,14 +1351,14 @@ export default function CapturePage() {
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "startTime", entry.startTime || "")}
-                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums"
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
                           >
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
                           </span>
                         )}
                       </TableCell>
                       {/* End — inline editable */}
-                      <TableCell className={COL.end} onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={cn(COL.end, isCellFailed("endTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={(e) => e.stopPropagation()}>
                         {isCellEditing("endTime") ? (
                           <input
                             autoFocus
@@ -1311,7 +1373,7 @@ export default function CapturePage() {
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "endTime", entry.endTime || "")}
-                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums"
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("endTime") && "text-destructive")}
                           >
                             {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">—</span>}
                           </span>
@@ -1384,6 +1446,7 @@ export default function CapturePage() {
                           groupValue={entry.activityGroupId ?? null}
                           onTypeChange={(id) => handleQuickSetType(entry, id)}
                           onGroupChange={(id) => handleQuickSetGroup(entry, id)}
+                          onError={(msg) => toast({ title: msg, variant: "destructive" })}
                         />
                       </TableCell>
                       {/* Actions */}
@@ -1555,6 +1618,7 @@ export default function CapturePage() {
                               groupValue={row.activityGroupId}
                               onTypeChange={(id) => updatePendingRow(row.key, { activityTypeId: id })}
                               onGroupChange={(id) => updatePendingRow(row.key, { activityGroupId: id })}
+                              onError={(msg) => toast({ title: msg, variant: "destructive" })}
                             />
                           </TableCell>
                           <TableCell className="pt-2">
