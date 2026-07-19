@@ -658,6 +658,16 @@ export default function CapturePage() {
     return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
   }, [sortedEntries]);
 
+  // Auto-select first date + first team on initial data load
+  const defaultsApplied = useRef(false);
+  useEffect(() => {
+    if (defaultsApplied.current) return;
+    if (distinctDates.length === 0 || teams.length === 0) return;
+    defaultsApplied.current = true;
+    setActiveDate(distinctDates[0]);
+    setActiveTeamId(teams[0].id);
+  }, [distinctDates, teams]);
+
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
 
