@@ -1140,7 +1140,7 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[860px]">
+            <Table className="table-fixed w-full min-w-[920px]">
               {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
                 {selectMode && <col className="w-[36px]" />}
@@ -1151,8 +1151,8 @@ export default function CapturePage() {
                 <col className="w-[6%]" />
                 <col className="w-[11%]" />
                 <col />
-                <col style={{ width: 210 }} />
-                <col style={{ width: 70 }} />
+                <col style={{ width: 270 }} />
+                <col style={{ width: 80 }} />
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
