@@ -459,7 +459,7 @@ export default function CapturePage() {
   const sortedEntries = useMemo(
     () =>
       [...entries.filter((e) => e.stage === "draft")].sort((a, b) => {
-        const d = new Date(a.date).getTime() - new Date(b.date).getTime();
+        const d = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (d !== 0) return d;
         return (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
       }),
