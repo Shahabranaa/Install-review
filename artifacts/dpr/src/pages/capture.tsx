@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, CalendarDays, Users } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, CalendarDays, Users, ChevronRight, ArrowLeftRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -118,29 +118,45 @@ function ActivityGroupPicker({
     onGroupChange(next.id);
   };
 
-  const baseBtnCls =
-    "flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center leading-tight break-words";
-  const workingCls  = "border-green-600  bg-green-500/10  text-green-400  hover:bg-green-500/20";
-  const nonWorkingCls = "border-yellow-500 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20";
-  const placeholderCls =
-    "flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded border text-center leading-tight select-none " +
-    "border-border/40 bg-muted/20 text-muted-foreground/40";
-
   return (
-    <div className="flex gap-1.5 min-w-[200px]">
+    <div className="inline-flex items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold min-w-[190px]"
+         style={{ borderColor: isWorking ? "rgb(22 163 74 / 0.4)" : "rgb(234 179 8 / 0.4)" }}>
+      {/* Left — type toggle */}
       <button
         type="button"
         onClick={handleTypeClick}
-        className={cn(baseBtnCls, isWorking ? workingCls : nonWorkingCls)}
+        title="Toggle Working / Non-Working Time"
+        className={cn(
+          "flex items-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
+          isWorking
+            ? "bg-green-500/10 text-green-400 hover:bg-green-500/20 border-r-green-600/30"
+            : "bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border-r-yellow-500/30"
+        )}
       >
-        {kindLabel}
+        {/* Status dot */}
+        <span className={cn(
+          "w-1.5 h-1.5 rounded-full shrink-0 ring-1",
+          isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
+        )} />
+        <span className="leading-none whitespace-nowrap">{kindLabel}</span>
+        <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />
       </button>
+
+      {/* Right — sub-group cycler */}
       {isWorking ? (
-        <button type="button" onClick={handleGroupClick} className={cn(baseBtnCls, workingCls)}>
-          {groupLabel ?? "Effective"}
+        <button
+          type="button"
+          onClick={handleGroupClick}
+          title="Cycle sub-group"
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 hover:bg-green-500/15 hover:text-green-300 transition-all duration-150"
+        >
+          <span className="leading-none whitespace-nowrap">{groupLabel ?? "Effective"}</span>
+          <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />
         </button>
       ) : (
-        <div className={placeholderCls}>—</div>
+        <div className="flex items-center px-2.5 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
+          <span className="leading-none">—</span>
+        </div>
       )}
     </div>
   );
