@@ -1,3 +1,4 @@
+// @refresh reset
 import { useState } from "react";
 import { Info, X, ClipboardPaste, Plus } from "lucide-react";
 
@@ -95,18 +96,6 @@ function ActivityToggle({
               </button>
             );
           })}
-        </div>
-      )}
-      {kind === "non-working" && (
-        <div className="flex gap-1">
-          {(["effective", "extra", "rework"] as const).map((g) => (
-            <span
-              key={g}
-              className="px-2 py-0.5 text-[11px] rounded bg-muted/20 text-muted-foreground/30 whitespace-nowrap"
-            >
-              {g === "effective" ? "Effective" : g === "extra" ? "Extra Work" : "Re-Work"}
-            </span>
-          ))}
         </div>
       )}
     </div>
