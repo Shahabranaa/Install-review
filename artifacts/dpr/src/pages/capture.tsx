@@ -336,7 +336,7 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
               Date
             </span>
             {row.map((d) => {
-              const label = (() => { try { return format(parseISO(d), "dd/MM"); } catch { return d; } })();
+              const label = (() => { try { return format(parseISO(d), "dd/MM/yy"); } catch { return d; } })();
               const isActive = activeDate === d;
               const bd = getDateBreakdown(d, teams, teamHoursMap);
               const ws = bd.worstStatus;
