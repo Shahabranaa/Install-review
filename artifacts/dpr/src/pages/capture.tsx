@@ -25,6 +25,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, CalendarDays, Users, ChevronRight, ArrowLeftRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
@@ -361,7 +363,7 @@ interface FilterPillsProps {
 function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick, teamHoursMap }: FilterPillsProps) {
   // activeDate may be outside the 10-day window (picked via "Other date")
   const isOtherDate = activeDate !== null && !distinctDates.includes(activeDate);
-  const otherDateInputRef = useRef<HTMLInputElement>(null);
+  const [calOpen, setCalOpen] = useState(false);
 
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
@@ -398,28 +400,37 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
             </button>
           );
         })}
-        {/* "Other date" picker — shown highlighted when a date outside the 10-day window is active */}
-        <button
-          type="button"
-          onClick={() => otherDateInputRef.current?.showPicker()}
-          className={cn(
-            "shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors",
-            isOtherDate
-              ? "border-2 border-primary bg-primary text-primary-foreground"
-              : "border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
-          )}
-          title="Select any date"
-        >
-          <CalendarDays className="w-3 h-3 shrink-0" />
-          <span>{isOtherDate ? (() => { try { return format(parseISO(activeDate!), "dd/MM/yy"); } catch { return activeDate; } })() : "Other date"}</span>
-        </button>
-        <input
-          ref={otherDateInputRef}
-          type="date"
-          className="sr-only"
-          value={isOtherDate ? activeDate! : ""}
-          onChange={(e) => { if (e.target.value) onDateClick(e.target.value); }}
-        />
+        {/* "Other date" — themed calendar popover anchored to the button */}
+        <Popover open={calOpen} onOpenChange={setCalOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors",
+                isOtherDate
+                  ? "border-2 border-primary bg-primary text-primary-foreground"
+                  : "border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
+              )}
+              title="Select any date"
+            >
+              <CalendarDays className="w-3 h-3 shrink-0" />
+              <span>{isOtherDate ? (() => { try { return format(parseISO(activeDate!), "dd/MM/yy"); } catch { return activeDate; } })() : "Other date"}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start" sideOffset={6}>
+            <Calendar
+              mode="single"
+              selected={isOtherDate && activeDate ? parseISO(activeDate) : undefined}
+              onSelect={(date) => {
+                if (date) {
+                  onDateClick(format(date, "yyyy-MM-dd"));
+                  setCalOpen(false);
+                }
+              }}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5">
