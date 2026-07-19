@@ -540,7 +540,6 @@ export default function CapturePage() {
       onSuccess: (updated) => {
         patchEntry(updated);
         toast({ title: "Entry updated" });
-        setEditingId(null);
       },
       onError: (err, _, ctx) => {
         if (ctx?.snapshot) restoreEntries(ctx.snapshot);
@@ -640,9 +639,9 @@ export default function CapturePage() {
   // ── UI state ──
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
   const [newRowErrors, setNewRowErrors] = useState<Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>>>({});
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<Partial<DprTimesheetEntry>>({});
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Per-cell inline editing — tracks which cell is active and its current typed value
+  const [editingCell, setEditingCell] = useState<{ entryId: number; field: string } | null>(null);
+  const [editingValue, setEditingValue] = useState<string>("");
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -695,7 +694,7 @@ export default function CapturePage() {
   const [bulkLocationId, setBulkLocationId] = useState<string>("");
   const someSelected = filteredEntries.some((e) => selectedIds.has(e.id));
 
-  const enterSelectMode = () => { setSelectMode(true); setSelectedIds(new Set()); };
+  const enterSelectMode = () => { setSelectMode(true); setSelectedIds(new Set()); setEditingCell(null); setEditingValue(""); };
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); setBulkLocationId(""); };
 
   const clearSelection = () => { setSelectedIds(new Set()); setBulkLocationId(""); };
@@ -820,42 +819,33 @@ export default function CapturePage() {
     quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityGroupId }) });
   };
 
-  const handleUpdate = () => {
-    if (!editingId) return;
-    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
-    updateMutation.mutate({ id: editingId, data: buildUpdatePayload(editDraft) });
+  // ── Per-cell inline editing helpers ──────────────────────────────────────────
+  const saveCell = (entryId: number, field: string, value: string) => {
+    const entry = entries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const patch: Partial<DprTimesheetEntry> = {};
+    if (field === "startTime") patch.startTime = value || undefined;
+    else if (field === "endTime") patch.endTime = value || undefined;
+    else if (field === "notes") patch.notes = value || undefined;
+    autosaveMutation.mutate({ id: entryId, data: buildUpdatePayload({ ...entry, ...patch }) });
   };
 
-  const startEditing = (entry: DprTimesheetEntry) => {
-    flushAutosave();
-    setEditingId(entry.id);
-    setEditDraft({ date: entry.date, teamId: entry.teamId, startTime: entry.startTime || "", endTime: entry.endTime || "", locationId: entry.locationId, notes: entry.notes || "", activityTypeId: entry.activityTypeId, activityGroupId: entry.activityGroupId ?? null, billingParty: entry.billingParty ?? null });
+  const activateCell = (entryId: number, field: string, currentValue: string) => {
+    if (selectMode) return;
+    // Flush any currently-active cell before switching
+    if (editingCell && (editingCell.entryId !== entryId || editingCell.field !== field)) {
+      saveCell(editingCell.entryId, editingCell.field, editingValue);
+    }
+    setEditingCell({ entryId, field });
+    setEditingValue(currentValue ?? "");
   };
 
-  const flushAutosave = () => {
-    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
-    if (!editingId || !editDraft.date) return;
-    autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(editDraft) });
-  };
-
-  const commitDraft = (patch: Partial<DprTimesheetEntry>) => {
-    const next = { ...editDraft, ...patch };
-    setEditDraft(next);
-    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
-    if (!editingId || !next.date) return;
-    autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(next) });
-  };
-
-  const updateDraftDebounced = (patch: Partial<DprTimesheetEntry>) => {
-    const next = { ...editDraft, ...patch };
-    setEditDraft(next);
-    if (!editingId) return;
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null;
-      if (!next.date) return;
-      autosaveMutation.mutate({ id: editingId, data: buildUpdatePayload(next) });
-    }, 700);
+  const deactivateCell = (entryId: number, field: string) => {
+    if (editingCell?.entryId === entryId && editingCell?.field === field) {
+      saveCell(entryId, field, editingValue);
+      setEditingCell(null);
+      setEditingValue("");
+    }
   };
 
   // ── Paste helpers ──
@@ -939,7 +929,7 @@ export default function CapturePage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">Timesheet Capture</h1>
           <p className="text-sm text-muted-foreground">
-            Click any cell to edit inline. Use Activity Group buttons to set type and sub-group.
+            Click any cell to edit it directly, like a spreadsheet.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1182,114 +1172,138 @@ export default function CapturePage() {
                   </TableRow>
                 )}
 
-                {/* ── Existing entries ── */}
+                {/* ── Existing entries — per-cell inline editing ── */}
                 {filteredEntries.map((entry) => {
-                  const isEditing = editingId === entry.id;
-
-                  if (isEditing) {
-                    return (
-                      <TableRow key={entry.id} className="bg-muted/20">
-                        {selectMode && <TableCell className="w-[36px] py-1" />}
-                        {showDateCol && (
-                          <TableCell className={cn(COL.date, "py-1")}>
-                            <Input type="date" lang="en-GB" value={editDraft.date || ""} onChange={(e) => updateDraftDebounced({ date: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
-                          </TableCell>
-                        )}
-                        {showTeamCol && (
-                          <TableCell className={cn(COL.team, "py-1")}>
-                            <Select value={editDraft.teamId?.toString() || ""} onValueChange={(v) => commitDraft({ teamId: parseInt(v) })}>
-                              <SelectTrigger className="h-7 text-xs px-2"><SelectValue placeholder="Team" /></SelectTrigger>
-                              <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </TableCell>
-                        )}
-                        <TableCell className={cn(COL.start, "py-1")}>
-                          <Input type="time" value={editDraft.startTime || ""} onChange={(e) => updateDraftDebounced({ startTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
-                        </TableCell>
-                        <TableCell className={cn(COL.end, "py-1")}>
-                          <Input type="time" value={editDraft.endTime || ""} onChange={(e) => updateDraftDebounced({ endTime: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" />
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <span className={cn("text-xs font-medium tabular-nums", formatDuration(editDraft.startTime, editDraft.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
-                            {formatDuration(editDraft.startTime, editDraft.endTime)}
-                          </span>
-                        </TableCell>
-                        <TableCell className={cn(COL.location, "py-1")}>
-                          <Combobox options={locationOptions} value={editDraft.locationId?.toString() || ""} onValueChange={(v) => commitDraft({ locationId: parseInt(v) })} placeholder="Location" searchPlaceholder="Search locations..." triggerClassName="h-7 text-xs px-2" />
-                        </TableCell>
-                        <TableCell className={cn(COL.notes, "py-1")}>
-                          <Input value={editDraft.notes || ""} onChange={(e) => updateDraftDebounced({ notes: e.target.value })} onBlur={flushAutosave} className="h-7 text-xs px-2" onKeyDown={(e) => e.key === "Enter" && handleUpdate()} />
-                        </TableCell>
-                        <TableCell className={cn(COL.group, "py-1")}>
-                          <ActivityGroupPicker
-                            allowedTypes={allowedTypes}
-                            allowedGroups={allowedGroups}
-                            workingTypeId={workingTypeId}
-                            typeValue={editDraft.activityTypeId ?? null}
-                            groupValue={editDraft.activityGroupId ?? null}
-                            onTypeChange={(id) => commitDraft({ activityTypeId: id })}
-                            onGroupChange={(id) => commitDraft({ activityGroupId: id })}
-                          />
-                        </TableCell>
-                        <TableCell className={cn(COL.actions, "text-right py-1")}>
-                          <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/10" onClick={handleUpdate} disabled={updateMutation.isPending || !editDraft.date}>
-                              <Save className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => { if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; } setEditingId(null); }}>
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }
-
-                  // ── Display row ──
                   const isSelected = selectedIds.has(entry.id);
+                  const isCellEditing = (field: string) =>
+                    editingCell?.entryId === entry.id && editingCell?.field === field;
+
                   return (
                     <TableRow
                       key={entry.id}
                       className={cn(
-                        "cursor-pointer transition-colors",
-                        isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/20"
+                        "transition-colors",
+                        isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/20",
+                        selectMode ? "cursor-pointer" : ""
                       )}
-                      onClick={() => selectMode ? toggleSelectRow(entry.id) : startEditing(entry)}
+                      onClick={selectMode ? () => toggleSelectRow(entry.id) : undefined}
+                      style={{ height: 52 }}
                     >
+                      {/* Checkbox — select mode only */}
                       {selectMode && (
-                        <TableCell className="w-[36px]" onClick={e => e.stopPropagation()}>
+                        <TableCell className="w-[36px]" onClick={(e) => e.stopPropagation()}>
                           {isSelected
                             ? <CheckSquare className="w-4 h-4 text-primary" />
                             : <Square className="w-4 h-4 text-muted-foreground/50" />}
                         </TableCell>
                       )}
+                      {/* Date */}
                       {showDateCol && (
                         <TableCell className={cn(COL.date, "font-medium")}>
                           {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
                         </TableCell>
                       )}
+                      {/* Team */}
                       {showTeamCol && (
                         <TableCell className={COL.team}>
                           {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
                         </TableCell>
                       )}
-                      <TableCell className={COL.start}>
-                        {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">--</span>}
+                      {/* Start — inline editable */}
+                      <TableCell className={COL.start} onClick={(e) => e.stopPropagation()}>
+                        {isCellEditing("startTime") ? (
+                          <input
+                            autoFocus
+                            type="time"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onBlur={() => deactivateCell(entry.id, "startTime")}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        ) : (
+                          <span
+                            onClick={() => activateCell(entry.id, "startTime", entry.startTime || "")}
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums"
+                          >
+                            {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
+                          </span>
+                        )}
                       </TableCell>
-                      <TableCell className={COL.end}>
-                        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">--</span>}
+                      {/* End — inline editable */}
+                      <TableCell className={COL.end} onClick={(e) => e.stopPropagation()}>
+                        {isCellEditing("endTime") ? (
+                          <input
+                            autoFocus
+                            type="time"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onBlur={() => deactivateCell(entry.id, "endTime")}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        ) : (
+                          <span
+                            onClick={() => activateCell(entry.id, "endTime", entry.endTime || "")}
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums"
+                          >
+                            {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">—</span>}
+                          </span>
+                        )}
                       </TableCell>
+                      {/* Duration */}
                       <TableCell>
-                        <span className={cn("text-sm font-medium tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/30")}>
+                        <span className={cn("text-sm font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
                           {formatDuration(entry.startTime, entry.endTime)}
                         </span>
                       </TableCell>
-                      <TableCell className={COL.location}>
-                        {entry.location?.name || <span className="text-muted-foreground/50">--</span>}
+                      {/* Location — inline combobox */}
+                      <TableCell className={COL.location} onClick={(e) => e.stopPropagation()}>
+                        {isCellEditing("locationId") ? (
+                          <Combobox
+                            options={locationOptions}
+                            value={entry.locationId?.toString() || ""}
+                            onValueChange={(v) => {
+                              const locationId = parseInt(v);
+                              const locationObj = locations.find((l) => l.id === locationId);
+                              autosaveMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, locationId, location: locationObj ? { id: locationObj.id, name: locationObj.name } : entry.location }) });
+                              setEditingCell(null);
+                              setEditingValue("");
+                            }}
+                            placeholder="Select Location"
+                            searchPlaceholder="Search locations..."
+                            triggerClassName="h-8 text-sm"
+                          />
+                        ) : (
+                          <span
+                            onClick={() => activateCell(entry.id, "locationId", entry.locationId?.toString() || "")}
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm"
+                          >
+                            {entry.location?.name || <span className="text-muted-foreground/50">—</span>}
+                          </span>
+                        )}
                       </TableCell>
-                      <TableCell className={cn(COL.notes, "max-w-[180px] truncate")}>
-                        {entry.notes || <span className="text-muted-foreground/50">--</span>}
+                      {/* Notes — inline editable */}
+                      <TableCell className={cn(COL.notes, "max-w-[180px]")} onClick={(e) => e.stopPropagation()}>
+                        {isCellEditing("notes") ? (
+                          <input
+                            autoFocus
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onBlur={() => deactivateCell(entry.id, "notes")}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        ) : (
+                          <span
+                            onClick={() => activateCell(entry.id, "notes", entry.notes || "")}
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
+                          >
+                            {entry.notes || <span className="text-muted-foreground/50">—</span>}
+                          </span>
+                        )}
                       </TableCell>
+                      {/* Activity Group — instant toggle, no editing mode needed */}
                       <TableCell className={COL.group} onClick={(e) => e.stopPropagation()}>
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
@@ -1301,6 +1315,7 @@ export default function CapturePage() {
                           onGroupChange={(id) => handleQuickSetGroup(entry, id)}
                         />
                       </TableCell>
+                      {/* Actions */}
                       <TableCell className={cn(COL.actions, "text-right")} onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           <Button
@@ -1366,6 +1381,15 @@ export default function CapturePage() {
             </Table>
           </div>
         )}
+      </div>
+
+      {/* ── Hint bar ── */}
+      <div className="px-6 py-2 border-t border-border bg-card/50 shrink-0">
+        <p className="text-xs text-muted-foreground">
+          {selectMode
+            ? "Click rows to select them, then use Delete or Approve above. Click Cancel Select to return to editing."
+            : <>Click any cell in <strong className="text-foreground">Start</strong>, <strong className="text-foreground">End</strong>, <strong className="text-foreground">Location</strong> or <strong className="text-foreground">Notes</strong> to edit inline. Activity Group pills toggle instantly — no dropdowns.</>}
+        </p>
       </div>
 
       {/* ── Paste Rows dialog (unchanged behaviour) ── */}
