@@ -1001,25 +1001,26 @@ export default function CapturePage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <header className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
+      <header className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Timesheet Capture</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight">Timesheet Capture</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
             Click any cell to edit it directly, like a spreadsheet.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
+            size="sm"
             onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
-            className={cn("gap-2", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
+            className={cn("gap-1.5", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
           >
             <CheckSquare className="w-4 h-4" />
-            {selectMode ? "Cancel Select" : "Select"}
+            <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
           </Button>
-          <Button variant="outline" onClick={() => setPasteOpen(true)} className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPasteOpen(true)} className="gap-1.5">
             <ClipboardPaste className="w-4 h-4" />
-            Paste Rows
+            <span className="hidden xs:inline">Paste Rows</span>
           </Button>
         </div>
       </header>
@@ -1037,17 +1038,17 @@ export default function CapturePage() {
 
       {/* Context bar — bulk action bar when selectMode, normal context bar otherwise */}
       {selectMode ? (
-        <div className="px-6 py-2 border-b border-primary/30 bg-primary/5 flex items-center gap-3 shrink-0">
-          <span className="text-xs font-semibold text-primary">
+        <div className="px-4 sm:px-6 py-2 border-b border-primary/30 bg-primary/5 flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
+          <span className="text-xs font-semibold text-primary shrink-0">
             {selectedIds.size === 0
               ? "Select rows below"
               : `${selectedIds.size} row${selectedIds.size !== 1 ? "s" : ""} selected`}
           </span>
-          <span className="text-border text-muted-foreground/40">·</span>
+          <span className="text-border text-muted-foreground/40 hidden sm:inline">·</span>
           <button
             type="button"
             onClick={toggleSelectAll}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
           >
             {allSelected
               ? <CheckCheck className="w-3.5 h-3.5 text-primary" />
@@ -1056,7 +1057,7 @@ export default function CapturePage() {
               : <Square className="w-3.5 h-3.5" />}
             {allSelected ? "Deselect all" : "Select all"}
           </button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 shrink-0">
             <Button
               size="sm"
               variant="outline"
@@ -1080,7 +1081,7 @@ export default function CapturePage() {
           </div>
         </div>
       ) : (
-        <div className="px-6 py-2 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
           <div className="flex items-center gap-3">
             {activeDate || activeTeamId ? (
               <>
@@ -1139,19 +1140,19 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[800px]">
-              {/* Column widths — notes gets all unclaimed space */}
+            <Table className="table-fixed w-full min-w-[860px]">
+              {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
-                {selectMode && <col className="w-[36px]" />}               {/* checkbox — only in select mode */}
-                {showDateCol && <col className="w-[9%]" />}                {/* date */}
-                {showTeamCol && <col className="w-[9%]" />}                {/* team */}
-                <col className="w-[7%]" />                                 {/* start */}
-                <col className="w-[7%]" />                                 {/* end */}
-                <col className="w-[6%]" />                                 {/* duration */}
-                <col className="w-[11%]" />                                {/* location */}
-                <col />                                                    {/* notes — remainder */}
-                <col className="w-[19%]" />                                {/* group */}
-                <col className="w-[5%]" />                                 {/* actions */}
+                {selectMode && <col className="w-[36px]" />}
+                {showDateCol && <col className="w-[9%]" />}
+                {showTeamCol && <col className="w-[9%]" />}
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[6%]" />
+                <col className="w-[11%]" />
+                <col />
+                <col style={{ width: 210 }} />
+                <col style={{ width: 70 }} />
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
@@ -1260,8 +1261,9 @@ export default function CapturePage() {
                     editingCell?.entryId === entry.id && editingCell?.field === field;
                   const isCellFailed = (field: string) =>
                     failedCell?.entryId === entry.id && failedCell?.field === field;
-                  // In select mode let the click bubble to the row; otherwise block it so cell edits don't toggle selection
-                  const onCellClick = (e: React.MouseEvent) => selectMode ? toggleSelectRow(entry.id) : e.stopPropagation();
+                  // In select mode let the click bubble to the TableRow's onClick (which toggles selection).
+                  // In edit mode stop propagation so cell interactions don't accidentally trigger row handlers.
+                  const onCellClick = (e: React.MouseEvent) => { if (!selectMode) e.stopPropagation(); };
 
                   return (
                     <TableRow
