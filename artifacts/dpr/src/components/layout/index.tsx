@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Redirect } from "wouter";
@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
   if (isLoading) {
     return (
@@ -21,8 +22,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-[100dvh] w-full bg-background overflow-hidden text-foreground">
-      <Sidebar />
-      <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden">
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden min-w-0">
         {children}
       </main>
     </div>
