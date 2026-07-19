@@ -274,7 +274,7 @@ function getDateBreakdown(date: string, teams: DprTeam[], teamHoursMap: Map<stri
 const STATUS_BORDER: Record<TeamStatus, string> = {
   full:    "border-green-500",
   partial: "border-amber-400",
-  none:    "border-red-500",
+  none:    "border-border",
 };
 const STATUS_TEXT: Record<TeamStatus, string> = {
   full:    "text-green-400",
