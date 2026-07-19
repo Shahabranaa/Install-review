@@ -393,7 +393,14 @@ function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateCli
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold">{label}</span>
-                <span className={cn("text-[10px] font-bold tabular-nums", isActive ? "text-primary-foreground/70" : STATUS_TEXT[ws])}>
+                <span className={cn(
+                  "text-[10px] tabular-nums font-medium",
+                  isActive
+                    ? "text-primary-foreground/60"
+                    : (bd.full + bd.partial) === 0
+                      ? "text-muted-foreground/35"
+                      : "text-muted-foreground/70"
+                )}>
                   {bd.full + bd.partial}/{bd.total}
                 </span>
               </div>
