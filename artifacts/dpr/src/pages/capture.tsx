@@ -503,45 +503,16 @@ export default function CapturePage() {
   // ── Mutations ──
   const createMutation = useCreateDprTimesheetEntry({
     mutation: {
-      onMutate: async ({ data }) => {
-        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        const snapshot = snapshotEntries();
-        const tempId = -(Date.now());
-        const tempEntry: DprTimesheetEntry = {
-          id: tempId,
-          date: data.date ?? format(new Date(), "yyyy-MM-dd"),
-          teamId: data.teamId,
-          team: teams.find((t) => t.id === data.teamId),
-          startTime: data.startTime,
-          endTime: data.endTime,
-          locationId: data.locationId,
-          location: locations.find((l) => l.id === data.locationId),
-          notes: data.notes,
-          activityTypeId: data.activityTypeId,
-          billingParty: data.billingParty as DprTimesheetEntry["billingParty"],
-          jdrCodeIds: [],
-          combinedComment: null,
-          stage: "draft",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+      // No optimistic insert — avoids duplicate rows when a background refetch races
+      // with cleanup. The "Add Row" form already shows a spinner via isPending.
+      onSuccess: (newEntry) => {
         queryClient.setQueriesData<DprTimesheetEntry[]>(
           { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
-          (old) => (old ? [...old, tempEntry] : [tempEntry])
-        );
-        return { snapshot, tempId };
-      },
-      onSuccess: (newEntry, _, ctx) => {
-        queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
-          // Filter out BOTH the temp optimistic entry AND any copy the background refetch
-          // may have already inserted — then append the authoritative server entry once.
-          (old) => (old ? [...old.filter((e) => e.id !== ctx?.tempId && e.id !== newEntry.id), newEntry] : [newEntry])
+          (old) => (old ? [...old.filter((e) => e.id !== newEntry.id), newEntry] : [newEntry])
         );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
       },
-      onError: (err, _, ctx) => {
-        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
+      onError: (err) => {
         toast({ title: "Failed to create", description: err.message, variant: "destructive" });
       },
     },
