@@ -827,6 +827,8 @@ export default function CapturePage() {
     if (field === "startTime") patch.startTime = value || undefined;
     else if (field === "endTime") patch.endTime = value || undefined;
     else if (field === "notes") patch.notes = value || undefined;
+    else if (field === "date") patch.date = value || entry.date;
+    else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
     autosaveMutation.mutate({ id: entryId, data: buildUpdatePayload({ ...entry, ...patch }) });
   };
 
@@ -1197,16 +1199,59 @@ export default function CapturePage() {
                             : <Square className="w-4 h-4 text-muted-foreground/50" />}
                         </TableCell>
                       )}
-                      {/* Date */}
+                      {/* Date — inline editable */}
                       {showDateCol && (
-                        <TableCell className={cn(COL.date, "font-medium")}>
-                          {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                        <TableCell className={cn(COL.date, "font-medium")} onClick={(e) => e.stopPropagation()}>
+                          {isCellEditing("date") ? (
+                            <input
+                              autoFocus
+                              type="date"
+                              lang="en-GB"
+                              value={editingValue}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              onBlur={() => deactivateCell(entry.id, "date")}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                              className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          ) : (
+                            <span
+                              onClick={() => activateCell(entry.id, "date", entry.date)}
+                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-medium"
+                            >
+                              {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                            </span>
+                          )}
                         </TableCell>
                       )}
-                      {/* Team */}
+                      {/* Team — inline select */}
                       {showTeamCol && (
-                        <TableCell className={COL.team}>
-                          {entry.team?.name || <span className="text-muted-foreground/50">--</span>}
+                        <TableCell className={COL.team} onClick={(e) => e.stopPropagation()}>
+                          {isCellEditing("teamId") ? (
+                            <Select
+                              value={editingValue}
+                              onValueChange={(v) => {
+                                saveCell(entry.id, "teamId", v);
+                                setEditingCell(null);
+                                setEditingValue("");
+                              }}
+                              onOpenChange={(open) => { if (!open) { setEditingCell(null); setEditingValue(""); } }}
+                              defaultOpen
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select Team" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span
+                              onClick={() => activateCell(entry.id, "teamId", entry.teamId?.toString() || "")}
+                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm"
+                            >
+                              {entry.team?.name || <span className="text-muted-foreground/50">—</span>}
+                            </span>
+                          )}
                         </TableCell>
                       )}
                       {/* Start — inline editable */}
