@@ -194,6 +194,17 @@ function normalizeTime(raw: string): string {
   return trimmed;
 }
 
+/** Returns an error string, or null if the time is a valid 00:00–47:59 string. */
+function validate48hTime(raw: string): string | null {
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return "Use HH:MM (e.g. 06:00 or 25:30)";
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (h > 47) return "Hours must be 0–47";
+  if (m > 59) return "Minutes must be 0–59";
+  return null;
+}
+
 function normalizeDate(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -789,7 +800,9 @@ export default function CapturePage() {
     const errors: Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>> = {};
     if (!newRow.teamId) errors.teamId = "Team is required";
     if (!newRow.startTime) errors.startTime = "Start time is required";
+    else { const e = validate48hTime(newRow.startTime); if (e) errors.startTime = e; }
     if (!newRow.endTime) errors.endTime = "End time is required";
+    else { const e = validate48hTime(newRow.endTime); if (e) errors.endTime = e; }
     if (!newRow.locationId) errors.locationId = "Location is required";
     if (Object.keys(errors).length) { setNewRowErrors(errors); return; }
     setNewRowErrors({});
@@ -1111,21 +1124,23 @@ export default function CapturePage() {
                     )}
                     <TableCell className={COL.start}>
                       <Input
-                        type="time"
-                            lang="en-GB"
+                        type="text"
+                        placeholder="HH:MM"
                         value={newRow.startTime}
                         onChange={(e) => { setNewRow({ ...newRow, startTime: e.target.value }); setNewRowErrors((e) => ({ ...e, startTime: undefined })); }}
-                        className={cn("h-8 text-sm", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
+                        onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, startTime: n } : r); }}
+                        className={cn("h-8 text-sm font-mono tabular-nums", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.startTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.startTime}</p>}
                     </TableCell>
                     <TableCell className={COL.end}>
                       <Input
-                        type="time"
-                            lang="en-GB"
+                        type="text"
+                        placeholder="HH:MM"
                         value={newRow.endTime}
                         onChange={(e) => { setNewRow({ ...newRow, endTime: e.target.value }); setNewRowErrors((e) => ({ ...e, endTime: undefined })); }}
-                        className={cn("h-8 text-sm", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
+                        onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, endTime: n } : r); }}
+                        className={cn("h-8 text-sm font-mono tabular-nums", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.endTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.endTime}</p>}
                     </TableCell>
