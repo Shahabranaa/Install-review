@@ -1,5 +1,11 @@
 import type { ActivityKind, ActivityGroup } from "./_shared";
 
+const GROUP_LABELS: Record<ActivityGroup, string> = {
+  effective: "Effective",
+  extra: "Extra Work",
+  rework: "Re-Work",
+};
+
 export function ActivityToggle({
   kind,
   group,
@@ -9,49 +15,42 @@ export function ActivityToggle({
   group: ActivityGroup | null;
   onChange: (k: ActivityKind, g: ActivityGroup | null) => void;
 }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex gap-1">
-        <button
-          onClick={() => onChange("working", group ?? "effective")}
-          className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors whitespace-nowrap ${
-            kind === "working"
-              ? "bg-sky-600 text-white"
-              : "bg-muted/50 text-muted-foreground hover:bg-muted"
-          }`}
-        >
-          Working Time
-        </button>
-        <button
-          onClick={() => onChange("non-working", null)}
-          className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors whitespace-nowrap ${
-            kind === "non-working"
-              ? "bg-amber-600 text-white"
-              : "bg-muted/50 text-muted-foreground hover:bg-muted"
-          }`}
-        >
-          Non-Working
-        </button>
-      </div>
+  const kindLabel = kind === "working" ? "Working Time" : "Non-Working Time";
+  const groupLabel = kind === "working" && group ? GROUP_LABELS[group] : null;
 
-      {kind === "working" && (
-        <div className="flex gap-1">
-          {(["effective", "extra", "rework"] as const).map((g) => {
-            const label = g === "effective" ? "Effective" : g === "extra" ? "Extra Work" : "Re-Work";
-            return (
-              <button
-                key={g}
-                onClick={() => onChange("working", g)}
-                className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap ${
-                  group === g
-                    ? "bg-emerald-600 text-white"
-                    : "bg-muted/40 text-muted-foreground/60 hover:bg-muted"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+  return (
+    <div className="flex gap-1.5">
+      {/* Button 1 — kind toggle */}
+      <button
+        onClick={() =>
+          onChange(
+            kind === "working" ? "non-working" : "working",
+            kind === "working" ? null : group ?? "effective"
+          )
+        }
+        className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center whitespace-nowrap
+          border-primary/70 bg-primary/10 text-primary hover:bg-primary/20"
+      >
+        {kindLabel}
+      </button>
+
+      {/* Button 2 — sub-group or inactive placeholder */}
+      {kind === "working" ? (
+        <button
+          onClick={() => {
+            const groups: ActivityGroup[] = ["effective", "extra", "rework"];
+            const next = groups[(groups.indexOf(group ?? "effective") + 1) % groups.length];
+            onChange("working", next);
+          }}
+          className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors text-center whitespace-nowrap
+            border-primary/70 bg-primary/10 text-primary hover:bg-primary/20"
+        >
+          {groupLabel}
+        </button>
+      ) : (
+        <div className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded border text-center whitespace-nowrap
+          border-border/40 bg-muted/20 text-muted-foreground/40 select-none">
+          —
         </div>
       )}
     </div>

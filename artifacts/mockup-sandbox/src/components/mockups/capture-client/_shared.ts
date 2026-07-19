@@ -60,7 +60,9 @@ export function duration(start: string, end: string): string {
   if (mins <= 0) mins += 24 * 60;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
 }
 
 export function totalDuration(rows: Row[]): string {

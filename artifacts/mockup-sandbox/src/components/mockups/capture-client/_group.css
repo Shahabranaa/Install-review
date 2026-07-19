@@ -1,36 +1,35 @@
-/* DPR app dark theme — exact CSS variables from artifacts/dpr/src/index.css */
+/* DPR mockup — medium-dark navy matching client screenshot */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Slate & Cyan cockpit vibe */
-  --background: 222 47% 8%;
-  --foreground: 210 40% 98%;
-  --border: 217 32% 17%;
-  --input: 217 32% 17%;
+  --background: 222 40% 14%;
+  --foreground: 210 40% 95%;
+  --border: 217 32% 24%;
+  --input: 217 32% 24%;
   --ring: 191 97% 55%;
 
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 32% 17%;
+  --card: 222 40% 18%;
+  --card-foreground: 210 40% 95%;
+  --card-border: 217 32% 24%;
 
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 217 32% 17%;
+  --popover: 222 40% 18%;
+  --popover-foreground: 210 40% 95%;
+  --popover-border: 217 32% 24%;
 
   --primary: 191 97% 55%;
   --primary-foreground: 222 47% 11%;
 
-  --secondary: 217 32% 17%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 217 32% 24%;
+  --secondary-foreground: 210 40% 95%;
 
-  --muted: 217 32% 17%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted: 217 32% 24%;
+  --muted-foreground: 215 20% 60%;
 
-  --accent: 217 32% 20%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 217 32% 28%;
+  --accent-foreground: 210 40% 95%;
 
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 40%;
+  --destructive-foreground: 210 40% 95%;
 
   --radius: 0.25rem;
 
@@ -43,7 +42,6 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
-/* Scrollbar to match DPR */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: hsl(var(--background)); }
 ::-webkit-scrollbar-thumb { background: hsl(var(--muted)); border-radius: 4px; }

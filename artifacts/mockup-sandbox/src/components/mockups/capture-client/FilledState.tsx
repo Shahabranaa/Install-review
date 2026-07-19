@@ -177,7 +177,7 @@ export function FilledState() {
               <col style={{ width: 76 }} />
               <col style={{ width: 90 }} />
               <col />
-              <col style={{ width: 220 }} />
+              <col style={{ width: 300 }} />
               <col style={{ width: 72 }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card border-b border-border">
