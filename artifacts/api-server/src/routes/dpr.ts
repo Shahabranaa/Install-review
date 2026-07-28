@@ -24,6 +24,7 @@ import {
   ListDprTimesheetEntriesResponse,
   CreateDprTimesheetEntryBody,
   GetDprTimesheetSummaryResponse,
+  GetDprDateSummaryResponse,
   GetDprTimesheetEntryParams,
   GetDprTimesheetEntryResponse,
   UpdateDprTimesheetEntryParams,
@@ -405,6 +406,26 @@ router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> =>
       clarifiedCount,
     }),
   );
+});
+
+router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({ date: dprTimesheetEntriesTable.date })
+    .from(dprTimesheetEntriesTable)
+    .where(eq(dprTimesheetEntriesTable.stage, "draft"));
+
+  const countMap = new Map<string, number>();
+  for (const row of rows) {
+    // date may come back as a JS Date or a string depending on the driver
+    const d = String(row.date).substring(0, 10);
+    countMap.set(d, (countMap.get(d) ?? 0) + 1);
+  }
+
+  const result = Array.from(countMap.entries()).map(([date, entryCount]) => ({
+    date,
+    entryCount,
+  }));
+  res.json(GetDprDateSummaryResponse.parse(result));
 });
 
 router.get("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {

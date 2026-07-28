@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { format, parseISO, subDays } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useCreateDprTimesheetEntry,
@@ -25,12 +25,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, CalendarDays, Users, ChevronRight, ArrowLeftRight } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -306,19 +305,6 @@ function getTeamStatus(hours: number): TeamStatus {
   if (hours < 12) return "partial";
   return "full";
 }
-interface DateBreakdown { full: number; partial: number; none: number; total: number; worstStatus: TeamStatus; }
-function getDateBreakdown(date: string, teams: DprTeam[], teamHoursMap: Map<string, Map<number, number>>): DateBreakdown {
-  const dm = teamHoursMap.get(date) ?? new Map<number, number>();
-  let full = 0, partial = 0, none = 0;
-  for (const team of teams) {
-    const s = getTeamStatus(dm.get(team.id) ?? 0);
-    if (s === "full") full++;
-    else if (s === "partial") partial++;
-    else none++;
-  }
-  const worstStatus: TeamStatus = none > 0 ? "none" : partial > 0 ? "partial" : "full";
-  return { full, partial, none, total: teams.length, worstStatus };
-}
 
 const STATUS_BORDER: Record<TeamStatus, string> = {
   full:    "border-green-500",
@@ -336,110 +322,22 @@ const STATUS_TINT: Record<TeamStatus, string> = {
   none:    "bg-red-500/10",
 };
 
-// Segmented bar showing green / amber / red proportions
-function StatusBar({ bd, isActive }: { bd: DateBreakdown; isActive: boolean }) {
-  const pct = (n: number) => `${(n / Math.max(bd.total, 1)) * 100}%`;
-  const base = isActive ? "opacity-60" : "";
-  return (
-    <div className="mt-1 w-full flex rounded-full overflow-hidden h-1 gap-px">
-      {bd.full    > 0 && <div style={{ width: pct(bd.full)    }} className={cn("bg-green-500", base, bd.partial === 0 && bd.none === 0 ? "rounded-full" : "rounded-l-full")} />}
-      {bd.partial > 0 && <div style={{ width: pct(bd.partial) }} className={cn("bg-amber-400", base, bd.full === 0 ? "rounded-l-full" : "", bd.none === 0 ? "rounded-r-full" : "")} />}
-      {bd.none    > 0 && <div style={{ width: pct(bd.none)    }} className={cn("bg-red-500",   base, bd.full === 0 && bd.partial === 0 ? "rounded-full" : "rounded-r-full")} />}
-    </div>
-  );
-}
 
 // ─── Filter pills component ───────────────────────────────────────────────────
 interface FilterPillsProps {
-  distinctDates: string[];
   teams: DprTeam[];
   activeDate: string | null;
   activeTeamId: number | null;
-  onDateClick: (d: string) => void;
   onTeamClick: (id: number) => void;
   teamHoursMap: Map<string, Map<number, number>>;
 }
 
-function FilterPills({ distinctDates, teams, activeDate, activeTeamId, onDateClick, onTeamClick, teamHoursMap }: FilterPillsProps) {
-  // activeDate may be outside the 10-day window (picked via "Other date")
-  const isOtherDate = activeDate !== null && !distinctDates.includes(activeDate);
-  const [calOpen, setCalOpen] = useState(false);
-
+function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMap }: FilterPillsProps) {
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
 
   return (
     <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-      {/* Date row — always 10 fixed pills + "Other date" picker */}
-      <div className="flex items-start flex-wrap gap-1.5">
-        <span className="text-xs text-muted-foreground shrink-0 w-8 mt-1.5">Date</span>
-        {distinctDates.map((d) => {
-          const label = (() => { try { return format(parseISO(d), "dd/MM/yy"); } catch { return d; } })();
-          const isActive = activeDate === d;
-          const bd = getDateBreakdown(d, teams, teamHoursMap);
-          const ws = bd.worstStatus;
-          return (
-            <button
-              key={d}
-              type="button"
-              data-testid={`date-pill-${d}`}
-              onClick={() => onDateClick(d)}
-              className={cn(
-                "shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-xs font-medium transition-colors min-w-[64px]",
-                isActive
-                  ? "border-2 border-primary bg-primary text-primary-foreground"
-                  : cn("border bg-transparent hover:bg-muted/40", STATUS_BORDER[ws], "text-muted-foreground hover:text-foreground")
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold">{label}</span>
-                <span className={cn(
-                  "text-[10px] tabular-nums font-medium",
-                  isActive
-                    ? "text-primary-foreground/60"
-                    : (bd.full + bd.partial) === 0
-                      ? "text-muted-foreground/35"
-                      : "text-muted-foreground/70"
-                )}>
-                  {bd.full + bd.partial}/{bd.total}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-        {/* "Other date" — themed calendar popover anchored to the button */}
-        <Popover open={calOpen} onOpenChange={setCalOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "shrink-0 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors",
-                isOtherDate
-                  ? "border-2 border-primary bg-primary text-primary-foreground"
-                  : "border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground"
-              )}
-              title="Select any date"
-            >
-              <CalendarDays className="w-3 h-3 shrink-0" />
-              <span>{isOtherDate ? (() => { try { return format(parseISO(activeDate!), "dd/MM/yy"); } catch { return activeDate; } })() : "Other date"}</span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start" sideOffset={6}>
-            <Calendar
-              mode="single"
-              selected={isOtherDate && activeDate ? parseISO(activeDate) : undefined}
-              onSelect={(date) => {
-                if (date) {
-                  onDateClick(format(date, "yyyy-MM-dd"));
-                  setCalOpen(false);
-                }
-              }}
-              initialFocus
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
-
       <div className="flex items-center flex-wrap gap-1.5">
         <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
         {teams.map((team) => {
@@ -526,7 +424,9 @@ export default function CapturePage() {
       [...entries.filter((e) => e.stage === "draft")].sort((a, b) => {
         const d = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (d !== 0) return d;
-        return (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
+        const t = (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
+        if (t !== 0) return t;
+        return (a.startTime ?? "").localeCompare(b.startTime ?? "");
       }),
     [entries]
   );
@@ -689,30 +589,23 @@ export default function CapturePage() {
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Date / team filter pills
-  const [activeDate, setActiveDate] = useState<string | null>(null);
-  const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
+  // Date / team filter — sourced from shared sidebar context so the sidebar date
+  // list and this page stay in sync.
+  const { activeDate, setActiveDate, activeTeamId, setActiveTeamId } = useCaptureNav();
 
-  // Fixed 10-day window: today → 9 days ago, regardless of what's in the DB
-  const distinctDates = useMemo(() =>
-    Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"))
-  , []);
-
-  // Auto-select today + first team on initial data load
+  // Auto-select first team when teams load (date defaults to today via context)
   const defaultsApplied = useRef(false);
   useEffect(() => {
     if (defaultsApplied.current) return;
     if (teams.length === 0) return;
     defaultsApplied.current = true;
-    setActiveDate(format(new Date(), "yyyy-MM-dd"));
     setActiveTeamId(teams[0].id);
-  }, [teams]);
+  }, [teams, setActiveTeamId]);
 
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
 
-  const handleDateClick = (d: string) => setActiveDate((prev) => prev === d ? null : d);
-  const handleTeamClick = (id: number) => setActiveTeamId((prev) => prev === id ? null : id);
+  const handleTeamClick = (id: number) => setActiveTeamId(activeTeamId === id ? null : id);
 
   const filteredEntries = useMemo(
     () =>
@@ -1043,13 +936,11 @@ export default function CapturePage() {
         </div>
       </header>
 
-      {/* Date & team filter pills */}
+      {/* Team filter pills */}
       <FilterPills
-        distinctDates={distinctDates}
         teams={teams}
         activeDate={activeDate}
         activeTeamId={activeTeamId}
-        onDateClick={handleDateClick}
         onTeamClick={handleTeamClick}
         teamHoursMap={teamHoursMap}
       />

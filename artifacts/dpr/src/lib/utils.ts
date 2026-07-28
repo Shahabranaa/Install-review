@@ -35,9 +35,7 @@ export function formatDuration(
   if (hours === 0) return "—";
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
-  if (m === 0) return `${h}h`;
-  if (h === 0) return `${m}m`;
-  return `${h}h ${m}m`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 // ── Time display ────────────────────────────────────────────────────────────

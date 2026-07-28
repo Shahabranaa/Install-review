@@ -1064,6 +1064,16 @@ export const CreateDprTimesheetEntryBody = zod.object({
 
 
 /**
+ * @summary Get entry counts grouped by date (for capture to-do list)
+ */
+export const GetDprDateSummaryResponseItem = zod.object({
+  "date": zod.string(),
+  "entryCount": zod.number()
+})
+export const GetDprDateSummaryResponse = zod.array(GetDprDateSummaryResponseItem)
+
+
+/**
  * @summary Get counts of timesheet entries by stage
  */
 export const GetDprTimesheetSummaryResponse = zod.object({
