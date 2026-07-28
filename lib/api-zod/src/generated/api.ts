@@ -1068,9 +1068,12 @@ export const CreateDprTimesheetEntryBody = zod.object({
  */
 export const GetDprDateSummaryResponseItem = zod.object({
   "date": zod.string(),
-  "entryCount": zod.number()
+  "teamCount": zod.number()
 })
-export const GetDprDateSummaryResponse = zod.array(GetDprDateSummaryResponseItem)
+export const GetDprDateSummaryResponse = zod.object({
+  "totalTeams": zod.number(),
+  "items": zod.array(GetDprDateSummaryResponseItem)
+})
 
 
 /**

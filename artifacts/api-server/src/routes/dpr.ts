@@ -409,23 +409,31 @@ router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> =>
 });
 
 router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<void> => {
-  const rows = await db
-    .select({ date: dprTimesheetEntriesTable.date })
-    .from(dprTimesheetEntriesTable)
-    .where(eq(dprTimesheetEntriesTable.stage, "draft"));
+  const [teamRows, entryRows] = await Promise.all([
+    db.select({ id: dprTeamsTable.id }).from(dprTeamsTable),
+    db
+      .select({
+        date: dprTimesheetEntriesTable.date,
+        teamId: dprTimesheetEntriesTable.teamId,
+      })
+      .from(dprTimesheetEntriesTable)
+      .where(eq(dprTimesheetEntriesTable.stage, "draft")),
+  ]);
 
-  const countMap = new Map<string, number>();
-  for (const row of rows) {
-    // date may come back as a JS Date or a string depending on the driver
+  // Count distinct teams per date
+  const teamSetMap = new Map<string, Set<number>>();
+  for (const row of entryRows) {
     const d = String(row.date).substring(0, 10);
-    countMap.set(d, (countMap.get(d) ?? 0) + 1);
+    if (!teamSetMap.has(d)) teamSetMap.set(d, new Set());
+    if (row.teamId !== null) teamSetMap.get(d)!.add(row.teamId);
   }
 
-  const result = Array.from(countMap.entries()).map(([date, entryCount]) => ({
+  const items = Array.from(teamSetMap.entries()).map(([date, teams]) => ({
     date,
-    entryCount,
+    teamCount: teams.size,
   }));
-  res.json(GetDprDateSummaryResponse.parse(result));
+
+  res.json(GetDprDateSummaryResponse.parse({ totalTeams: teamRows.length, items }));
 });
 
 router.get("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {

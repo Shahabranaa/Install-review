@@ -17,7 +17,12 @@ interface SidebarProps {
 
 interface DateSummaryItem {
   date: string;
-  entryCount: number;
+  teamCount: number;
+}
+
+interface DateSummaryResponse {
+  totalTeams: number;
+  items: DateSummaryItem[];
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
@@ -33,7 +38,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
   });
 
-  const { data: dateSummaryRaw } = useQuery<DateSummaryItem[]>({
+  const { data: dateSummaryRaw } = useQuery<DateSummaryResponse>({
     queryKey: ["/api/dpr/timesheet-entries/date-summary"],
     queryFn: async ({ signal }) => {
       const res = await fetch("/api/dpr/timesheet-entries/date-summary", { signal });
@@ -43,6 +48,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     refetchInterval: 30000,
   });
 
+  const totalTeams = dateSummaryRaw?.totalTeams ?? 0;
+
   // Fixed 10-day window: today → 9 days ago
   const windowDates = useMemo(
     () => Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd")),
@@ -51,14 +58,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const dateCountMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const item of dateSummaryRaw ?? []) {
-      map.set(item.date, item.entryCount);
+    for (const item of dateSummaryRaw?.items ?? []) {
+      map.set(item.date, item.teamCount);
     }
     return map;
   }, [dateSummaryRaw]);
 
-  // How many dates in the window have zero entries → "to-do" badge
-  const emptyDateCount = windowDates.filter((d) => (dateCountMap.get(d) ?? 0) === 0).length;
+  // How many dates in the window have incomplete team coverage → "to-do" badge
+  const emptyDateCount = windowDates.filter((d) => (dateCountMap.get(d) ?? 0) < totalTeams).length;
 
   // "Other date" = active date is outside the 10-day window
   const isOtherDate = activeDate !== null && !windowDates.includes(activeDate);
@@ -176,12 +183,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     )}
                   >
                     <span>{label}</span>
-                    {count > 0 ? (
-                      <span className="tabular-nums text-[10px] text-muted-foreground/70 font-medium">
-                        {count}
+                    {totalTeams > 0 && (
+                      <span className={cn(
+                        "tabular-nums text-[10px] font-medium",
+                        count < totalTeams
+                          ? "text-amber-500 dark:text-amber-400"
+                          : "text-emerald-600 dark:text-emerald-400"
+                      )}>
+                        {count}/{totalTeams}
                       </span>
-                    ) : (
-                      <span className="w-1.5 h-1.5 rounded-full border border-amber-500/50 shrink-0" />
                     )}
                   </button>
                 );
