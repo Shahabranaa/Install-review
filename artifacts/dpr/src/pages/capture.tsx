@@ -336,33 +336,56 @@ function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMa
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
 
+  const renderPill = (team: DprTeam) => {
+    const isActive = activeTeamId === team.id;
+    const status: TeamStatus = activeDm ? getTeamStatus(activeDm.get(team.id) ?? 0) : null!;
+    const hasStatus = activeDm !== null;
+    return (
+      <button
+        key={team.id}
+        type="button"
+        data-testid={`team-pill-${team.id}`}
+        onClick={() => onTeamClick(team.id)}
+        className={cn(
+          "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
+          isActive
+            ? "border-2 border-primary bg-primary text-primary-foreground"
+            : hasStatus
+              ? cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
+              : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+        )}
+      >
+        {team.name}
+      </button>
+    );
+  };
+
+  if (activeDm !== null) {
+    const todoTeams = teams.filter((t) => (activeDm.get(t.id) ?? 0) === 0);
+    const doneTeams = teams.filter((t) => (activeDm.get(t.id) ?? 0) > 0);
+    return (
+      <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
+        <div className="flex items-center flex-wrap gap-1.5">
+          <span className="text-xs text-muted-foreground shrink-0 w-8">To do</span>
+          {todoTeams.length > 0
+            ? todoTeams.map(renderPill)
+            : <span className="text-xs text-muted-foreground italic">none</span>}
+        </div>
+        {doneTeams.length > 0 && (
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0 w-8">Done</span>
+            {doneTeams.map(renderPill)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
       <div className="flex items-center flex-wrap gap-1.5">
         <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
-        {teams.map((team) => {
-          const isActive = activeTeamId === team.id;
-          const status: TeamStatus = activeDm ? getTeamStatus(activeDm.get(team.id) ?? 0) : null!;
-          const hasStatus = activeDm !== null;
-          return (
-            <button
-              key={team.id}
-              type="button"
-              data-testid={`team-pill-${team.id}`}
-              onClick={() => onTeamClick(team.id)}
-              className={cn(
-                "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
-                isActive
-                  ? "border-2 border-primary bg-primary text-primary-foreground"
-                  : hasStatus
-                    ? cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
-                    : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
-              )}
-            >
-              {team.name}
-            </button>
-          );
-        })}
+        {teams.map(renderPill)}
       </div>
     </div>
   );
