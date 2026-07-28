@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Link, useLocation } from "wouter";
 import { format, subDays, parseISO } from "date-fns";
-import { LogOut, ClipboardList, CheckSquare, Settings2, PanelLeftClose, PanelLeftOpen, CalendarDays } from "lucide-react";
+import { LogOut, ClipboardList, CheckSquare, Settings2, PanelLeftClose, PanelLeftOpen, CalendarDays, Users } from "lucide-react";
 import { useGetDprTimesheetSummary, getGetDprTimesheetSummaryQueryKey } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,7 +17,9 @@ interface SidebarProps {
 
 interface DateSummaryItem {
   date: string;
-  teamCount: number;
+  noTime: number;
+  partial: number;
+  complete: number;
 }
 
 interface DateSummaryResponse {
@@ -56,16 +58,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     []
   );
 
-  const dateCountMap = useMemo(() => {
-    const map = new Map<string, number>();
+  const dateStatsMap = useMemo(() => {
+    const map = new Map<string, { noTime: number; partial: number; complete: number }>();
     for (const item of dateSummaryRaw?.items ?? []) {
-      map.set(item.date, item.teamCount);
+      map.set(item.date, { noTime: item.noTime, partial: item.partial, complete: item.complete });
     }
     return map;
   }, [dateSummaryRaw]);
 
-  // How many dates in the window have incomplete team coverage → "to-do" badge
-  const emptyDateCount = windowDates.filter((d) => (dateCountMap.get(d) ?? 0) < totalTeams).length;
+  // Badge = dates where any expected team is still missing or in draft
+  const emptyDateCount = windowDates.filter((d) => {
+    const s = dateStatsMap.get(d);
+    if (!s) return totalTeams > 0; // no data yet → incomplete
+    return s.noTime > 0 || s.partial > 0;
+  }).length;
 
   // "Other date" = active date is outside the 10-day window
   const isOtherDate = activeDate !== null && !windowDates.includes(activeDate);
@@ -167,7 +173,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {!collapsed && (
             <div className="mt-0.5 ml-3 border-l border-border pl-2 space-y-0.5 pb-1">
               {windowDates.map((d) => {
-                const count = dateCountMap.get(d) ?? 0;
+                const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0 };
                 const isActive = activeDate === d;
                 const label = format(parseISO(d), "EEE dd/MM");
                 return (
@@ -184,13 +190,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   >
                     <span>{label}</span>
                     {totalTeams > 0 && (
-                      <span className={cn(
-                        "tabular-nums text-[10px] font-medium",
-                        count < totalTeams
-                          ? "text-amber-500 dark:text-amber-400"
-                          : "text-emerald-600 dark:text-emerald-400"
-                      )}>
-                        {count}/{totalTeams}
+                      <span className="tabular-nums text-[10px] font-medium flex items-center gap-0.5">
+                        <span className="text-red-500 dark:text-red-400">{stats.noTime}</span>
+                        <span className="text-sidebar-foreground/30">/</span>
+                        <span className="text-amber-500 dark:text-amber-400">{stats.partial}</span>
+                        <span className="text-sidebar-foreground/30">/</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{stats.complete}</span>
                       </span>
                     )}
                   </button>
@@ -245,6 +250,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </span>
           ) : null
         )}
+        {isAdmin && navItem("/team-setup", <Users className="w-4 h-4" />, "Team Setup")}
         {isAdmin && navItem("/jdr-mapping", <Settings2 className="w-4 h-4" />, "JDR Mapping")}
       </nav>
 

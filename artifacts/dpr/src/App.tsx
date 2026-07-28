@@ -11,6 +11,7 @@ import LoginPage from "@/pages/login";
 import CapturePage from "@/pages/capture";
 import ClarifyPage from "@/pages/clarify";
 import JdrMappingPage from "@/pages/jdr-mapping";
+import TeamSetupPage from "@/pages/team-setup";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,13 @@ function Router() {
       <Route path="/clarify">
         <AppLayout>
           <ClarifyPage />
+        </AppLayout>
+      </Route>
+      <Route path="/team-setup">
+        <AppLayout>
+          <AdminOnly>
+            <TeamSetupPage />
+          </AdminOnly>
         </AppLayout>
       </Route>
       <Route path="/jdr-mapping">

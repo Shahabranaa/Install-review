@@ -1068,11 +1068,31 @@ export const CreateDprTimesheetEntryBody = zod.object({
  */
 export const GetDprDateSummaryResponseItem = zod.object({
   "date": zod.string(),
-  "teamCount": zod.number()
+  "noTime": zod.number(),
+  "partial": zod.number(),
+  "complete": zod.number()
 })
 export const GetDprDateSummaryResponse = zod.object({
   "totalTeams": zod.number(),
   "items": zod.array(GetDprDateSummaryResponseItem)
+})
+
+export const GetDprTeamDateExceptionsQueryParams = zod.object({
+  date: zod.string().optional()
+})
+export const DprTeamDateException = zod.object({
+  id: zod.number(),
+  teamId: zod.number(),
+  date: zod.string(),
+  status: zod.string()
+})
+export const GetDprTeamDateExceptionsResponse = zod.array(DprTeamDateException)
+export const CreateDprTeamDateExceptionBody = zod.object({
+  teamId: zod.number(),
+  date: zod.string()
+})
+export const DeleteDprTeamDateExceptionParams = zod.object({
+  id: zod.coerce.number()
 })
 
 

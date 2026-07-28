@@ -9,6 +9,7 @@ import {
   dprActivitiesTable,
   dprJdrCodesTable,
   dprTimesheetEntriesTable,
+  dprTeamDateExceptionsTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -31,6 +32,11 @@ import {
   UpdateDprTimesheetEntryBody,
   UpdateDprTimesheetEntryResponse,
   DeleteDprTimesheetEntryParams,
+  GetDprTeamDateExceptionsQueryParams,
+  GetDprTeamDateExceptionsResponse,
+  CreateDprTeamDateExceptionBody,
+  DeleteDprTeamDateExceptionParams,
+  DprTeamDateException,
   CreateDprActivityTypeBody,
   UpdateDprActivityTypeParams,
   UpdateDprActivityTypeBody,
@@ -409,32 +415,129 @@ router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> =>
 });
 
 router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<void> => {
-  const [teamRows, entryRows] = await Promise.all([
+  // Fixed 10-day window
+  const windowDates = Array.from({ length: 10 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return d.toISOString().substring(0, 10);
+  });
+  const windowStart = windowDates[windowDates.length - 1];
+  const windowEnd = windowDates[0];
+
+  const [teamRows, entryRows, exceptionRows] = await Promise.all([
     db.select({ id: dprTeamsTable.id }).from(dprTeamsTable),
     db
       .select({
         date: dprTimesheetEntriesTable.date,
         teamId: dprTimesheetEntriesTable.teamId,
+        stage: dprTimesheetEntriesTable.stage,
       })
-      .from(dprTimesheetEntriesTable)
-      .where(eq(dprTimesheetEntriesTable.stage, "draft")),
+      .from(dprTimesheetEntriesTable),
+    db
+      .select({ teamId: dprTeamDateExceptionsTable.teamId, date: dprTeamDateExceptionsTable.date })
+      .from(dprTeamDateExceptionsTable)
+      .where(
+        and(
+          gte(dprTeamDateExceptionsTable.date, windowStart),
+          lte(dprTeamDateExceptionsTable.date, windowEnd)
+        )
+      ),
   ]);
 
-  // Count distinct teams per date
-  const teamSetMap = new Map<string, Set<number>>();
-  for (const row of entryRows) {
-    const d = String(row.date).substring(0, 10);
-    if (!teamSetMap.has(d)) teamSetMap.set(d, new Set());
-    if (row.teamId !== null) teamSetMap.get(d)!.add(row.teamId);
+  const allTeamIds = new Set(teamRows.map((t) => t.id));
+  const totalTeams = allTeamIds.size;
+
+  // exceptions per date
+  const exceptionsMap = new Map<string, Set<number>>();
+  for (const ex of exceptionRows) {
+    const d = String(ex.date).substring(0, 10);
+    if (!exceptionsMap.has(d)) exceptionsMap.set(d, new Set());
+    exceptionsMap.get(d)!.add(ex.teamId);
   }
 
-  const items = Array.from(teamSetMap.entries()).map(([date, teams]) => ({
-    date,
-    teamCount: teams.size,
-  }));
+  // per-date, per-team stage sets
+  type StageSet = { hasDraft: boolean; hasSubmitted: boolean };
+  const datemap = new Map<string, Map<number, StageSet>>();
+  for (const row of entryRows) {
+    if (row.teamId === null) continue;
+    const d = String(row.date).substring(0, 10);
+    if (!datemap.has(d)) datemap.set(d, new Map());
+    const teamMap = datemap.get(d)!;
+    if (!teamMap.has(row.teamId)) teamMap.set(row.teamId, { hasDraft: false, hasSubmitted: false });
+    const s = teamMap.get(row.teamId)!;
+    if (row.stage === "draft") s.hasDraft = true;
+    else s.hasSubmitted = true;
+  }
 
-  res.json(GetDprDateSummaryResponse.parse({ totalTeams: teamRows.length, items }));
+  const items = windowDates.map((date) => {
+    const excluded = exceptionsMap.get(date) ?? new Set<number>();
+    const teamMap = datemap.get(date) ?? new Map<number, StageSet>();
+    let partial = 0;
+    let complete = 0;
+    for (const id of allTeamIds) {
+      if (excluded.has(id)) continue; // not expected this date
+      const s = teamMap.get(id);
+      if (!s) continue; // no entries → noTime
+      if (s.hasDraft) partial++;
+      else complete++;
+    }
+    const expectedCount = totalTeams - excluded.size;
+    const noTime = expectedCount - partial - complete;
+    return { date, noTime, partial, complete };
+  });
+
+  res.json(GetDprDateSummaryResponse.parse({ totalTeams, items }));
 });
+
+// ── Team date exceptions ──────────────────────────────────────────────────
+
+router.get("/dpr/team-date-exceptions", async (req, res): Promise<void> => {
+  const query = GetDprTeamDateExceptionsQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const conditions: SQL[] = [];
+  if (query.data.date) conditions.push(eq(dprTeamDateExceptionsTable.date, query.data.date));
+  const rows = await db.select().from(dprTeamDateExceptionsTable).where(and(...conditions));
+  res.json(GetDprTeamDateExceptionsResponse.parse(rows.map((r) => ({
+    id: r.id,
+    teamId: r.teamId,
+    date: String(r.date).substring(0, 10),
+    status: r.status,
+  }))));
+});
+
+router.post("/dpr/team-date-exceptions", async (req, res): Promise<void> => {
+  const body = CreateDprTeamDateExceptionBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db
+    .insert(dprTeamDateExceptionsTable)
+    .values({ teamId: body.data.teamId, date: body.data.date, status: "not_working" })
+    .onConflictDoNothing()
+    .returning();
+  if (!row) {
+    // Already exists — return existing row
+    const [existing] = await db
+      .select()
+      .from(dprTeamDateExceptionsTable)
+      .where(
+        and(
+          eq(dprTeamDateExceptionsTable.teamId, body.data.teamId),
+          eq(dprTeamDateExceptionsTable.date, body.data.date)
+        )
+      );
+    res.status(200).json(DprTeamDateException.parse({ ...existing, date: String(existing.date).substring(0, 10) }));
+    return;
+  }
+  res.status(201).json(DprTeamDateException.parse({ ...row, date: String(row.date).substring(0, 10) }));
+});
+
+router.delete("/dpr/team-date-exceptions/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprTeamDateExceptionParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  await db.delete(dprTeamDateExceptionsTable).where(eq(dprTeamDateExceptionsTable.id, params.data.id));
+  res.status(204).send();
+});
+
+// ── Timesheet entries ─────────────────────────────────────────────────────
 
 router.get("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
   const params = GetDprTimesheetEntryParams.safeParse(req.params);
