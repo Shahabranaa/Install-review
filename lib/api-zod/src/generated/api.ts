@@ -1021,6 +1021,7 @@ export const ListDprTimesheetEntriesQueryParams = zod.object({
 export const ListDprTimesheetEntriesResponseItem = zod.object({
   "id": zod.number(),
   "date": zod.string(),
+  "shiftDate": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),
@@ -1052,6 +1053,7 @@ export const ListDprTimesheetEntriesResponse = zod.array(ListDprTimesheetEntries
  */
 export const CreateDprTimesheetEntryBody = zod.object({
   "date": zod.string(),
+  "shiftDate": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
@@ -1116,6 +1118,7 @@ export const GetDprTimesheetEntryParams = zod.object({
 export const GetDprTimesheetEntryResponse = zod.object({
   "id": zod.number(),
   "date": zod.string(),
+  "shiftDate": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),
@@ -1150,6 +1153,7 @@ export const UpdateDprTimesheetEntryParams = zod.object({
 
 export const UpdateDprTimesheetEntryBody = zod.object({
   "date": zod.string().optional(),
+  "shiftDate": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
@@ -1167,6 +1171,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
 export const UpdateDprTimesheetEntryResponse = zod.object({
   "id": zod.number(),
   "date": zod.string(),
+  "shiftDate": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),

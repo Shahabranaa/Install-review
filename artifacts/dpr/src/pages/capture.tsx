@@ -608,6 +608,7 @@ export default function CapturePage() {
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
   const [pendingRows, setPendingRows] = useState<PendingRow[] | null>(null);
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -633,7 +634,7 @@ export default function CapturePage() {
   const filteredEntries = useMemo(
     () =>
       sortedEntries.filter((e) => {
-        if (activeDate && e.date !== activeDate) return false;
+        if (activeDate && (e.shiftDate ?? e.date) !== activeDate) return false;
         if (activeTeamId !== null && e.teamId !== activeTeamId) return false;
         return true;
       }),
@@ -641,13 +642,15 @@ export default function CapturePage() {
   );
 
   // Hours per team per date — drives filter pill status indicators
+  // Uses shiftDate when set so overnight shifts group under their start date.
   const teamHoursMap = useMemo(() => {
     const map = new Map<string, Map<number, number>>();
     for (const e of sortedEntries) {
       if (!e.teamId) continue;
       const h = hoursForEntry(e.startTime, e.endTime);
-      if (!map.has(e.date)) map.set(e.date, new Map());
-      const dm = map.get(e.date)!;
+      const d = e.shiftDate ?? e.date;
+      if (!map.has(d)) map.set(d, new Map());
+      const dm = map.get(d)!;
       dm.set(e.teamId, (dm.get(e.teamId) ?? 0) + h);
     }
     return map;
@@ -789,7 +792,7 @@ export default function CapturePage() {
     if (Object.keys(errors).length) { setNewRowErrors(errors); return; }
     setNewRowErrors({});
     createMutation.mutate(
-      { data: { date: newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
+      { data: { date: newRow.date, shiftDate: activeDate ?? newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
       { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); setNewRowErrors({}); } }
     );
   };
@@ -871,16 +874,19 @@ export default function CapturePage() {
   const removePendingRow = (key: string) =>
     setPendingRows((rows) => rows?.filter((r) => r.key !== key) ?? null);
 
-  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPendingRows(null); };
+  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPendingRows(null); };
 
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
     setIsSavingBulk(true);
     const rowsToSave = pendingRows.filter((row): row is PendingRow & { date: string } => !!row.date);
     const skipped = pendingRows.length - rowsToSave.length;
+    // If a shift date override is set in the dialog, all pasted rows use it for grouping.
+    // Otherwise each row's own date is its shift date.
+    const effectiveShiftDate = pasteShiftDate.trim() || null;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
-        createMutation.mutateAsync({ data: { date: row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
+        createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
       )
     );
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
@@ -1481,6 +1487,23 @@ export default function CapturePage() {
               placeholder={"2024-06-01\tTeam 1\t07:00\t15:30\tA01\tRoutine works"}
               className="min-h-[100px] font-mono text-xs shrink-0"
             />
+
+            {/* Shift date override — groups all pasted rows under one shift date */}
+            <div className="flex items-center gap-3 bg-muted/40 rounded-md px-3 py-2 shrink-0">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-xs font-medium">Shift date override</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Set this if the pasted rows belong to a night shift that started on a different date (e.g. rows dated 28th that are part of the 27th shift).
+                </span>
+              </div>
+              <Input
+                type="date"
+                lang="en-GB"
+                value={pasteShiftDate}
+                onChange={(e) => setPasteShiftDate(e.target.value)}
+                className="h-8 text-sm w-[150px] shrink-0"
+              />
+            </div>
 
             {pendingRows && pendingRows.length > 0 && (
               <div className="rounded-md border border-border overflow-auto flex-1 min-h-0">

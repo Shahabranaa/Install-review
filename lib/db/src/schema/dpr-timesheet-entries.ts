@@ -10,6 +10,7 @@ import { dprActivitiesTable } from "./dpr-activities";
 export const dprTimesheetEntriesTable = pgTable("dpr_timesheet_entries", {
   id: serial("id").primaryKey(),
   date: text("date").notNull(),
+  shiftDate: text("shift_date"),
   teamId: integer("team_id").references(() => dprTeamsTable.id, { onDelete: "set null" }),
   startTime: text("start_time"),
   endTime: text("end_time"),

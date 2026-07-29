@@ -429,6 +429,7 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
     db
       .select({
         date: dprTimesheetEntriesTable.date,
+        shiftDate: dprTimesheetEntriesTable.shiftDate,
         teamId: dprTimesheetEntriesTable.teamId,
         stage: dprTimesheetEntriesTable.stage,
       })
@@ -455,12 +456,13 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
     exceptionsMap.get(d)!.add(ex.teamId);
   }
 
-  // per-date, per-team stage sets
+  // per-date, per-team stage sets — group by shiftDate when set, else date
   type StageSet = { hasDraft: boolean; hasSubmitted: boolean };
   const datemap = new Map<string, Map<number, StageSet>>();
   for (const row of entryRows) {
     if (row.teamId === null) continue;
-    const d = String(row.date).substring(0, 10);
+    const rawGroupDate = row.shiftDate ?? row.date;
+    const d = String(rawGroupDate).substring(0, 10);
     if (!datemap.has(d)) datemap.set(d, new Map());
     const teamMap = datemap.get(d)!;
     if (!teamMap.has(row.teamId)) teamMap.set(row.teamId, { hasDraft: false, hasSubmitted: false });
