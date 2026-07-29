@@ -29,6 +29,8 @@ async function apiFetch(url: string, options?: RequestInit) {
 export default function TeamSetupPage() {
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [calOpen, setCalOpen] = useState(false);
+  // Tracks which team IDs have an in-flight mutation so only that row shows as pending
+  const [pendingTeamIds, setPendingTeamIds] = useState<Set<number>>(new Set());
   const queryClient = useQueryClient();
 
   const { data: teams = [] } = useQuery<Team[]>({
@@ -36,8 +38,10 @@ export default function TeamSetupPage() {
     queryFn: ({ signal }) => apiFetch("/api/dpr/teams", { signal }),
   });
 
+  const exceptionsKey = ["/api/dpr/team-date-exceptions", date];
+
   const { data: exceptions = [] } = useQuery<TeamDateException[]>({
-    queryKey: ["/api/dpr/team-date-exceptions", date],
+    queryKey: exceptionsKey,
     queryFn: ({ signal }) => apiFetch(`/api/dpr/team-date-exceptions?date=${date}`, { signal }),
   });
 
@@ -48,31 +52,72 @@ export default function TeamSetupPage() {
     return map;
   }, [exceptions]);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/dpr/team-date-exceptions", date] });
+  const markPending = (teamId: number) =>
+    setPendingTeamIds((s) => new Set([...s, teamId]));
+  const clearPending = (teamId: number) =>
+    setPendingTeamIds((s) => { const n = new Set(s); n.delete(teamId); return n; });
 
   const createException = useMutation({
-    mutationFn: (teamId: number) =>
+    mutationFn: ({ teamId }: { teamId: number }) =>
       apiFetch("/api/dpr/team-date-exceptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId, date }),
-      }),
-    onSuccess: invalidate,
+      }) as Promise<TeamDateException>,
+    onMutate: ({ teamId }) => {
+      markPending(teamId);
+      // Optimistically add a placeholder exception so the switch flips immediately
+      const prev = queryClient.getQueryData<TeamDateException[]>(exceptionsKey);
+      queryClient.setQueryData<TeamDateException[]>(exceptionsKey, (old = []) => [
+        ...old,
+        { id: -teamId, teamId, date, status: "not_working" },
+      ]);
+      return { prev, teamId };
+    },
+    onSuccess: (data, { teamId }) => {
+      // Replace placeholder with real record from server
+      queryClient.setQueryData<TeamDateException[]>(exceptionsKey, (old = []) =>
+        old.map((e) => (e.id === -teamId ? data : e))
+      );
+      clearPending(teamId);
+      // Background-refresh the sidebar counts
+      queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
+    },
+    onError: (_err, { teamId }, ctx) => {
+      // Roll back optimistic update
+      if (ctx?.prev !== undefined) queryClient.setQueryData(exceptionsKey, ctx.prev);
+      clearPending(teamId);
+    },
   });
 
   const deleteException = useMutation({
-    mutationFn: (id: number) =>
+    mutationFn: ({ id }: { id: number; teamId: number }) =>
       apiFetch(`/api/dpr/team-date-exceptions/${id}`, { method: "DELETE" }),
-    onSuccess: invalidate,
+    onMutate: ({ id, teamId }) => {
+      markPending(teamId);
+      const prev = queryClient.getQueryData<TeamDateException[]>(exceptionsKey);
+      queryClient.setQueryData<TeamDateException[]>(exceptionsKey, (old = []) =>
+        old.filter((e) => e.id !== id)
+      );
+      return { prev, teamId };
+    },
+    onSuccess: (_data, { teamId }) => {
+      clearPending(teamId);
+      queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
+    },
+    onError: (_err, { teamId }, ctx) => {
+      if (ctx?.prev !== undefined) queryClient.setQueryData(exceptionsKey, ctx.prev);
+      clearPending(teamId);
+    },
   });
 
   const toggle = (teamId: number) => {
+    if (pendingTeamIds.has(teamId)) return; // debounce double-tap
     const exId = exceptionById.get(teamId);
     if (exId !== undefined) {
-      deleteException.mutate(exId);
+      deleteException.mutate({ id: exId, teamId });
     } else {
-      createException.mutate(teamId);
+      createException.mutate({ teamId });
     }
   };
 
@@ -126,6 +171,7 @@ export default function TeamSetupPage() {
       <div className="space-y-1.5">
         {teams.map((team) => {
           const isOff = exceptionsSet.has(team.id);
+          const isPending = pendingTeamIds.has(team.id);
           return (
             <div
               key={team.id}
@@ -141,7 +187,7 @@ export default function TeamSetupPage() {
                 <Switch
                   checked={!isOff}
                   onCheckedChange={() => toggle(team.id)}
-                  disabled={createException.isPending || deleteException.isPending}
+                  disabled={isPending}
                 />
               </div>
             </div>
