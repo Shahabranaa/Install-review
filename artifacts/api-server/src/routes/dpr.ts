@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql, type SQL } from "drizzle-orm";
 import {
   db,
   dprLocationsTable,
@@ -32,6 +32,8 @@ import {
   UpdateDprTimesheetEntryBody,
   UpdateDprTimesheetEntryResponse,
   DeleteDprTimesheetEntryParams,
+  LockDprTimesheetEntriesBody,
+  LockDprTimesheetEntriesResponse,
   GetDprTeamDateExceptionsQueryParams,
   GetDprTeamDateExceptionsResponse,
   CreateDprTeamDateExceptionBody,
@@ -489,6 +491,44 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
   });
 
   res.json(GetDprDateSummaryResponse.parse({ totalTeams, items }));
+});
+
+// ── Lock entries for Clarify ─────────────────────────────────────────────
+
+router.post("/dpr/timesheet-entries/lock", async (req, res): Promise<void> => {
+  const parsed = LockDprTimesheetEntriesBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { teamId, date } = parsed.data;
+
+  // Find all draft entries for this team whose shift date (or calendar date) matches
+  const targets = await db
+    .select({ id: dprTimesheetEntriesTable.id })
+    .from(dprTimesheetEntriesTable)
+    .where(
+      and(
+        eq(dprTimesheetEntriesTable.stage, "draft"),
+        eq(dprTimesheetEntriesTable.teamId, teamId),
+        sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date}) = ${date}`
+      )
+    );
+
+  if (targets.length === 0) {
+    res.json(LockDprTimesheetEntriesResponse.parse([]));
+    return;
+  }
+
+  const ids = targets.map((r) => r.id);
+  const updated = await db
+    .update(dprTimesheetEntriesTable)
+    .set({ stage: "captured", updatedAt: new Date() })
+    .where(inArray(dprTimesheetEntriesTable.id, ids))
+    .returning();
+
+  const withJoins = await Promise.all(updated.map(withRelations));
+  res.json(LockDprTimesheetEntriesResponse.parse(serialize(withJoins)));
 });
 
 // ── Team date exceptions ──────────────────────────────────────────────────

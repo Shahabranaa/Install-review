@@ -1198,6 +1198,16 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
 
 
 /**
+ * @summary Lock all draft entries for a team+date, sending them to the Clarify queue
+ */
+export const LockDprTimesheetEntriesBody = zod.object({
+  "teamId": zod.number(),
+  "date": zod.string()
+})
+export const LockDprTimesheetEntriesResponse = zod.array(ListDprTimesheetEntriesResponseItem)
+
+
+/**
  * @summary Delete a timesheet entry
  */
 export const DeleteDprTimesheetEntryParams = zod.object({

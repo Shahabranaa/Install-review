@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
+import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,10 @@ async function apiFetch(url: string, options?: RequestInit) {
 }
 
 export default function TeamSetupPage() {
-  const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  // Sync with the sidebar's active date so clicking a date in the sidebar
+  // automatically jumps Team Setup to that date, and vice versa.
+  const { activeDate, setActiveDate } = useCaptureNav();
+  const date = activeDate ?? format(new Date(), "yyyy-MM-dd");
   const [calOpen, setCalOpen] = useState(false);
   // Tracks which team IDs have an in-flight mutation so only that row shows as pending
   const [pendingTeamIds, setPendingTeamIds] = useState<Set<number>>(new Set());
@@ -147,7 +151,7 @@ export default function TeamSetupPage() {
               mode="single"
               selected={parseISO(date)}
               onSelect={(d) => {
-                if (d) { setDate(format(d, "yyyy-MM-dd")); setCalOpen(false); }
+                if (d) { setActiveDate(format(d, "yyyy-MM-dd")); setCalOpen(false); }
               }}
               initialFocus
             />

@@ -408,7 +408,8 @@ export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({ stage: "draft" });
+  // Load draft + captured entries (clarified are handled by the Clarify page)
+  const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({});
   const { data: teams = [] } = useListDprTeams();
   const { data: locations = [] } = useListDprLocations();
   const { data: activityTypes = [] } = useListDprActivityTypes();
@@ -441,10 +442,10 @@ export default function CapturePage() {
     [locations]
   );
 
-  // Sorted flat entry list (date asc, then team name asc)
+  // All active entries (draft + captured) sorted; clarified are handled by the Clarify page
   const sortedEntries = useMemo(
     () =>
-      [...entries.filter((e) => e.stage === "draft")].sort((a, b) => {
+      [...entries.filter((e) => e.stage !== "clarified")].sort((a, b) => {
         const d = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (d !== 0) return d;
         const t = (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
@@ -452,6 +453,12 @@ export default function CapturePage() {
         return (a.startTime ?? "").localeCompare(b.startTime ?? "");
       }),
     [entries]
+  );
+
+  // Only draft entries — editable rows
+  const draftEntries = useMemo(
+    () => sortedEntries.filter((e) => e.stage === "draft"),
+    [sortedEntries]
   );
 
   // ── Cache helpers ──
@@ -474,7 +481,7 @@ export default function CapturePage() {
       // with cleanup. The "Add Row" form already shows a spinner via isPending.
       onSuccess: (newEntry) => {
         queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey({ stage: "draft" }) },
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
           (old) => (old ? [...old.filter((e) => e.id !== newEntry.id), newEntry] : [newEntry])
         );
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
@@ -596,6 +603,49 @@ export default function CapturePage() {
 
   const bulkApproveMutation = useUpdateDprTimesheetEntry({ mutation: {} });
 
+  // Lock all draft entries for the active team+date → captured
+  const [isLocking, setIsLocking] = useState(false);
+  const handleLock = async () => {
+    if (!activeDate || !activeTeamId || filteredEntries.length === 0) return;
+    setIsLocking(true);
+    // Optimistic: move matching draft entries to captured in the cache
+    const snapshot = snapshotEntries();
+    queryClient.setQueriesData<DprTimesheetEntry[]>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.map((e) =>
+        e.stage === "draft" && e.teamId === activeTeamId && (e.shiftDate ?? e.date) === activeDate
+          ? { ...e, stage: "captured" as const }
+          : e
+      )
+    );
+    try {
+      const res = await fetch("/api/dpr/timesheet-entries/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId: activeTeamId, date: activeDate }),
+      });
+      if (!res.ok) throw new Error(`Lock failed: ${res.status}`);
+      const updated: DprTimesheetEntry[] = await res.json();
+      // Patch cache with server data
+      queryClient.setQueriesData<DprTimesheetEntry[]>(
+        { queryKey: getListDprTimesheetEntriesQueryKey() },
+        (old) => {
+          if (!old) return old;
+          const byId = new Map(updated.map((e) => [e.id, e]));
+          return old.map((e) => byId.get(e.id) ?? e);
+        }
+      );
+      queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
+      toast({ title: `${updated.length} row${updated.length !== 1 ? "s" : ""} locked`, description: "Sent to Clarify queue." });
+    } catch (err) {
+      restoreEntries(snapshot);
+      toast({ title: "Lock failed", description: String(err), variant: "destructive" });
+    } finally {
+      setIsLocking(false);
+    }
+  };
+
   // ── UI state ──
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
   const [newRowErrors, setNewRowErrors] = useState<Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>>>({});
@@ -633,7 +683,19 @@ export default function CapturePage() {
 
   const filteredEntries = useMemo(
     () =>
+      draftEntries.filter((e) => {
+        if (activeDate && (e.shiftDate ?? e.date) !== activeDate) return false;
+        if (activeTeamId !== null && e.teamId !== activeTeamId) return false;
+        return true;
+      }),
+    [draftEntries, activeDate, activeTeamId]
+  );
+
+  // Captured (locked) entries matching the current date+team filter
+  const filteredLockedEntries = useMemo(
+    () =>
       sortedEntries.filter((e) => {
+        if (e.stage !== "captured") return false;
         if (activeDate && (e.shiftDate ?? e.date) !== activeDate) return false;
         if (activeTeamId !== null && e.teamId !== activeTeamId) return false;
         return true;
@@ -1037,7 +1099,7 @@ export default function CapturePage() {
                     </span>
                   )}
                 </div>
-                {filteredEntries.length > 0 && (
+                {(filteredEntries.length > 0 || filteredLockedEntries.length > 0) && (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <span className="font-semibold text-emerald-500 tabular-nums">
                       {Math.floor(filteredTotalHours)}h {Math.round((filteredTotalHours % 1) * 60)}m
@@ -1045,6 +1107,9 @@ export default function CapturePage() {
                     <span>· {filteredEntries.length} rows</span>
                     {filteredTotalHours < 12 && <span className="text-muted-foreground/60">/ 12h expected</span>}
                     {filteredTotalHours >= 12 && <span className="text-emerald-500/70">✓</span>}
+                    {filteredLockedEntries.length > 0 && (
+                      <span className="text-muted-foreground/50">· {filteredLockedEntries.length} locked</span>
+                    )}
                   </div>
                 )}
               </>
@@ -1052,22 +1117,35 @@ export default function CapturePage() {
               <span className="text-xs text-muted-foreground/60 italic">Select a date and team above to filter</span>
             )}
           </div>
-          <Button
-            size="sm"
-            onClick={handleAddRow}
-            disabled={newRow !== null}
-            title={newRow !== null ? "Finish or cancel the open row first" : undefined}
-            className="gap-1.5 h-7 text-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Row
-            {(activeDate || activeTeamId) && (
-              <span className="opacity-60 font-normal">
-                ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
-                {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
-              </span>
+          <div className="flex items-center gap-2">
+            {activeDate && activeTeamId && filteredEntries.length > 0 && (
+              <Button
+                size="sm"
+                onClick={handleLock}
+                disabled={isLocking}
+                className="gap-1.5 h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+              >
+                {isLocking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                Lock for Clarify
+              </Button>
             )}
-          </Button>
+            <Button
+              size="sm"
+              onClick={handleAddRow}
+              disabled={newRow !== null}
+              title={newRow !== null ? "Finish or cancel the open row first" : undefined}
+              className="gap-1.5 h-7 text-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Row
+              {(activeDate || activeTeamId) && (
+                <span className="opacity-60 font-normal">
+                  ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
+                  {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1420,7 +1498,7 @@ export default function CapturePage() {
                   );
                 })}
 
-                {/* ── Duration footer — only when entries are visible ── */}
+                {/* ── Duration footer — only when draft entries are visible ── */}
                 {filteredEntries.length > 0 && (
                   <TableRow className="bg-muted/10 border-t-2 border-border">
                     <TableCell colSpan={2 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
@@ -1444,11 +1522,62 @@ export default function CapturePage() {
                   </TableRow>
                 )}
 
+                {/* ── Locked (captured) rows — read-only, shown below draft entries ── */}
+                {filteredLockedEntries.length > 0 && (
+                  <>
+                    <TableRow className="bg-emerald-950/20">
+                      <TableCell
+                        colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
+                        className="py-1.5 px-4"
+                      >
+                        <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                          <Lock className="w-3 h-3" />
+                          Locked — {filteredLockedEntries.length} row{filteredLockedEntries.length !== 1 ? "s" : ""} sent to Clarify queue
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {filteredLockedEntries.map((entry) => (
+                      <TableRow key={`locked-${entry.id}`} className="opacity-50 bg-muted/5">
+                        {selectMode && <TableCell className="w-[36px]" />}
+                        {showDateCol && (
+                          <TableCell className={cn(COL.date, "text-sm text-muted-foreground")}>
+                            {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                          </TableCell>
+                        )}
+                        {showTeamCol && (
+                          <TableCell className={cn(COL.team, "text-sm text-muted-foreground truncate")}>
+                            {entry.team?.name || "—"}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+                          {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
+                        </TableCell>
+                        <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+                          {entry.endTime ? formatTimeDisplay(entry.endTime) : "—"}
+                        </TableCell>
+                        <TableCell className="text-sm tabular-nums text-muted-foreground">
+                          {formatDuration(entry.startTime, entry.endTime)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground truncate">
+                          {entry.location?.name || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground truncate">
+                          {entry.notes || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">—</TableCell>
+                        <TableCell className="text-right">
+                          <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </>
+                )}
+
                 {/* Empty state */}
-                {!loadingEntries && filteredEntries.length === 0 && !newRow && (
+                {!loadingEntries && filteredEntries.length === 0 && filteredLockedEntries.length === 0 && !newRow && (
                   <TableRow>
                     <TableCell colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
-                      {sortedEntries.length === 0
+                      {draftEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}
                     </TableCell>

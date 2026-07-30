@@ -442,6 +442,8 @@ export interface DprTimesheetEntry {
   billingParty?: DprTimesheetEntryBillingParty;
   /** @nullable */
   combinedComment?: string | null;
+  /** @nullable */
+  shiftDate?: string | null;
   stage: DprTimesheetEntryStage;
   createdAt: string;
   updatedAt: string;
@@ -476,6 +478,8 @@ export interface DprTimesheetEntryInput {
   activityGroupId?: number | null;
   /** @nullable */
   billingParty?: DprTimesheetEntryInputBillingParty;
+  /** @nullable */
+  shiftDate?: string | null;
 }
 
 /**
@@ -522,6 +526,8 @@ export interface DprTimesheetEntryUpdate {
   /** @nullable */
   combinedComment?: string | null;
   stage?: DprTimesheetEntryUpdateStage;
+  /** @nullable */
+  shiftDate?: string | null;
 }
 
 export interface DprTimesheetSummary {
