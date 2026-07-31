@@ -1,13 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Link, useLocation } from "wouter";
-import { format, subDays, parseISO } from "date-fns";
-import { LogOut, ClipboardList, CheckSquare, Settings2, PanelLeftClose, PanelLeftOpen, CalendarDays, Users } from "lucide-react";
+import {
+  format, subDays, parseISO, startOfMonth, endOfMonth,
+  addMonths, subMonths, isSameDay, isToday, getDay,
+} from "date-fns";
+import {
+  LogOut, ClipboardList, CheckSquare, Settings2,
+  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Users,
+} from "lucide-react";
 import { useGetDprTimesheetSummary, getGetDprTimesheetSummaryQueryKey } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -28,17 +32,31 @@ interface DateSummaryResponse {
   items: DateSummaryItem[];
 }
 
+// Day-of-week header labels starting Monday
+const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { logout, user, isAdmin } = useAuth();
   const [location] = useLocation();
   const { activeDate, setActiveDate } = useCaptureNav();
-  const [calOpen, setCalOpen] = useState(false);
+
+  // Calendar month state — default to today's month
+  const [calMonth, setCalMonth] = useState<Date>(() => startOfMonth(new Date()));
+
+  // When activeDate changes, navigate calendar to that month
+  useEffect(() => {
+    if (activeDate) {
+      try {
+        setCalMonth(startOfMonth(parseISO(activeDate)));
+      } catch {/* ignore */}
+    }
+  }, [activeDate]);
 
   const { data: summary } = useGetDprTimesheetSummary({
     query: {
       queryKey: getGetDprTimesheetSummaryQueryKey(),
       refetchInterval: 30000,
-    }
+    },
   });
 
   const { data: dateSummaryRaw } = useQuery<DateSummaryResponse>({
@@ -53,29 +71,79 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const totalTeams = dateSummaryRaw?.totalTeams ?? 0;
 
-  // Fixed 10-day window: today → 9 days ago
-  const windowDates = useMemo(
-    () => Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd")),
-    []
-  );
-
   const dateStatsMap = useMemo(() => {
     const map = new Map<string, { noTime: number; partial: number; complete: number; captured: number }>();
     for (const item of dateSummaryRaw?.items ?? []) {
-      map.set(item.date, { noTime: item.noTime, partial: item.partial, complete: item.complete, captured: item.captured ?? 0 });
+      map.set(item.date, {
+        noTime: item.noTime,
+        partial: item.partial,
+        complete: item.complete,
+        captured: item.captured ?? 0,
+      });
     }
     return map;
   }, [dateSummaryRaw]);
 
-  // Badge = dates where any expected team is still missing or in draft
+  // Badge = dates in the last 10 days that still have missing/partial teams
+  const windowDates = useMemo(
+    () => Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd")),
+    []
+  );
   const emptyDateCount = windowDates.filter((d) => {
     const s = dateStatsMap.get(d);
-    if (!s) return totalTeams > 0; // no data yet → incomplete
+    if (!s) return totalTeams > 0;
     return s.noTime > 0 || s.partial > 0;
   }).length;
 
-  // "Other date" = active date is outside the 10-day window
-  const isOtherDate = activeDate !== null && !windowDates.includes(activeDate);
+  // Build calendar grid — always 6 rows × 7 cols starting Monday
+  const calendarGrid = useMemo(() => {
+    const first = startOfMonth(calMonth);
+    const last  = endOfMonth(calMonth);
+
+    // getDay: 0=Sun … 6=Sat → convert to Mon-first: 0=Mon … 6=Sun
+    const startPad = (getDay(first) + 6) % 7;
+
+    const days: Array<{ date: Date; inMonth: boolean }> = [];
+
+    // Padding from previous month
+    for (let i = startPad - 1; i >= 0; i--) {
+      days.push({ date: subDays(first, i + 1), inMonth: false });
+    }
+    // Current month
+    for (let d = new Date(first); d <= last; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      days.push({ date: new Date(d), inMonth: true });
+    }
+    // Pad to 42 cells (6 rows)
+    let next = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1);
+    while (days.length < 42) {
+      days.push({ date: new Date(next), inMonth: false });
+      next = new Date(next.getFullYear(), next.getMonth(), next.getDate() + 1);
+    }
+    return days;
+  }, [calMonth]);
+
+  const activeParsed = useMemo(() => {
+    if (!activeDate) return null;
+    try { return parseISO(activeDate); } catch { return null; }
+  }, [activeDate]);
+
+  const handleDayClick = (date: Date, inMonth: boolean) => {
+    if (!inMonth) {
+      setCalMonth(startOfMonth(date));
+    }
+    const key = format(date, "yyyy-MM-dd");
+    setActiveDate(activeDate === key ? null : key);
+  };
+
+  // Per-day status derived from dateStatsMap
+  const getDayStatus = (dateKey: string) => {
+    if (totalTeams === 0) return "neutral";
+    const s = dateStatsMap.get(dateKey);
+    if (!s) return "neutral";
+    if (s.complete === totalTeams) return "complete";
+    if (s.partial > 0 || s.noTime < totalTeams) return "partial";
+    return "missing";
+  };
 
   const navItem = (href: string, icon: React.ReactNode, label: string, badge?: React.ReactNode) => {
     const active = location === href;
@@ -112,7 +180,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         collapsed ? "w-12" : "w-64"
       )}
     >
-      {/* Header */}
+      {/* ── Header ── */}
       <div className={cn(
         "flex items-center border-b border-border text-sidebar-foreground shrink-0",
         collapsed ? "justify-center p-2 h-[57px]" : "justify-between px-4 py-4"
@@ -133,127 +201,161 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-sidebar-accent/50"
         >
-          {collapsed
-            ? <PanelLeftOpen className="w-4 h-4" />
-            : <PanelLeftClose className="w-4 h-4" />}
+          {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Nav */}
-      <nav className={cn("flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden", collapsed && "relative")}>
-        {/* Capture — with date sub-list */}
-        <div>
-          <Link
-            href="/"
-            title={collapsed ? "Capture" : undefined}
-            className={cn(
-              "flex items-center rounded-md text-sm font-medium transition-colors",
-              collapsed ? "justify-center px-0 py-2 relative" : "gap-3 px-3 py-2",
-              location === "/"
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-            )}
-          >
-            <span className="shrink-0"><ClipboardList className="w-4 h-4" /></span>
-            {!collapsed && (
-              <>
-                <span className="flex-1">Capture</span>
-                {emptyDateCount > 0 && (
-                  <span className="ml-auto bg-amber-500/20 text-amber-600 border border-amber-500/40 text-xs px-1.5 py-0.5 rounded-full font-bold dark:text-amber-400">
-                    {emptyDateCount}
+      {/* ── Calendar (expanded only) ── */}
+      {!collapsed && (
+        <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
+          {/* Month navigation */}
+          <div className="flex items-center justify-between mb-2 px-0.5">
+            <button
+              onClick={() => setCalMonth(subMonths(calMonth, 1))}
+              className="p-1 rounded hover:bg-sidebar-accent/60 text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setCalMonth(startOfMonth(new Date()))}
+              className="text-xs font-semibold text-sidebar-foreground tracking-tight hover:text-primary transition-colors"
+              title="Jump to today"
+            >
+              {format(calMonth, "MMMM yyyy")}
+            </button>
+            <button
+              onClick={() => setCalMonth(addMonths(calMonth, 1))}
+              className="p-1 rounded hover:bg-sidebar-accent/60 text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div className="grid grid-cols-7 mb-0.5">
+            {DOW_LABELS.map((d) => (
+              <div key={d} className="text-center text-[10px] font-medium text-sidebar-foreground/35 py-0.5">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {calendarGrid.map(({ date, inMonth }, idx) => {
+              const key = format(date, "yyyy-MM-dd");
+              const isSelected = activeParsed ? isSameDay(date, activeParsed) : false;
+              const today = isToday(date);
+              const status = inMonth ? getDayStatus(key) : "neutral";
+              const stats = dateStatsMap.get(key);
+              const hasCaptured = (stats?.captured ?? 0) > 0;
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleDayClick(date, inMonth)}
+                  className={cn(
+                    "relative flex flex-col items-center justify-center rounded-md text-[11px] font-medium transition-all h-8 select-none",
+                    // Selected state
+                    isSelected
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : [
+                          // Status backgrounds (only for in-month days)
+                          inMonth && status === "complete"  && "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20",
+                          inMonth && status === "partial"   && "bg-amber-500/12 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20",
+                          inMonth && status === "missing"   && "bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/18",
+                          inMonth && status === "neutral"   && "text-sidebar-foreground/80 hover:bg-sidebar-accent/60",
+                          !inMonth && "text-sidebar-foreground/20 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/40",
+                        ].filter(Boolean).join(" "),
+                    // Today ring
+                    today && !isSelected && "ring-1 ring-primary/50 ring-inset"
+                  )}
+                >
+                  <span className={cn("leading-none", today && !isSelected && "font-bold")}>
+                    {format(date, "d")}
                   </span>
-                )}
-              </>
-            )}
-            {collapsed && emptyDateCount > 0 && (
-              <span className="absolute right-1.5 top-1.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
-            )}
-          </Link>
 
-          {/* Date to-do list — only when sidebar is expanded */}
-          {!collapsed && (
-            <div className="mt-0.5 ml-3 border-l border-border pl-2 space-y-0.5 pb-1">
-              {windowDates.map((d) => {
-                const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0, captured: 0 };
-                const capturedOnDate = stats.captured ?? 0;
-                const isActive = activeDate === d;
-                const label = format(parseISO(d), "EEE dd/MM");
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setActiveDate(isActive ? null : d)}
-                    className={cn(
-                      "w-full flex items-center justify-between rounded px-2 py-0.5 text-xs transition-colors",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )}
-                  >
-                    <span>{label}</span>
-                    <span className="tabular-nums text-[10px] font-medium flex items-center gap-0.5">
-                      {totalTeams > 0 && (
-                        <>
-                          <span className="text-red-500 dark:text-red-400">{stats.noTime}</span>
-                          <span className="text-sidebar-foreground/30">/</span>
-                          <span className="text-amber-500 dark:text-amber-400">{stats.partial}</span>
-                          <span className="text-sidebar-foreground/30">/</span>
-                          <span className="text-emerald-600 dark:text-emerald-400">{stats.complete}</span>
-                        </>
-                      )}
-                      {capturedOnDate > 0 && (
-                        <>
-                          {totalTeams > 0 && <span className="text-sidebar-foreground/30 mx-0.5">·</span>}
-                          <span className="text-orange-500 dark:text-orange-400" title={`${capturedOnDate} entries awaiting clarification`}>
-                            {capturedOnDate}↑
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
+                  {/* Captured-entries dot */}
+                  {hasCaptured && inMonth && !isSelected && (
+                    <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-orange-400" />
+                  )}
+                  {/* Status dot when selected (replace background with dot) */}
+                  {isSelected && hasCaptured && (
+                    <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary-foreground/60" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-              {/* Other date — calendar picker */}
-              <Popover open={calOpen} onOpenChange={setCalOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "w-full flex items-center gap-1.5 rounded px-2 py-0.5 text-xs transition-colors",
-                      isOtherDate
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground/40 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )}
-                  >
-                    <CalendarDays className="w-3 h-3 shrink-0" />
-                    <span>
-                      {isOtherDate && activeDate
-                        ? (() => {
-                            try { return format(parseISO(activeDate), "EEE dd/MM"); }
-                            catch { return activeDate; }
-                          })()
-                        : "Other date…"}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start" side="right" sideOffset={8}>
-                  <Calendar
-                    mode="single"
-                    selected={isOtherDate && activeDate ? parseISO(activeDate) : undefined}
-                    onSelect={(date) => {
-                      if (date) {
-                        setActiveDate(format(date, "yyyy-MM-dd"));
-                        setCalOpen(false);
-                      }
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+          {/* Legend */}
+          {totalTeams > 0 && (
+            <div className="flex items-center gap-3 mt-2 px-0.5 justify-center">
+              <span className="flex items-center gap-1 text-[10px] text-sidebar-foreground/40">
+                <span className="w-2 h-2 rounded-sm bg-rose-500/30 inline-block" />Missing
+              </span>
+              <span className="flex items-center gap-1 text-[10px] text-sidebar-foreground/40">
+                <span className="w-2 h-2 rounded-sm bg-amber-500/30 inline-block" />Partial
+              </span>
+              <span className="flex items-center gap-1 text-[10px] text-sidebar-foreground/40">
+                <span className="w-2 h-2 rounded-sm bg-emerald-500/30 inline-block" />Done
+              </span>
+              <span className="flex items-center gap-1 text-[10px] text-sidebar-foreground/40">
+                <span className="w-1 h-1 rounded-full bg-orange-400 inline-block" />Locked
+              </span>
+            </div>
+          )}
+
+          {/* Selected date label */}
+          {activeDate && (
+            <div className="mt-2 flex items-center justify-between px-0.5">
+              <span className="text-[11px] text-sidebar-foreground/50">
+                {(() => { try { return format(parseISO(activeDate), "EEEE d MMMM"); } catch { return activeDate; } })()}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveDate(null)}
+                className="text-[10px] text-sidebar-foreground/35 hover:text-sidebar-foreground/70 transition-colors"
+              >
+                Clear
+              </button>
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Nav ── */}
+      <nav className={cn("flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden", collapsed && "relative")}>
+        {/* Capture */}
+        <Link
+          href="/"
+          title={collapsed ? "Capture" : undefined}
+          className={cn(
+            "flex items-center rounded-md text-sm font-medium transition-colors",
+            collapsed ? "justify-center px-0 py-2 relative" : "gap-3 px-3 py-2",
+            location === "/"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          )}
+        >
+          <span className="shrink-0"><ClipboardList className="w-4 h-4" /></span>
+          {!collapsed && (
+            <>
+              <span className="flex-1">Capture</span>
+              {emptyDateCount > 0 && (
+                <span className="ml-auto bg-amber-500/20 text-amber-600 border border-amber-500/40 text-xs px-1.5 py-0.5 rounded-full font-bold dark:text-amber-400">
+                  {emptyDateCount}
+                </span>
+              )}
+            </>
+          )}
+          {collapsed && emptyDateCount > 0 && (
+            <span className="absolute right-1.5 top-1.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
+          )}
+        </Link>
 
         {navItem("/clarify", <CheckSquare className="w-4 h-4" />, "Clarify",
           summary?.clarifiedCount ? (
@@ -266,7 +368,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {isAdmin && navItem("/jdr-mapping", <Settings2 className="w-4 h-4" />, "JDR Mapping")}
       </nav>
 
-      {/* Footer */}
+      {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>
         {!collapsed && (
           <div className="flex items-center gap-3 px-3 py-2 mb-2">
