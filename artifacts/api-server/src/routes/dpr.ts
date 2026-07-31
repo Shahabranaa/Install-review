@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql, isNull, isNotNull, or, type SQL } from "drizzle-orm";
 import {
   db,
   dprLocationsTable,
@@ -76,20 +76,57 @@ function naturalSort<T extends { name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => collator.compare(a.name, b.name));
 }
 
+// ─── Server-side TTL cache for rarely-changing reference data ───────────────
+// Eliminates repeated DB round-trips for lookups that change only when an
+// admin edits them.  TTL = 60 s; mutations call .invalidate() on the relevant
+// cache so the next read is always fresh.
+
+function makeTTLCache<T>(ttlMs: number) {
+  let cached: T | null = null;
+  let expiresAt = 0;
+  return {
+    get(): T | null { return Date.now() < expiresAt ? cached : null; },
+    set(v: T) { cached = v; expiresAt = Date.now() + ttlMs; },
+    invalidate() { cached = null; expiresAt = 0; },
+  };
+}
+
+const TTL = 60_000;
+const refCache = {
+  locations:      makeTTLCache<{ id: number; name: string }[]>(TTL),
+  teams:          makeTTLCache<{ id: number; name: string }[]>(TTL),
+  activityTypes:  makeTTLCache<(typeof dprActivityTypesTable.$inferSelect)[]>(TTL),
+  activityGroups: makeTTLCache<(typeof dprActivityGroupsTable.$inferSelect)[]>(TTL),
+  activities:     makeTTLCache<(typeof dprActivitiesTable.$inferSelect)[]>(TTL),
+  jdrCodes:       makeTTLCache<(typeof dprJdrCodesTable.$inferSelect)[]>(TTL),
+};
+
 // ─── Reference lookups ──────────────────────────────────────────────────────
 
 router.get("/dpr/locations", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(dprLocationsTable);
+  let rows = refCache.locations.get();
+  if (!rows) {
+    rows = await db.select().from(dprLocationsTable);
+    refCache.locations.set(rows);
+  }
   res.json(ListDprLocationsResponse.parse(serialize(naturalSort(rows))));
 });
 
 router.get("/dpr/teams", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(dprTeamsTable);
+  let rows = refCache.teams.get();
+  if (!rows) {
+    rows = await db.select().from(dprTeamsTable);
+    refCache.teams.set(rows);
+  }
   res.json(ListDprTeamsResponse.parse(serialize(naturalSort(rows))));
 });
 
 router.get("/dpr/activity-types", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(dprActivityTypesTable).orderBy(dprActivityTypesTable.name);
+  let rows = refCache.activityTypes.get();
+  if (!rows) {
+    rows = await db.select().from(dprActivityTypesTable).orderBy(dprActivityTypesTable.name);
+    refCache.activityTypes.set(rows);
+  }
   res.json(ListDprActivityTypesResponse.parse(serialize(rows)));
 });
 
@@ -100,6 +137,7 @@ router.post("/dpr/activity-types", async (req, res): Promise<void> => {
     return;
   }
   const [row] = await db.insert(dprActivityTypesTable).values(parsed.data).returning();
+  refCache.activityTypes.invalidate();
   res.status(201).json(UpdateDprActivityTypeResponse.parse(serialize(row)));
 });
 
@@ -123,6 +161,7 @@ router.patch("/dpr/activity-types/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity type not found" });
     return;
   }
+  refCache.activityTypes.invalidate();
   res.json(UpdateDprActivityTypeResponse.parse(serialize(row)));
 });
 
@@ -140,6 +179,7 @@ router.delete("/dpr/activity-types/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity type not found" });
     return;
   }
+  refCache.activityTypes.invalidate();
   res.sendStatus(204);
 });
 
@@ -149,16 +189,15 @@ router.get("/dpr/activity-groups", async (req, res): Promise<void> => {
     res.status(400).json({ error: queryParams.error.message });
     return;
   }
-  let rows;
-  if (queryParams.data.activityTypeId) {
-    rows = await db
-      .select()
-      .from(dprActivityGroupsTable)
-      .where(eq(dprActivityGroupsTable.activityTypeId, queryParams.data.activityTypeId))
-      .orderBy(dprActivityGroupsTable.name);
-  } else {
-    rows = await db.select().from(dprActivityGroupsTable).orderBy(dprActivityGroupsTable.name);
+  // Serve from cache (full list) and filter in-process when a typeId is given
+  let all = refCache.activityGroups.get();
+  if (!all) {
+    all = await db.select().from(dprActivityGroupsTable).orderBy(dprActivityGroupsTable.name);
+    refCache.activityGroups.set(all);
   }
+  const rows = queryParams.data.activityTypeId
+    ? all.filter((r) => r.activityTypeId === queryParams.data.activityTypeId)
+    : all;
   res.json(ListDprActivityGroupsResponse.parse(serialize(rows)));
 });
 
@@ -169,6 +208,7 @@ router.post("/dpr/activity-groups", async (req, res): Promise<void> => {
     return;
   }
   const [row] = await db.insert(dprActivityGroupsTable).values(parsed.data).returning();
+  refCache.activityGroups.invalidate();
   res.status(201).json(UpdateDprActivityGroupResponse.parse(serialize(row)));
 });
 
@@ -192,6 +232,7 @@ router.patch("/dpr/activity-groups/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity group not found" });
     return;
   }
+  refCache.activityGroups.invalidate();
   res.json(UpdateDprActivityGroupResponse.parse(serialize(row)));
 });
 
@@ -209,6 +250,7 @@ router.delete("/dpr/activity-groups/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity group not found" });
     return;
   }
+  refCache.activityGroups.invalidate();
   res.sendStatus(204);
 });
 
@@ -218,16 +260,14 @@ router.get("/dpr/activities", async (req, res): Promise<void> => {
     res.status(400).json({ error: queryParams.error.message });
     return;
   }
-  let rows;
-  if (queryParams.data.activityGroupId) {
-    rows = await db
-      .select()
-      .from(dprActivitiesTable)
-      .where(eq(dprActivitiesTable.activityGroupId, queryParams.data.activityGroupId))
-      .orderBy(dprActivitiesTable.name);
-  } else {
-    rows = await db.select().from(dprActivitiesTable).orderBy(dprActivitiesTable.name);
+  let all = refCache.activities.get();
+  if (!all) {
+    all = await db.select().from(dprActivitiesTable).orderBy(dprActivitiesTable.name);
+    refCache.activities.set(all);
   }
+  const rows = queryParams.data.activityGroupId
+    ? all.filter((r) => r.activityGroupId === queryParams.data.activityGroupId)
+    : all;
   res.json(ListDprActivitiesResponse.parse(serialize(rows)));
 });
 
@@ -238,6 +278,7 @@ router.post("/dpr/activities", async (req, res): Promise<void> => {
     return;
   }
   const [row] = await db.insert(dprActivitiesTable).values(parsed.data).returning();
+  refCache.activities.invalidate();
   res.status(201).json(UpdateDprActivityResponse.parse(serialize(row)));
 });
 
@@ -261,6 +302,7 @@ router.patch("/dpr/activities/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity not found" });
     return;
   }
+  refCache.activities.invalidate();
   res.json(UpdateDprActivityResponse.parse(serialize(row)));
 });
 
@@ -278,6 +320,7 @@ router.delete("/dpr/activities/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Activity not found" });
     return;
   }
+  refCache.activities.invalidate();
   res.sendStatus(204);
 });
 
@@ -287,16 +330,14 @@ router.get("/dpr/jdr-codes", async (req, res): Promise<void> => {
     res.status(400).json({ error: queryParams.error.message });
     return;
   }
-  let rows;
-  if (queryParams.data.activityId) {
-    rows = await db
-      .select()
-      .from(dprJdrCodesTable)
-      .where(eq(dprJdrCodesTable.activityId, queryParams.data.activityId))
-      .orderBy(dprJdrCodesTable.jdrWorkActivity);
-  } else {
-    rows = await db.select().from(dprJdrCodesTable).orderBy(dprJdrCodesTable.jdrWorkActivity);
+  let all = refCache.jdrCodes.get();
+  if (!all) {
+    all = await db.select().from(dprJdrCodesTable).orderBy(dprJdrCodesTable.jdrWorkActivity);
+    refCache.jdrCodes.set(all);
   }
+  const rows = queryParams.data.activityId
+    ? all.filter((r) => r.activityId === queryParams.data.activityId)
+    : all;
   res.json(ListDprJdrCodesResponse.parse(serialize(rows)));
 });
 
@@ -307,6 +348,7 @@ router.post("/dpr/jdr-codes", async (req, res): Promise<void> => {
     return;
   }
   const [row] = await db.insert(dprJdrCodesTable).values(parsed.data).returning();
+  refCache.jdrCodes.invalidate();
   res.status(201).json(UpdateDprJdrCodeResponse.parse(serialize(row)));
 });
 
@@ -330,6 +372,7 @@ router.patch("/dpr/jdr-codes/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "JDR code not found" });
     return;
   }
+  refCache.jdrCodes.invalidate();
   res.json(UpdateDprJdrCodeResponse.parse(serialize(row)));
 });
 
@@ -347,11 +390,37 @@ router.delete("/dpr/jdr-codes/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "JDR code not found" });
     return;
   }
+  refCache.jdrCodes.invalidate();
   res.sendStatus(204);
 });
 
 // ─── Timesheet entries ──────────────────────────────────────────────────────
 
+// Single JOIN query that replaces the old N+1 withRelations helper.
+// Used for the list endpoint; single-row operations (GET /:id, PATCH, lock)
+// use withRelationsSingle which does two targeted queries — fast enough for
+// one row but avoids the Drizzle join complexity on mutations.
+async function fetchEntriesWithJoins(where?: SQL) {
+  const rows = await db
+    .select({
+      entry: dprTimesheetEntriesTable,
+      team: dprTeamsTable,
+      location: dprLocationsTable,
+    })
+    .from(dprTimesheetEntriesTable)
+    .leftJoin(dprTeamsTable, eq(dprTimesheetEntriesTable.teamId, dprTeamsTable.id))
+    .leftJoin(dprLocationsTable, eq(dprTimesheetEntriesTable.locationId, dprLocationsTable.id))
+    .where(where)
+    .orderBy(dprTimesheetEntriesTable.date, dprTimesheetEntriesTable.id);
+
+  return rows.map(({ entry, team, location }) => ({
+    ...entry,
+    team: team ?? undefined,
+    location: entry.locationId ? (location ?? null) : undefined,
+  }));
+}
+
+// For single-row mutations: two targeted queries — negligible for one row.
 async function withRelations(entry: typeof dprTimesheetEntriesTable.$inferSelect) {
   const [team] = entry.teamId
     ? await db.select().from(dprTeamsTable).where(eq(dprTeamsTable.id, entry.teamId))
@@ -379,13 +448,7 @@ router.get("/dpr/timesheet-entries", async (req, res): Promise<void> => {
   if (dateFrom) conditions.push(gte(dprTimesheetEntriesTable.date, dateFrom));
   if (dateTo) conditions.push(lte(dprTimesheetEntriesTable.date, dateTo));
 
-  const rows = await db
-    .select()
-    .from(dprTimesheetEntriesTable)
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(dprTimesheetEntriesTable.date, dprTimesheetEntriesTable.id);
-
-  const withJoins = await Promise.all(rows.map(withRelations));
+  const withJoins = await fetchEntriesWithJoins(conditions.length ? and(...conditions) : undefined);
   res.json(ListDprTimesheetEntriesResponse.parse(serialize(withJoins)));
 });
 
@@ -404,14 +467,19 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
 });
 
 router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> => {
-  const rows = await db.select({ stage: dprTimesheetEntriesTable.stage }).from(dprTimesheetEntriesTable);
-  const capturedCount = rows.filter((r) => r.stage === "draft").length;
-  const clarifiedCount = rows.filter((r) => r.stage === "captured").length;
+  // Use SQL aggregation instead of fetching all rows and counting in JS
+  const [counts] = await db
+    .select({
+      total:     sql<number>`COUNT(*)::int`,
+      captured:  sql<number>`COUNT(*) FILTER (WHERE stage = 'draft')::int`,
+      clarified: sql<number>`COUNT(*) FILTER (WHERE stage = 'captured')::int`,
+    })
+    .from(dprTimesheetEntriesTable);
   res.json(
     GetDprTimesheetSummaryResponse.parse({
-      totalEntries: rows.length,
-      capturedCount,
-      clarifiedCount,
+      totalEntries:  counts?.total     ?? 0,
+      capturedCount: counts?.captured  ?? 0,
+      clarifiedCount: counts?.clarified ?? 0,
     }),
   );
 });
@@ -435,7 +503,23 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
         teamId: dprTimesheetEntriesTable.teamId,
         stage: dprTimesheetEntriesTable.stage,
       })
-      .from(dprTimesheetEntriesTable),
+      .from(dprTimesheetEntriesTable)
+      // Only fetch entries whose effective date (shiftDate ?? date) falls within
+      // the 10-day window — avoids a full-table scan of all historical entries.
+      .where(
+        or(
+          and(
+            isNull(dprTimesheetEntriesTable.shiftDate),
+            gte(dprTimesheetEntriesTable.date, windowStart),
+            lte(dprTimesheetEntriesTable.date, windowEnd),
+          ),
+          and(
+            isNotNull(dprTimesheetEntriesTable.shiftDate),
+            gte(dprTimesheetEntriesTable.shiftDate, windowStart),
+            lte(dprTimesheetEntriesTable.shiftDate, windowEnd),
+          ),
+        )
+      ),
     db
       .select({ teamId: dprTeamDateExceptionsTable.teamId, date: dprTeamDateExceptionsTable.date })
       .from(dprTeamDateExceptionsTable)
