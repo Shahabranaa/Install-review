@@ -1624,7 +1624,12 @@ export default function CapturePage() {
                         <TableCell className="text-sm text-muted-foreground truncate">
                           {entry.notes || "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">—</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {(() => {
+                            const grp = activityGroups.find((g) => g.id === entry.activityGroupId);
+                            return grp ? (GROUP_LABELS[grp.name] ?? grp.name) : "—";
+                          })()}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
                         </TableCell>
