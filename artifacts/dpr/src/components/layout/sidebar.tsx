@@ -205,6 +205,56 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
+      {/* ── Recent dates (expanded only) ── */}
+      {!collapsed && (
+        <div className="px-3 pt-2.5 pb-2 border-b border-border shrink-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/35 mb-1 px-0.5">Recent</p>
+          <div className="space-y-0.5">
+            {Array.from({ length: 7 }, (_, i) => {
+              const d = format(subDays(new Date(), i), "yyyy-MM-dd");
+              const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0, captured: 0 };
+              const capturedOnDate = stats.captured ?? 0;
+              const isActive = activeDate === d;
+              const label = format(parseISO(d), "EEE dd/MM");
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setActiveDate(isActive ? null : d)}
+                  className={cn(
+                    "w-full flex items-center justify-between rounded px-2 py-0.5 text-xs transition-colors",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  )}
+                >
+                  <span>{label}</span>
+                  <span className="tabular-nums text-[10px] font-medium flex items-center gap-0.5">
+                    {totalTeams > 0 && (
+                      <>
+                        <span className="text-red-500 dark:text-red-400">{stats.noTime}</span>
+                        <span className="text-sidebar-foreground/30">/</span>
+                        <span className="text-amber-500 dark:text-amber-400">{stats.partial}</span>
+                        <span className="text-sidebar-foreground/30">/</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{stats.complete}</span>
+                      </>
+                    )}
+                    {capturedOnDate > 0 && (
+                      <>
+                        {totalTeams > 0 && <span className="text-sidebar-foreground/30 mx-0.5">·</span>}
+                        <span className="text-orange-500 dark:text-orange-400" title={`${capturedOnDate} entries awaiting clarification`}>
+                          {capturedOnDate}↑
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Calendar (expanded only) ── */}
       {!collapsed && (
         <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
