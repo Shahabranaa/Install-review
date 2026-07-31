@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -703,6 +703,17 @@ export default function CapturePage() {
     [sortedEntries, activeDate, activeTeamId]
   );
 
+  // When a shift date is active and entries span more than one raw calendar date
+  // (e.g. overnight: some entries date=27th, some date=28th) surface that range.
+  const calendarDateSpan = useMemo(() => {
+    if (!activeDate) return null;
+    const allVisible = [...filteredEntries, ...filteredLockedEntries];
+    const dates = [...new Set(allVisible.map((e) => e.date))].sort();
+    if (dates.length < 2) return null;
+    const fmt = (d: string) => { try { return format(parseISO(d), "d MMM"); } catch { return d; } };
+    return { from: fmt(dates[0]), to: fmt(dates[dates.length - 1]), count: dates.length };
+  }, [activeDate, filteredEntries, filteredLockedEntries]);
+
   // Hours per team per date — drives filter pill status indicators
   // Uses shiftDate when set so overnight shifts group under their start date.
   const teamHoursMap = useMemo(() => {
@@ -861,6 +872,7 @@ export default function CapturePage() {
 
   const buildUpdatePayload = (draft: Partial<DprTimesheetEntry>) => ({
     date: draft.date,
+    shiftDate: draft.shiftDate ?? null,
     teamId: draft.teamId || null,
     startTime: draft.startTime || null,
     endTime: draft.endTime || null,
@@ -899,6 +911,7 @@ export default function CapturePage() {
     else if (field === "endTime") patch.endTime = value || undefined;
     else if (field === "notes") patch.notes = value || undefined;
     else if (field === "date") patch.date = value || entry.date;
+    else if (field === "shiftDate") patch.shiftDate = value || entry.date; // fall back to raw date if cleared
     else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
     lastSavedCellRef.current = { entryId, field };
     autosaveMutation.mutate({ id: entryId, data: buildUpdatePayload({ ...entry, ...patch }) });
@@ -943,9 +956,10 @@ export default function CapturePage() {
     setIsSavingBulk(true);
     const rowsToSave = pendingRows.filter((row): row is PendingRow & { date: string } => !!row.date);
     const skipped = pendingRows.length - rowsToSave.length;
-    // If a shift date override is set in the dialog, all pasted rows use it for grouping.
-    // Otherwise each row's own date is its shift date.
-    const effectiveShiftDate = pasteShiftDate.trim() || null;
+    // Priority: explicit override → active sidebar date → each row's own calendar date.
+    // Defaulting to activeDate means pasting while on the 27th filter auto-assigns
+    // shiftDate=27th without needing to fill in the override every time.
+    const effectiveShiftDate = pasteShiftDate.trim() || activeDate || null;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
         createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
@@ -1109,6 +1123,11 @@ export default function CapturePage() {
                     {filteredTotalHours >= 12 && <span className="text-emerald-500/70">✓</span>}
                     {filteredLockedEntries.length > 0 && (
                       <span className="text-muted-foreground/50">· {filteredLockedEntries.length} locked</span>
+                    )}
+                    {calendarDateSpan && (
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-medium" title={`This shift spans ${calendarDateSpan.count} calendar dates`}>
+                        ⏱ {calendarDateSpan.from}–{calendarDateSpan.to}
+                      </span>
                     )}
                   </div>
                 )}
@@ -1301,26 +1320,38 @@ export default function CapturePage() {
                             : <Square className="w-4 h-4 text-muted-foreground/50 cursor-pointer" />}
                         </TableCell>
                       )}
-                      {/* Date — inline editable */}
+                      {/* Date — inline editable (edits shiftDate; raw calendar date shown as annotation) */}
                       {showDateCol && (
                         <TableCell className={cn(COL.date, "font-medium")} onClick={onCellClick}>
-                          {isCellEditing("date") ? (
+                          {isCellEditing("shiftDate") ? (
                             <input
                               autoFocus
                               type="date"
                               lang="en-GB"
                               value={editingValue}
                               onChange={(e) => setEditingValue(e.target.value)}
-                              onBlur={() => deactivateCell(entry.id, "date")}
+                              onBlur={() => deactivateCell(entry.id, "shiftDate")}
                               onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
                               className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
                             />
                           ) : (
                             <span
-                              onClick={() => activateCell(entry.id, "date", entry.date)}
+                              onClick={() => activateCell(entry.id, "shiftDate", entry.shiftDate ?? entry.date)}
                               className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-medium"
+                              title="Click to change shift date"
                             >
-                              {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                              {(() => {
+                                const display = entry.shiftDate ?? entry.date;
+                                const formatted = (() => { try { return format(parseISO(display), "dd/MM/yyyy"); } catch { return display; } })();
+                                const calDiffers = entry.shiftDate && entry.shiftDate !== entry.date;
+                                const calFormatted = calDiffers ? (() => { try { return format(parseISO(entry.date), "dd/MM"); } catch { return entry.date; } })() : null;
+                                return (
+                                  <>
+                                    {formatted}
+                                    {calDiffers && <span className="ml-1 text-[10px] text-muted-foreground/50 font-normal" title={`Calendar date: ${calFormatted}`}>(cal {calFormatted})</span>}
+                                  </>
+                                );
+                              })()}
                             </span>
                           )}
                         </TableCell>
@@ -1473,6 +1504,32 @@ export default function CapturePage() {
                       {/* Actions */}
                       <TableCell className={cn(COL.actions, "text-right")} onClick={onCellClick}>
                         <div className="flex items-center justify-end gap-1">
+                          {/* Shift-date editor — only shown when the date column is hidden (date filter active) */}
+                          {!showDateCol && (
+                            isCellEditing("shiftDate") ? (
+                              <input
+                                autoFocus
+                                type="date"
+                                lang="en-GB"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onBlur={() => deactivateCell(entry.id, "shiftDate")}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                                className="w-28 bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground/40 hover:text-primary hover:bg-primary/10"
+                                title={`Move to a different shift date (currently ${(() => { try { return format(parseISO(entry.shiftDate ?? entry.date), "d MMM"); } catch { return entry.shiftDate ?? entry.date; } })()})`}
+                                onClick={(e) => { e.stopPropagation(); activateCell(entry.id, "shiftDate", entry.shiftDate ?? entry.date); }}
+                              >
+                                <Calendar className="w-3.5 h-3.5" />
+                              </Button>
+                            )
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1541,7 +1598,10 @@ export default function CapturePage() {
                         {selectMode && <TableCell className="w-[36px]" />}
                         {showDateCol && (
                           <TableCell className={cn(COL.date, "text-sm text-muted-foreground")}>
-                            {(() => { try { return format(parseISO(entry.date), "dd/MM/yyyy"); } catch { return entry.date; } })()}
+                            {(() => {
+                              const display = entry.shiftDate ?? entry.date;
+                              return (() => { try { return format(parseISO(display), "dd/MM/yyyy"); } catch { return display; } })();
+                            })()}
                           </TableCell>
                         )}
                         {showTeamCol && (
