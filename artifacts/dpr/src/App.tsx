@@ -13,7 +13,22 @@ import ClarifyPage from "@/pages/clarify";
 import JdrMappingPage from "@/pages/jdr-mapping";
 import TeamSetupPage from "@/pages/team-setup";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Data is considered fresh for 30 s — navigating between pages shows
+      // cached data instantly rather than triggering a new network request.
+      staleTime: 30_000,
+      // Keep unused query data in cache for 5 minutes so coming back to a
+      // page never starts from a blank slate.
+      gcTime: 5 * 60_000,
+      // Don't refetch just because the user switched browser tabs.
+      refetchOnWindowFocus: false,
+      // Do retry on failure, but only once (default is 3).
+      retry: 1,
+    },
+  },
+});
 
 function Router() {
   return (
