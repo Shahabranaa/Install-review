@@ -1072,7 +1072,8 @@ export const GetDprDateSummaryResponseItem = zod.object({
   "date": zod.string(),
   "noTime": zod.number(),
   "partial": zod.number(),
-  "complete": zod.number()
+  "complete": zod.number(),
+  "captured": zod.number().optional().default(0)
 })
 export const GetDprDateSummaryResponse = zod.object({
   "totalTeams": zod.number(),

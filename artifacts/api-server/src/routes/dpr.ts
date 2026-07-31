@@ -461,6 +461,8 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
   // per-date, per-team stage sets — group by shiftDate when set, else date
   type StageSet = { hasDraft: boolean; hasSubmitted: boolean };
   const datemap = new Map<string, Map<number, StageSet>>();
+  // captured entry counts per date (for the clarify queue indicator)
+  const capturedCountMap = new Map<string, number>();
   for (const row of entryRows) {
     if (row.teamId === null) continue;
     const rawGroupDate = row.shiftDate ?? row.date;
@@ -471,6 +473,9 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
     const s = teamMap.get(row.teamId)!;
     if (row.stage === "draft") s.hasDraft = true;
     else s.hasSubmitted = true;
+    if (row.stage === "captured") {
+      capturedCountMap.set(d, (capturedCountMap.get(d) ?? 0) + 1);
+    }
   }
 
   const items = windowDates.map((date) => {
@@ -487,7 +492,8 @@ router.get("/dpr/timesheet-entries/date-summary", async (_req, res): Promise<voi
     }
     const expectedCount = totalTeams - excluded.size;
     const noTime = expectedCount - partial - complete;
-    return { date, noTime, partial, complete };
+    const captured = capturedCountMap.get(date) ?? 0;
+    return { date, noTime, partial, complete, captured };
   });
 
   res.json(GetDprDateSummaryResponse.parse({ totalTeams, items }));

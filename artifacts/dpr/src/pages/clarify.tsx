@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import { 
   useListDprTimesheetEntries, 
   useUpdateDprTimesheetEntry, 
@@ -20,10 +21,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Clock, MapPin, Users, CheckCircle2, ChevronRight, Check, Search, Lock, Timer } from "lucide-react";
+import { Loader2, Clock, MapPin, Users, CheckCircle2, Check, Search, Lock, Timer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,7 +35,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
+import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
+import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 type BillingParty = "jdr" | "orsted" | null;
 
@@ -61,26 +62,28 @@ function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange
 }
 
 export default function ClarifyPage() {
-  const { toast: _toast } = useToast();
-
-  const [activeTab, setActiveTab] = useState<"queue" | "clarified">("queue");
+  const { activeDate, activeTeamId, setActiveTeamId } = useCaptureNav();
 
   const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
 
-  const queue = useMemo(() => entries.filter(e => e.stage === "captured").sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [entries]);
-  const clarified = useMemo(() => entries.filter(e => e.stage === "clarified").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()), [entries]);
+  const queue = useMemo(() => entries.filter(e => e.stage === "captured"), [entries]);
 
   // Groups keep the whole shift (team + date) visible together — including
   // rows that have already been clarified — until every row in the group is
   // clarified. This way the group doesn't shrink/disappear row-by-row while
   // someone is working through it; clarified rows are shown greyed-out and
   // locked instead of vanishing immediately.
+  //
+  // IMPORTANT: uses `shiftDate ?? date` as the effective date, matching the
+  // lock endpoint and Capture's filter logic so overnight/cross-date entries
+  // are filed under their shift-start date rather than their calendar date.
   const groups = useMemo(() => {
     const relevant = entries.filter(e => e.stage === "captured" || e.stage === "clarified");
     const byKey = new Map<string, { teamId: number | null; teamName: string; date: string; entries: DprTimesheetEntry[] }>();
     for (const entry of relevant) {
       const teamId = entry.teamId ?? null;
-      const key = `${teamId ?? "none"}__${entry.date}`;
+      const effectiveDate = (entry.shiftDate ?? entry.date) as string;
+      const key = `${teamId ?? "none"}__${effectiveDate}`;
       const existing = byKey.get(key);
       if (existing) {
         existing.entries.push(entry);
@@ -88,7 +91,7 @@ export default function ClarifyPage() {
         byKey.set(key, {
           teamId,
           teamName: entry.team?.name || "Unassigned Team",
-          date: entry.date,
+          date: effectiveDate,
           entries: [entry],
         });
       }
@@ -102,8 +105,39 @@ export default function ClarifyPage() {
       });
   }, [entries]);
 
+  // Teams that have captured entries on the active date (for filter pills)
+  const teamsOnActiveDate = useMemo(() => {
+    if (!activeDate) return [];
+    const seen = new Map<number | null, string>();
+    for (const g of groups) {
+      if (g.date === activeDate) {
+        seen.set(g.teamId, g.teamName);
+      }
+    }
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
+  }, [groups, activeDate]);
+
+  // Filtered groups based on active date + team
+  const filteredGroups = useMemo(() => {
+    return groups.filter(g => {
+      if (activeDate && g.date !== activeDate) return false;
+      if (activeTeamId !== null && g.teamId !== activeTeamId) return false;
+      return true;
+    });
+  }, [groups, activeDate, activeTeamId]);
+
+  const pendingCount = useMemo(
+    () => filteredGroups.reduce((acc, g) => acc + g.entries.filter(e => e.stage === "captured").length, 0),
+    [filteredGroups]
+  );
+
+  const handleTeamClick = (id: number | null) => {
+    setActiveTeamId(activeTeamId === id ? null : id);
+  };
+
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <header className="px-6 py-4 border-b border-border bg-card flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Clarify Queue</h1>
@@ -114,49 +148,88 @@ export default function ClarifyPage() {
             <div className="w-2 h-2 rounded-full bg-primary" />
             <span className="text-foreground">{queue.length} Pending</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-muted-foreground" />
-            <span className="text-muted-foreground">{clarified.length} Clarified</span>
-          </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-hidden flex flex-col bg-background p-6">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="h-full flex flex-col">
-          <div className="shrink-0 mb-4">
-            <TabsList>
-              <TabsTrigger value="queue">Queue ({queue.length})</TabsTrigger>
-              <TabsTrigger value="clarified">Clarified History</TabsTrigger>
-            </TabsList>
+      {/* Filter bar — visible whenever a date is active */}
+      {activeDate ? (
+        <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Showing:</span>
+              <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
+              </span>
+              {activeTeamId !== null && (
+                <>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                    {teamsOnActiveDate.find(t => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
+                  </span>
+                </>
+              )}
+            </div>
+            {pendingCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground tabular-nums">{pendingCount}</span> rows pending
+              </span>
+            )}
           </div>
-          
-          <div className="flex-1 overflow-hidden relative">
-            <TabsContent value="queue" className="absolute inset-0 m-0 overflow-y-auto space-y-6 pr-2">
-              {loadingEntries && queue.length === 0 && (
-                <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
-              )}
-              {!loadingEntries && queue.length === 0 && (
-                <div className="text-center p-12 border border-dashed rounded-lg border-border">
-                  <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-4 opacity-50" />
-                  <h3 className="text-lg font-medium">All caught up!</h3>
-                  <p className="text-sm text-muted-foreground mt-1">There are no pending timesheets to clarify.</p>
-                </div>
-              )}
-              {groups.map(group => (
-                <ClarifyGroup key={`${group.teamId ?? "none"}__${group.date}`} teamName={group.teamName} date={group.date} entries={group.entries} />
-              ))}
-            </TabsContent>
-            
-            <TabsContent value="clarified" className="absolute inset-0 m-0 overflow-y-auto space-y-4 pr-2">
-              {clarified.map(entry => (
-                <ClarifiedCard key={entry.id} entry={entry} />
-              ))}
-              {!loadingEntries && clarified.length === 0 && (
-                <div className="text-center p-12 text-muted-foreground">No clarified records yet.</div>
-              )}
-            </TabsContent>
+        </div>
+      ) : (
+        <div className="px-4 sm:px-6 py-1.5 border-b border-border bg-muted/10 shrink-0">
+          <span className="text-xs text-muted-foreground/60 italic">Select a date from the sidebar to filter the queue</span>
+        </div>
+      )}
+
+      {/* Team pills — only when a date is active */}
+      {activeDate && teamsOnActiveDate.length > 0 && (
+        <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
+            {teamsOnActiveDate.map(team => {
+              const isActive = activeTeamId === team.id;
+              return (
+                <button
+                  key={team.id ?? "none"}
+                  type="button"
+                  onClick={() => handleTeamClick(team.id)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
+                    isActive
+                      ? "border-2 border-amber-500 bg-amber-500 text-white"
+                      : "border-2 bg-transparent border-border text-muted-foreground hover:border-amber-500/60 hover:text-foreground"
+                  )}
+                >
+                  {team.name}
+                </button>
+              );
+            })}
           </div>
-        </Tabs>
+        </div>
+      )}
+
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {loadingEntries && filteredGroups.length === 0 && (
+          <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
+        )}
+        {!loadingEntries && filteredGroups.length === 0 && (
+          <div className="text-center p-12 border border-dashed rounded-lg border-border">
+            <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-medium">
+              {activeDate ? "Nothing to clarify here" : "All caught up!"}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              {activeDate
+                ? "No captured entries waiting on this date. Try another date or clear the filter."
+                : "There are no pending timesheets to clarify."}
+            </p>
+          </div>
+        )}
+        {filteredGroups.map(group => (
+          <ClarifyGroup key={`${group.teamId ?? "none"}__${group.date}`} teamName={group.teamName} date={group.date} entries={group.entries} />
+        ))}
       </div>
     </div>
   );
@@ -446,7 +519,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const handleQuickFillSelect = (codeId: number) => {
     const match = searchIndex.find(m => m.code.id === codeId);
     if (!match) return;
-    const { code, activity, group } = match;
+    const { code, activity } = match;
     if (activity?.activityGroupId != null) setActivityGroupId(activity.activityGroupId);
     if (code.activityId != null) setActivityId(code.activityId);
     setJdrCodeId(code.id);
@@ -618,36 +691,5 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         </Button>
       </TableCell>
     </TableRow>
-  );
-}
-
-function ClarifiedCard({ entry }: { entry: DprTimesheetEntry }) {
-  const { data: jdrCodes = [] } = useListDprJdrCodes(
-    { activityId: entry.activityId || undefined },
-    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
-  );
-  const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
-
-  return (
-    <Card className="border-border shadow-none opacity-80 hover:opacity-100 transition-opacity bg-card">
-      <CardContent className="p-4 flex gap-6">
-        <div className="w-48 shrink-0">
-          <Badge variant="outline" className="font-mono text-xs mb-2 border-border text-muted-foreground">{entry.date}</Badge>
-          <div className="text-sm font-medium">{entry.team?.name}</div>
-          <div className="text-xs text-muted-foreground">{entry.location?.name}</div>
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-xs font-medium text-primary mb-2">
-            <span>{code?.lautecActivity || "Categorized"}</span>
-            <ChevronRight className="w-3 h-3 text-muted-foreground" />
-            <span>{code?.jdrWorkActivity || "Activity"}</span>
-          </div>
-          <p className="text-sm text-foreground/80 whitespace-pre-wrap">
-            {entry.combinedComment}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
   );
 }

@@ -20,6 +20,7 @@ interface DateSummaryItem {
   noTime: number;
   partial: number;
   complete: number;
+  captured?: number;
 }
 
 interface DateSummaryResponse {
@@ -59,9 +60,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   );
 
   const dateStatsMap = useMemo(() => {
-    const map = new Map<string, { noTime: number; partial: number; complete: number }>();
+    const map = new Map<string, { noTime: number; partial: number; complete: number; captured: number }>();
     for (const item of dateSummaryRaw?.items ?? []) {
-      map.set(item.date, { noTime: item.noTime, partial: item.partial, complete: item.complete });
+      map.set(item.date, { noTime: item.noTime, partial: item.partial, complete: item.complete, captured: item.captured ?? 0 });
     }
     return map;
   }, [dateSummaryRaw]);
@@ -173,7 +174,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {!collapsed && (
             <div className="mt-0.5 ml-3 border-l border-border pl-2 space-y-0.5 pb-1">
               {windowDates.map((d) => {
-                const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0 };
+                const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0, captured: 0 };
+                const capturedOnDate = stats.captured ?? 0;
                 const isActive = activeDate === d;
                 const label = format(parseISO(d), "EEE dd/MM");
                 return (
@@ -189,15 +191,25 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     )}
                   >
                     <span>{label}</span>
-                    {totalTeams > 0 && (
-                      <span className="tabular-nums text-[10px] font-medium flex items-center gap-0.5">
-                        <span className="text-red-500 dark:text-red-400">{stats.noTime}</span>
-                        <span className="text-sidebar-foreground/30">/</span>
-                        <span className="text-amber-500 dark:text-amber-400">{stats.partial}</span>
-                        <span className="text-sidebar-foreground/30">/</span>
-                        <span className="text-emerald-600 dark:text-emerald-400">{stats.complete}</span>
-                      </span>
-                    )}
+                    <span className="tabular-nums text-[10px] font-medium flex items-center gap-0.5">
+                      {totalTeams > 0 && (
+                        <>
+                          <span className="text-red-500 dark:text-red-400">{stats.noTime}</span>
+                          <span className="text-sidebar-foreground/30">/</span>
+                          <span className="text-amber-500 dark:text-amber-400">{stats.partial}</span>
+                          <span className="text-sidebar-foreground/30">/</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">{stats.complete}</span>
+                        </>
+                      )}
+                      {capturedOnDate > 0 && (
+                        <>
+                          {totalTeams > 0 && <span className="text-sidebar-foreground/30 mx-0.5">·</span>}
+                          <span className="text-orange-500 dark:text-orange-400" title={`${capturedOnDate} entries awaiting clarification`}>
+                            {capturedOnDate}↑
+                          </span>
+                        </>
+                      )}
+                    </span>
                   </button>
                 );
               })}
