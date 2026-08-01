@@ -109,6 +109,15 @@ export default function ClarifyPage() {
     {},
     { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
   );
+  // Hoisted here so ClarifyRow instances share one cache subscription each
+  const { data: allActivities = [] } = useListDprActivities(
+    {},
+    { query: { queryKey: getListDprActivitiesQueryKey({}) } }
+  );
+  const { data: allJdrCodes = [] } = useListDprJdrCodes(
+    {},
+    { query: { queryKey: getListDprJdrCodesQueryKey({}) } }
+  );
 
   // All captured + clarified entries, grouped by shiftDate+team
   const groups = useMemo(() => {
@@ -313,7 +322,7 @@ export default function ClarifyPage() {
 
                       {/* ── Pending rows ── */}
                       {pending.map(entry => (
-                        <ClarifyRow key={entry.id} entry={entry} activityGroups={activityGroups} />
+                        <ClarifyRow key={entry.id} entry={entry} activityGroups={activityGroups} allActivities={allActivities} allJdrCodes={allJdrCodes} />
                       ))}
 
                       {/* ── Clarified rows (greyed, below pending) ── */}
@@ -344,8 +353,7 @@ export default function ClarifyPage() {
       {/* ── Hint bar — matches Capture exactly ── */}
       <div className="px-6 py-2 border-t border-border bg-card/50 shrink-0">
         <p className="text-xs text-muted-foreground">
-          Use <strong className="text-foreground">Quick Fill</strong> to search and apply a JDR code in one step — it auto-fills Activity Group and Activity.
-          Or pick <strong className="text-foreground">Activity Group</strong> first, then select the <strong className="text-foreground">JDR Code</strong>.
+          Select a <strong className="text-foreground">JDR Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
         </p>
       </div>
     </div>
@@ -405,52 +413,31 @@ function ClarifiedRow({ entry, activityGroups }: { entry: DprTimesheetEntry; act
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activityGroups: DprActivityGroup[] }) {
+function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes }: {
+  entry: DprTimesheetEntry;
+  activityGroups: DprActivityGroup[];
+  allActivities: DprActivity[];
+  allJdrCodes: DprJdrCode[];
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [activityGroupId, setActivityGroupId] = useState<number | null>(entry.activityGroupId || null);
-  const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
 
-  // Cascading: JDR codes filtered by activity group (via activities)
-  const { data: allActivities = [] } = useListDprActivities(
-    {},
-    { query: { queryKey: getListDprActivitiesQueryKey({}) } }
+  // Filter codes to this entry's activity group (via activities relationship)
+  const filteredCodes = useMemo(() => {
+    if (!entry.activityGroupId) return allJdrCodes;
+    const activityIdsInGroup = new Set(
+      allActivities.filter(a => a.activityGroupId === entry.activityGroupId).map(a => a.id)
+    );
+    return allJdrCodes.filter(c => c.activityId != null && activityIdsInGroup.has(c.activityId));
+  }, [allJdrCodes, allActivities, entry.activityGroupId]);
+
+  // Resolve the selected code's activityId for saving
+  const selectedCodeObj = useMemo(
+    () => allJdrCodes.find(c => c.id === jdrCodeId) || null,
+    [allJdrCodes, jdrCodeId]
   );
-  const { data: allJdrCodes = [] } = useListDprJdrCodes(
-    {},
-    { query: { queryKey: getListDprJdrCodesQueryKey({}) } }
-  );
-
-  // Build search index: all codes with their resolved activity+group
-  const searchIndex = useMemo(() => {
-    const activityById = new Map<number, DprActivity>(allActivities.map(a => [a.id, a]));
-    const groupById = new Map<number, DprActivityGroup>(activityGroups.map(g => [g.id, g]));
-    return allJdrCodes.map(code => {
-      const activity = code.activityId != null ? activityById.get(code.activityId) : undefined;
-      const group = activity?.activityGroupId != null ? groupById.get(activity.activityGroupId) : undefined;
-      return { code, activity, group } as {
-        code: DprJdrCode; activity: DprActivity | undefined; group: DprActivityGroup | undefined;
-      };
-    });
-  }, [allJdrCodes, allActivities, activityGroups]);
-
-  // When Activity Group is set, filter search to that group's codes only
-  const filteredSearchIndex = useMemo(() => {
-    if (!activityGroupId) return searchIndex;
-    return searchIndex.filter(m => m.group?.id === activityGroupId);
-  }, [searchIndex, activityGroupId]);
-
-  const [selectedCode, setSelectedCode] = useState<DprJdrCode | null>(() =>
-    allJdrCodes.find(c => c.id === (entry.jdrCodeIds?.[0] || null)) || null
-  );
-
-  const resolvedCode = useMemo(() => {
-    if (selectedCode) return selectedCode;
-    if (!jdrCodeId) return null;
-    return allJdrCodes.find(c => c.id === jdrCodeId) || null;
-  }, [selectedCode, jdrCodeId, allJdrCodes]);
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
@@ -481,32 +468,14 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
     }
   });
 
-  const applyCode = (match: { code: DprJdrCode; activity: DprActivity | undefined; group: DprActivityGroup | undefined }) => {
-    const { code, activity } = match;
-    if (activity?.activityGroupId != null) setActivityGroupId(activity.activityGroupId);
-    if (code.activityId != null) setActivityId(code.activityId);
-    setJdrCodeId(code.id);
-    setSelectedCode(code);
-  };
-
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  const handleQuickFillSelect = (codeId: number) => {
-    const match = filteredSearchIndex.find(m => m.code.id === codeId);
-    if (!match) return;
-    applyCode(match);
-    setSearchOpen(false);
-    toast({ title: "Applied", description: `${match.code.contractualCode} — ${match.code.jdrWorkActivity}` });
-  };
-
   const handleSave = () => {
-    const group = activityGroups.find(g => g.id === activityGroupId);
+    const group = activityGroups.find(g => g.id === entry.activityGroupId);
     updateMutation.mutate({
       id: entry.id,
       data: {
         activityTypeId: group?.activityTypeId ?? null,
-        activityGroupId,
-        activityId,
+        activityGroupId: entry.activityGroupId || null,
+        activityId: selectedCodeObj?.activityId ?? null,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
         stage: "clarified",
       }
@@ -550,55 +519,28 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
           ? <span className="line-clamp-3 break-words">{entry.combinedComment || entry.notes}</span>
           : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Activity Group — read-only, updates after Quick Fill */}
+      {/* Activity Group — read-only */}
       <TableCell className="text-sm text-muted-foreground pr-4">
-        {activityGroups.find(g => g.id === activityGroupId)?.name
+        {activityGroups.find(g => g.id === entry.activityGroupId)?.name
           ?? <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* JDR Code — searchable Quick Fill */}
+      {/* JDR Code — plain Select */}
       <TableCell>
-        <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              title={resolvedCode ? `${resolvedCode.contractualCode} — ${resolvedCode.jdrWorkActivity}` : "Search JDR code or activity"}
-              className={cn(
-                "h-8 w-full flex items-center gap-1.5 px-2 rounded border text-xs font-normal transition-colors bg-background",
-                resolvedCode ? "border-primary/50 text-foreground" : "border-border text-muted-foreground hover:bg-muted/40"
-              )}
-            >
-              {resolvedCode ? (
-                <><Check className="w-3 h-3 shrink-0 text-primary" /><span className="truncate font-mono font-medium">{resolvedCode.contractualCode}</span></>
-              ) : (
-                <><Search className="w-3 h-3 shrink-0" /><span className="truncate">Quick Fill</span></>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[420px] p-0" align="start">
-            <Command filter={(value, search) => {
-              const item = filteredSearchIndex.find(m => m.code.id.toString() === value);
-              if (!item) return 0;
-              const hay = `${item.code.contractualCode} ${item.code.jdrWorkActivity} ${item.code.lautecActivity} ${item.code.lautecActivityGroup} ${item.code.genericComment}`.toLowerCase();
-              return hay.includes(search.toLowerCase()) ? 1 : 0;
-            }}>
-              <CommandInput placeholder={activityGroupId ? "Search within this group…" : "Search all JDR codes…"} />
-              <CommandList>
-                <CommandEmpty>No matches found.</CommandEmpty>
-                <CommandGroup>
-                  {filteredSearchIndex.map(match => (
-                    <CommandItem key={match.code.id} value={match.code.id.toString()} onSelect={() => handleQuickFillSelect(match.code.id)}>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-medium">{match.code.contractualCode} — {match.code.jdrWorkActivity}</span>
-                        <span className="text-[11px] text-muted-foreground">{match.code.lautecActivity} / {match.code.lautecActivityGroup}</span>
-                        <span className="text-[11px] text-primary/80 truncate">{match.code.genericComment}</span>
-                      </div>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        <Select
+          value={jdrCodeId?.toString() || ""}
+          onValueChange={v => setJdrCodeId(parseInt(v))}
+        >
+          <SelectTrigger className="h-8 text-xs bg-background">
+            <SelectValue placeholder="Select code…" />
+          </SelectTrigger>
+          <SelectContent>
+            {filteredCodes.map(c => (
+              <SelectItem key={c.id} value={c.id.toString()}>
+                {c.contractualCode} — {c.jdrWorkActivity}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </TableCell>
       {/* Save */}
       <TableCell className="text-right pr-2">
@@ -607,7 +549,7 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
           className="h-8 w-8"
           onClick={handleSave}
           disabled={!canSave || updateMutation.isPending}
-          title={canSave ? "Mark as Clarified" : "Pick Activity Group and JDR Code first"}
+          title={canSave ? "Mark as Clarified" : "Select a JDR code first"}
         >
           {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
         </Button>
