@@ -19,9 +19,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Clock, MapPin, Users, CheckCircle2, Check, Search, Lock, Timer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -42,7 +40,7 @@ type BillingParty = "jdr" | "orsted" | null;
 
 function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange: (v: BillingParty) => void }) {
   return (
-    <div className="inline-flex rounded-md border border-border overflow-hidden">
+    <div className="inline-flex rounded border border-border overflow-hidden">
       <button
         type="button"
         onClick={() => onChange(value === "jdr" ? null : "jdr")}
@@ -68,15 +66,6 @@ export default function ClarifyPage() {
 
   const queue = useMemo(() => entries.filter(e => e.stage === "captured"), [entries]);
 
-  // Groups keep the whole shift (team + date) visible together — including
-  // rows that have already been clarified — until every row in the group is
-  // clarified. This way the group doesn't shrink/disappear row-by-row while
-  // someone is working through it; clarified rows are shown greyed-out and
-  // locked instead of vanishing immediately.
-  //
-  // IMPORTANT: uses `shiftDate ?? date` as the effective date, matching the
-  // lock endpoint and Capture's filter logic so overnight/cross-date entries
-  // are filed under their shift-start date rather than their calendar date.
   const groups = useMemo(() => {
     const relevant = entries.filter(e => e.stage === "captured" || e.stage === "clarified");
     const byKey = new Map<string, { teamId: number | null; teamName: string; date: string; entries: DprTimesheetEntry[] }>();
@@ -105,19 +94,15 @@ export default function ClarifyPage() {
       });
   }, [entries]);
 
-  // Teams that have captured entries on the active date (for filter pills)
   const teamsOnActiveDate = useMemo(() => {
     if (!activeDate) return [];
     const seen = new Map<number | null, string>();
     for (const g of groups) {
-      if (g.date === activeDate) {
-        seen.set(g.teamId, g.teamName);
-      }
+      if (g.date === activeDate) seen.set(g.teamId, g.teamName);
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
   }, [groups, activeDate]);
 
-  // Filtered groups based on active date + team
   const filteredGroups = useMemo(() => {
     return groups.filter(g => {
       if (activeDate && g.date !== activeDate) return false;
@@ -137,7 +122,7 @@ export default function ClarifyPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* Header — matches Capture header exactly */}
       <header className="px-6 py-4 border-b border-border bg-card flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Clarify Queue</h1>
@@ -151,7 +136,7 @@ export default function ClarifyPage() {
         </div>
       </header>
 
-      {/* Filter bar — visible whenever a date is active */}
+      {/* Filter bar */}
       {activeDate ? (
         <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
           <div className="flex items-center gap-3">
@@ -182,7 +167,7 @@ export default function ClarifyPage() {
         </div>
       )}
 
-      {/* Team pills — only when a date is active */}
+      {/* Team pills */}
       {activeDate && teamsOnActiveDate.length > 0 && (
         <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
           <div className="flex items-center flex-wrap gap-1.5">
@@ -209,7 +194,7 @@ export default function ClarifyPage() {
         </div>
       )}
 
-      {/* Content area */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {loadingEntries && filteredGroups.length === 0 && (
           <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
@@ -243,8 +228,10 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
     const m = Math.round((totalHours - h) * 60);
     return m === 0 ? `${h}h total` : `${h}h ${m}m total`;
   })();
+
   return (
-    <Card className="border-border shadow-sm bg-card overflow-hidden">
+    <div className="rounded-lg border border-border bg-card overflow-hidden shadow-sm">
+      {/* Card header — matches Capture's locked-section divider style */}
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
         <Users className="w-4 h-4 text-muted-foreground" />
         <span className="font-semibold text-sm">{teamName}</span>
@@ -256,109 +243,99 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
         )}
         <span className="text-xs text-muted-foreground ml-auto">{remaining} of {entries.length} remaining</span>
       </div>
+
       <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
+        <Table className="table-fixed w-full min-w-[900px]">
+          <colgroup>
+            <col style={{ width: "8%" }} />   {/* Start */}
+            <col style={{ width: "8%" }} />   {/* End */}
+            <col style={{ width: "6%" }} />   {/* Duration */}
+            <col style={{ width: "14%" }} />  {/* Location */}
+            <col />                            {/* Notes — flex */}
+            <col style={{ width: "10%" }} />  {/* JDR|Orsted */}
+            <col style={{ width: "18%" }} />  {/* Quick Fill / Code */}
+            <col style={{ width: "22%" }} />  {/* Comment */}
+            <col style={{ width: 44 }} />     {/* Action */}
+          </colgroup>
+          <TableHeader className="bg-muted/30 sticky top-0 z-10">
             <TableRow>
-              <TableHead className="w-[90px]">Start</TableHead>
-              <TableHead className="w-[90px]">Finish</TableHead>
-              <TableHead className="w-[70px]">Duration</TableHead>
-              <TableHead className="w-[130px]">Location</TableHead>
-              <TableHead className="w-[120px]">Billing</TableHead>
-              <TableHead className="w-[130px]">Quick Fill</TableHead>
-              <TableHead className="min-w-[140px]">Activity Group</TableHead>
-              <TableHead className="min-w-[140px]">Activity</TableHead>
-              <TableHead className="min-w-[160px]">JDR Code</TableHead>
-              <TableHead className="min-w-[220px]">Billing Comment</TableHead>
-              <TableHead className="w-[60px] text-right">Action</TableHead>
+              <TableHead className="text-xs">Start</TableHead>
+              <TableHead className="text-xs">End</TableHead>
+              <TableHead className="text-xs text-emerald-600 dark:text-emerald-400">Duration</TableHead>
+              <TableHead className="text-xs">Location</TableHead>
+              <TableHead className="text-xs">Notes</TableHead>
+              <TableHead className="text-xs">Billing</TableHead>
+              <TableHead className="text-xs">JDR Code</TableHead>
+              <TableHead className="text-xs">Comment</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {entries.map(entry => (
+            {entries.map(entry =>
               entry.stage === "clarified"
                 ? <ClarifiedRow key={entry.id} entry={entry} />
                 : <ClarifyRow key={entry.id} entry={entry} />
-            ))}
+            )}
           </TableBody>
         </Table>
       </div>
-    </Card>
+    </div>
   );
 }
 
-// A locked, read-only rendering of an already-clarified row within a group
-// that still has other rows pending. Kept visible (greyed out) instead of
-// disappearing so the whole shift stays together until the group is done.
 function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
   const { data: jdrCodes = [] } = useListDprJdrCodes(
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
   );
-  const { data: activities = [] } = useListDprActivities(
-    { activityGroupId: entry.activityGroupId || undefined },
-    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: entry.activityGroupId || undefined }), enabled: !!entry.activityGroupId } }
-  );
-  const { data: activityGroups = [] } = useListDprActivityGroups(
-    {},
-    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
-  );
-  const { data: activityTypes = [] } = useListDprActivityTypes();
-  const capturedActivityType = activityTypes.find(t => t.id === entry.activityTypeId);
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
-  const group = activityGroups.find(g => g.id === entry.activityGroupId);
-  const activity = activities.find(a => a.id === entry.activityId);
 
   return (
-    <TableRow className="align-top bg-muted/30 opacity-60">
-      <TableCell className="whitespace-nowrap text-sm">
-        {entry.startTime ? (
-          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-sm">
-        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-        {formatDuration(entry.startTime, entry.endTime)}
-      </TableCell>
-      <TableCell className="text-sm">
-        {entry.location ? (
-          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-        {capturedActivityType && (
-          <div className="mt-1">
-            <Badge variant="secondary" className="text-[10px] font-normal" title="Activity Type set at Capture">
-              {capturedActivityType.name}
-            </Badge>
+    <TableRow className="align-top bg-muted/5 opacity-50">
+      {/* Start */}
+      <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+        {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
+        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            {(() => { try { return format(parseISO(entry.date as string), "d MMM"); } catch { return ""; } })()}
           </div>
         )}
       </TableCell>
-      <TableCell className="text-sm">
-        {entry.billingParty
-          ? <Badge variant="secondary" className="text-[10px] font-normal capitalize">{entry.billingParty}</Badge>
-          : <span className="text-muted-foreground">—</span>}
+      {/* End */}
+      <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
+      {/* Duration */}
+      <TableCell className="text-sm font-semibold tabular-nums text-emerald-600/50 dark:text-emerald-400/50">
+        {formatDuration(entry.startTime, entry.endTime)}
+      </TableCell>
+      {/* Location */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {entry.location?.name || <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
+      {/* Notes */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {entry.notes || <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
+      {/* Billing */}
       <TableCell className="text-sm text-muted-foreground">
-        <span className="italic">Clarified</span>
+        {entry.billingParty
+          ? <span className="text-xs font-medium uppercase tracking-wide">{entry.billingParty}</span>
+          : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      <TableCell className="text-sm">
-        {group?.name || <span className="text-muted-foreground">—</span>}
+      {/* JDR Code */}
+      <TableCell className="text-sm text-muted-foreground">
+        {code
+          ? <span className="font-mono text-xs">{code.contractualCode}</span>
+          : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      <TableCell className="text-sm">
-        {activity?.name || <span className="text-muted-foreground">—</span>}
+      {/* Comment */}
+      <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
+        {entry.combinedComment || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      <TableCell className="text-sm">
-        {code ? `${code.contractualCode} — ${code.jdrWorkActivity}` : <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell className="text-sm max-w-[220px] truncate">
-        {entry.combinedComment || <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell className="text-right">
-        <Lock className="w-4 h-4 text-muted-foreground inline-block" />
+      {/* Action */}
+      <TableCell className="text-right pr-3">
+        <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
       </TableCell>
     </TableRow>
   );
@@ -372,27 +349,14 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   const [billingParty, setBillingParty] = useState<BillingParty>((entry.billingParty as BillingParty) || null);
-  
   const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
 
-  // Activity Type is no longer chosen directly by the user — it's superseded
-  // by JDR/Orsted classification at Capture. We derive it automatically
-  // from whichever Activity Group gets picked, unfiltered by type.
   const { data: activityGroups = [] } = useListDprActivityGroups(
     {},
     { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
   );
-  const { data: activities = [] } = useListDprActivities(
-    { activityGroupId: activityGroupId || undefined },
-    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: activityGroupId || undefined }), enabled: !!activityGroupId } }
-  );
-  const { data: jdrCodes = [] } = useListDprJdrCodes(
-    { activityId: activityId || undefined },
-    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: activityId || undefined }), enabled: !!activityId } }
-  );
 
-  // Unfiltered lookups used to build the combined quick-fill search index,
-  // independent of the cascading dropdown state above.
+  // Unfiltered lookup for Quick Fill search index
   const { data: allActivities = [] } = useListDprActivities(
     {},
     { query: { queryKey: getListDprActivitiesQueryKey({}) } }
@@ -401,8 +365,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     {},
     { query: { queryKey: getListDprJdrCodesQueryKey({}) } }
   );
-  const { data: activityTypes = [] } = useListDprActivityTypes();
-  const capturedActivityType = activityTypes.find(t => t.id === entry.activityTypeId);
 
   const searchIndex = useMemo(() => {
     const activityById = new Map<number, DprActivity>(allActivities.map(a => [a.id, a]));
@@ -419,10 +381,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     });
   }, [allJdrCodes, allActivities, activityGroups]);
 
-  // Once something has been selected via Quick Fill, remember which match it
-  // was so we can show clear, visible confirmation in the trigger itself.
   const [selectedMatch, setSelectedMatch] = useState<{ code: DprJdrCode } | null>(null);
-
   const resolvedSelectedCode = useMemo(() => {
     if (selectedMatch) return selectedMatch.code;
     if (!jdrCodeId) return null;
@@ -431,9 +390,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onMutate: async ({ id }) => {
-        // Optimistically update the summary badge: one fewer pending row,
-        // one more clarified — so the sidebar count drops instantly.
+      onMutate: async () => {
         await queryClient.cancelQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         const summarySnapshot = queryClient.getQueryData<{ capturedCount: number; clarifiedCount: number }>(
           getGetDprTimesheetSummaryQueryKey()
@@ -447,20 +404,14 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         return { summarySnapshot };
       },
       onSuccess: (updated) => {
-        // Patch the cached list in place instead of a full refetch — the
-        // clarify queue can have a lot of rows, and re-fetching everything
-        // on every single save is the main source of perceived save lag.
         queryClient.setQueriesData<DprTimesheetEntry[] | undefined>(
           { queryKey: getListDprTimesheetEntriesQueryKey() },
           (old) => old?.map(e => (e.id === updated.id ? updated : e))
         );
-        // Summary was already patched optimistically; do a background
-        // invalidation to confirm the server agrees.
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         toast({ title: "Entry clarified" });
       },
       onError: (err, _, ctx) => {
-        // Restore the summary optimistic update on failure.
         if (ctx?.summarySnapshot !== undefined) {
           queryClient.setQueryData(getGetDprTimesheetSummaryQueryKey(), ctx.summarySnapshot);
         }
@@ -505,15 +456,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     setCombinedComment(baseNotes + "Generic Comment: " + code.genericComment);
   };
 
-  const handleJdrSelect = (codeId: number) => {
-    setJdrCodeId(codeId);
-    const code = jdrCodes.find(c => c.id === codeId);
-    if (code) {
-      setSelectedMatch({ code });
-      seedCommentFromCode(code);
-    }
-  };
-
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handleQuickFillSelect = (codeId: number) => {
@@ -530,8 +472,6 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   };
 
   const handleSave = () => {
-    // Derive activityTypeId from the chosen Activity Group behind the
-    // scenes — the user no longer picks it directly.
     const group = activityGroups.find(g => g.id === activityGroupId);
     updateMutation.mutate({
       id: entry.id,
@@ -546,71 +486,82 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     });
   };
 
-  const canSave = activityGroupId && activityId && jdrCodeId;
+  const canSave = !!jdrCodeId;
 
   return (
     <TableRow className="align-top">
-      <TableCell className="whitespace-nowrap text-sm">
-        {entry.startTime ? (
-          <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-sm">
-        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-        {formatDuration(entry.startTime, entry.endTime)}
-      </TableCell>
-      <TableCell className="text-sm">
-        {entry.location ? (
-          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-        {capturedActivityType && (
-          <div className="mt-1">
-            <Badge variant="secondary" className="text-[10px] font-normal" title="Activity Type set at Capture">
-              {capturedActivityType.name}
-            </Badge>
+      {/* Start */}
+      <TableCell className="text-sm font-mono tabular-nums">
+        {entry.startTime
+          ? <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
+          : <span className="text-muted-foreground/40">—</span>}
+        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
           </div>
         )}
       </TableCell>
-      <TableCell className="w-[120px]">
+      {/* End */}
+      <TableCell className="text-sm font-mono tabular-nums">
+        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
+      {/* Duration */}
+      <TableCell>
+        <span className={cn("text-sm font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
+          {formatDuration(entry.startTime, entry.endTime)}
+        </span>
+      </TableCell>
+      {/* Location */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {entry.location ? (
+          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
+      </TableCell>
+      {/* Notes */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {entry.notes || <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
+      {/* JDR | Orsted billing toggle */}
+      <TableCell>
         <BillingPartyToggle value={billingParty} onChange={handleBillingChange} />
       </TableCell>
-      <TableCell className="w-[130px]">
+      {/* Quick Fill → JDR Code */}
+      <TableCell>
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={searchOpen}
+            <button
+              type="button"
               title={resolvedSelectedCode ? `${resolvedSelectedCode.contractualCode} — ${resolvedSelectedCode.jdrWorkActivity}` : "Search JDR code or activity"}
-              className={`h-8 w-full justify-start text-xs font-normal bg-background px-2 ${resolvedSelectedCode ? "border-primary/50" : ""}`}
+              className={cn(
+                "h-8 w-full flex items-center gap-1.5 px-2 rounded border text-xs font-normal transition-colors bg-background",
+                resolvedSelectedCode
+                  ? "border-primary/50 text-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted/40"
+              )}
             >
               {resolvedSelectedCode ? (
-                <span className="flex items-center gap-1 min-w-0">
+                <>
                   <Check className="w-3 h-3 shrink-0 text-primary" />
-                  <span className="truncate font-medium">{resolvedSelectedCode.contractualCode}</span>
-                </span>
+                  <span className="truncate font-mono font-medium">{resolvedSelectedCode.contractualCode}</span>
+                </>
               ) : (
-                <span className="flex items-center gap-1 min-w-0 text-muted-foreground">
+                <>
                   <Search className="w-3 h-3 shrink-0" />
                   <span className="truncate">Quick Fill</span>
-                </span>
+                </>
               )}
-            </Button>
+            </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[400px] p-0" align="start">
+          <PopoverContent className="w-[420px] p-0" align="start">
             <Command filter={(value, search) => {
               const item = searchIndex.find(m => m.code.id.toString() === value);
               if (!item) return 0;
               const haystack = `${item.code.contractualCode} ${item.code.jdrWorkActivity} ${item.code.lautecActivity} ${item.code.lautecActivityGroup} ${item.code.genericComment}`.toLowerCase();
               return haystack.includes(search.toLowerCase()) ? 1 : 0;
             }}>
-              <CommandInput placeholder="Search by JDR code, activity, or comment..." />
+              <CommandInput placeholder="Search by JDR code, activity, or comment…" />
               <CommandList>
                 <CommandEmpty>No matches found.</CommandEmpty>
                 <CommandGroup>
@@ -633,60 +584,24 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           </PopoverContent>
         </Popover>
       </TableCell>
+      {/* Comment */}
       <TableCell>
-        <Select 
-          value={activityGroupId?.toString() || ""} 
-          onValueChange={v => {
-            setActivityGroupId(parseInt(v));
-            setActivityId(null);
-            setJdrCodeId(null);
-            setSelectedMatch(null);
-          }}
-        >
-          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Group" /></SelectTrigger>
-          <SelectContent>
-            {activityGroups.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Select 
-          disabled={!activityGroupId}
-          value={activityId?.toString() || ""} 
-          onValueChange={v => {
-            setActivityId(parseInt(v));
-            setJdrCodeId(null);
-            setSelectedMatch(null);
-          }}
-        >
-          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Activity" /></SelectTrigger>
-          <SelectContent>
-            {activities.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Select 
-          disabled={!activityId}
-          value={jdrCodeId?.toString() || ""} 
-          onValueChange={v => handleJdrSelect(parseInt(v))}
-        >
-          <SelectTrigger className="bg-background h-8 text-xs"><SelectValue placeholder="Select Code" /></SelectTrigger>
-          <SelectContent>
-            {jdrCodes.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.contractualCode} - {t.jdrWorkActivity}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Textarea 
-          className="h-16 resize-none bg-background text-xs min-w-[200px]" 
+        <Textarea
+          className="h-16 resize-none bg-background text-xs"
           value={combinedComment}
           onChange={(e) => setCombinedComment(e.target.value)}
-          placeholder="Will appear on the invoice..."
+          placeholder="Will appear on the invoice…"
         />
       </TableCell>
-      <TableCell className="text-right">
-        <Button size="icon" onClick={handleSave} disabled={!canSave || updateMutation.isPending} title="Mark as Clarified">
+      {/* Save */}
+      <TableCell className="text-right pr-2">
+        <Button
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleSave}
+          disabled={!canSave || updateMutation.isPending}
+          title={canSave ? "Mark as Clarified" : "Pick a JDR code first"}
+        >
           {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
         </Button>
       </TableCell>

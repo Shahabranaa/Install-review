@@ -1406,6 +1406,11 @@ export default function CapturePage() {
                             className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
                           >
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
+                            {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+                              <span className="block text-[10px] font-sans font-normal text-muted-foreground leading-tight">
+                                {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
+                              </span>
+                            )}
                           </span>
                         )}
                       </TableCell>
@@ -1611,6 +1616,11 @@ export default function CapturePage() {
                         )}
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
+                          {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+                            <span className="block text-[10px] font-sans font-normal leading-tight">
+                              {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.endTime ? formatTimeDisplay(entry.endTime) : "—"}
