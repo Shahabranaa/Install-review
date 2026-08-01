@@ -379,6 +379,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* ── Nav ── */}
       <nav className={cn("flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden", collapsed && "relative")}>
+        {isAdmin && navItem("/team-setup", <Users className="w-4 h-4" />, "Team Setup")}
+
         {/* Capture */}
         <Link
           href="/"
@@ -414,7 +416,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </span>
           ) : null
         )}
-        {isAdmin && navItem("/team-setup", <Users className="w-4 h-4" />, "Team Setup")}
         {isAdmin && navItem("/jdr-mapping", <Settings2 className="w-4 h-4" />, "JDR Mapping")}
       </nav>
 

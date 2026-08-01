@@ -469,12 +469,21 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes }: {
   });
 
   const handleSave = () => {
-    const group = activityGroups.find(g => g.id === entry.activityGroupId);
+    // Derive activity group from the selected code → activity → group chain.
+    // Entries often arrive from Capture with activityGroupId=null, so we must
+    // write the correct group based on the chosen JDR code, not just echo back
+    // whatever was already on the entry.
+    const selectedActivity = selectedCodeObj
+      ? allActivities.find(a => a.id === selectedCodeObj.activityId) ?? null
+      : null;
+    const resolvedGroupId = selectedActivity?.activityGroupId ?? entry.activityGroupId ?? null;
+    const resolvedGroup = activityGroups.find(g => g.id === resolvedGroupId) ?? null;
+
     updateMutation.mutate({
       id: entry.id,
       data: {
-        activityTypeId: group?.activityTypeId ?? null,
-        activityGroupId: entry.activityGroupId || null,
+        activityTypeId: resolvedGroup?.activityTypeId ?? null,
+        activityGroupId: resolvedGroupId,
         activityId: selectedCodeObj?.activityId ?? null,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
         stage: "clarified",
