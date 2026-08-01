@@ -7,7 +7,6 @@ import {
   useListDprActivities,
   getListDprActivityGroupsQueryKey,
   useListDprJdrCodes,
-  useListDprActivityTypes,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
   getListDprActivitiesQueryKey,
@@ -19,6 +18,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Clock, MapPin, Users, CheckCircle2, Check, Search, Lock, Timer } from "lucide-react";
@@ -35,29 +35,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
-
-type BillingParty = "jdr" | "orsted" | null;
-
-function BillingPartyToggle({ value, onChange }: { value: BillingParty; onChange: (v: BillingParty) => void }) {
-  return (
-    <div className="inline-flex rounded border border-border overflow-hidden">
-      <button
-        type="button"
-        onClick={() => onChange(value === "jdr" ? null : "jdr")}
-        className={`px-2 py-1 text-xs font-medium transition-colors ${value === "jdr" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-      >
-        JDR
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(value === "orsted" ? null : "orsted")}
-        className={`px-2 py-1 text-xs font-medium border-l border-border transition-colors ${value === "orsted" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-      >
-        Orsted
-      </button>
-    </div>
-  );
-}
 
 export default function ClarifyPage() {
   const { activeDate, activeTeamId, setActiveTeamId } = useCaptureNav();
@@ -122,7 +99,6 @@ export default function ClarifyPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header — matches Capture header exactly */}
       <header className="px-6 py-4 border-b border-border bg-card flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Clarify Queue</h1>
@@ -136,7 +112,6 @@ export default function ClarifyPage() {
         </div>
       </header>
 
-      {/* Filter bar */}
       {activeDate ? (
         <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
           <div className="flex items-center gap-3">
@@ -167,7 +142,6 @@ export default function ClarifyPage() {
         </div>
       )}
 
-      {/* Team pills */}
       {activeDate && teamsOnActiveDate.length > 0 && (
         <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
           <div className="flex items-center flex-wrap gap-1.5">
@@ -194,7 +168,6 @@ export default function ClarifyPage() {
         </div>
       )}
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {loadingEntries && filteredGroups.length === 0 && (
           <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
@@ -231,7 +204,6 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden shadow-sm">
-      {/* Card header — matches Capture's locked-section divider style */}
       <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
         <Users className="w-4 h-4 text-muted-foreground" />
         <span className="font-semibold text-sm">{teamName}</span>
@@ -245,16 +217,17 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
       </div>
 
       <div className="overflow-x-auto">
-        <Table className="table-fixed w-full min-w-[900px]">
+        <Table className="table-fixed w-full min-w-[1100px]">
           <colgroup>
-            <col style={{ width: "8%" }} />   {/* Start */}
-            <col style={{ width: "8%" }} />   {/* End */}
+            <col style={{ width: "7%" }} />   {/* Start */}
+            <col style={{ width: "7%" }} />   {/* End */}
             <col style={{ width: "6%" }} />   {/* Duration */}
-            <col style={{ width: "14%" }} />  {/* Location */}
+            <col style={{ width: "11%" }} />  {/* Location */}
+            <col style={{ width: "11%" }} />  {/* Quick Fill */}
+            <col style={{ width: "12%" }} />  {/* Activity Group */}
+            <col style={{ width: "12%" }} />  {/* Activity */}
+            <col style={{ width: "12%" }} />  {/* JDR Code */}
             <col />                            {/* Notes — flex */}
-            <col style={{ width: "10%" }} />  {/* JDR|Orsted */}
-            <col style={{ width: "18%" }} />  {/* Quick Fill / Code */}
-            <col style={{ width: "22%" }} />  {/* Comment */}
             <col style={{ width: 44 }} />     {/* Action */}
           </colgroup>
           <TableHeader className="bg-muted/30 sticky top-0 z-10">
@@ -263,10 +236,11 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
               <TableHead className="text-xs">End</TableHead>
               <TableHead className="text-xs text-emerald-600 dark:text-emerald-400">Duration</TableHead>
               <TableHead className="text-xs">Location</TableHead>
-              <TableHead className="text-xs">Notes</TableHead>
-              <TableHead className="text-xs">Billing</TableHead>
+              <TableHead className="text-xs">Quick Fill</TableHead>
+              <TableHead className="text-xs">Activity Group</TableHead>
+              <TableHead className="text-xs">Activity</TableHead>
               <TableHead className="text-xs">JDR Code</TableHead>
-              <TableHead className="text-xs">Comment</TableHead>
+              <TableHead className="text-xs">Notes</TableHead>
               <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
@@ -284,10 +258,20 @@ function ClarifyGroup({ teamName, date, entries }: { teamName: string; date: str
 }
 
 function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
+  const { data: activityGroups = [] } = useListDprActivityGroups(
+    {},
+    { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
+  );
+  const { data: activities = [] } = useListDprActivities(
+    { activityGroupId: entry.activityGroupId || undefined },
+    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: entry.activityGroupId || undefined }), enabled: !!entry.activityGroupId } }
+  );
   const { data: jdrCodes = [] } = useListDprJdrCodes(
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
   );
+  const group = activityGroups.find(g => g.id === entry.activityGroupId);
+  const activity = activities.find(a => a.id === entry.activityId);
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
 
   return (
@@ -313,27 +297,25 @@ function ClarifiedRow({ entry }: { entry: DprTimesheetEntry }) {
       <TableCell className="text-sm text-muted-foreground truncate">
         {entry.location?.name || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Notes */}
+      {/* Quick Fill — blank for clarified rows */}
+      <TableCell />
+      {/* Activity Group */}
       <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.notes || <span className="text-muted-foreground/40">—</span>}
+        {group?.name || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Billing */}
-      <TableCell className="text-sm text-muted-foreground">
-        {entry.billingParty
-          ? <span className="text-xs font-medium uppercase tracking-wide">{entry.billingParty}</span>
-          : <span className="text-muted-foreground/40">—</span>}
+      {/* Activity */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {activity?.name || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
       {/* JDR Code */}
       <TableCell className="text-sm text-muted-foreground">
-        {code
-          ? <span className="font-mono text-xs">{code.contractualCode}</span>
-          : <span className="text-muted-foreground/40">—</span>}
+        {code ? <span className="font-mono text-xs">{code.contractualCode}</span> : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Comment */}
-      <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
+      {/* Notes */}
+      <TableCell className="text-sm text-muted-foreground truncate">
         {entry.combinedComment || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Action */}
+      {/* Lock */}
       <TableCell className="text-right pr-3">
         <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
       </TableCell>
@@ -348,15 +330,23 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
   const [activityGroupId, setActivityGroupId] = useState<number | null>(entry.activityGroupId || null);
   const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
-  const [billingParty, setBillingParty] = useState<BillingParty>((entry.billingParty as BillingParty) || null);
-  const [combinedComment, setCombinedComment] = useState(entry.combinedComment || entry.notes || "");
+  const [notes, setNotes] = useState(entry.combinedComment || entry.notes || "");
 
+  // Cascading selects
   const { data: activityGroups = [] } = useListDprActivityGroups(
     {},
     { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
   );
+  const { data: activities = [] } = useListDprActivities(
+    { activityGroupId: activityGroupId || undefined },
+    { query: { queryKey: getListDprActivitiesQueryKey({ activityGroupId: activityGroupId || undefined }), enabled: !!activityGroupId } }
+  );
+  const { data: jdrCodes = [] } = useListDprJdrCodes(
+    { activityId: activityId || undefined },
+    { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: activityId || undefined }), enabled: !!activityId } }
+  );
 
-  // Unfiltered lookup for Quick Fill search index
+  // Unfiltered for Quick Fill search index
   const { data: allActivities = [] } = useListDprActivities(
     {},
     { query: { queryKey: getListDprActivitiesQueryKey({}) } }
@@ -372,12 +362,11 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     return allJdrCodes.map(code => {
       const activity = code.activityId != null ? activityById.get(code.activityId) : undefined;
       const group = activity?.activityGroupId != null ? groupById.get(activity.activityGroupId) : undefined;
-      return {
-        code,
-        activity,
-        group,
-        label: `${code.contractualCode} - ${code.jdrWorkActivity} (${code.lautecActivity} / ${code.lautecActivityGroup})`,
-      } as { code: DprJdrCode; activity: DprActivity | undefined; group: DprActivityGroup | undefined; label: string };
+      return { code, activity, group } as {
+        code: DprJdrCode;
+        activity: DprActivity | undefined;
+        group: DprActivityGroup | undefined;
+      };
     });
   }, [allJdrCodes, allActivities, activityGroups]);
 
@@ -421,39 +410,9 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     }
   });
 
-  const billingMutation = useUpdateDprTimesheetEntry({
-    mutation: {
-      onMutate: async ({ id, data }) => {
-        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        const snapshot = queryClient.getQueriesData<DprTimesheetEntry[]>({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey() },
-          (old) => old?.map(e => e.id === id ? { ...e, billingParty: data.billingParty } : e)
-        );
-        return { snapshot };
-      },
-      onSuccess: (updated) => {
-        queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey() },
-          (old) => old?.map(e => e.id === updated.id ? updated : e)
-        );
-      },
-      onError: (err, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        setBillingParty((entry.billingParty as BillingParty) || null);
-        toast({ title: "Failed to update billing", description: err.message, variant: "destructive" });
-      }
-    }
-  });
-
-  const handleBillingChange = (next: BillingParty) => {
-    setBillingParty(next);
-    billingMutation.mutate({ id: entry.id, data: { billingParty: next ?? undefined } });
-  };
-
-  const seedCommentFromCode = (code: DprJdrCode) => {
-    const baseNotes = entry.notes ? entry.notes + "\n\n" : "";
-    setCombinedComment(baseNotes + "Generic Comment: " + code.genericComment);
+  const seedNotesFromCode = (code: DprJdrCode) => {
+    const base = entry.notes ? entry.notes + "\n\n" : "";
+    setNotes(base + "Generic Comment: " + code.genericComment);
   };
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -466,7 +425,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
     if (code.activityId != null) setActivityId(code.activityId);
     setJdrCodeId(code.id);
     setSelectedMatch({ code });
-    seedCommentFromCode(code);
+    seedNotesFromCode(code);
     setSearchOpen(false);
     toast({ title: "Quick Fill applied", description: `${code.contractualCode} — ${code.jdrWorkActivity}` });
   };
@@ -480,13 +439,13 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
         activityGroupId,
         activityId,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
-        combinedComment,
+        combinedComment: notes,
         stage: "clarified"
       }
     });
   };
 
-  const canSave = !!jdrCodeId;
+  const canSave = !!(activityGroupId && activityId && jdrCodeId);
 
   return (
     <TableRow className="align-top">
@@ -513,21 +472,11 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
       </TableCell>
       {/* Location */}
       <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.location ? (
-          <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
-        ) : (
-          <span className="text-muted-foreground/40">—</span>
-        )}
+        {entry.location
+          ? <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-muted-foreground shrink-0" />{entry.location.name}</span>
+          : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Notes */}
-      <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.notes || <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* JDR | Orsted billing toggle */}
-      <TableCell>
-        <BillingPartyToggle value={billingParty} onChange={handleBillingChange} />
-      </TableCell>
-      {/* Quick Fill → JDR Code */}
+      {/* Quick Fill */}
       <TableCell>
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
           <PopoverTrigger asChild>
@@ -584,12 +533,64 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           </PopoverContent>
         </Popover>
       </TableCell>
-      {/* Comment */}
+      {/* Activity Group */}
+      <TableCell>
+        <Select
+          value={activityGroupId?.toString() || ""}
+          onValueChange={v => {
+            setActivityGroupId(parseInt(v));
+            setActivityId(null);
+            setJdrCodeId(null);
+            setSelectedMatch(null);
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Group…" /></SelectTrigger>
+          <SelectContent>
+            {activityGroups.map(g => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      {/* Activity */}
+      <TableCell>
+        <Select
+          disabled={!activityGroupId}
+          value={activityId?.toString() || ""}
+          onValueChange={v => {
+            setActivityId(parseInt(v));
+            setJdrCodeId(null);
+            setSelectedMatch(null);
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Activity…" /></SelectTrigger>
+          <SelectContent>
+            {activities.map(a => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      {/* JDR Code */}
+      <TableCell>
+        <Select
+          disabled={!activityId}
+          value={jdrCodeId?.toString() || ""}
+          onValueChange={v => {
+            const id = parseInt(v);
+            setJdrCodeId(id);
+            const code = jdrCodes.find(c => c.id === id);
+            if (code) { setSelectedMatch({ code }); seedNotesFromCode(code); }
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Code…" /></SelectTrigger>
+          <SelectContent>
+            {jdrCodes.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.contractualCode} — {c.jdrWorkActivity}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      {/* Notes */}
       <TableCell>
         <Textarea
           className="h-16 resize-none bg-background text-xs"
-          value={combinedComment}
-          onChange={(e) => setCombinedComment(e.target.value)}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
           placeholder="Will appear on the invoice…"
         />
       </TableCell>
@@ -600,7 +601,7 @@ function ClarifyRow({ entry }: { entry: DprTimesheetEntry }) {
           className="h-8 w-8"
           onClick={handleSave}
           disabled={!canSave || updateMutation.isPending}
-          title={canSave ? "Mark as Clarified" : "Pick a JDR code first"}
+          title={canSave ? "Mark as Clarified" : "Complete Activity Group → Activity → JDR Code first"}
         >
           {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
         </Button>
