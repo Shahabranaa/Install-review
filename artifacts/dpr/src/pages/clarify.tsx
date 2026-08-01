@@ -21,17 +21,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Search, Lock, Timer,
+  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Timer,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
-import {
-  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
@@ -418,7 +412,6 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
   const [activityGroupId, setActivityGroupId] = useState<number | null>(entry.activityGroupId || null);
   const [activityId, setActivityId] = useState<number | null>(entry.activityId || null);
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
-  const [notes, setNotes] = useState(entry.combinedComment || entry.notes || "");
 
   // Cascading: JDR codes filtered by activity group (via activities)
   const { data: allActivities = [] } = useListDprActivities(
@@ -494,8 +487,6 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
     if (code.activityId != null) setActivityId(code.activityId);
     setJdrCodeId(code.id);
     setSelectedCode(code);
-    const base = entry.notes ? entry.notes + "\n\n" : "";
-    setNotes(base + "Generic Comment: " + code.genericComment);
   };
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -517,13 +508,12 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
         activityGroupId,
         activityId,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
-        combinedComment: notes,
         stage: "clarified",
       }
     });
   };
 
-  const canSave = !!(activityGroupId && jdrCodeId);
+  const canSave = !!jdrCodeId;
 
   return (
     <TableRow className="align-top">
@@ -554,31 +544,16 @@ function ClarifyRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activ
           ? <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{entry.location.name}</span>
           : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Notes — editable textarea */}
-      <TableCell>
-        <Textarea
-          className="h-16 resize-none bg-background text-xs min-w-[160px]"
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Will appear on the invoice…"
-        />
+      {/* Notes — read-only */}
+      <TableCell className="text-sm text-muted-foreground">
+        {entry.combinedComment || entry.notes
+          ? <span className="line-clamp-3 break-words">{entry.combinedComment || entry.notes}</span>
+          : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Activity Group */}
-      <TableCell className="pr-4">
-        <Select
-          value={activityGroupId?.toString() || ""}
-          onValueChange={v => {
-            setActivityGroupId(parseInt(v));
-            setActivityId(null);
-            setJdrCodeId(null);
-            setSelectedCode(null);
-          }}
-        >
-          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Group…" /></SelectTrigger>
-          <SelectContent>
-            {activityGroups.map(g => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      {/* Activity Group — read-only, updates after Quick Fill */}
+      <TableCell className="text-sm text-muted-foreground pr-4">
+        {activityGroups.find(g => g.id === activityGroupId)?.name
+          ?? <span className="text-muted-foreground/40">—</span>}
       </TableCell>
       {/* JDR Code — searchable Quick Fill */}
       <TableCell>
