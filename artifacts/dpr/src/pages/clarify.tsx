@@ -1,5 +1,5 @@
 import { Fragment, useState, useMemo } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useListDprTeams,
@@ -150,24 +150,39 @@ export default function ClarifyPage() {
         m.set(g.teamId, (m.get(g.teamId) ?? 0) + pending);
       }
     } else {
+      // Only add teams that actually have entries on this date (captured or clarified).
+      // Also include previous-day groups that have overnight entries crossing into activeDate.
+      // Teams with zero entries remain absent from the map and won't appear in either pill row.
+      const prevDay = format(subDays(parseISO(activeDate), 1), "yyyy-MM-dd");
       for (const g of groups) {
-        if (g.date !== activeDate) continue;
-        const pending = g.entries.filter(e => e.stage === "captured").length;
-        m.set(g.teamId, (m.get(g.teamId) ?? 0) + pending);
-      }
-      // teams with 0 pending still need an entry so pill shows Done
-      for (const t of teams) {
-        if (!m.has(t.id)) m.set(t.id, 0);
+        if (g.date === activeDate) {
+          const pending = g.entries.filter(e => e.stage === "captured").length;
+          m.set(g.teamId, (m.get(g.teamId) ?? 0) + pending);
+        } else if (g.date === prevDay) {
+          const hasOvernight = g.entries.some(e => e.startTime && e.endTime && e.endTime < e.startTime);
+          if (hasOvernight) {
+            const pending = g.entries.filter(e => e.stage === "captured").length;
+            m.set(g.teamId, (m.get(g.teamId) ?? 0) + pending);
+          }
+        }
       }
     }
     return m;
-  }, [groups, activeDate, teams]);
+  }, [groups, activeDate]);
 
-  const filteredGroups = useMemo(() => groups.filter(g => {
-    if (activeDate && g.date !== activeDate) return false;
-    if (activeTeamId !== null && g.teamId !== activeTeamId) return false;
-    return true;
-  }), [groups, activeDate, activeTeamId]);
+  const filteredGroups = useMemo(() => {
+    const prevDay = activeDate ? format(subDays(parseISO(activeDate), 1), "yyyy-MM-dd") : null;
+    return groups.filter(g => {
+      if (activeTeamId !== null && g.teamId !== activeTeamId) return false;
+      if (!activeDate) return true;
+      if (g.date === activeDate) return true;
+      // Include previous-day groups that have at least one overnight entry
+      if (g.date === prevDay) {
+        return g.entries.some(e => e.startTime && e.endTime && e.endTime < e.startTime);
+      }
+      return false;
+    });
+  }, [groups, activeDate, activeTeamId]);
 
   const totalPending = useMemo(
     () => allEntries.filter(e => e.stage === "captured").length,
@@ -297,6 +312,8 @@ export default function ClarifyPage() {
                   const m = Math.round((totalHours - h) * 60);
                   const totalLabel = totalHours > 0 ? (m === 0 ? `${h}h total` : `${h}h ${m}m total`) : null;
 
+                  const isOvernightGroup = activeDate && group.date !== activeDate;
+
                   return (
                     <Fragment key={`${group.teamId ?? "none"}__${group.date}`}>
                       {/* ── Group divider row ── */}
@@ -308,6 +325,11 @@ export default function ClarifyPage() {
                             <span className="font-mono text-amber-500/70">
                               {(() => { try { return format(parseISO(group.date), "d MMM yyyy"); } catch { return group.date; } })()}
                             </span>
+                            {isOvernightGroup && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                                overnight
+                              </span>
+                            )}
                             {totalLabel && (
                               <span className="inline-flex items-center gap-1">
                                 <Timer className="w-3 h-3" />{totalLabel}
