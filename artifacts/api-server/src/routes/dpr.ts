@@ -411,7 +411,12 @@ async function fetchEntriesWithJoins(where?: SQL) {
     .leftJoin(dprTeamsTable, eq(dprTimesheetEntriesTable.teamId, dprTeamsTable.id))
     .leftJoin(dprLocationsTable, eq(dprTimesheetEntriesTable.locationId, dprLocationsTable.id))
     .where(where)
-    .orderBy(dprTimesheetEntriesTable.date, dprTimesheetEntriesTable.id);
+    .orderBy(
+      sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date})`,
+      dprTimesheetEntriesTable.date,
+      dprTimesheetEntriesTable.startTime,
+      dprTimesheetEntriesTable.id,
+    );
 
   return rows.map(({ entry, team, location }) => ({
     ...entry,

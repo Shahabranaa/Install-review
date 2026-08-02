@@ -133,6 +133,19 @@ export default function ClarifyPage() {
       if (existing) { existing.entries.push(entry); }
       else byKey.set(key, { teamId, teamName: entry.team?.name || "Unassigned", date: effectiveDate, entries: [entry] });
     }
+    // Sort entries within each group chronologically: calendar date first
+    // (so cross-midnight entries on the next calendar date come after same-date entries),
+    // then by start time within the same date.
+    for (const g of byKey.values()) {
+      g.entries.sort((a, b) => {
+        const dateA = (a.date as string) ?? "";
+        const dateB = (b.date as string) ?? "";
+        if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+        const tA = (a.startTime as string | null) ?? "";
+        const tB = (b.startTime as string | null) ?? "";
+        return tA < tB ? -1 : tA > tB ? 1 : 0;
+      });
+    }
     return Array.from(byKey.values())
       .filter(g => g.entries.some(e => e.stage === "captured"))
       .sort((a, b) => {
