@@ -1629,6 +1629,11 @@ export default function CapturePage() {
                         </TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.endTime ? formatTimeDisplay(entry.endTime) : "—"}
+                          {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
+                            <span className="block text-[10px] font-sans font-normal leading-tight">
+                              {(() => { try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "d MMM"); } catch { return ""; } })()}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm tabular-nums text-muted-foreground">
                           {formatDuration(entry.startTime, entry.endTime)}
