@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useCreateDprTimesheetEntry,
@@ -1433,6 +1433,11 @@ export default function CapturePage() {
                             className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("endTime") && "text-destructive")}
                           >
                             {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">—</span>}
+                       {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
+                         <span className="block text-[10px] font-sans font-normal text-muted-foreground leading-tight">
+                           {(() => { try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "d MMM"); } catch { return ""; } })()}
+                         </span>
+                       )}
                           </span>
                         )}
                       </TableCell>

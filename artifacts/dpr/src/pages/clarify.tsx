@@ -1,5 +1,5 @@
 import { Fragment, useState, useMemo } from "react";
-import { format, parseISO, subDays } from "date-fns";
+import { format, parseISO, subDays, addDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
   useListDprTeams,
@@ -418,6 +418,11 @@ function ClarifiedRow({ entry, activityGroups }: { entry: DprTimesheetEntry; act
       {/* End */}
       <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
+        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
+          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+            {(() => { try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "d MMM"); } catch { return ""; } })()}
+          </div>
+        )}
       </TableCell>
       {/* Duration */}
       <TableCell className="text-sm font-semibold tabular-nums text-emerald-600/50 dark:text-emerald-400/50">
