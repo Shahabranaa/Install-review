@@ -51,44 +51,44 @@
 }
 
 :root {
-  /* Slate & Cyan cockpit vibe */
-  --background: 222 47% 8%;
-  --foreground: 210 40% 98%;
-  --border: 217 32% 17%;
-  --input: 217 32% 17%;
-  --ring: 191 97% 55%;
-  
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 32% 17%;
-  
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 217 32% 17%;
-  
-  --primary: 191 97% 55%;
-  --primary-foreground: 222 47% 11%;
-  
-  --secondary: 217 32% 17%;
-  --secondary-foreground: 210 40% 98%;
-  
-  --muted: 217 32% 17%;
-  --muted-foreground: 215 20.2% 65.1%;
-  
-  --accent: 217 32% 20%;
-  --accent-foreground: 210 40% 98%;
-  
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --sidebar: 222 47% 9%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 32% 17%;
-  --sidebar-primary: 191 97% 55%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 217 32% 17%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 191 97% 55%;
+  /* Clean light enterprise theme */
+  --background: 0 0% 100%;
+  --foreground: 215 25% 15%;
+  --border: 214 20% 88%;
+  --input: 214 20% 88%;
+  --ring: 213 82% 43%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 215 25% 15%;
+  --card-border: 214 20% 88%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 25% 15%;
+  --popover-border: 214 20% 88%;
+
+  --primary: 213 82% 43%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 214 20% 94%;
+  --secondary-foreground: 215 25% 15%;
+
+  --muted: 214 20% 95%;
+  --muted-foreground: 215 16% 47%;
+
+  --accent: 214 20% 91%;
+  --accent-foreground: 215 25% 15%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --sidebar: 214 25% 97%;
+  --sidebar-foreground: 215 25% 15%;
+  --sidebar-border: 214 20% 88%;
+  --sidebar-primary: 213 82% 43%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 214 20% 91%;
+  --sidebar-accent-foreground: 215 25% 15%;
+  --sidebar-ring: 213 82% 43%;
 
   --radius: 0.25rem;
 }
@@ -111,9 +111,9 @@
   background: hsl(var(--background));
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted));
+  background: hsl(var(--border));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--accent));
+  background: hsl(var(--muted-foreground) / 0.4);
 }

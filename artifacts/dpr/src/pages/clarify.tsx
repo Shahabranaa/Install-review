@@ -30,7 +30,7 @@ import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/util
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
-const COL_COUNT = 8; // Start End Duration Location Notes ActivityGroup JDRCode Action
+const COL_COUNT = 9; // # Start End Duration Location Notes ActivityGroup JDRCode Action
 
 // ─── Team pills (mirrors Capture's FilterPills) ───────────────────────────────
 function ClarifyPills({
@@ -295,6 +295,7 @@ export default function ClarifyPage() {
           <div className="rounded-none border-0">
             <Table className="table-fixed w-full min-w-[1000px]">
               <colgroup>
+                <col style={{ width: 36 }} />  {/* # */}
                 <col className="w-[7%]" />   {/* Start */}
                 <col className="w-[7%]" />   {/* End */}
                 <col className="w-[6%]" />   {/* Duration */}
@@ -306,11 +307,12 @@ export default function ClarifyPage() {
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableRow>
+                  <TableHead className="w-[36px] text-center text-muted-foreground">#</TableHead>
                   <TableHead>Start</TableHead>
-                  <TableHead>End</TableHead>
-                  <TableHead className="text-emerald-600 dark:text-emerald-400">Duration</TableHead>
+                  <TableHead>Finish</TableHead>
+                  <TableHead className="text-emerald-600">Duration</TableHead>
                   <TableHead>Location</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead>Comment</TableHead>
                   <TableHead className="pr-4">Activity Group</TableHead>
                   <TableHead>JDR Code</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -356,8 +358,8 @@ export default function ClarifyPage() {
                       </TableRow>
 
                       {/* ── Pending rows ── */}
-                      {pending.map(entry => (
-                        <ClarifyRow key={entry.id} entry={entry} activityGroups={activityGroups} allActivities={allActivities} allJdrCodes={allJdrCodes} />
+                      {pending.map((entry, idx) => (
+                        <ClarifyRow key={entry.id} entry={entry} activityGroups={activityGroups} allActivities={allActivities} allJdrCodes={allJdrCodes} rowIndex={idx + 1} />
                       ))}
 
                       {/* ── Clarified rows (greyed, below pending) ── */}
@@ -371,8 +373,8 @@ export default function ClarifyPage() {
                               </div>
                             </TableCell>
                           </TableRow>
-                          {clarified.map(entry => (
-                            <ClarifiedRow key={entry.id} entry={entry} activityGroups={activityGroups} />
+                          {clarified.map((entry, idx) => (
+                            <ClarifiedRow key={entry.id} entry={entry} activityGroups={activityGroups} rowIndex={pending.length + idx + 1} />
                           ))}
                         </>
                       )}
@@ -396,7 +398,7 @@ export default function ClarifyPage() {
 }
 
 // ─── ClarifiedRow ─────────────────────────────────────────────────────────────
-function ClarifiedRow({ entry, activityGroups }: { entry: DprTimesheetEntry; activityGroups: DprActivityGroup[] }) {
+function ClarifiedRow({ entry, activityGroups, rowIndex }: { entry: DprTimesheetEntry; activityGroups: DprActivityGroup[]; rowIndex?: number }) {
   const { data: jdrCodes = [] } = useListDprJdrCodes(
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
@@ -406,6 +408,8 @@ function ClarifiedRow({ entry, activityGroups }: { entry: DprTimesheetEntry; act
 
   return (
     <TableRow className="opacity-40 bg-muted/5">
+      {/* # */}
+      <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground/40">{rowIndex ?? ""}</TableCell>
       {/* Start */}
       <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
         {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
@@ -453,11 +457,12 @@ function ClarifiedRow({ entry, activityGroups }: { entry: DprTimesheetEntry; act
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes }: {
+function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowIndex }: {
   entry: DprTimesheetEntry;
   activityGroups: DprActivityGroup[];
   allActivities: DprActivity[];
   allJdrCodes: DprJdrCode[];
+  rowIndex?: number;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -535,6 +540,8 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes }: {
 
   return (
     <TableRow className="align-top">
+      {/* # */}
+      <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground pt-3">{rowIndex ?? ""}</TableCell>
       {/* Start */}
       <TableCell className="text-sm font-mono tabular-nums">
         {entry.startTime

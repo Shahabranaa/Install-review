@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -679,7 +679,8 @@ export default function CapturePage() {
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
 
-  const handleTeamClick = (id: number) => setActiveTeamId(activeTeamId === id ? null : id);
+  const handleTeamClick = (id: number) =>
+    setActiveTeamId(activeTeamId === id ? null : id);
 
   const filteredEntries = useMemo(
     () =>
@@ -1004,11 +1005,13 @@ export default function CapturePage() {
       )}
       {showDateCol && <TableHead className={COL.date}>Date</TableHead>}
       {showTeamCol && <TableHead className={COL.team}>Team</TableHead>}
+      <TableHead className="w-[36px] text-center text-muted-foreground">#</TableHead>
+      <TableHead className="w-[44px]">Status</TableHead>
       <TableHead className={COL.start}>Start</TableHead>
-      <TableHead className={COL.end}>End</TableHead>
-      <TableHead className="text-emerald-600 dark:text-emerald-400">Duration</TableHead>
+      <TableHead className={COL.end}>Finish</TableHead>
+      <TableHead className="text-emerald-600">Duration</TableHead>
       <TableHead className={COL.location}>Location</TableHead>
-      <TableHead className={COL.notes}>Notes</TableHead>
+      <TableHead className={COL.notes}>Comment</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
       <TableHead className={cn(COL.actions, "text-right")}>Actions</TableHead>
     </TableRow>
@@ -1182,6 +1185,8 @@ export default function CapturePage() {
                 {selectMode && <col className="w-[36px]" />}
                 {showDateCol && <col className="w-[9%]" />}
                 {showTeamCol && <col className="w-[9%]" />}
+                <col style={{ width: 36 }} />
+                <col style={{ width: 44 }} />
                 <col className="w-[7%]" />
                 <col className="w-[7%]" />
                 <col className="w-[6%]" />
@@ -1218,6 +1223,8 @@ export default function CapturePage() {
                         {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
                       </TableCell>
                     )}
+                    <TableCell className="w-[36px]" />
+                    <TableCell className="w-[44px]" />
                     <TableCell className={COL.start}>
                       <Input
                         type="text"
@@ -1291,7 +1298,7 @@ export default function CapturePage() {
                 )}
 
                 {/* ── Existing entries — per-cell inline editing ── */}
-                {filteredEntries.map((entry) => {
+                {filteredEntries.map((entry, idx) => {
                   const isSelected = selectedIds.has(entry.id);
                   const isCellEditing = (field: string) =>
                     editingCell?.entryId === entry.id && editingCell?.field === field;
@@ -1387,7 +1394,10 @@ export default function CapturePage() {
                           )}
                         </TableCell>
                       )}
-                      {/* Start — inline editable */}
+                                             {/* # and Status */}
+                       <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{idx + 1}</TableCell>
+                       <TableCell className="w-[44px] text-center"><Circle className="w-3.5 h-3.5 text-muted-foreground/30 inline-block" /></TableCell>
+                       {/* Start — inline editable */}
                       <TableCell className={cn(COL.start, isCellFailed("startTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={onCellClick}>
                         {isCellEditing("startTime") ? (
                           <input
@@ -1568,7 +1578,7 @@ export default function CapturePage() {
                 {/* ── Duration footer — only when draft entries are visible ── */}
                 {filteredEntries.length > 0 && (
                   <TableRow className="bg-muted/10 border-t-2 border-border">
-                    <TableCell colSpan={2 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
+                    <TableCell colSpan={4 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
                       Total
                     </TableCell>
                     <TableCell className="py-1.5">
@@ -1594,7 +1604,7 @@ export default function CapturePage() {
                   <>
                     <TableRow className="bg-emerald-950/20">
                       <TableCell
-                        colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
+                        colSpan={9 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
                         className="py-1.5 px-4"
                       >
                         <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -1603,7 +1613,7 @@ export default function CapturePage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                    {filteredLockedEntries.map((entry) => (
+                    {filteredLockedEntries.map((entry, idx) => (
                       <TableRow key={`locked-${entry.id}`} className="opacity-50 bg-muted/5">
                         {selectMode && <TableCell className="w-[36px]" />}
                         {showDateCol && (
@@ -1619,6 +1629,8 @@ export default function CapturePage() {
                             {entry.team?.name || "—"}
                           </TableCell>
                         )}
+                        <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{filteredEntries.length + idx + 1}</TableCell>
+                        <TableCell className="w-[44px] text-center"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline-block" /></TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
                           {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
@@ -1661,7 +1673,7 @@ export default function CapturePage() {
                 {/* Empty state */}
                 {!loadingEntries && filteredEntries.length === 0 && filteredLockedEntries.length === 0 && !newRow && (
                   <TableRow>
-                    <TableCell colSpan={7 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
+                    <TableCell colSpan={9 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
                       {draftEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}

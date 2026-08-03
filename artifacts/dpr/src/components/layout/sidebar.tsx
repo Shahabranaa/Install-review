@@ -1,16 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
-import { Link, useLocation } from "wouter";
+
 import {
   format, subDays, parseISO, startOfMonth, endOfMonth,
   addMonths, subMonths, isSameDay, isToday, getDay,
 } from "date-fns";
 import {
-  LogOut, ClipboardList, CheckSquare, Settings2,
-  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Users,
+  LogOut, ClipboardList,
+  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { useGetDprTimesheetSummary, getGetDprTimesheetSummaryQueryKey } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +36,6 @@ const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { logout, user, isAdmin } = useAuth();
-  const [location] = useLocation();
   const { activeDate, setActiveDate } = useCaptureNav();
 
   // Calendar month state — default to today's month
@@ -51,13 +49,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       } catch {/* ignore */}
     }
   }, [activeDate]);
-
-  const { data: summary } = useGetDprTimesheetSummary({
-    query: {
-      queryKey: getGetDprTimesheetSummaryQueryKey(),
-      refetchInterval: 30000,
-    },
-  });
 
   const { data: dateSummaryRaw } = useQuery<DateSummaryResponse>({
     queryKey: ["/api/dpr/timesheet-entries/date-summary"],
@@ -83,17 +74,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
     return map;
   }, [dateSummaryRaw]);
-
-  // Badge = dates in the last 10 days that still have missing/partial teams
-  const windowDates = useMemo(
-    () => Array.from({ length: 10 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd")),
-    []
-  );
-  const emptyDateCount = windowDates.filter((d) => {
-    const s = dateStatsMap.get(d);
-    if (!s) return totalTeams > 0;
-    return s.noTime > 0 || s.partial > 0;
-  }).length;
 
   // Build calendar grid — always 6 rows × 7 cols starting Monday
   const calendarGrid = useMemo(() => {
@@ -143,34 +123,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     if (s.complete === totalTeams) return "complete";
     if (s.partial > 0 || s.noTime < totalTeams) return "partial";
     return "missing";
-  };
-
-  const navItem = (href: string, icon: React.ReactNode, label: string, badge?: React.ReactNode) => {
-    const active = location === href;
-    return (
-      <Link
-        href={href}
-        title={collapsed ? label : undefined}
-        className={cn(
-          "flex items-center rounded-md text-sm font-medium transition-colors",
-          collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
-          active
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-        )}
-      >
-        <span className="shrink-0">{icon}</span>
-        {!collapsed && (
-          <>
-            <span className="flex-1">{label}</span>
-            {badge}
-          </>
-        )}
-        {collapsed && badge && (
-          <span className="absolute right-1.5 top-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
-        )}
-      </Link>
-    );
   };
 
   return (
@@ -377,47 +329,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
       )}
 
-      {/* ── Nav ── */}
-      <nav className={cn("flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden", collapsed && "relative")}>
-        {isAdmin && navItem("/team-setup", <Users className="w-4 h-4" />, "Team Setup")}
-
-        {/* Capture */}
-        <Link
-          href="/"
-          title={collapsed ? "Capture" : undefined}
-          className={cn(
-            "flex items-center rounded-md text-sm font-medium transition-colors",
-            collapsed ? "justify-center px-0 py-2 relative" : "gap-3 px-3 py-2",
-            location === "/"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-          )}
-        >
-          <span className="shrink-0"><ClipboardList className="w-4 h-4" /></span>
-          {!collapsed && (
-            <>
-              <span className="flex-1">Capture</span>
-              {emptyDateCount > 0 && (
-                <span className="ml-auto bg-amber-500/20 text-amber-600 border border-amber-500/40 text-xs px-1.5 py-0.5 rounded-full font-bold dark:text-amber-400">
-                  {emptyDateCount}
-                </span>
-              )}
-            </>
-          )}
-          {collapsed && emptyDateCount > 0 && (
-            <span className="absolute right-1.5 top-1.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
-          )}
-        </Link>
-
-        {navItem("/clarify", <CheckSquare className="w-4 h-4" />, "Clarify",
-          summary?.clarifiedCount ? (
-            <span className="ml-auto bg-muted text-muted-foreground border border-border text-xs px-1.5 py-0.5 rounded-full font-bold">
-              {summary.clarifiedCount}
-            </span>
-          ) : null
-        )}
-        {isAdmin && navItem("/jdr-mapping", <Settings2 className="w-4 h-4" />, "JDR Mapping")}
-      </nav>
+      {/* spacer pushes footer to bottom */}
+      <div className="flex-1" />
 
       {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>
