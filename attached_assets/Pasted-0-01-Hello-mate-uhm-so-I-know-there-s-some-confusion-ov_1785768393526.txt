@@ -1,0 +1,16 @@
+0:01 Hello mate, uhm, so I know there's some confusion over the, uhm, shift start date, and the DPR date, so I just wanted to, uhm.
+0:14 Yeah, so, I just wanted to go through, and try to demonstrate it. So this is Team 2, and they work from, uhm, 17.30 at night, to 05.30 in the morning.
+0:26 so they obviously cross over the day. So I've gone through from the 20th to the 24th to try and demonstrate that.
+0:35 So you should see here kind of like that the shift start date, this obviously started on the 19th at 17.30.
+0:43 If we look at the 20th, because it shows both sides, you can see that it started at 17.30. That was the shift start date, because they go from 17.30 until 05.30.
+0:56 So, if I just kind of like block these, uhm, for example, maybe that will kind of help to visualize it.
+1:23 And this is, uhm, we kind of cut off at midnight for this reason. So, if you're a night shift team, you're almost doing two timesheets, two timesheets per day, uhm, because you're doing kind of like partial shift, if you like.
+1:58 You want to cut it off at midnight. So, this just, you know, so, if you consider a DPR, that'd probably be helpful as well if I was to do that, uhm.
+2:14 So, I'm just going to colour it in. And you should be able to see the crossover. Yeah. Okay, mate. So, that should do it.
+3:20 Kind of, um, demonstrate it, I think. So, um, so yeah, hopefully that kind of clears up a bit. So, you can see the DPR date, 20th, is kind of cut across two shifts, here.
+3:42 And 21st is cut across two shifts, so, obviously, kind of the end of the shift is zero. So, So this is one shift, yeah, but it's across two dates.
+3:55 One shift across two DPR dates. One shift. Across two DPR dates. Yeah, man, hopefully that, um, that helps with it, because I'm just trying to get your, kind of, head to the same place as mine.
+4:11 But, um, it's just kind of, obviously, because the team, and us, that's why the shift start date is important, because it's a logical thing.
+4:19 It's like, if I was reading through it, obviously, if I kind of organize it by DPR date, then it, it, it doesn't kind of make sense, because it's across two shifts.
+4:28 So I'm looking at the second half of one shift and the first half of another shift and it just doesn't make any sense I need to be able to look at it just in a shift.
+4:37 So I started my shift and then 12 hours later I finished my shift and then it's all kind of in a, like a sequential, chronological order, um, until it's complete and then I finish my shift and then I start it again later for the next day for the DPR date of the 21st of the 7th.

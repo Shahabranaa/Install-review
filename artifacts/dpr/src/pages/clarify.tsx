@@ -23,8 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Timer,
+  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Timer, Download,
 } from "lucide-react";
+import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
@@ -212,6 +213,14 @@ export default function ClarifyPage() {
 
   const handleTeamClick = (id: number | null) => setActiveTeamId(activeTeamId === id ? null : id);
 
+  // ── CSV export ──
+  const handleExportCsv = () => {
+    const entries = filteredGroups.flatMap(g => g.entries);
+    const csv = buildLautecCsv(entries, { teams, activityGroups, activities: allActivities });
+    const datePart = activeDate ?? "all";
+    downloadCsv(`DPR_Clarify_${datePart}.csv`, csv);
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Header — matches Capture exactly ── */}
@@ -225,6 +234,10 @@ export default function ClarifyPage() {
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-primary" />
           <span className="text-sm font-medium">{totalPending} Pending</span>
+          <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5 ml-2">
+            <Download className="w-4 h-4" />
+            <span className="hidden xs:inline">Export CSV</span>
+          </Button>
         </div>
       </header>
 

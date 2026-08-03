@@ -25,10 +25,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
@@ -446,7 +447,10 @@ export default function CapturePage() {
   const sortedEntries = useMemo(
     () =>
       [...entries.filter((e) => e.stage !== "clarified")].sort((a, b) => {
-        const d = new Date(b.date).getTime() - new Date(a.date).getTime();
+        // Sort chronologically within a shift: earliest calendar date first,
+        // then by start time — so overnight entries (next calendar day) follow
+        // same-day entries in the correct sequence.
+        const d = new Date(a.date).getTime() - new Date(b.date).getTime();
         if (d !== 0) return d;
         const t = (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
         if (t !== 0) return t;
@@ -836,6 +840,14 @@ export default function CapturePage() {
     approveMutation.mutate({ id, data: { stage: "captured" } });
   };
 
+  // ── CSV export ──
+  const handleExportCsv = () => {
+    const entries = [...filteredEntries, ...filteredLockedEntries];
+    const csv = buildLautecCsv(entries, { teams, activityGroups, activities: [] });
+    const datePart = activeDate ?? "all";
+    downloadCsv(`DPR_Capture_${datePart}.csv`, csv);
+  };
+
   // ── Derived display flags ──
   const showDateCol = !activeDate;
   const showTeamCol = !activeTeamId;
@@ -1040,6 +1052,10 @@ export default function CapturePage() {
           <Button variant="outline" size="sm" onClick={() => setPasteOpen(true)} className="gap-1.5">
             <ClipboardPaste className="w-4 h-4" />
             <span className="hidden xs:inline">Paste Rows</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5">
+            <Download className="w-4 h-4" />
+            <span className="hidden xs:inline">Export CSV</span>
           </Button>
         </div>
       </header>
