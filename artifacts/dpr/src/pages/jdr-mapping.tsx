@@ -21,10 +21,16 @@ import {
   useUpdateDprJdrCode,
   useDeleteDprJdrCode,
   getListDprJdrCodesQueryKey,
+  useListDprLocations,
+  useCreateDprLocation,
+  useUpdateDprLocation,
+  useDeleteDprLocation,
+  getListDprLocationsQueryKey,
   DprActivityType,
   DprActivityGroup,
   DprActivity,
   DprJdrCode,
+  DprLocation,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -45,8 +51,9 @@ export default function JdrMappingPage() {
   const { data: groups = [], isLoading: groupsLoading } = useListDprActivityGroups({});
   const { data: activities = [], isLoading: activitiesLoading } = useListDprActivities({});
   const { data: jdrCodes = [], isLoading: jdrCodesLoading } = useListDprJdrCodes({});
+  const { data: locations = [], isLoading: locationsLoading } = useListDprLocations();
 
-  const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading;
+  const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading || locationsLoading;
 
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
@@ -441,10 +448,86 @@ export default function JdrMappingPage() {
     },
   });
 
+  // ── Location CRUD ──
+  const createLocation = useCreateDprLocation({
+    mutation: {
+      onMutate: async ({ data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
+        const tempId = -(Date.now());
+        queryClient.setQueriesData<DprLocation[]>(
+          { queryKey: getListDprLocationsQueryKey() },
+          (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }])
+        );
+        return { snapshot, tempId };
+      },
+      onSuccess: (created, _, ctx) => {
+        queryClient.setQueriesData<DprLocation[]>(
+          { queryKey: getListDprLocationsQueryKey() },
+          (old) => old ? [...old.filter((l) => l.id !== ctx?.tempId), created] : [created]
+        );
+        toast({ title: "Location created" });
+        setLocationDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
+      },
+    },
+  });
+  const updateLocation = useUpdateDprLocation({
+    mutation: {
+      onMutate: async ({ id, data }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
+        queryClient.setQueriesData<DprLocation[]>(
+          { queryKey: getListDprLocationsQueryKey() },
+          (old) => old?.map((l) => (l.id === id ? { ...l, ...data } : l))
+        );
+        return { snapshot };
+      },
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprLocation[]>(
+          { queryKey: getListDprLocationsQueryKey() },
+          (old) => old?.map((l) => (l.id === updated.id ? updated : l))
+        );
+        toast({ title: "Location updated" });
+        setLocationDialog(null);
+      },
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      },
+    },
+  });
+  const deleteLocation = useDeleteDprLocation({
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
+        queryClient.setQueriesData<DprLocation[]>(
+          { queryKey: getListDprLocationsQueryKey() },
+          (old) => old?.filter((l) => l.id !== id)
+        );
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "Location deleted" }),
+      onError: (e, _, ctx) => {
+        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
+      },
+    },
+  });
+
   const [typeDialog, setTypeDialog] = useState<{ editing: DprActivityType | null } | null>(null);
   const [groupDialog, setGroupDialog] = useState<{ editing: DprActivityGroup | null; defaultTypeId: number | null } | null>(null);
   const [activityDialog, setActivityDialog] = useState<{ editing: DprActivity | null; defaultGroupId: number | null } | null>(null);
   const [jdrDialog, setJdrDialog] = useState<{ editing: DprJdrCode | null; defaultActivityId: number | null } | null>(null);
+  const [locationDialog, setLocationDialog] = useState<{ editing: DprLocation | null } | null>(null);
+  const [showAllLocations, setShowAllLocations] = useState(false);
+
+  const LOCATION_PAGE = 25;
+  const visibleLocations = showAllLocations ? locations : locations.slice(0, LOCATION_PAGE);
 
   return (
     <div className="flex flex-col h-full">
@@ -493,8 +576,91 @@ export default function JdrMappingPage() {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-x-auto p-4">
-          <div className="grid grid-cols-4 gap-0 min-w-[1100px] h-full divide-x divide-border border border-border rounded-lg overflow-hidden">
+        <div className="flex-1 overflow-auto p-4 flex flex-col gap-4 min-h-0">
+          {/* ── Locations panel ─────────────────────────────────── */}
+          <div className="border border-border rounded-lg overflow-hidden shrink-0">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Locations
+                </span>
+                <span className="text-[11px] text-muted-foreground/50">({locations.length})</span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setLocationDialog({ editing: null })}
+              >
+                <Plus className="w-3 h-3" />
+                Add
+              </Button>
+            </div>
+            {locations.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-6 bg-card">No locations yet.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-0 divide-x divide-y divide-border bg-card">
+                  {visibleLocations.map((loc) => (
+                    <div
+                      key={loc.id}
+                      className="group relative flex items-center px-3 py-2.5 hover:bg-muted/25 transition-colors"
+                    >
+                      <span className="text-sm font-medium truncate pr-10">{loc.name}</span>
+                      <div
+                        className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setLocationDialog({ editing: loc })}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                              <AlertDialogDescription>Delete location "{loc.name}"? Existing timesheet entries that reference it will lose their location link.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteLocation.mutate({ id: loc.id })}
+                                disabled={deleteLocation.isPending}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {deleteLocation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {locations.length > LOCATION_PAGE && (
+                  <div className="border-t border-border bg-card px-4 py-2">
+                    <button
+                      onClick={() => setShowAllLocations((v) => !v)}
+                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                    >
+                      {showAllLocations
+                        ? "Show fewer"
+                        : `Show all ${locations.length} locations`}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── JDR hierarchy grid ──────────────────────────────── */}
+          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 h-full divide-y sm:divide-y-0 sm:divide-x divide-border border border-border rounded-lg overflow-hidden">
 
             {/* Column 1 — CATEGORY */}
             <DrillColumn
@@ -590,9 +756,22 @@ export default function JdrMappingPage() {
             </DrillColumn>
 
           </div>
+          </div>{/* end overflow-x-auto grid wrapper */}
         </div>
       )}
 
+      {locationDialog && (
+        <LocationDialog
+          editing={locationDialog.editing}
+          onClose={() => setLocationDialog(null)}
+          onSave={(name) =>
+            locationDialog.editing
+              ? updateLocation.mutate({ id: locationDialog.editing.id, data: { name } })
+              : createLocation.mutate({ data: { name } })
+          }
+          saving={createLocation.isPending || updateLocation.isPending}
+        />
+      )}
       {typeDialog && (
         <TypeDialog
           editing={typeDialog.editing}
@@ -1057,6 +1236,44 @@ function JdrCodeDialog({
             }
             disabled={!isValid || saving}
           >
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LocationDialog({
+  editing,
+  onClose,
+  onSave,
+  saving,
+}: {
+  editing: DprLocation | null;
+  onClose: () => void;
+  onSave: (name: string) => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editing ? "Edit Location" : "New Location"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. BLP 39, OSS East, Port of Hull"
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
             {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
           </Button>
         </DialogFooter>

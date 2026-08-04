@@ -342,6 +342,10 @@ export interface DprTeam {
   name: string;
 }
 
+export interface DprLocationInput {
+  name: string;
+}
+
 export interface DprActivityType {
   id: number;
   name: string;
@@ -420,6 +424,8 @@ export interface DprTimesheetEntry {
   id: number;
   date: string;
   /** @nullable */
+  shiftDate?: string | null;
+  /** @nullable */
   teamId?: number | null;
   team?: DprTeam;
   /** @nullable */
@@ -442,8 +448,6 @@ export interface DprTimesheetEntry {
   billingParty?: DprTimesheetEntryBillingParty;
   /** @nullable */
   combinedComment?: string | null;
-  /** @nullable */
-  shiftDate?: string | null;
   stage: DprTimesheetEntryStage;
   createdAt: string;
   updatedAt: string;
@@ -463,6 +467,8 @@ export const DprTimesheetEntryInputBillingParty = {
 export interface DprTimesheetEntryInput {
   date: string;
   /** @nullable */
+  shiftDate?: string | null;
+  /** @nullable */
   teamId?: number | null;
   /** @nullable */
   startTime?: string | null;
@@ -478,8 +484,6 @@ export interface DprTimesheetEntryInput {
   activityGroupId?: number | null;
   /** @nullable */
   billingParty?: DprTimesheetEntryInputBillingParty;
-  /** @nullable */
-  shiftDate?: string | null;
 }
 
 /**
@@ -505,6 +509,8 @@ export const DprTimesheetEntryUpdateStage = {
 export interface DprTimesheetEntryUpdate {
   date?: string;
   /** @nullable */
+  shiftDate?: string | null;
+  /** @nullable */
   teamId?: number | null;
   /** @nullable */
   startTime?: string | null;
@@ -526,8 +532,6 @@ export interface DprTimesheetEntryUpdate {
   /** @nullable */
   combinedComment?: string | null;
   stage?: DprTimesheetEntryUpdateStage;
-  /** @nullable */
-  shiftDate?: string | null;
 }
 
 export interface DprTimesheetSummary {

@@ -78,3 +78,53 @@ export const GetTowerResponse = zod.object({
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
+
+// ── DPR — date summary ────────────────────────────────────────────────────────
+
+export const GetDprDateSummaryResponse = zod.object({
+  totalTeams: zod.number(),
+  items: zod.array(
+    zod.object({
+      date: zod.string(),
+      noTime: zod.number(),
+      partial: zod.number(),
+      complete: zod.number(),
+      captured: zod.number(),
+    })
+  ),
+});
+
+// ── DPR — lock entries ────────────────────────────────────────────────────────
+
+export const LockDprTimesheetEntriesBody = zod.object({
+  teamId: zod.number(),
+  date: zod.string(),
+});
+
+// Response mirrors DprTimesheetEntry array; permissive shape since the
+// full entry shape is validated by the GET endpoint schema.
+export const LockDprTimesheetEntriesResponse = zod.array(zod.record(zod.unknown()));
+
+// ── DPR — team date exceptions ────────────────────────────────────────────────
+
+export const DprTeamDateException = zod.object({
+  id: zod.number(),
+  teamId: zod.number(),
+  date: zod.string(),
+  status: zod.string(),
+});
+
+export const GetDprTeamDateExceptionsQueryParams = zod.object({
+  date: zod.string().optional(),
+});
+
+export const GetDprTeamDateExceptionsResponse = zod.array(DprTeamDateException);
+
+export const CreateDprTeamDateExceptionBody = zod.object({
+  teamId: zod.number(),
+  date: zod.string(),
+});
+
+export const DeleteDprTeamDateExceptionParams = zod.object({
+  id: zod.coerce.number(),
+});

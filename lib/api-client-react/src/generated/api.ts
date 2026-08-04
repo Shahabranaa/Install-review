@@ -39,6 +39,7 @@ import type {
   DprJdrCode,
   DprJdrCodeInput,
   DprLocation,
+  DprLocationInput,
   DprTeam,
   DprTimesheetEntry,
   DprTimesheetEntryInput,
@@ -3056,6 +3057,219 @@ export function useListDprLocations<TData = Awaited<ReturnType<typeof listDprLoc
 
 
 
+
+export const getCreateDprLocationUrl = () => {
+
+
+
+
+  return `/api/dpr/locations`
+}
+
+/**
+ * @summary Create a DPR location
+ */
+export const createDprLocation = async (dprLocationInput: DprLocationInput, options?: RequestInit): Promise<DprLocation> => {
+
+  return customFetch<DprLocation>(getCreateDprLocationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprLocationInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprLocationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprLocation>>, TError,{data: BodyType<DprLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprLocation>>, TError,{data: BodyType<DprLocationInput>}, TContext> => {
+
+const mutationKey = ['createDprLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprLocation>>, {data: BodyType<DprLocationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprLocation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprLocationMutationResult = NonNullable<Awaited<ReturnType<typeof createDprLocation>>>
+    export type CreateDprLocationMutationBody = BodyType<DprLocationInput>
+    export type CreateDprLocationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a DPR location
+ */
+export const useCreateDprLocation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprLocation>>, TError,{data: BodyType<DprLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprLocation>>,
+        TError,
+        {data: BodyType<DprLocationInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprLocationMutationOptions(options));
+    }
+
+export const getUpdateDprLocationUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/locations/${id}`
+}
+
+/**
+ * @summary Update a DPR location
+ */
+export const updateDprLocation = async (id: number,
+    dprLocationInput: DprLocationInput, options?: RequestInit): Promise<DprLocation> => {
+
+  return customFetch<DprLocation>(getUpdateDprLocationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprLocationInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDprLocationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprLocation>>, TError,{id: number;data: BodyType<DprLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDprLocation>>, TError,{id: number;data: BodyType<DprLocationInput>}, TContext> => {
+
+const mutationKey = ['updateDprLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDprLocation>>, {id: number;data: BodyType<DprLocationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDprLocation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDprLocationMutationResult = NonNullable<Awaited<ReturnType<typeof updateDprLocation>>>
+    export type UpdateDprLocationMutationBody = BodyType<DprLocationInput>
+    export type UpdateDprLocationMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a DPR location
+ */
+export const useUpdateDprLocation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDprLocation>>, TError,{id: number;data: BodyType<DprLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDprLocation>>,
+        TError,
+        {id: number;data: BodyType<DprLocationInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDprLocationMutationOptions(options));
+    }
+
+export const getDeleteDprLocationUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/locations/${id}`
+}
+
+/**
+ * @summary Delete a DPR location
+ */
+export const deleteDprLocation = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprLocationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprLocationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprLocation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprLocation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprLocation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprLocation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprLocationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprLocation>>>
+
+    export type DeleteDprLocationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a DPR location
+ */
+export const useDeleteDprLocation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprLocation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprLocation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprLocationMutationOptions(options));
+    }
 
 export const getListDprTeamsUrl = () => {
 

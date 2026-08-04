@@ -59,6 +59,11 @@ import {
   UpdateDprJdrCodeBody,
   UpdateDprJdrCodeResponse,
   DeleteDprJdrCodeParams,
+  CreateDprLocationBody,
+  UpdateDprLocationParams,
+  UpdateDprLocationBody,
+  UpdateDprLocationResponse,
+  DeleteDprLocationParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 
@@ -110,6 +115,59 @@ router.get("/dpr/locations", async (_req, res): Promise<void> => {
     refCache.locations.set(rows);
   }
   res.json(ListDprLocationsResponse.parse(serialize(naturalSort(rows))));
+});
+
+router.post("/dpr/locations", async (req, res): Promise<void> => {
+  const parsed = CreateDprLocationBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprLocationsTable).values(parsed.data).returning();
+  refCache.locations.invalidate();
+  res.status(201).json(UpdateDprLocationResponse.parse(serialize(row)));
+});
+
+router.patch("/dpr/locations/:id", async (req, res): Promise<void> => {
+  const params = UpdateDprLocationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateDprLocationBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db
+    .update(dprLocationsTable)
+    .set(parsed.data)
+    .where(eq(dprLocationsTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Location not found" });
+    return;
+  }
+  refCache.locations.invalidate();
+  res.json(UpdateDprLocationResponse.parse(serialize(row)));
+});
+
+router.delete("/dpr/locations/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprLocationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [row] = await db
+    .delete(dprLocationsTable)
+    .where(eq(dprLocationsTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Location not found" });
+    return;
+  }
+  refCache.locations.invalidate();
+  res.sendStatus(204);
 });
 
 router.get("/dpr/teams", async (_req, res): Promise<void> => {

@@ -222,36 +222,34 @@ function validate48hTime(raw: string): string | null {
   return null;
 }
 
-function normalizeDate(raw: string): string | null {
+type DateFormat = "mdy" | "dmy";
+
+function normalizeDate(raw: string, dateFormat: DateFormat = "dmy"): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // DD-MM-YY or DD-MM-YYYY (dash-separated day-first, e.g. "14-02-2026")
-  const dashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
-  if (dashMatch) {
-    const day = dashMatch[1].padStart(2, "0");
-    const month = dashMatch[2].padStart(2, "0");
-    const year = dashMatch[3].length === 2 ? `20${dashMatch[3]}` : dashMatch[3];
-    return `${year}-${month}-${day}`;
+
+  // Helper: given two ambiguous parts, assign day/month based on chosen format
+  function assignDayMonth(a: string, b: string): { day: string; month: string } {
+    const [first, second] = dateFormat === "mdy"
+      ? [b, a]   // mdy: a=month, b=day  → day=b, month=a
+      : [a, b];  // dmy: a=day,   b=month → day=a, month=b
+    return { day: first.padStart(2, "0"), month: second.padStart(2, "0") };
   }
-  // DD.MM.YY or DD.MM.YYYY (dot-separated, e.g. "14.06.26")
-  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
-  if (dotMatch) {
-    const day = dotMatch[1].padStart(2, "0");
-    const month = dotMatch[2].padStart(2, "0");
-    const year = dotMatch[3].length === 2 ? `20${dotMatch[3]}` : dotMatch[3];
-    return `${year}-${month}-${day}`;
+
+  // Separator-agnostic match: D/M/Y or M/D/Y with / - or .
+  const parts = trimmed.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  if (parts) {
+    const { day, month } = assignDayMonth(parts[1], parts[2]);
+    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
+    const candidate = `${year}-${month}-${day}`;
+    // Validate: if the assembled date is invalid, return null rather than silently wrong
+    if (isNaN(new Date(candidate).getTime())) return null;
+    return candidate;
   }
-  // DD/MM/YY or DD/MM/YYYY (slash-separated UK format, e.g. "14/06/2026")
-  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (slashMatch) {
-    const day = slashMatch[1].padStart(2, "0");
-    const month = slashMatch[2].padStart(2, "0");
-    const year = slashMatch[3].length === 2 ? `20${slashMatch[3]}` : slashMatch[3];
-    return `${year}-${month}-${day}`;
-  }
-  // Generic fallback (avoid for ambiguous formats — JS Date treats M/D/YYYY as US)
+
+  // Generic fallback — only for unambiguous formats like "July 30 2026"
   const parsed = new Date(trimmed);
   if (!isNaN(parsed.getTime())) return format(parsed, "yyyy-MM-dd");
   return null; // unparseable — caller must handle
@@ -278,15 +276,33 @@ function parsePastedText(
   teams: DprTeam[],
   locations: DprLocation[],
   defaultActivityTypeId: number | null,
-  defaultGroupId: number | null
+  defaultGroupId: number | null,
+  dateFormat: DateFormat = "dmy"
 ): PendingRow[] {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  return lines.map((line, idx) => {
-    const cols = line.split("\t");
+  // A line starts a new row only when it begins with a recognisable date.
+  // Continuation lines (e.g. multi-line notes) are folded into the preceding
+  // row's notes field. Bare row-number lines (pure digits) are discarded.
+  const STARTS_WITH_DATE = /^\s*\d{1,2}[/\-.\s]\d{1,2}[/\-.\s]\d{2,4}/;
+  const IS_ROW_NUMBER    = /^\s*\d{1,6}\s*$/;
+
+  // Group lines into [anchor-line, ...continuation-lines]
+  const groups: string[][] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (IS_ROW_NUMBER.test(line))         continue; // skip spreadsheet row numbers
+    if (STARTS_WITH_DATE.test(line))      groups.push([line]);
+    else if (line.trim() && groups.length) groups[groups.length - 1].push(line);
+  }
+
+  return groups.map((group, idx) => {
+    const cols = group[0].split("\t");
     const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = ""] = cols;
+
+    // Any continuation lines become extra lines appended to notes
+    const extra = group.slice(1).map((l) => l.trim()).filter(Boolean).join("\n");
+    const fullNotes = [rawNotes.trim(), extra].filter(Boolean).join("\n");
     const team = findByName(teams, rawTeam);
     const location = findByNameFuzzy(locations, rawLocation);
-    const parsedDate = normalizeDate(rawDate);
+    const parsedDate = normalizeDate(rawDate, dateFormat);
     return {
       key: `${Date.now()}-${idx}`,
       date: parsedDate,
@@ -297,7 +313,7 @@ function parsePastedText(
       endTime: normalizeTime(rawEnd),
       locationId: location?.id ?? null,
       locationRaw: rawLocation.trim(),
-      notes: rawNotes.trim(),
+      notes: fullNotes,
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       billingParty: null,
@@ -671,6 +687,7 @@ export default function CapturePage() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
+  const [pasteDateFormat, setPasteDateFormat] = useState<DateFormat>("mdy");
   const [pendingRows, setPendingRows] = useState<PendingRow[] | null>(null);
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -961,7 +978,7 @@ export default function CapturePage() {
   const handlePasteChange = (text: string) => {
     setPasteText(text);
     if (!text.trim()) { setPendingRows(null); return; }
-    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId));
+    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId, pasteDateFormat));
   };
 
   const updatePendingRow = (key: string, patch: Partial<PendingRow>) =>
@@ -970,7 +987,14 @@ export default function CapturePage() {
   const removePendingRow = (key: string) =>
     setPendingRows((rows) => rows?.filter((r) => r.key !== key) ?? null);
 
-  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPendingRows(null); };
+  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPasteDateFormat("mdy"); setPendingRows(null); };
+
+  const handleDateFormatChange = (fmt: DateFormat) => {
+    setPasteDateFormat(fmt);
+    if (pasteText.trim()) {
+      setPendingRows(parsePastedText(pasteText, teams, locations, defaultActivityTypeId, defaultGroupId, fmt));
+    }
+  };
 
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
@@ -1753,6 +1777,33 @@ export default function CapturePage() {
                 onChange={(e) => setPasteShiftDate(e.target.value)}
                 className="h-8 text-sm w-[150px] shrink-0"
               />
+            </div>
+
+            {/* Date format selector */}
+            <div className="flex items-center gap-3 bg-muted/40 rounded-md px-3 py-2 shrink-0">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-xs font-medium">Date format</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Choose how dates are ordered in your source sheet.
+                </span>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                {(["mdy", "dmy"] as DateFormat[]).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => handleDateFormatChange(fmt)}
+                    className={cn(
+                      "px-3 py-1 rounded text-xs font-mono border transition-colors",
+                      pasteDateFormat === fmt
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-muted-foreground border-border hover:border-primary/60"
+                    )}
+                  >
+                    {fmt === "mdy" ? "MM/DD/YYYY" : "DD/MM/YYYY"}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {pendingRows && pendingRows.length > 0 && (

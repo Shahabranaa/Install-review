@@ -787,6 +787,39 @@ export const ListDprLocationsResponse = zod.array(ListDprLocationsResponseItem)
 
 
 /**
+ * @summary Create a DPR location
+ */
+export const CreateDprLocationBody = zod.object({
+  "name": zod.string()
+})
+
+
+/**
+ * @summary Update a DPR location
+ */
+export const UpdateDprLocationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDprLocationBody = zod.object({
+  "name": zod.string()
+})
+
+export const UpdateDprLocationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})
+
+
+/**
+ * @summary Delete a DPR location
+ */
+export const DeleteDprLocationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary List DPR activity stream teams
  */
 export const ListDprTeamsResponseItem = zod.object({
@@ -1066,40 +1099,6 @@ export const CreateDprTimesheetEntryBody = zod.object({
 
 
 /**
- * @summary Get entry counts grouped by date (for capture to-do list)
- */
-export const GetDprDateSummaryResponseItem = zod.object({
-  "date": zod.string(),
-  "noTime": zod.number(),
-  "partial": zod.number(),
-  "complete": zod.number(),
-  "captured": zod.number().optional().default(0)
-})
-export const GetDprDateSummaryResponse = zod.object({
-  "totalTeams": zod.number(),
-  "items": zod.array(GetDprDateSummaryResponseItem)
-})
-
-export const GetDprTeamDateExceptionsQueryParams = zod.object({
-  date: zod.string().optional()
-})
-export const DprTeamDateException = zod.object({
-  id: zod.number(),
-  teamId: zod.number(),
-  date: zod.string(),
-  status: zod.string()
-})
-export const GetDprTeamDateExceptionsResponse = zod.array(DprTeamDateException)
-export const CreateDprTeamDateExceptionBody = zod.object({
-  teamId: zod.number(),
-  date: zod.string()
-})
-export const DeleteDprTeamDateExceptionParams = zod.object({
-  id: zod.coerce.number()
-})
-
-
-/**
  * @summary Get counts of timesheet entries by stage
  */
 export const GetDprTimesheetSummaryResponse = zod.object({
@@ -1196,16 +1195,6 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
-
-
-/**
- * @summary Lock all draft entries for a team+date, sending them to the Clarify queue
- */
-export const LockDprTimesheetEntriesBody = zod.object({
-  "teamId": zod.number(),
-  "date": zod.string()
-})
-export const LockDprTimesheetEntriesResponse = zod.array(ListDprTimesheetEntriesResponseItem)
 
 
 /**

@@ -936,6 +936,63 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DprLocation"
+    post:
+      operationId: createDprLocation
+      tags: [dpr]
+      summary: Create a DPR location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprLocationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprLocation"
+
+  /dpr/locations/{id}:
+    patch:
+      operationId: updateDprLocation
+      tags: [dpr]
+      summary: Update a DPR location
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprLocationInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprLocation"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDprLocation
+      tags: [dpr]
+      summary: Delete a DPR location
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
 
   /dpr/teams:
     get:
@@ -2025,6 +2082,14 @@ components:
         - id
         - name
 
+    DprLocationInput:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
     DprActivityType:
       type: object
       properties:
@@ -2146,6 +2211,8 @@ components:
           type: integer
         date:
           type: string
+        shiftDate:
+          type: ["string", "null"]
         teamId:
           type: ["integer", "null"]
         team:
@@ -2197,6 +2264,8 @@ components:
       properties:
         date:
           type: string
+        shiftDate:
+          type: ["string", "null"]
         teamId:
           type: ["integer", "null"]
         startTime:
@@ -2209,6 +2278,8 @@ components:
           type: ["string", "null"]
         activityTypeId:
           type: ["integer", "null"]
+        activityGroupId:
+          type: ["integer", "null"]
         billingParty:
           type: ["string", "null"]
           enum: [jdr, orsted, null]
@@ -2220,6 +2291,8 @@ components:
       properties:
         date:
           type: string
+        shiftDate:
+          type: ["string", "null"]
         teamId:
           type: ["integer", "null"]
         startTime:
