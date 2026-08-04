@@ -994,6 +994,99 @@ paths:
         "204":
           description: Deleted
 
+  /dpr/workers:
+    get:
+      operationId: listDprWorkers
+      tags: [dpr]
+      summary: List DPR workers with their team assignments
+      responses:
+        "200":
+          description: List of workers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprWorker"
+    post:
+      operationId: createDprWorker
+      tags: [dpr]
+      summary: Create a single DPR worker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprWorkerInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprWorker"
+
+  /dpr/workers/import:
+    post:
+      operationId: importDprWorkers
+      tags: [dpr]
+      summary: Bulk-import DPR workers (skips duplicates by name+company)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/DprWorkerInput"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprWorkerImportResult"
+
+  /dpr/workers/{id}:
+    delete:
+      operationId: deleteDprWorker
+      tags: [dpr]
+      summary: Delete a DPR worker
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /dpr/workers/{id}/teams:
+    put:
+      operationId: setDprWorkerTeams
+      tags: [dpr]
+      summary: Set (replace) team assignments for a worker
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprWorkerTeamsBody"
+      responses:
+        "200":
+          description: Updated worker with new team assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprWorker"
+
   /dpr/teams:
     get:
       operationId: listDprTeams
@@ -2059,6 +2152,72 @@ components:
         - incomplete
         - needsReview
         - pending
+
+    DprWorker:
+      type: object
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+        teamIds:
+          type: array
+          items:
+            type: integer
+      required:
+        - id
+        - firstName
+        - lastName
+        - active
+        - teamIds
+
+    DprWorkerInput:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+      required:
+        - firstName
+        - lastName
+
+    DprWorkerTeamsBody:
+      type: object
+      properties:
+        teamIds:
+          type: array
+          items:
+            type: integer
+      required:
+        - teamIds
+
+    DprWorkerImportResult:
+      type: object
+      properties:
+        inserted:
+          type: integer
+        total:
+          type: integer
+      required:
+        - inserted
+        - total
 
     DprLocation:
       type: object

@@ -44,3 +44,5 @@ export * from "./dpr-activities";
 export * from "./dpr-jdr-codes";
 export * from "./dpr-timesheet-entries";
 export * from "./dpr-team-date-exceptions";
+export * from "./dpr-workers";
+export * from "./dpr-team-workers";

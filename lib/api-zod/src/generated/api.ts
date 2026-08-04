@@ -820,6 +820,79 @@ export const DeleteDprLocationParams = zod.object({
 
 
 /**
+ * @summary List DPR workers with their team assignments
+ */
+export const ListDprWorkersResponseItem = zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+})
+export const ListDprWorkersResponse = zod.array(ListDprWorkersResponseItem)
+
+
+/**
+ * @summary Create a single DPR worker
+ */
+export const CreateDprWorkerBody = zod.object({
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish()
+})
+
+
+/**
+ * @summary Bulk-import DPR workers (skips duplicates by name+company)
+ */
+export const ImportDprWorkersBodyItem = zod.object({
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish()
+})
+export const ImportDprWorkersBody = zod.array(ImportDprWorkersBodyItem)
+
+export const ImportDprWorkersResponse = zod.object({
+  "inserted": zod.number(),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Delete a DPR worker
+ */
+export const DeleteDprWorkerParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Set (replace) team assignments for a worker
+ */
+export const SetDprWorkerTeamsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetDprWorkerTeamsBody = zod.object({
+  "teamIds": zod.array(zod.number())
+})
+
+export const SetDprWorkerTeamsResponse = zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+})
+
+
+/**
  * @summary List DPR activity stream teams
  */
 export const ListDprTeamsResponseItem = zod.object({

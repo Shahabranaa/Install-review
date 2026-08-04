@@ -45,6 +45,10 @@ import type {
   DprTimesheetEntryInput,
   DprTimesheetEntryUpdate,
   DprTimesheetSummary,
+  DprWorker,
+  DprWorkerImportResult,
+  DprWorkerInput,
+  DprWorkerTeamsBody,
   ErrorResponse,
   GenerateDocumentBody,
   GetDashboardSummaryParams,
@@ -3269,6 +3273,367 @@ export const useDeleteDprLocation = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteDprLocationMutationOptions(options));
+    }
+
+export const getListDprWorkersUrl = () => {
+
+
+
+
+  return `/api/dpr/workers`
+}
+
+/**
+ * @summary List DPR workers with their team assignments
+ */
+export const listDprWorkers = async ( options?: RequestInit): Promise<DprWorker[]> => {
+
+  return customFetch<DprWorker[]>(getListDprWorkersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprWorkersQueryKey = () => {
+    return [
+    `/api/dpr/workers`
+    ] as const;
+    }
+
+
+export const getListDprWorkersQueryOptions = <TData = Awaited<ReturnType<typeof listDprWorkers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprWorkers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprWorkersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprWorkers>>> = ({ signal }) => listDprWorkers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprWorkers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprWorkersQueryResult = NonNullable<Awaited<ReturnType<typeof listDprWorkers>>>
+export type ListDprWorkersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List DPR workers with their team assignments
+ */
+
+export function useListDprWorkers<TData = Awaited<ReturnType<typeof listDprWorkers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprWorkers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprWorkersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateDprWorkerUrl = () => {
+
+
+
+
+  return `/api/dpr/workers`
+}
+
+/**
+ * @summary Create a single DPR worker
+ */
+export const createDprWorker = async (dprWorkerInput: DprWorkerInput, options?: RequestInit): Promise<DprWorker> => {
+
+  return customFetch<DprWorker>(getCreateDprWorkerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprWorkerInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprWorkerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprWorker>>, TError,{data: BodyType<DprWorkerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprWorker>>, TError,{data: BodyType<DprWorkerInput>}, TContext> => {
+
+const mutationKey = ['createDprWorker'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprWorker>>, {data: BodyType<DprWorkerInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDprWorker(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprWorkerMutationResult = NonNullable<Awaited<ReturnType<typeof createDprWorker>>>
+    export type CreateDprWorkerMutationBody = BodyType<DprWorkerInput>
+    export type CreateDprWorkerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a single DPR worker
+ */
+export const useCreateDprWorker = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprWorker>>, TError,{data: BodyType<DprWorkerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprWorker>>,
+        TError,
+        {data: BodyType<DprWorkerInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprWorkerMutationOptions(options));
+    }
+
+export const getImportDprWorkersUrl = () => {
+
+
+
+
+  return `/api/dpr/workers/import`
+}
+
+/**
+ * @summary Bulk-import DPR workers (skips duplicates by name+company)
+ */
+export const importDprWorkers = async (dprWorkerInput: DprWorkerInput[], options?: RequestInit): Promise<DprWorkerImportResult> => {
+
+  return customFetch<DprWorkerImportResult>(getImportDprWorkersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprWorkerInput,)
+  }
+);}
+
+
+
+
+export const getImportDprWorkersMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importDprWorkers>>, TError,{data: BodyType<DprWorkerInput[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importDprWorkers>>, TError,{data: BodyType<DprWorkerInput[]>}, TContext> => {
+
+const mutationKey = ['importDprWorkers'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importDprWorkers>>, {data: BodyType<DprWorkerInput[]>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importDprWorkers(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportDprWorkersMutationResult = NonNullable<Awaited<ReturnType<typeof importDprWorkers>>>
+    export type ImportDprWorkersMutationBody = BodyType<DprWorkerInput[]>
+    export type ImportDprWorkersMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Bulk-import DPR workers (skips duplicates by name+company)
+ */
+export const useImportDprWorkers = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importDprWorkers>>, TError,{data: BodyType<DprWorkerInput[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importDprWorkers>>,
+        TError,
+        {data: BodyType<DprWorkerInput[]>},
+        TContext
+      > => {
+      return useMutation(getImportDprWorkersMutationOptions(options));
+    }
+
+export const getDeleteDprWorkerUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/workers/${id}`
+}
+
+/**
+ * @summary Delete a DPR worker
+ */
+export const deleteDprWorker = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprWorkerUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprWorkerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprWorker>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprWorker>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprWorker'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprWorker>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprWorker(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprWorkerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprWorker>>>
+
+    export type DeleteDprWorkerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a DPR worker
+ */
+export const useDeleteDprWorker = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprWorker>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprWorker>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprWorkerMutationOptions(options));
+    }
+
+export const getSetDprWorkerTeamsUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/workers/${id}/teams`
+}
+
+/**
+ * @summary Set (replace) team assignments for a worker
+ */
+export const setDprWorkerTeams = async (id: number,
+    dprWorkerTeamsBody: DprWorkerTeamsBody, options?: RequestInit): Promise<DprWorker> => {
+
+  return customFetch<DprWorker>(getSetDprWorkerTeamsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprWorkerTeamsBody,)
+  }
+);}
+
+
+
+
+export const getSetDprWorkerTeamsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDprWorkerTeams>>, TError,{id: number;data: BodyType<DprWorkerTeamsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setDprWorkerTeams>>, TError,{id: number;data: BodyType<DprWorkerTeamsBody>}, TContext> => {
+
+const mutationKey = ['setDprWorkerTeams'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setDprWorkerTeams>>, {id: number;data: BodyType<DprWorkerTeamsBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setDprWorkerTeams(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetDprWorkerTeamsMutationResult = NonNullable<Awaited<ReturnType<typeof setDprWorkerTeams>>>
+    export type SetDprWorkerTeamsMutationBody = BodyType<DprWorkerTeamsBody>
+    export type SetDprWorkerTeamsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set (replace) team assignments for a worker
+ */
+export const useSetDprWorkerTeams = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDprWorkerTeams>>, TError,{id: number;data: BodyType<DprWorkerTeamsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setDprWorkerTeams>>,
+        TError,
+        {id: number;data: BodyType<DprWorkerTeamsBody>},
+        TContext
+      > => {
+      return useMutation(getSetDprWorkerTeamsMutationOptions(options));
     }
 
 export const getListDprTeamsUrl = () => {

@@ -332,6 +332,32 @@ export interface PhaseStatusBreakdown {
   pending: number;
 }
 
+export interface DprWorker {
+  id: number;
+  firstName: string;
+  lastName: string;
+  role?: string | null;
+  company?: string | null;
+  active: boolean;
+  teamIds: number[];
+}
+
+export interface DprWorkerInput {
+  firstName: string;
+  lastName: string;
+  role?: string | null;
+  company?: string | null;
+}
+
+export interface DprWorkerTeamsBody {
+  teamIds: number[];
+}
+
+export interface DprWorkerImportResult {
+  inserted: number;
+  total: number;
+}
+
 export interface DprLocation {
   id: number;
   name: string;

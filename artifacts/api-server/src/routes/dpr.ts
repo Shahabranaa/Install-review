@@ -10,6 +10,8 @@ import {
   dprJdrCodesTable,
   dprTimesheetEntriesTable,
   dprTeamDateExceptionsTable,
+  dprWorkersTable,
+  dprTeamWorkersTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -64,6 +66,15 @@ import {
   UpdateDprLocationBody,
   UpdateDprLocationResponse,
   DeleteDprLocationParams,
+  ListDprWorkersResponse,
+  ListDprWorkersResponseItem,
+  CreateDprWorkerBody,
+  ImportDprWorkersBody,
+  ImportDprWorkersResponse,
+  DeleteDprWorkerParams,
+  SetDprWorkerTeamsParams,
+  SetDprWorkerTeamsBody,
+  SetDprWorkerTeamsResponse,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 
@@ -795,6 +806,71 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+// ── DPR Workers ───────────────────────────────────────────────────────────────
+
+async function workerWithTeams(workerId: number) {
+  const [worker] = await db.select().from(dprWorkersTable).where(eq(dprWorkersTable.id, workerId));
+  if (!worker) return null;
+  const assignments = await db.select({ teamId: dprTeamWorkersTable.teamId }).from(dprTeamWorkersTable).where(eq(dprTeamWorkersTable.workerId, workerId));
+  return { ...worker, teamIds: assignments.map((a) => a.teamId) };
+}
+
+router.get("/dpr/workers", async (_req, res): Promise<void> => {
+  const workers = await db.select().from(dprWorkersTable).orderBy(dprWorkersTable.lastName, dprWorkersTable.firstName);
+  const assignments = await db.select().from(dprTeamWorkersTable);
+  const teamMap = new Map<number, number[]>();
+  for (const a of assignments) {
+    if (!teamMap.has(a.workerId)) teamMap.set(a.workerId, []);
+    teamMap.get(a.workerId)!.push(a.teamId);
+  }
+  const result = workers.map((w) => ({ ...w, teamIds: teamMap.get(w.id) ?? [] }));
+  res.json(ListDprWorkersResponse.parse(serialize(result)));
+});
+
+router.post("/dpr/workers", async (req, res): Promise<void> => {
+  const body = CreateDprWorkerBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [worker] = await db.insert(dprWorkersTable).values(body.data).returning();
+  const result = { ...worker, teamIds: [] as number[] };
+  res.status(201).json(ListDprWorkersResponseItem.parse(serialize(result)));
+});
+
+// Must be defined before /dpr/workers/:id so Express matches it first
+router.post("/dpr/workers/import", async (req, res): Promise<void> => {
+  const body = ImportDprWorkersBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (body.data.length === 0) { res.json(ImportDprWorkersResponse.parse({ inserted: 0, total: 0 })); return; }
+  const inserted = await db
+    .insert(dprWorkersTable)
+    .values(body.data)
+    .onConflictDoNothing()
+    .returning();
+  res.json(ImportDprWorkersResponse.parse({ inserted: inserted.length, total: body.data.length }));
+});
+
+router.delete("/dpr/workers/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprWorkerParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  await db.delete(dprWorkersTable).where(eq(dprWorkersTable.id, params.data.id));
+  res.status(204).send();
+});
+
+router.put("/dpr/workers/:id/teams", async (req, res): Promise<void> => {
+  const params = SetDprWorkerTeamsParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = SetDprWorkerTeamsBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const workerId = params.data.id;
+  // Replace all team assignments atomically
+  await db.delete(dprTeamWorkersTable).where(eq(dprTeamWorkersTable.workerId, workerId));
+  if (body.data.teamIds.length > 0) {
+    await db.insert(dprTeamWorkersTable).values(body.data.teamIds.map((teamId) => ({ teamId, workerId }))).onConflictDoNothing();
+  }
+  const result = await workerWithTeams(workerId);
+  if (!result) { res.status(404).json({ error: "Worker not found" }); return; }
+  res.json(SetDprWorkerTeamsResponse.parse(serialize(result)));
 });
 
 export default router;
