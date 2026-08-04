@@ -1047,13 +1047,13 @@ export default function CapturePage() {
           </button>
         </TableHead>
       )}
+      <TableHead className="text-center text-muted-foreground">#</TableHead>
       {showDateCol && <TableHead className={COL.date}>Date</TableHead>}
       {showTeamCol && <TableHead className={COL.team}>Team</TableHead>}
-      <TableHead className="w-[36px] text-center text-muted-foreground">#</TableHead>
-      <TableHead className="w-[44px]">Status</TableHead>
-      <TableHead className={COL.start}>Start</TableHead>
-      <TableHead className={COL.end}>Finish</TableHead>
-      <TableHead className="text-emerald-600">Duration</TableHead>
+      <TableHead className="text-center whitespace-nowrap">Status</TableHead>
+      <TableHead className={cn(COL.start, "whitespace-nowrap")}>Start</TableHead>
+      <TableHead className={cn(COL.end, "whitespace-nowrap")}>Finish</TableHead>
+      <TableHead className="whitespace-nowrap text-emerald-600">Duration</TableHead>
       <TableHead className={COL.location}>Location</TableHead>
       <TableHead className={COL.notes}>Comment</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
@@ -1227,21 +1227,21 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[920px]">
+            <Table className="table-fixed w-full min-w-[1160px]">
               {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
-                {selectMode && <col className="w-[36px]" />}
-                {showDateCol && <col className="w-[9%]" />}
-                {showTeamCol && <col className="w-[9%]" />}
-                <col style={{ width: 36 }} />
-                <col style={{ width: 44 }} />
-                <col className="w-[7%]" />
-                <col className="w-[7%]" />
-                <col className="w-[6%]" />
-                <col className="w-[11%]" />
-                <col />
-                <col style={{ width: 270 }} />
-                <col style={{ width: 80 }} />
+                {selectMode && <col style={{ width: 36 }} />}
+                <col style={{ width: 40 }} />{/* # */}
+                {showDateCol && <col style={{ width: 104 }} />}{/* Date */}
+                {showTeamCol && <col style={{ width: 92 }} />}{/* Team */}
+                <col style={{ width: 60 }} />{/* Status */}
+                <col style={{ width: 72 }} />{/* Start */}
+                <col style={{ width: 72 }} />{/* Finish */}
+                <col style={{ width: 80 }} />{/* Duration */}
+                <col style={{ width: 130 }} />{/* Location */}
+                <col />{/* Comment — flexible */}
+                <col style={{ width: 270 }} />{/* Activity Group */}
+                <col style={{ width: 84 }} />{/* Actions */}
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
@@ -1252,6 +1252,7 @@ export default function CapturePage() {
                 {newRow && (
                   <TableRow className="bg-primary/5 align-top">
                     {selectMode && <TableCell className="w-[36px]" />}
+                    <TableCell className="w-[36px]" />
                     {showDateCol && (
                       <TableCell className={COL.date}>
                         <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
@@ -1271,7 +1272,6 @@ export default function CapturePage() {
                         {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
                       </TableCell>
                     )}
-                    <TableCell className="w-[36px]" />
                     <TableCell className="w-[44px]" />
                     <TableCell className={COL.start}>
                       <Input
@@ -1375,6 +1375,8 @@ export default function CapturePage() {
                             : <Square className="w-4 h-4 text-muted-foreground/50 cursor-pointer" />}
                         </TableCell>
                       )}
+                      {/* # */}
+                      <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{idx + 1}</TableCell>
                       {/* Date — inline editable (edits shiftDate; raw calendar date shown as annotation) */}
                       {showDateCol && (
                         <TableCell className={cn(COL.date, "font-medium")} onClick={onCellClick}>
@@ -1442,8 +1444,7 @@ export default function CapturePage() {
                           )}
                         </TableCell>
                       )}
-                                             {/* # and Status */}
-                       <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{idx + 1}</TableCell>
+                                             {/* Status */}
                        <TableCell className="w-[44px] text-center"><Circle className="w-3.5 h-3.5 text-muted-foreground/30 inline-block" /></TableCell>
                        {/* Start — inline editable */}
                       <TableCell className={cn(COL.start, isCellFailed("startTime") && "ring-1 ring-inset ring-destructive rounded")} onClick={onCellClick}>
@@ -1664,6 +1665,7 @@ export default function CapturePage() {
                     {filteredLockedEntries.map((entry, idx) => (
                       <TableRow key={`locked-${entry.id}`} className="opacity-50 bg-muted/5">
                         {selectMode && <TableCell className="w-[36px]" />}
+                        <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{filteredEntries.length + idx + 1}</TableCell>
                         {showDateCol && (
                           <TableCell className={cn(COL.date, "text-sm text-muted-foreground")}>
                             {(() => {
@@ -1677,7 +1679,6 @@ export default function CapturePage() {
                             {entry.team?.name || "—"}
                           </TableCell>
                         )}
-                        <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{filteredEntries.length + idx + 1}</TableCell>
                         <TableCell className="w-[44px] text-center"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline-block" /></TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
