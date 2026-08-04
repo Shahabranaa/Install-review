@@ -227,6 +227,14 @@ function normalizeDate(raw: string): string | null {
   if (!trimmed) return null;
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // DD-MM-YY or DD-MM-YYYY (dash-separated day-first, e.g. "14-02-2026")
+  const dashMatch = trimmed.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
+  if (dashMatch) {
+    const day = dashMatch[1].padStart(2, "0");
+    const month = dashMatch[2].padStart(2, "0");
+    const year = dashMatch[3].length === 2 ? `20${dashMatch[3]}` : dashMatch[3];
+    return `${year}-${month}-${day}`;
+  }
   // DD.MM.YY or DD.MM.YYYY (dot-separated, e.g. "14.06.26")
   const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
   if (dotMatch) {
