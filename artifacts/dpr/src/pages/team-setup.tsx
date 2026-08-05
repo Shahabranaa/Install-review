@@ -243,10 +243,12 @@ function ManageWorkersDialog({ open, onClose }: { open: boolean; onClose: () => 
 
 function SlotTypeahead({
   allWorkers,
+  slotRole,
   onSelect,
   onCancel,
 }: {
   allWorkers: DprWorker[];
+  slotRole: string;
   onSelect: (workerId: number) => void;
   onCancel: () => void;
 }) {
@@ -254,13 +256,19 @@ function SlotTypeahead({
   const [focused, setFocused] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const slotAbbr = roleAbbr(slotRole);
+  const roleFilteredWorkers = useMemo(
+    () => allWorkers.filter((w) => roleAbbr(w.role ?? "") === slotAbbr),
+    [allWorkers, slotAbbr],
+  );
+
   const matches = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return allWorkers.slice(0, 8);
-    return allWorkers
+    if (!q) return roleFilteredWorkers.slice(0, 8);
+    return roleFilteredWorkers
       .filter((w) => `${w.firstName} ${w.lastName}`.toLowerCase().includes(q) || (w.role ?? "").toLowerCase().includes(q))
       .slice(0, 8);
-  }, [query, allWorkers]);
+  }, [query, roleFilteredWorkers]);
 
   // Focus input on mount
   useRef<boolean>(false); // placeholder to ensure useEffect is ordered
@@ -418,6 +426,7 @@ function TeamPanel({
             {isEditing ? (
               <SlotTypeahead
                 allWorkers={allWorkers}
+                slotRole={slot.role}
                 onSelect={(workerId) => { onAssign(slot.slotId, workerId); setEditingSlotId(null); }}
                 onCancel={() => setEditingSlotId(null)}
               />
