@@ -22,6 +22,8 @@ import type {
 import type {
   ApproveImageBody,
   ApprovePhaseBody,
+  ClearDprRosterBody,
+  CopyDprRosterBody,
   CreateImageBody,
   CreateIssueBody,
   CreateLocationBody,
@@ -36,11 +38,15 @@ import type {
   DprActivityInput,
   DprActivityType,
   DprActivityTypeInput,
+  DprDailyAssignment,
   DprJdrCode,
   DprJdrCodeInput,
   DprLocation,
   DprLocationInput,
+  DprRosterDay,
   DprTeam,
+  DprTeamRoleSlot,
+  DprTeamRoleSlotInput,
   DprTimesheetEntry,
   DprTimesheetEntryInput,
   DprTimesheetEntryUpdate,
@@ -52,6 +58,7 @@ import type {
   ErrorResponse,
   GenerateDocumentBody,
   GetDashboardSummaryParams,
+  GetDprRosterParams,
   GetPhaseStatusesParams,
   HealthStatus,
   ImageDetail,
@@ -81,7 +88,8 @@ import type {
   UpdateIssueBody,
   UpdatePhaseBody,
   UpdateProjectBody,
-  UpdateSiteBody
+  UpdateSiteBody,
+  UpsertDprDailyAssignmentBody
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -3273,6 +3281,594 @@ export const useDeleteDprLocation = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteDprLocationMutationOptions(options));
+    }
+
+export const getGetDprRosterUrl = (params: GetDprRosterParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/roster?${stringifiedParams}` : `/api/dpr/roster`
+}
+
+/**
+ * @summary Get the full roster for a date (all teams, slots, assignments, unassigned workers)
+ */
+export const getDprRoster = async (params: GetDprRosterParams, options?: RequestInit): Promise<DprRosterDay> => {
+
+  return customFetch<DprRosterDay>(getGetDprRosterUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDprRosterQueryKey = (params?: GetDprRosterParams,) => {
+    return [
+    `/api/dpr/roster`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetDprRosterQueryOptions = <TData = Awaited<ReturnType<typeof getDprRoster>>, TError = ErrorType<unknown>>(params: GetDprRosterParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprRoster>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDprRosterQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDprRoster>>> = ({ signal }) => getDprRoster(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDprRoster>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDprRosterQueryResult = NonNullable<Awaited<ReturnType<typeof getDprRoster>>>
+export type GetDprRosterQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the full roster for a date (all teams, slots, assignments, unassigned workers)
+ */
+
+export function useGetDprRoster<TData = Awaited<ReturnType<typeof getDprRoster>>, TError = ErrorType<unknown>>(
+ params: GetDprRosterParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprRoster>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDprRosterQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCopyDprRosterUrl = () => {
+
+
+
+
+  return `/api/dpr/roster/copy`
+}
+
+/**
+ * @summary Copy assignments from one date to another
+ */
+export const copyDprRoster = async (copyDprRosterBody: CopyDprRosterBody, options?: RequestInit): Promise<DprRosterDay> => {
+
+  return customFetch<DprRosterDay>(getCopyDprRosterUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      copyDprRosterBody,)
+  }
+);}
+
+
+
+
+export const getCopyDprRosterMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof copyDprRoster>>, TError,{data: BodyType<CopyDprRosterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof copyDprRoster>>, TError,{data: BodyType<CopyDprRosterBody>}, TContext> => {
+
+const mutationKey = ['copyDprRoster'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof copyDprRoster>>, {data: BodyType<CopyDprRosterBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  copyDprRoster(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CopyDprRosterMutationResult = NonNullable<Awaited<ReturnType<typeof copyDprRoster>>>
+    export type CopyDprRosterMutationBody = BodyType<CopyDprRosterBody>
+    export type CopyDprRosterMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Copy assignments from one date to another
+ */
+export const useCopyDprRoster = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof copyDprRoster>>, TError,{data: BodyType<CopyDprRosterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof copyDprRoster>>,
+        TError,
+        {data: BodyType<CopyDprRosterBody>},
+        TContext
+      > => {
+      return useMutation(getCopyDprRosterMutationOptions(options));
+    }
+
+export const getClearDprRosterUrl = () => {
+
+
+
+
+  return `/api/dpr/roster/clear`
+}
+
+/**
+ * @summary Clear all assignments for a date
+ */
+export const clearDprRoster = async (clearDprRosterBody: ClearDprRosterBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getClearDprRosterUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clearDprRosterBody,)
+  }
+);}
+
+
+
+
+export const getClearDprRosterMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearDprRoster>>, TError,{data: BodyType<ClearDprRosterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearDprRoster>>, TError,{data: BodyType<ClearDprRosterBody>}, TContext> => {
+
+const mutationKey = ['clearDprRoster'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearDprRoster>>, {data: BodyType<ClearDprRosterBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  clearDprRoster(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearDprRosterMutationResult = NonNullable<Awaited<ReturnType<typeof clearDprRoster>>>
+    export type ClearDprRosterMutationBody = BodyType<ClearDprRosterBody>
+    export type ClearDprRosterMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear all assignments for a date
+ */
+export const useClearDprRoster = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearDprRoster>>, TError,{data: BodyType<ClearDprRosterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearDprRoster>>,
+        TError,
+        {data: BodyType<ClearDprRosterBody>},
+        TContext
+      > => {
+      return useMutation(getClearDprRosterMutationOptions(options));
+    }
+
+export const getListDprTeamRoleSlotsUrl = (teamId: number,) => {
+
+
+
+
+  return `/api/dpr/team-role-slots/${teamId}`
+}
+
+/**
+ * @summary List role slots for a team
+ */
+export const listDprTeamRoleSlots = async (teamId: number, options?: RequestInit): Promise<DprTeamRoleSlot[]> => {
+
+  return customFetch<DprTeamRoleSlot[]>(getListDprTeamRoleSlotsUrl(teamId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprTeamRoleSlotsQueryKey = (teamId: number,) => {
+    return [
+    `/api/dpr/team-role-slots/${teamId}`
+    ] as const;
+    }
+
+
+export const getListDprTeamRoleSlotsQueryOptions = <TData = Awaited<ReturnType<typeof listDprTeamRoleSlots>>, TError = ErrorType<unknown>>(teamId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTeamRoleSlots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprTeamRoleSlotsQueryKey(teamId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprTeamRoleSlots>>> = ({ signal }) => listDprTeamRoleSlots(teamId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(teamId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprTeamRoleSlots>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprTeamRoleSlotsQueryResult = NonNullable<Awaited<ReturnType<typeof listDprTeamRoleSlots>>>
+export type ListDprTeamRoleSlotsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List role slots for a team
+ */
+
+export function useListDprTeamRoleSlots<TData = Awaited<ReturnType<typeof listDprTeamRoleSlots>>, TError = ErrorType<unknown>>(
+ teamId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprTeamRoleSlots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprTeamRoleSlotsQueryOptions(teamId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateDprTeamRoleSlotUrl = (teamId: number,) => {
+
+
+
+
+  return `/api/dpr/team-role-slots/${teamId}`
+}
+
+/**
+ * @summary Add a role slot to a team
+ */
+export const createDprTeamRoleSlot = async (teamId: number,
+    dprTeamRoleSlotInput: DprTeamRoleSlotInput, options?: RequestInit): Promise<DprTeamRoleSlot> => {
+
+  return customFetch<DprTeamRoleSlot>(getCreateDprTeamRoleSlotUrl(teamId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprTeamRoleSlotInput,)
+  }
+);}
+
+
+
+
+export const getCreateDprTeamRoleSlotMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprTeamRoleSlot>>, TError,{teamId: number;data: BodyType<DprTeamRoleSlotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDprTeamRoleSlot>>, TError,{teamId: number;data: BodyType<DprTeamRoleSlotInput>}, TContext> => {
+
+const mutationKey = ['createDprTeamRoleSlot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDprTeamRoleSlot>>, {teamId: number;data: BodyType<DprTeamRoleSlotInput>}> = (props) => {
+          const {teamId,data} = props ?? {};
+
+          return  createDprTeamRoleSlot(teamId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDprTeamRoleSlotMutationResult = NonNullable<Awaited<ReturnType<typeof createDprTeamRoleSlot>>>
+    export type CreateDprTeamRoleSlotMutationBody = BodyType<DprTeamRoleSlotInput>
+    export type CreateDprTeamRoleSlotMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a role slot to a team
+ */
+export const useCreateDprTeamRoleSlot = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDprTeamRoleSlot>>, TError,{teamId: number;data: BodyType<DprTeamRoleSlotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDprTeamRoleSlot>>,
+        TError,
+        {teamId: number;data: BodyType<DprTeamRoleSlotInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDprTeamRoleSlotMutationOptions(options));
+    }
+
+export const getDeleteDprTeamRoleSlotUrl = (teamId: number,
+    slotId: number,) => {
+
+
+
+
+  return `/api/dpr/team-role-slots/${teamId}/${slotId}`
+}
+
+/**
+ * @summary Delete a role slot from a team
+ */
+export const deleteDprTeamRoleSlot = async (teamId: number,
+    slotId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprTeamRoleSlotUrl(teamId,slotId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprTeamRoleSlotMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>, TError,{teamId: number;slotId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>, TError,{teamId: number;slotId: number}, TContext> => {
+
+const mutationKey = ['deleteDprTeamRoleSlot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>, {teamId: number;slotId: number}> = (props) => {
+          const {teamId,slotId} = props ?? {};
+
+          return  deleteDprTeamRoleSlot(teamId,slotId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprTeamRoleSlotMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>>
+
+    export type DeleteDprTeamRoleSlotMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a role slot from a team
+ */
+export const useDeleteDprTeamRoleSlot = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>, TError,{teamId: number;slotId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprTeamRoleSlot>>,
+        TError,
+        {teamId: number;slotId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprTeamRoleSlotMutationOptions(options));
+    }
+
+export const getUpsertDprDailyAssignmentUrl = () => {
+
+
+
+
+  return `/api/dpr/daily-assignments`
+}
+
+/**
+ * @summary Assign a worker to a slot for a date (creates or replaces)
+ */
+export const upsertDprDailyAssignment = async (upsertDprDailyAssignmentBody: UpsertDprDailyAssignmentBody, options?: RequestInit): Promise<DprDailyAssignment> => {
+
+  return customFetch<DprDailyAssignment>(getUpsertDprDailyAssignmentUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      upsertDprDailyAssignmentBody,)
+  }
+);}
+
+
+
+
+export const getUpsertDprDailyAssignmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertDprDailyAssignment>>, TError,{data: BodyType<UpsertDprDailyAssignmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertDprDailyAssignment>>, TError,{data: BodyType<UpsertDprDailyAssignmentBody>}, TContext> => {
+
+const mutationKey = ['upsertDprDailyAssignment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertDprDailyAssignment>>, {data: BodyType<UpsertDprDailyAssignmentBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertDprDailyAssignment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertDprDailyAssignmentMutationResult = NonNullable<Awaited<ReturnType<typeof upsertDprDailyAssignment>>>
+    export type UpsertDprDailyAssignmentMutationBody = BodyType<UpsertDprDailyAssignmentBody>
+    export type UpsertDprDailyAssignmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Assign a worker to a slot for a date (creates or replaces)
+ */
+export const useUpsertDprDailyAssignment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertDprDailyAssignment>>, TError,{data: BodyType<UpsertDprDailyAssignmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertDprDailyAssignment>>,
+        TError,
+        {data: BodyType<UpsertDprDailyAssignmentBody>},
+        TContext
+      > => {
+      return useMutation(getUpsertDprDailyAssignmentMutationOptions(options));
+    }
+
+export const getDeleteDprDailyAssignmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/dpr/daily-assignments/${id}`
+}
+
+/**
+ * @summary Remove an assignment
+ */
+export const deleteDprDailyAssignment = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteDprDailyAssignmentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDprDailyAssignmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprDailyAssignment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDprDailyAssignment>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteDprDailyAssignment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDprDailyAssignment>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteDprDailyAssignment(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDprDailyAssignmentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDprDailyAssignment>>>
+
+    export type DeleteDprDailyAssignmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove an assignment
+ */
+export const useDeleteDprDailyAssignment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDprDailyAssignment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDprDailyAssignment>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDprDailyAssignmentMutationOptions(options));
     }
 
 export const getListDprWorkersUrl = () => {

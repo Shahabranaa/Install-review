@@ -820,6 +820,157 @@ export const DeleteDprLocationParams = zod.object({
 
 
 /**
+ * @summary Get the full roster for a date (all teams, slots, assignments, unassigned workers)
+ */
+export const GetDprRosterQueryParams = zod.object({
+  "date": zod.coerce.string()
+})
+
+export const GetDprRosterResponse = zod.object({
+  "date": zod.string(),
+  "teams": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "slots": zod.array(zod.object({
+  "slotId": zod.number(),
+  "role": zod.string(),
+  "displayOrder": zod.number(),
+  "assignmentId": zod.number().nullish(),
+  "worker": zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+}).nullish()
+}))
+})),
+  "unassigned": zod.array(zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+}))
+})
+
+
+/**
+ * @summary Copy assignments from one date to another
+ */
+export const CopyDprRosterBody = zod.object({
+  "fromDate": zod.string(),
+  "toDate": zod.string()
+})
+
+export const CopyDprRosterResponse = zod.object({
+  "date": zod.string(),
+  "teams": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "slots": zod.array(zod.object({
+  "slotId": zod.number(),
+  "role": zod.string(),
+  "displayOrder": zod.number(),
+  "assignmentId": zod.number().nullish(),
+  "worker": zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+}).nullish()
+}))
+})),
+  "unassigned": zod.array(zod.object({
+  "id": zod.number(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "active": zod.boolean(),
+  "teamIds": zod.array(zod.number())
+}))
+})
+
+
+/**
+ * @summary Clear all assignments for a date
+ */
+export const ClearDprRosterBody = zod.object({
+  "date": zod.string()
+})
+
+
+/**
+ * @summary List role slots for a team
+ */
+export const ListDprTeamRoleSlotsParams = zod.object({
+  "teamId": zod.coerce.number()
+})
+
+export const ListDprTeamRoleSlotsResponseItem = zod.object({
+  "id": zod.number(),
+  "teamId": zod.number(),
+  "role": zod.string(),
+  "displayOrder": zod.number()
+})
+export const ListDprTeamRoleSlotsResponse = zod.array(ListDprTeamRoleSlotsResponseItem)
+
+
+/**
+ * @summary Add a role slot to a team
+ */
+export const CreateDprTeamRoleSlotParams = zod.object({
+  "teamId": zod.coerce.number()
+})
+
+export const CreateDprTeamRoleSlotBody = zod.object({
+  "role": zod.string()
+})
+
+
+/**
+ * @summary Delete a role slot from a team
+ */
+export const DeleteDprTeamRoleSlotParams = zod.object({
+  "teamId": zod.coerce.number(),
+  "slotId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Assign a worker to a slot for a date (creates or replaces)
+ */
+export const UpsertDprDailyAssignmentBody = zod.object({
+  "date": zod.string(),
+  "slotId": zod.number(),
+  "workerId": zod.number()
+})
+
+export const UpsertDprDailyAssignmentResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "slotId": zod.number(),
+  "workerId": zod.number()
+})
+
+
+/**
+ * @summary Remove an assignment
+ */
+export const DeleteDprDailyAssignmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary List DPR workers with their team assignments
  */
 export const ListDprWorkersResponseItem = zod.object({

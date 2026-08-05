@@ -12,6 +12,8 @@ import {
   dprTeamDateExceptionsTable,
   dprWorkersTable,
   dprTeamWorkersTable,
+  dprTeamRoleSlotsTable,
+  dprDailyAssignmentsTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -75,6 +77,15 @@ import {
   SetDprWorkerTeamsParams,
   SetDprWorkerTeamsBody,
   SetDprWorkerTeamsResponse,
+  GetDprRosterQueryParams,
+  CopyDprRosterBody,
+  ClearDprRosterBody,
+  ListDprTeamRoleSlotsParams,
+  CreateDprTeamRoleSlotParams,
+  CreateDprTeamRoleSlotBody,
+  DeleteDprTeamRoleSlotParams,
+  UpsertDprDailyAssignmentBody,
+  DeleteDprDailyAssignmentParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 
@@ -806,6 +817,174 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+// ── Roster & Role Slots ───────────────────────────────────────────────────────
+
+// Helper: build full roster response for a date
+async function buildRoster(date: string) {
+  const [teams, slots, assignments, workers] = await Promise.all([
+    db.select().from(dprTeamsTable),
+    db.select().from(dprTeamRoleSlotsTable).orderBy(dprTeamRoleSlotsTable.teamId, dprTeamRoleSlotsTable.displayOrder),
+    db.select().from(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.date, date)),
+    db.select().from(dprWorkersTable).where(eq(dprWorkersTable.active, true)),
+  ]);
+
+  const assignedWorkerIds = new Set(assignments.map((a) => a.workerId));
+
+  // worker lookup by id
+  const workerById = new Map(workers.map((w) => [w.id, w]));
+
+  // assignment lookup: slotId → assignment
+  const assignBySlot = new Map(assignments.map((a) => [a.slotId, a]));
+
+  // group slots by team
+  const slotsByTeam = new Map<number, typeof slots>();
+  for (const slot of slots) {
+    if (!slotsByTeam.has(slot.teamId)) slotsByTeam.set(slot.teamId, []);
+    slotsByTeam.get(slot.teamId)!.push(slot);
+  }
+
+  const rosterTeams = teams.map((team) => {
+    const teamSlots = slotsByTeam.get(team.id) ?? [];
+    return {
+      teamId: team.id,
+      teamName: team.name,
+      slots: teamSlots.map((slot) => {
+        const assignment = assignBySlot.get(slot.id);
+        const worker = assignment ? workerById.get(assignment.workerId) : null;
+        return {
+          slotId: slot.id,
+          role: slot.role,
+          displayOrder: slot.displayOrder,
+          assignmentId: assignment?.id ?? null,
+          worker: worker
+            ? { ...worker, teamIds: [] as number[] }
+            : null,
+        };
+      }),
+    };
+  });
+
+  const unassigned = workers
+    .filter((w) => !assignedWorkerIds.has(w.id))
+    .map((w) => ({ ...w, teamIds: [] as number[] }));
+
+  return { date, teams: rosterTeams, unassigned };
+}
+
+router.get("/dpr/roster", async (req, res): Promise<void> => {
+  const query = GetDprRosterQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const roster = await buildRoster(query.data.date);
+  res.json(roster);
+});
+
+router.post("/dpr/roster/copy", async (req, res): Promise<void> => {
+  const body = CopyDprRosterBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const { fromDate, toDate } = body.data;
+
+  // Get source assignments
+  const sourceAssignments = await db
+    .select()
+    .from(dprDailyAssignmentsTable)
+    .where(eq(dprDailyAssignmentsTable.date, fromDate));
+
+  if (sourceAssignments.length > 0) {
+    // Get workers still active
+    const activeWorkers = await db
+      .select({ id: dprWorkersTable.id })
+      .from(dprWorkersTable)
+      .where(eq(dprWorkersTable.active, true));
+    const activeIds = new Set(activeWorkers.map((w) => w.id));
+
+    const toInsert = sourceAssignments
+      .filter((a) => activeIds.has(a.workerId))
+      .map((a) => ({ date: toDate, slotId: a.slotId, workerId: a.workerId }));
+
+    if (toInsert.length > 0) {
+      // Delete existing assignments for toDate first, then insert copied ones
+      await db.delete(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.date, toDate));
+      await db.insert(dprDailyAssignmentsTable).values(toInsert).onConflictDoNothing();
+    }
+  }
+
+  const roster = await buildRoster(toDate);
+  res.json(roster);
+});
+
+router.post("/dpr/roster/clear", async (req, res): Promise<void> => {
+  const body = ClearDprRosterBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  await db.delete(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.date, body.data.date));
+  res.status(204).send();
+});
+
+router.get("/dpr/team-role-slots/:teamId", async (req, res): Promise<void> => {
+  const params = ListDprTeamRoleSlotsParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const rows = await db
+    .select()
+    .from(dprTeamRoleSlotsTable)
+    .where(eq(dprTeamRoleSlotsTable.teamId, params.data.teamId))
+    .orderBy(dprTeamRoleSlotsTable.displayOrder);
+  res.json(rows);
+});
+
+router.post("/dpr/team-role-slots/:teamId", async (req, res): Promise<void> => {
+  const params = CreateDprTeamRoleSlotParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = CreateDprTeamRoleSlotBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Display order = max + 1
+  const [maxRow] = await db
+    .select({ maxOrder: sql<number>`MAX(display_order)` })
+    .from(dprTeamRoleSlotsTable)
+    .where(eq(dprTeamRoleSlotsTable.teamId, params.data.teamId));
+  const nextOrder = (maxRow?.maxOrder ?? -1) + 1;
+
+  const [slot] = await db
+    .insert(dprTeamRoleSlotsTable)
+    .values({ teamId: params.data.teamId, role: body.data.role, displayOrder: nextOrder })
+    .returning();
+  res.status(201).json(slot);
+});
+
+router.delete("/dpr/team-role-slots/:teamId/:slotId", async (req, res): Promise<void> => {
+  const params = DeleteDprTeamRoleSlotParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  await db
+    .delete(dprTeamRoleSlotsTable)
+    .where(
+      and(
+        eq(dprTeamRoleSlotsTable.id, params.data.slotId),
+        eq(dprTeamRoleSlotsTable.teamId, params.data.teamId)
+      )
+    );
+  res.status(204).send();
+});
+
+router.put("/dpr/daily-assignments", async (req, res): Promise<void> => {
+  const body = UpsertDprDailyAssignmentBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db
+    .insert(dprDailyAssignmentsTable)
+    .values(body.data)
+    .onConflictDoUpdate({
+      target: [dprDailyAssignmentsTable.date, dprDailyAssignmentsTable.slotId],
+      set: { workerId: body.data.workerId },
+    })
+    .returning();
+  res.json(row);
+});
+
+router.delete("/dpr/daily-assignments/:id", async (req, res): Promise<void> => {
+  const params = DeleteDprDailyAssignmentParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  await db.delete(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.id, params.data.id));
+  res.status(204).send();
 });
 
 // ── DPR Workers ───────────────────────────────────────────────────────────────

@@ -46,3 +46,5 @@ export * from "./dpr-timesheet-entries";
 export * from "./dpr-team-date-exceptions";
 export * from "./dpr-workers";
 export * from "./dpr-team-workers";
+export * from "./dpr-team-role-slots";
+export * from "./dpr-daily-assignments";

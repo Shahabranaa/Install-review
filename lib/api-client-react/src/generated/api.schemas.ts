@@ -332,6 +332,30 @@ export interface PhaseStatusBreakdown {
   pending: number;
 }
 
+export interface DprTeamRoleSlot {
+  id: number;
+  teamId: number;
+  role: string;
+  displayOrder: number;
+}
+
+export interface DprTeamRoleSlotInput {
+  role: string;
+}
+
+export interface DprDailyAssignment {
+  id: number;
+  date: string;
+  slotId: number;
+  workerId: number;
+}
+
+export interface UpsertDprDailyAssignmentBody {
+  date: string;
+  slotId: number;
+  workerId: number;
+}
+
 export interface DprWorker {
   id: number;
   firstName: string;
@@ -340,6 +364,35 @@ export interface DprWorker {
   company?: string | null;
   active: boolean;
   teamIds: number[];
+}
+
+export interface DprRosterSlot {
+  slotId: number;
+  role: string;
+  displayOrder: number;
+  assignmentId?: number | null;
+  worker?: DprWorker | null;
+}
+
+export interface DprRosterTeam {
+  teamId: number;
+  teamName: string;
+  slots: DprRosterSlot[];
+}
+
+export interface DprRosterDay {
+  date: string;
+  teams: DprRosterTeam[];
+  unassigned: DprWorker[];
+}
+
+export interface CopyDprRosterBody {
+  fromDate: string;
+  toDate: string;
+}
+
+export interface ClearDprRosterBody {
+  date: string;
 }
 
 export interface DprWorkerInput {
@@ -612,6 +665,10 @@ projectId?: number;
 export type GetPhaseStatusesParams = {
 projectId?: number;
 siteId?: number;
+};
+
+export type GetDprRosterParams = {
+date: string;
 };
 
 export type ListDprActivityGroupsParams = {

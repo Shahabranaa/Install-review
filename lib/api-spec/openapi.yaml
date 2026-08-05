@@ -994,6 +994,157 @@ paths:
         "204":
           description: Deleted
 
+  /dpr/roster:
+    get:
+      operationId: getDprRoster
+      tags: [dpr]
+      summary: Get the full roster for a date (all teams, slots, assignments, unassigned workers)
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Roster for the date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprRosterDay"
+
+  /dpr/roster/copy:
+    post:
+      operationId: copyDprRoster
+      tags: [dpr]
+      summary: Copy assignments from one date to another
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyDprRosterBody"
+      responses:
+        "200":
+          description: Updated roster for the target date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprRosterDay"
+
+  /dpr/roster/clear:
+    post:
+      operationId: clearDprRoster
+      tags: [dpr]
+      summary: Clear all assignments for a date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClearDprRosterBody"
+      responses:
+        "204":
+          description: Cleared
+
+  /dpr/team-role-slots/{teamId}:
+    get:
+      operationId: listDprTeamRoleSlots
+      tags: [dpr]
+      summary: List role slots for a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Role slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DprTeamRoleSlot"
+    post:
+      operationId: createDprTeamRoleSlot
+      tags: [dpr]
+      summary: Add a role slot to a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprTeamRoleSlotInput"
+      responses:
+        "201":
+          description: Created slot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTeamRoleSlot"
+
+  /dpr/team-role-slots/{teamId}/{slotId}:
+    delete:
+      operationId: deleteDprTeamRoleSlot
+      tags: [dpr]
+      summary: Delete a role slot from a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: slotId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /dpr/daily-assignments:
+    put:
+      operationId: upsertDprDailyAssignment
+      tags: [dpr]
+      summary: Assign a worker to a slot for a date (creates or replaces)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertDprDailyAssignmentBody"
+      responses:
+        "200":
+          description: Assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprDailyAssignment"
+
+  /dpr/daily-assignments/{id}:
+    delete:
+      operationId: deleteDprDailyAssignment
+      tags: [dpr]
+      summary: Remove an assignment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   /dpr/workers:
     get:
       operationId: listDprWorkers
@@ -2152,6 +2303,112 @@ components:
         - incomplete
         - needsReview
         - pending
+
+    DprTeamRoleSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+        teamId:
+          type: integer
+        role:
+          type: string
+        displayOrder:
+          type: integer
+      required: [id, teamId, role, displayOrder]
+
+    DprTeamRoleSlotInput:
+      type: object
+      properties:
+        role:
+          type: string
+      required: [role]
+
+    DprDailyAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+        slotId:
+          type: integer
+        workerId:
+          type: integer
+      required: [id, date, slotId, workerId]
+
+    UpsertDprDailyAssignmentBody:
+      type: object
+      properties:
+        date:
+          type: string
+        slotId:
+          type: integer
+        workerId:
+          type: integer
+      required: [date, slotId, workerId]
+
+    DprRosterSlot:
+      type: object
+      properties:
+        slotId:
+          type: integer
+        role:
+          type: string
+        displayOrder:
+          type: integer
+        assignmentId:
+          type: integer
+          nullable: true
+        worker:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DprWorker"
+      required: [slotId, role, displayOrder]
+
+    DprRosterTeam:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/DprRosterSlot"
+      required: [teamId, teamName, slots]
+
+    DprRosterDay:
+      type: object
+      properties:
+        date:
+          type: string
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/DprRosterTeam"
+        unassigned:
+          type: array
+          items:
+            $ref: "#/components/schemas/DprWorker"
+      required: [date, teams, unassigned]
+
+    CopyDprRosterBody:
+      type: object
+      properties:
+        fromDate:
+          type: string
+        toDate:
+          type: string
+      required: [fromDate, toDate]
+
+    ClearDprRosterBody:
+      type: object
+      properties:
+        date:
+          type: string
+      required: [date]
 
     DprWorker:
       type: object
