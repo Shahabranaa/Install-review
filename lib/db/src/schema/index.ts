@@ -48,3 +48,4 @@ export * from "./dpr-workers";
 export * from "./dpr-team-workers";
 export * from "./dpr-team-role-slots";
 export * from "./dpr-daily-assignments";
+export * from "./dpr-roster-visible-teams";

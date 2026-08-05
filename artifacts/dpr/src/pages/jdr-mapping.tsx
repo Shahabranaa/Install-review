@@ -32,7 +32,7 @@ import {
   DprJdrCode,
   DprLocation,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -526,6 +526,49 @@ export default function JdrMappingPage() {
   const [locationDialog, setLocationDialog] = useState<{ editing: DprLocation | null } | null>(null);
   const [showAllLocations, setShowAllLocations] = useState(false);
 
+  // ── Teams ──
+  const teamsKey = ["/api/dpr/teams"];
+  const { data: teams = [] } = useQuery({
+    queryKey: teamsKey,
+    queryFn: async ({ signal }) => {
+      const res = await fetch("/api/dpr/teams", { signal });
+      if (!res.ok) throw new Error("Failed to fetch teams");
+      return res.json() as Promise<{ id: number; name: string }[]>;
+    },
+  });
+  const [teamDialog, setTeamDialog] = useState<{ editing: { id: number; name: string } | null } | null>(null);
+
+  const createTeam = useMutation({
+    mutationFn: (name: string) => fetch("/api/dpr/teams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
+    onMutate: async (name) => {
+      const prev = queryClient.getQueryData(teamsKey);
+      queryClient.setQueryData(teamsKey, (old: any[]) => [...(old ?? []), { id: -(Date.now()), name }]);
+      return { prev };
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); setTeamDialog(null); toast({ title: "Team created" }); },
+    onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to create team", variant: "destructive" }); },
+  });
+  const updateTeam = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => fetch(`/api/dpr/teams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
+    onMutate: async ({ id, name }) => {
+      const prev = queryClient.getQueryData(teamsKey);
+      queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).map((t) => t.id === id ? { ...t, name } : t));
+      return { prev };
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); setTeamDialog(null); toast({ title: "Team updated" }); },
+    onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to update team", variant: "destructive" }); },
+  });
+  const deleteTeam = useMutation({
+    mutationFn: (id: number) => fetch(`/api/dpr/teams/${id}`, { method: "DELETE" }),
+    onMutate: async (id) => {
+      const prev = queryClient.getQueryData(teamsKey);
+      queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).filter((t) => t.id !== id));
+      return { prev };
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); toast({ title: "Team deleted" }); },
+    onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to delete team", variant: "destructive" }); },
+  });
+
   const LOCATION_PAGE = 25;
   const visibleLocations = showAllLocations ? locations : locations.slice(0, LOCATION_PAGE);
 
@@ -577,6 +620,65 @@ export default function JdrMappingPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-4 flex flex-col gap-4 min-h-0">
+          {/* ── Teams panel ──────────────────────────────────────── */}
+          <div className="border border-border rounded-lg overflow-hidden shrink-0">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Teams</span>
+                <span className="text-[11px] text-muted-foreground/50">({teams.length})</span>
+              </div>
+              <Button
+                size="sm" variant="ghost"
+                className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setTeamDialog({ editing: null })}
+              >
+                <Plus className="w-3 h-3" /> Add
+              </Button>
+            </div>
+            {teams.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-6 bg-card">No teams yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-0 divide-x divide-y divide-border bg-card">
+                {teams.map((team) => (
+                  <div key={team.id} className="group relative flex items-center px-3 py-2.5 hover:bg-muted/25 transition-colors">
+                    <span className="text-sm font-medium truncate pr-10">{team.name}</span>
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0" onClick={(e) => e.stopPropagation()}>
+                      <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setTeamDialog({ editing: team })}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete team "{team.name}"?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will also delete all role slots and daily assignments for this team. Timesheet entries referencing it will lose their team link.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => deleteTeam.mutate(team.id)}
+                              disabled={deleteTeam.isPending}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              {deleteTeam.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* ── Locations panel ─────────────────────────────────── */}
           <div className="border border-border rounded-lg overflow-hidden shrink-0">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card">
@@ -760,6 +862,18 @@ export default function JdrMappingPage() {
         </div>
       )}
 
+      {teamDialog && (
+        <TeamDialog
+          editing={teamDialog.editing}
+          onClose={() => setTeamDialog(null)}
+          onSave={(name) =>
+            teamDialog.editing
+              ? updateTeam.mutate({ id: teamDialog.editing.id, name })
+              : createTeam.mutate(name)
+          }
+          saving={createTeam.isPending || updateTeam.isPending}
+        />
+      )}
       {locationDialog && (
         <LocationDialog
           editing={locationDialog.editing}
@@ -1236,6 +1350,45 @@ function JdrCodeDialog({
             }
             disabled={!isValid || saving}
           >
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TeamDialog({
+  editing,
+  onClose,
+  onSave,
+  saving,
+}: {
+  editing: { id: number; name: string } | null;
+  onClose: () => void;
+  onSave: (name: string) => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Rename Team" : "New Team"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>Team name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Team 1"
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave(name.trim())}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
             {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
           </Button>
         </DialogFooter>

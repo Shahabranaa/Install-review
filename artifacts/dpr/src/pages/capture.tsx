@@ -15,7 +15,7 @@ import {
   DprTeam,
   DprLocation,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import { TeamSetupGate } from "@/components/team-setup-gate";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -355,9 +356,11 @@ interface FilterPillsProps {
   activeTeamId: number | null;
   onTeamClick: (id: number) => void;
   teamHoursMap: Map<string, Map<number, number>>;
+  /** Team IDs that have at least one locked (captured/clarified) entry on the active date */
+  teamLockedSet: Set<number>;
 }
 
-function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMap }: FilterPillsProps) {
+function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMap, teamLockedSet }: FilterPillsProps) {
   // Team status for active date
   const activeDm = activeDate ? (teamHoursMap.get(activeDate) ?? new Map<number, number>()) : null;
 
@@ -386,8 +389,9 @@ function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMa
   };
 
   if (activeDm !== null) {
-    const todoTeams = teams.filter((t) => (activeDm.get(t.id) ?? 0) === 0);
-    const doneTeams = teams.filter((t) => (activeDm.get(t.id) ?? 0) > 0);
+    // "Done" = team has at least one locked (captured/clarified) entry; "To Do" = not yet locked
+    const todoTeams = teams.filter((t) => !teamLockedSet.has(t.id));
+    const doneTeams = teams.filter((t) => teamLockedSet.has(t.id));
     return (
       <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
         <div className="flex items-center flex-wrap gap-1.5">
@@ -437,6 +441,30 @@ export default function CapturePage() {
   const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({});
   const { data: teams = [] } = useListDprTeams();
   const { data: locations = [] } = useListDprLocations();
+
+  // Fetch which teams are selected for the active date (set via Team Setup)
+  const { activeDate: activeDateForVisible } = useCaptureNav();
+  const { data: visibleTeamsData } = useQuery<{ teamIds: number[] }>({
+    queryKey: ["/api/dpr/roster-visible-teams", activeDateForVisible],
+    queryFn: ({ signal }) =>
+      fetch(`/api/dpr/roster-visible-teams?date=${activeDateForVisible}`, { signal }).then((r) => r.json()),
+    enabled: !!activeDateForVisible,
+  });
+
+  // When a date is selected and has a saved team selection, restrict to those teams only
+  const visibleTeams = useMemo(() => {
+    if (!activeDateForVisible) return teams;
+    const ids = visibleTeamsData?.teamIds;
+    if (!ids || ids.length === 0) return teams;
+    const idSet = new Set(ids);
+    return teams.filter((t) => idSet.has(t.id));
+  }, [teams, activeDateForVisible, visibleTeamsData]);
+
+  // True when a date is selected but team setup has not been completed for it
+  const needsTeamSetup =
+    !!activeDateForVisible &&
+    visibleTeamsData !== undefined &&
+    visibleTeamsData.teamIds.length === 0;
   const { data: activityTypes = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups({});
 
@@ -696,14 +724,14 @@ export default function CapturePage() {
   // list and this page stay in sync.
   const { activeDate, setActiveDate, activeTeamId, setActiveTeamId } = useCaptureNav();
 
-  // Auto-select first team when teams load (date defaults to today via context)
+  // Auto-select first visible team when teams load (date defaults to today via context)
   const defaultsApplied = useRef(false);
   useEffect(() => {
     if (defaultsApplied.current) return;
-    if (teams.length === 0) return;
+    if (visibleTeams.length === 0) return;
     defaultsApplied.current = true;
-    setActiveTeamId(teams[0].id);
-  }, [teams, setActiveTeamId]);
+    setActiveTeamId(visibleTeams[0].id);
+  }, [visibleTeams, setActiveTeamId]);
 
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
@@ -744,7 +772,7 @@ export default function CapturePage() {
     return { from: fmt(dates[0]), to: fmt(dates[dates.length - 1]), count: dates.length };
   }, [activeDate, filteredEntries, filteredLockedEntries]);
 
-  // Hours per team per date — drives filter pill status indicators
+  // Hours per team per date — drives filter pill border colours
   // Uses shiftDate when set so overnight shifts group under their start date.
   const teamHoursMap = useMemo(() => {
     const map = new Map<string, Map<number, number>>();
@@ -755,6 +783,19 @@ export default function CapturePage() {
       if (!map.has(d)) map.set(d, new Map());
       const dm = map.get(d)!;
       dm.set(e.teamId, (dm.get(e.teamId) ?? 0) + h);
+    }
+    return map;
+  }, [sortedEntries]);
+
+  // Team IDs with at least one locked (captured/clarified) entry per date — drives To Do / Done split
+  const teamLockedMap = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    for (const e of sortedEntries) {
+      if (e.stage !== "captured" && e.stage !== "clarified") continue;
+      if (!e.teamId) continue;
+      const d = (e.shiftDate ?? e.date) as string;
+      if (!map.has(d)) map.set(d, new Set());
+      map.get(d)!.add(e.teamId);
     }
     return map;
   }, [sortedEntries]);
@@ -1092,13 +1133,18 @@ export default function CapturePage() {
         </div>
       </header>
 
+      {needsTeamSetup && activeDateForVisible && (
+        <TeamSetupGate date={activeDateForVisible} />
+      )}
+      <div className={cn("flex flex-col flex-1 min-h-0 overflow-hidden", needsTeamSetup && "hidden")}>
       {/* Team filter pills */}
       <FilterPills
-        teams={teams}
+        teams={visibleTeams}
         activeDate={activeDate}
         activeTeamId={activeTeamId}
         onTeamClick={handleTeamClick}
         teamHoursMap={teamHoursMap}
+        teamLockedSet={activeDate ? (teamLockedMap.get(activeDate) ?? new Set()) : new Set()}
       />
 
       {/* Context bar — bulk action bar when selectMode, normal context bar otherwise */}
@@ -1267,7 +1313,7 @@ export default function CapturePage() {
                           <SelectTrigger className={cn("h-8 text-sm", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
                             <SelectValue placeholder="Select Team" />
                           </SelectTrigger>
-                          <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{visibleTeams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                         </Select>
                         {newRowErrors.teamId && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.teamId}</p>}
                       </TableCell>
@@ -1431,7 +1477,7 @@ export default function CapturePage() {
                                 <SelectValue placeholder="Select Team" />
                               </SelectTrigger>
                               <SelectContent>
-                                {teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                                {visibleTeams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           ) : (
@@ -1859,7 +1905,7 @@ export default function CapturePage() {
                               <SelectTrigger className={`h-8 text-sm ${teamUnmatched ? "border-amber-500" : ""}`}>
                                 <SelectValue placeholder={teamUnmatched ? row.teamRaw : "Select Team"} />
                               </SelectTrigger>
-                              <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
+                              <SelectContent>{visibleTeams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
                             </Select>
                           </TableCell>
                           <TableCell className="pt-3">
@@ -1930,6 +1976,7 @@ export default function CapturePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>{/* end needsTeamSetup wrapper */}
     </div>
   );
 }

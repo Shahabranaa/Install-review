@@ -8,8 +8,9 @@ import {
 } from "date-fns";
 import {
   LogOut, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight,
+  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Layers,
 } from "lucide-react";
+import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { logout, user, isAdmin } = useAuth();
   const { activeDate, setActiveDate } = useCaptureNav();
+  const [location] = useLocation();
 
   // Calendar month state — default to today's month
   const [calMonth, setCalMonth] = useState<Date>(() => startOfMonth(new Date()));
@@ -331,6 +333,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* spacer pushes footer to bottom */}
       <div className="flex-1" />
+
+      {/* ── JDR Mapping link (admin only) ── */}
+      {isAdmin && (
+        <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex justify-center" : "px-3 py-2")}>
+          {collapsed ? (
+            <Link
+              href="/jdr-mapping"
+              title="JDR Mapping"
+              className={cn(
+                "p-2 rounded-md transition-colors flex items-center justify-center",
+                location === "/jdr-mapping"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              )}
+            >
+              <Layers className="w-4 h-4" />
+            </Link>
+          ) : (
+            <Link
+              href="/jdr-mapping"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full",
+                location === "/jdr-mapping"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+              )}
+            >
+              <Layers className="w-4 h-4" />
+              JDR Mapping
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>

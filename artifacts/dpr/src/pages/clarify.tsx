@@ -18,7 +18,7 @@ import {
   DprJdrCode,
   DprTeam,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,6 +29,7 @@ import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import { TeamSetupGate } from "@/components/team-setup-gate";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
 const COL_COUNT = 9; // # Start End Duration Location Notes ActivityGroup JDRCode Action
@@ -104,6 +105,19 @@ function ClarifyPills({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClarifyPage() {
   const { activeDate, activeTeamId, setActiveTeamId } = useCaptureNav();
+
+  // Block page when team setup hasn't been done for the active date
+  const { data: visibleTeamsData } = useQuery<{ teamIds: number[] }>({
+    queryKey: ["/api/dpr/roster-visible-teams", activeDate],
+    queryFn: ({ signal }) =>
+      fetch(`/api/dpr/roster-visible-teams?date=${activeDate}`, { signal }).then((r) => r.json()),
+    enabled: !!activeDate,
+  });
+  const needsTeamSetup =
+    !!activeDate &&
+    visibleTeamsData !== undefined &&
+    visibleTeamsData.teamIds.length === 0;
+
   const { data: allEntries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
   const { data: teams = [] } = useListDprTeams();
   const { data: activityGroups = [] } = useListDprActivityGroups(
@@ -148,7 +162,6 @@ export default function ClarifyPage() {
       });
     }
     return Array.from(byKey.values())
-      .filter(g => g.entries.some(e => e.stage === "captured"))
       .sort((a, b) => {
         const d = new Date(a.date).getTime() - new Date(b.date).getTime();
         return d !== 0 ? d : a.teamName.localeCompare(b.teamName);
@@ -188,7 +201,11 @@ export default function ClarifyPage() {
     const prevDay = activeDate ? format(subDays(parseISO(activeDate), 1), "yyyy-MM-dd") : null;
     return groups.filter(g => {
       if (activeTeamId !== null && g.teamId !== activeTeamId) return false;
-      if (!activeDate) return true;
+      if (!activeDate) {
+        // No date filter: only show groups that still have pending entries so the
+        // "all" view isn't flooded with historical clarified-only data.
+        return g.entries.some(e => e.stage === "captured");
+      }
       if (g.date === activeDate) return true;
       // Include previous-day groups that have at least one overnight entry
       if (g.date === prevDay) {
@@ -210,6 +227,25 @@ export default function ClarifyPage() {
     () => filteredGroups.reduce((acc, g) => acc + g.entries.reduce((s, e) => s + hoursForEntry(e.startTime, e.endTime), 0), 0),
     [filteredGroups]
   );
+
+  // Teams that have at least one locked (captured or clarified) entry for the active date.
+  // When a date is filtered, Clarify only shows these teams — not teams that haven't been locked yet.
+  const lockedTeams = useMemo(() => {
+    if (!activeDate) return teams; // no date filter → show all teams as before
+    const prevDay = format(subDays(parseISO(activeDate), 1), "yyyy-MM-dd");
+    const ids = new Set<number>();
+    for (const e of allEntries) {
+      if (e.stage !== "captured" && e.stage !== "clarified") continue;
+      if (!e.teamId) continue;
+      const d = (e.shiftDate ?? e.date) as string;
+      if (d === activeDate) { ids.add(e.teamId); continue; }
+      // Include overnight entries from the previous day
+      if (d === prevDay && e.startTime && e.endTime && e.endTime < e.startTime) {
+        ids.add(e.teamId);
+      }
+    }
+    return teams.filter(t => ids.has(t.id));
+  }, [teams, allEntries, activeDate]);
 
   const handleTeamClick = (id: number | null) => setActiveTeamId(activeTeamId === id ? null : id);
 
@@ -241,9 +277,13 @@ export default function ClarifyPage() {
         </div>
       </header>
 
+      {needsTeamSetup && activeDate && (
+        <TeamSetupGate date={activeDate} />
+      )}
+      <div className={cn("flex flex-col flex-1 min-h-0 overflow-hidden", needsTeamSetup && "hidden")}>
       {/* ── Team pills — mirrors Capture's FilterPills ── */}
       <ClarifyPills
-        teams={teams}
+        teams={lockedTeams}
         activeDate={activeDate}
         activeTeamId={activeTeamId}
         onTeamClick={handleTeamClick}
@@ -406,6 +446,7 @@ export default function ClarifyPage() {
           Select a <strong className="text-foreground">JDR Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
         </p>
       </div>
+      </div>{/* end needsTeamSetup wrapper */}
     </div>
   );
 }

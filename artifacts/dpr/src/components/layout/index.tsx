@@ -132,13 +132,6 @@ function TopNav() {
       show: true,
       badge: clarifyBadge,
     },
-    {
-      href: "/jdr-mapping",
-      label: "JDR Mapping",
-      icon: <Settings2 className="w-3.5 h-3.5" />,
-      show: !!isAdmin,
-      badge: 0,
-    },
   ];
 
   return (

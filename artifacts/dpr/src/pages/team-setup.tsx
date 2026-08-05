@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown } from "lucide-react";
+import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,8 +47,12 @@ function jsonBody(body: unknown): RequestInit {
 /** Up to 3-char uppercase abbreviation from a role string */
 function roleAbbr(role: string): string {
   const words = role.trim().split(/\s+/);
+  // If the first word is already a short abbreviation (e.g. "HV", "FO", "CT"), use it as-is
+  if (words[0].length <= 3) return words[0].toUpperCase();
+  // Single long word: take first 3 chars
   if (words.length === 1) return role.substring(0, 3).toUpperCase();
-  return words.map((w) => w[0]).join("").substring(0, 4).toUpperCase();
+  // Multiple words with a long first word: use initials
+  return words.map((w) => w[0]).join("").substring(0, 3).toUpperCase();
 }
 
 /** Deterministic colour token for a role abbreviation */
@@ -127,6 +131,18 @@ function ManageWorkersDialog({ open, onClose }: { open: boolean; onClose: () => 
     mutationFn: (body: object[]) => apiFetch("/api/dpr/workers/import", { method: "POST", ...jsonBody(body) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: key }); setImportText(""); setTab("list"); },
   });
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, active }: { id: number; active: boolean }) =>
+      apiFetch(`/api/dpr/workers/${id}`, { method: "PATCH", ...jsonBody({ active }) }),
+    onMutate: ({ id, active }) => {
+      const prev = qc.getQueryData<DprWorker[]>(key);
+      qc.setQueryData<DprWorker[]>(key, (old = []) => old.map((w) => w.id === id ? { ...w, active } : w));
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => { if (ctx?.prev) qc.setQueryData(key, ctx.prev); },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/dpr/roster"] }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/api/dpr/workers/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
@@ -160,17 +176,24 @@ function ManageWorkersDialog({ open, onClose }: { open: boolean; onClose: () => 
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead>
                 <tr>
-                  {["Name", "Role", "Company", ""].map((h, i) => (
-                    <th key={i} className={cn("px-3 py-2 text-left text-xs font-semibold text-muted-foreground bg-muted/40 border-b border-border", i === 0 && "rounded-tl-md", i === 3 && "rounded-tr-md w-8")}>{h}</th>
+                  {["Name", "Role", "Company", "Active", ""].map((h, i) => (
+                    <th key={i} className={cn("px-3 py-2 text-left text-xs font-semibold text-muted-foreground bg-muted/40 border-b border-border", i === 0 && "rounded-tl-md", i === 4 && "rounded-tr-md w-8", i === 3 && "w-16")}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {workers.map((w, i) => (
-                  <tr key={w.id} className={cn("group", i % 2 === 0 ? "bg-background" : "bg-muted/20")}>
+                  <tr key={w.id} className={cn("group", i % 2 === 0 ? "bg-background" : "bg-muted/20", !w.active && "opacity-50")}>
                     <td className="px-3 py-2 font-medium text-sm">{w.firstName} {w.lastName}</td>
                     <td className="px-3 py-2 text-sm text-muted-foreground">{w.role ?? "—"}</td>
                     <td className="px-3 py-2 text-sm text-muted-foreground">{w.company ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      <Switch
+                        checked={w.active}
+                        onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: w.id, active: checked })}
+                        className="scale-75 origin-left"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive" onClick={() => deleteMutation.mutate(w.id)}>
                         <Trash2 className="h-3 w-3" />
@@ -610,6 +633,7 @@ function RosterBoard({ date }: { date: string }) {
   const rosterKey = useMemo(() => ["/api/dpr/roster", date], [date]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<number | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [copyConfirmOpen, setCopyConfirmOpen] = useState(false);
 
   const { data: roster, isLoading } = useQuery<RosterDay>({
     queryKey: rosterKey,
@@ -708,13 +732,46 @@ function RosterBoard({ date }: { date: string }) {
     onSuccess: invalidate,
   });
 
-  // Group teams in threes: [A, B, C], [D, E, F], ...
+  // Visible team selection for this date
+  const visibleKey = useMemo(() => ["/api/dpr/roster-visible-teams", date], [date]);
+  const { data: visibleData, isLoading: visibleLoading } = useQuery<{ teamIds: number[] }>({
+    queryKey: visibleKey,
+    queryFn: ({ signal }) => apiFetch(`/api/dpr/roster-visible-teams?date=${date}`, { signal }),
+  });
+
+  // Exceptions (for the team picker — which teams are off today)
+  const exceptionsPickerKey = useMemo(() => ["/api/dpr/team-date-exceptions", date], [date]);
+  const { data: exceptionsForPicker = [] } = useQuery<TeamDateException[]>({
+    queryKey: exceptionsPickerKey,
+    queryFn: ({ signal }) => apiFetch(`/api/dpr/team-date-exceptions?date=${date}`, { signal }),
+  });
+  const offTeamIds = useMemo(() => new Set(exceptionsForPicker.map((e) => e.teamId)), [exceptionsForPicker]);
+
+  const [editTeamsOpen, setEditTeamsOpen] = useState(false);
+
+  const saveVisibleMutation = useMutation({
+    mutationFn: (teamIds: number[]) =>
+      apiFetch("/api/dpr/roster-visible-teams", { method: "POST", ...jsonBody({ date, teamIds }) }),
+    onMutate: (teamIds) => {
+      qc.setQueryData<{ teamIds: number[] }>(visibleKey, { teamIds });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: visibleKey });
+      setEditTeamsOpen(false);
+    },
+  });
+
+  // True when loaded but no teams have been selected yet (new date)
+  const needsPicker = !isLoading && !visibleLoading && (visibleData?.teamIds ?? []).length === 0;
+
+  // Group teams in threes — only visible teams
   const groups = useMemo(() => {
-    const teams = roster?.teams ?? [];
+    const visibleIds = new Set(visibleData?.teamIds ?? []);
+    const teams = (roster?.teams ?? []).filter((t) => visibleIds.size === 0 || visibleIds.has(t.teamId));
     const result: TeamTriple[] = [];
     for (let i = 0; i < teams.length; i += 3) result.push([teams[i], teams[i + 1], teams[i + 2]]);
     return result;
-  }, [roster?.teams]);
+  }, [roster?.teams, visibleData?.teamIds]);
 
   // All workers (unassigned + those filling slots) — used for the typeahead
   const allWorkers = useMemo(() => {
@@ -734,7 +791,7 @@ function RosterBoard({ date }: { date: string }) {
     try { return format(subDays(parseISO(date), 1), "EEE d MMM"); } catch { return "prev day"; }
   })();
 
-  if (isLoading) {
+  if (isLoading || visibleLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
@@ -766,13 +823,20 @@ function RosterBoard({ date }: { date: string }) {
           >
             <Settings2 className="w-3 h-3" /> Workers
           </Button>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+            onClick={() => setEditTeamsOpen(true)}
+          >
+            <UsersRound className="w-3 h-3" /> Edit teams
+          </Button>
 
           <div className="w-px h-4 bg-border" />
 
           <Button
             variant="ghost" size="sm"
             className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-            onClick={() => copyMutation.mutate()}
+            onClick={() => setCopyConfirmOpen(true)}
             disabled={copyMutation.isPending}
             title={`Copy assignments from ${prevLabel}`}
           >
@@ -789,39 +853,84 @@ function RosterBoard({ date }: { date: string }) {
         </div>
       </div>
 
-      {/* Board */}
-      <div className="flex flex-1 overflow-hidden">
-        <AvailablePanel
-          workers={roster?.unassigned ?? []}
-          selectedId={selectedWorkerId}
-          onSelect={setSelectedWorkerId}
+      {/* Board or Team Picker */}
+      {needsPicker ? (
+        <TeamPickerScreen
+          date={date}
+          allTeams={roster?.teams ?? []}
+          offTeamIds={offTeamIds}
+          onConfirm={(ids) => saveVisibleMutation.mutate(ids)}
+          saving={saveVisibleMutation.isPending}
         />
+      ) : (
+        <div className="flex flex-1 overflow-hidden">
+          <AvailablePanel
+            workers={roster?.unassigned ?? []}
+            selectedId={selectedWorkerId}
+            onSelect={setSelectedWorkerId}
+          />
 
-        {/* Paired columns */}
-        <div className="flex flex-1 overflow-x-auto overflow-y-hidden bg-background">
-          {groups.map(([teamA, teamB, teamC], i) => (
-            <TeamGroupColumn
-              key={i}
-              teamA={teamA}
-              teamB={teamB}
-              teamC={teamC}
-              date={date}
-              selectedWorkerId={selectedWorkerId}
-              allWorkers={allWorkers}
-              onAssign={(slotId, workerId) => assignMutation.mutate({ slotId, workerId })}
-              onUnassign={(id) => unassignMutation.mutate(id)}
-              onRefresh={invalidate}
-            />
-          ))}
-          {groups.length === 0 && (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              No teams configured.
-            </div>
-          )}
+          {/* Paired columns */}
+          <div className="flex flex-1 overflow-x-auto overflow-y-hidden bg-background">
+            {groups.map(([teamA, teamB, teamC], i) => (
+              <TeamGroupColumn
+                key={i}
+                teamA={teamA}
+                teamB={teamB}
+                teamC={teamC}
+                date={date}
+                selectedWorkerId={selectedWorkerId}
+                allWorkers={allWorkers}
+                onAssign={(slotId, workerId) => assignMutation.mutate({ slotId, workerId })}
+                onUnassign={(id) => unassignMutation.mutate(id)}
+                onRefresh={invalidate}
+              />
+            ))}
+            {groups.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+                No teams configured.
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <ManageWorkersDialog open={manageOpen} onClose={() => setManageOpen(false)} />
+
+      {editTeamsOpen && (
+        <TeamPickerDialog
+          date={date}
+          allTeams={roster?.teams ?? []}
+          offTeamIds={offTeamIds}
+          currentTeamIds={visibleData?.teamIds ?? []}
+          onConfirm={(ids) => saveVisibleMutation.mutate(ids)}
+          onClose={() => setEditTeamsOpen(false)}
+          saving={saveVisibleMutation.isPending}
+        />
+      )}
+
+      <Dialog open={copyConfirmOpen} onOpenChange={setCopyConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Replace today's assignments?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will copy all assignments from <span className="font-medium text-foreground">{prevLabel}</span> and overwrite any assignments already made for{" "}
+            <span className="font-medium text-foreground">
+              {(() => { try { return format(parseISO(date), "EEE, d MMM"); } catch { return date; } })()}
+            </span>.
+          </p>
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => setCopyConfirmOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => { setCopyConfirmOpen(false); copyMutation.mutate(); }}
+              disabled={copyMutation.isPending}
+            >
+              Yes, replace
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -943,6 +1052,154 @@ function ScheduleTab({ date, teams }: { date: string; teams: Team[] }) {
         {teams.length === 0 && <p className="text-sm text-muted-foreground py-4 text-center">Loading teams…</p>}
       </div>
     </div>
+  );
+}
+
+// ─── Team Picker (full-screen, first-time) ────────────────────────────────────
+
+function TeamPickerScreen({
+  date, allTeams, offTeamIds, onConfirm, saving,
+}: {
+  date: string;
+  allTeams: RosterTeam[];
+  offTeamIds: Set<number>;
+  onConfirm: (teamIds: number[]) => void;
+  saving: boolean;
+}) {
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(allTeams.filter((t) => !offTeamIds.has(t.teamId)).map((t) => t.teamId)),
+  );
+  const toggle = (id: number) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const dateLabel = (() => { try { return format(parseISO(date), "EEEE, d MMMM yyyy"); } catch { return date; } })();
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-8 bg-muted/20">
+      <div className="bg-background border border-border rounded-xl shadow-sm w-full max-w-lg">
+        <div className="px-6 py-5 border-b border-border">
+          <h2 className="font-semibold text-base">Select teams for {dateLabel}</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Choose which teams are working today. Teams marked as off in the schedule are pre-deselected.
+          </p>
+        </div>
+        <div className="p-4 grid grid-cols-2 gap-2 max-h-80 overflow-y-auto">
+          {allTeams.map((team) => {
+            const isOff = offTeamIds.has(team.teamId);
+            const checked = selected.has(team.teamId);
+            return (
+              <button
+                key={team.teamId}
+                onClick={() => toggle(team.teamId)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-left transition-colors",
+                  checked
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/40",
+                )}
+              >
+                <div className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors text-[10px] font-bold",
+                  checked ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30",
+                )}>
+                  {checked && "✓"}
+                </div>
+                <span className="font-medium flex-1">{team.teamName}</span>
+                {isOff && (
+                  <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">off</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="px-6 py-4 border-t border-border flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {selected.size} team{selected.size !== 1 ? "s" : ""} selected
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline" size="sm"
+              onClick={() => setSelected(new Set(allTeams.map((t) => t.teamId)))}
+            >
+              Select all
+            </Button>
+            <Button
+              onClick={() => onConfirm([...selected])}
+              disabled={selected.size === 0 || saving}
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Start setup
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Team Picker Dialog (edit existing selection) ─────────────────────────────
+
+function TeamPickerDialog({
+  date, allTeams, offTeamIds, currentTeamIds, onConfirm, onClose, saving,
+}: {
+  date: string;
+  allTeams: RosterTeam[];
+  offTeamIds: Set<number>;
+  currentTeamIds: number[];
+  onConfirm: (teamIds: number[]) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(currentTeamIds));
+  const toggle = (id: number) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const dateLabel = (() => { try { return format(parseISO(date), "EEE, d MMM yyyy"); } catch { return date; } })();
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Teams for {dateLabel}</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto py-1">
+          {allTeams.map((team) => {
+            const isOff = offTeamIds.has(team.teamId);
+            const checked = selected.has(team.teamId);
+            return (
+              <button
+                key={team.teamId}
+                onClick={() => toggle(team.teamId)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-left transition-colors",
+                  checked
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/40",
+                )}
+              >
+                <div className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 text-[10px] font-bold transition-colors",
+                  checked ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30",
+                )}>
+                  {checked && "✓"}
+                </div>
+                <span className="font-medium flex-1">{team.teamName}</span>
+                {isOff && (
+                  <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">off</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <DialogFooter className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground mr-auto">
+            {selected.size} team{selected.size !== 1 ? "s" : ""} selected
+          </span>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onConfirm([...selected])} disabled={selected.size === 0 || saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

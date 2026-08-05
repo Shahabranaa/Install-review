@@ -14,6 +14,7 @@ import {
   dprTeamWorkersTable,
   dprTeamRoleSlotsTable,
   dprDailyAssignmentsTable,
+  dprRosterVisibleTeamsTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -199,6 +200,33 @@ router.get("/dpr/teams", async (_req, res): Promise<void> => {
     refCache.teams.set(rows);
   }
   res.json(ListDprTeamsResponse.parse(serialize(naturalSort(rows))));
+});
+
+router.post("/dpr/teams", async (req, res): Promise<void> => {
+  const { name } = req.body as { name?: string };
+  if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+  const [row] = await db.insert(dprTeamsTable).values({ name: name.trim() }).returning();
+  refCache.teams.invalidate();
+  res.status(201).json(row);
+});
+
+router.patch("/dpr/teams/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+  const { name } = req.body as { name?: string };
+  if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+  const [updated] = await db.update(dprTeamsTable).set({ name: name.trim() }).where(eq(dprTeamsTable.id, id)).returning();
+  if (!updated) { res.status(404).json({ error: "Team not found" }); return; }
+  refCache.teams.invalidate();
+  res.json(updated);
+});
+
+router.delete("/dpr/teams/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(dprTeamsTable).where(eq(dprTeamsTable.id, id));
+  refCache.teams.invalidate();
+  res.status(204).send();
 });
 
 router.get("/dpr/activity-types", async (_req, res): Promise<void> => {
@@ -880,10 +908,40 @@ router.get("/dpr/roster", async (req, res): Promise<void> => {
   res.json(roster);
 });
 
+router.get("/dpr/roster-visible-teams", async (req, res): Promise<void> => {
+  const date = req.query.date as string | undefined;
+  if (!date) { res.status(400).json({ error: "date is required" }); return; }
+  const rows = await db
+    .select({ teamId: dprRosterVisibleTeamsTable.teamId })
+    .from(dprRosterVisibleTeamsTable)
+    .where(eq(dprRosterVisibleTeamsTable.date, date));
+  res.json({ teamIds: rows.map((r) => r.teamId) });
+});
+
+router.post("/dpr/roster-visible-teams", async (req, res): Promise<void> => {
+  const { date, teamIds } = req.body as { date?: string; teamIds?: number[] };
+  if (!date || !Array.isArray(teamIds)) { res.status(400).json({ error: "date and teamIds are required" }); return; }
+  await db.delete(dprRosterVisibleTeamsTable).where(eq(dprRosterVisibleTeamsTable.date, date));
+  if (teamIds.length > 0) {
+    await db.insert(dprRosterVisibleTeamsTable).values(teamIds.map((teamId) => ({ date, teamId }))).onConflictDoNothing();
+  }
+  res.json({ teamIds });
+});
+
 router.post("/dpr/roster/copy", async (req, res): Promise<void> => {
   const body = CopyDprRosterBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const { fromDate, toDate } = body.data;
+
+  // Copy visible team selection from source date to target date
+  const sourceVisible = await db
+    .select({ teamId: dprRosterVisibleTeamsTable.teamId })
+    .from(dprRosterVisibleTeamsTable)
+    .where(eq(dprRosterVisibleTeamsTable.date, fromDate));
+  if (sourceVisible.length > 0) {
+    await db.delete(dprRosterVisibleTeamsTable).where(eq(dprRosterVisibleTeamsTable.date, toDate));
+    await db.insert(dprRosterVisibleTeamsTable).values(sourceVisible.map((r) => ({ date: toDate, teamId: r.teamId }))).onConflictDoNothing();
+  }
 
   // Get source assignments
   const sourceAssignments = await db
@@ -1034,6 +1092,20 @@ router.delete("/dpr/workers/:id", async (req, res): Promise<void> => {
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   await db.delete(dprWorkersTable).where(eq(dprWorkersTable.id, params.data.id));
   res.status(204).send();
+});
+
+router.patch("/dpr/workers/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+  const { active } = req.body as { active?: boolean };
+  if (typeof active !== "boolean") { res.status(400).json({ error: "active must be a boolean" }); return; }
+  const [updated] = await db
+    .update(dprWorkersTable)
+    .set({ active })
+    .where(eq(dprWorkersTable.id, id))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
+  res.json({ ...updated, teamIds: [] });
 });
 
 router.put("/dpr/workers/:id/teams", async (req, res): Promise<void> => {
