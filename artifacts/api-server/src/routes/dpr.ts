@@ -1074,6 +1074,14 @@ router.delete("/dpr/daily-assignments/:id", async (req, res): Promise<void> => {
 
 // ── Shift Attendance ──────────────────────────────────────────────────────────
 
+router.delete("/dpr/shift-attendance", async (req, res): Promise<void> => {
+  const query = GetDprShiftAttendanceQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const { date } = query.data;
+  await db.delete(dprWorkerShiftStatusTable).where(eq(dprWorkerShiftStatusTable.date, date));
+  res.status(204).end();
+});
+
 router.get("/dpr/shift-attendance", async (req, res): Promise<void> => {
   const query = GetDprShiftAttendanceQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
@@ -1151,11 +1159,11 @@ router.post("/dpr/shift-attendance/copy-from-previous", async (req, res): Promis
   const prevDate = new Date(year, month - 1, day - 1);
   const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-${String(prevDate.getDate()).padStart(2, "0")}`;
 
-  // Get previous day's on_shift records
+  // Get all previous day's records regardless of status
   const prevOnShift = await db
     .select()
     .from(dprWorkerShiftStatusTable)
-    .where(and(eq(dprWorkerShiftStatusTable.date, prevDateStr), eq(dprWorkerShiftStatusTable.status, "on_shift")));
+    .where(eq(dprWorkerShiftStatusTable.date, prevDateStr));
 
   if (prevOnShift.length === 0) {
     res.json(CopyDprShiftAttendanceResponse.parse({ copied: 0 }));

@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Copy, Plus, Loader2, CheckCircle2, Save } from "lucide-react";
+import { Copy, Plus, Loader2, CheckCircle2, Save, RotateCcw } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -408,6 +408,15 @@ export default function SignOnPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
+  const [confirmReset, setConfirmReset] = useState(false);
+  const resetMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/dpr/shift-attendance?date=${date}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setConfirmReset(false);
+      qc.invalidateQueries({ queryKey });
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: () => apiFetch("/api/dpr/shift-attendance/save", { method: "POST", ...jsonBody({ date }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: sessionKey }),
@@ -460,6 +469,33 @@ export default function SignOnPage() {
             {copyMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Copy className="w-3 h-3" />}
             Copy from previous day
           </Button>
+          {confirmReset ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-destructive font-medium">Move all to Off Shift?</span>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => resetMutation.mutate()}
+                disabled={resetMutation.isPending}
+              >
+                {resetMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setConfirmReset(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmReset(true)}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reset
+            </Button>
+          )}
           {session?.saved ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />

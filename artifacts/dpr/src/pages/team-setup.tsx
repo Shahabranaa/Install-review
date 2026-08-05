@@ -783,19 +783,12 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
     return result;
   }, [roster?.teams, visibleData?.teamIds]);
 
-  // All workers (unassigned + those filling slots) — used for the typeahead
-  const allWorkers = useMemo(() => {
-    const map = new Map<number, DprWorker>();
-    for (const w of roster?.unassigned ?? []) map.set(w.id, w);
-    for (const team of roster?.teams ?? []) {
-      for (const slot of team.slots) {
-        if (slot.worker) map.set(slot.worker.id, slot.worker);
-      }
-    }
-    return [...map.values()].sort((a, b) =>
+  // Only unassigned workers for the slot typeahead — assigned workers must not be suggested again
+  const allWorkers = useMemo(() =>
+    [...(roster?.unassigned ?? [])].sort((a, b) =>
       `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
-    );
-  }, [roster]);
+    ),
+  [roster?.unassigned]);
 
   const prevLabel = (() => {
     try { return format(subDays(parseISO(date), 1), "EEE d MMM"); } catch { return "prev day"; }
