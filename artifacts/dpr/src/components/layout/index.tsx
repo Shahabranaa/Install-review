@@ -87,16 +87,37 @@ function DprHeader() {
 function TopNav() {
   const [location] = useLocation();
   const { isAdmin } = useAuth();
+  const { activeDate } = useCaptureNav();
 
-  const { data: summary } = useGetDprTimesheetSummary({
-    query: {
-      queryKey: getGetDprTimesheetSummaryQueryKey(),
-      refetchInterval: 30_000,
-      staleTime: 15_000,
+  // Reuse the already-cached date-summary so the badge reflects the active
+  // date's captured-but-not-locked count, not the global total.
+  const { data: dateSummary } = useQuery<{
+    totalTeams: number;
+    items: Array<{ date: string; noTime: number; partial: number; complete: number; captured: number }>;
+  }>({
+    queryKey: ["/api/dpr/timesheet-entries/date-summary"],
+    queryFn: async ({ signal }) => {
+      const res = await fetch("/api/dpr/timesheet-entries/date-summary", { signal });
+      if (!res.ok) throw new Error("Failed to fetch date summary");
+      return res.json();
     },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 
+  const activeDateStats = activeDate
+    ? dateSummary?.items?.find((i) => i.date === activeDate)
+    : undefined;
+  const clarifyBadge = activeDateStats?.captured ?? 0;
+
   const tabs = [
+    {
+      href: "/team-setup",
+      label: "Team Setup",
+      icon: <Users className="w-3.5 h-3.5" />,
+      show: !!isAdmin,
+      badge: 0,
+    },
     {
       href: "/",
       label: "Capture",
@@ -109,14 +130,7 @@ function TopNav() {
       label: "Clarify",
       icon: <CheckSquare className="w-3.5 h-3.5" />,
       show: true,
-      badge: summary?.capturedCount ?? 0,
-    },
-    {
-      href: "/team-setup",
-      label: "Team Setup",
-      icon: <Users className="w-3.5 h-3.5" />,
-      show: !!isAdmin,
-      badge: 0,
+      badge: clarifyBadge,
     },
     {
       href: "/jdr-mapping",
