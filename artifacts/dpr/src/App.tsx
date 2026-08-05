@@ -44,6 +44,9 @@ function Router() {
           <ClarifyPage />
         </AppLayout>
       </Route>
+      <Route path="/sign-on">
+        <Redirect to="/team-setup" />
+      </Route>
       <Route path="/team-setup">
         <AppLayout>
           <AdminOnly>

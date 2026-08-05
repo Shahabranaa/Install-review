@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import SignOnPage from "./sign-on";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -637,7 +638,7 @@ function RosterStats({ roster }: { roster: RosterDay }) {
 
 // ─── Roster board ─────────────────────────────────────────────────────────────
 
-function RosterBoard({ date }: { date: string }) {
+function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean }) {
   const qc = useQueryClient();
   const rosterKey = useMemo(() => ["/api/dpr/roster", date], [date]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<number | null>(null);
@@ -870,6 +871,7 @@ function RosterBoard({ date }: { date: string }) {
           offTeamIds={offTeamIds}
           onConfirm={(ids) => saveVisibleMutation.mutate(ids)}
           saving={saveVisibleMutation.isPending}
+          signOnSaved={signOnSaved}
         />
       ) : (
         <div className="flex flex-1 overflow-hidden">
@@ -1067,13 +1069,14 @@ function ScheduleTab({ date, teams }: { date: string; teams: Team[] }) {
 // ─── Team Picker (full-screen, first-time) ────────────────────────────────────
 
 function TeamPickerScreen({
-  date, allTeams, offTeamIds, onConfirm, saving,
+  date, allTeams, offTeamIds, onConfirm, saving, signOnSaved,
 }: {
   date: string;
   allTeams: RosterTeam[];
   offTeamIds: Set<number>;
   onConfirm: (teamIds: number[]) => void;
   saving: boolean;
+  signOnSaved: boolean;
 }) {
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(allTeams.filter((t) => !offTeamIds.has(t.teamId)).map((t) => t.teamId)),
@@ -1124,7 +1127,12 @@ function TeamPickerScreen({
           <span className="text-xs text-muted-foreground">
             {selected.size} team{selected.size !== 1 ? "s" : ""} selected
           </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {!signOnSaved && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Complete Sign On first
+              </span>
+            )}
             <Button
               variant="outline" size="sm"
               onClick={() => setSelected(new Set(allTeams.map((t) => t.teamId)))}
@@ -1133,7 +1141,7 @@ function TeamPickerScreen({
             </Button>
             <Button
               onClick={() => onConfirm([...selected])}
-              disabled={selected.size === 0 || saving}
+              disabled={selected.size === 0 || saving || !signOnSaved}
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               Start setup
@@ -1223,19 +1231,30 @@ export default function TeamSetupPage() {
     queryFn: ({ signal }) => apiFetch("/api/dpr/teams", { signal }),
   });
 
+  const { data: session } = useQuery<{ saved: boolean; savedAt: string | null }>({
+    queryKey: ["/api/dpr/shift-attendance/session", date],
+    queryFn: ({ signal }) => apiFetch(`/api/dpr/shift-attendance/session?date=${date}`, { signal }),
+  });
+  const signOnSaved = session?.saved ?? false;
+
   return (
     <div className="flex flex-col h-full">
-      <Tabs defaultValue="roster" className="flex flex-col h-full">
+      <Tabs defaultValue="sign-on" className="flex flex-col h-full">
         <div className="border-b border-border px-6 pt-4 flex-none">
           <h1 className="text-xl font-bold mb-3">Team Setup</h1>
           <TabsList className="h-8">
+            <TabsTrigger value="sign-on" className="text-xs px-4">Sign On</TabsTrigger>
             <TabsTrigger value="roster" className="text-xs px-4">Workers</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs px-4">Schedule</TabsTrigger>
           </TabsList>
         </div>
 
+        <TabsContent value="sign-on" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+          <SignOnPage />
+        </TabsContent>
+
         <TabsContent value="roster" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
-          <RosterBoard date={date} />
+          <RosterBoard date={date} signOnSaved={signOnSaved} />
         </TabsContent>
 
         <TabsContent value="schedule" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">

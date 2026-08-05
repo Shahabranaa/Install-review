@@ -15,6 +15,8 @@ import {
   dprTeamRoleSlotsTable,
   dprDailyAssignmentsTable,
   dprRosterVisibleTeamsTable,
+  dprWorkerShiftStatusTable,
+  dprShiftSessionTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -87,6 +89,15 @@ import {
   DeleteDprTeamRoleSlotParams,
   UpsertDprDailyAssignmentBody,
   DeleteDprDailyAssignmentParams,
+  GetDprShiftAttendanceQueryParams,
+  UpdateDprShiftAttendanceParams,
+  UpdateDprShiftAttendanceBody,
+  CopyDprShiftAttendanceQueryParams,
+  ListDprShiftAttendanceResponse,
+  CopyDprShiftAttendanceResponse,
+  DprShiftSessionResponse,
+  SaveDprShiftAttendanceBody,
+  GetDprShiftSessionQueryParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 
@@ -851,12 +862,22 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
 
 // Helper: build full roster response for a date
 async function buildRoster(date: string) {
-  const [teams, slots, assignments, workers] = await Promise.all([
+  const [teams, slots, assignments, workers, shiftRows] = await Promise.all([
     db.select().from(dprTeamsTable),
     db.select().from(dprTeamRoleSlotsTable).orderBy(dprTeamRoleSlotsTable.teamId, dprTeamRoleSlotsTable.displayOrder),
     db.select().from(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.date, date)),
     db.select().from(dprWorkersTable).where(eq(dprWorkersTable.active, true)),
+    db.select({ workerId: dprWorkerShiftStatusTable.workerId, status: dprWorkerShiftStatusTable.status })
+      .from(dprWorkerShiftStatusTable)
+      .where(eq(dprWorkerShiftStatusTable.date, date)),
   ]);
+
+  // If any shift-attendance records exist for this date, filter available workers
+  // to only those with on_shift status. If no records exist at all (sign-on page
+  // never used for this date) fall through to show all active workers so that
+  // existing users aren't broken.
+  const shiftStatusByWorker = new Map(shiftRows.map((r) => [r.workerId, r.status]));
+  const hasShiftData = shiftRows.length > 0;
 
   const assignedWorkerIds = new Set(assignments.map((a) => a.workerId));
 
@@ -895,7 +916,13 @@ async function buildRoster(date: string) {
   });
 
   const unassigned = workers
-    .filter((w) => !assignedWorkerIds.has(w.id))
+    .filter((w) => {
+      if (assignedWorkerIds.has(w.id)) return false;
+      // When sign-on data exists, exclude workers who are explicitly off_shift.
+      // signing_on, on_shift, and signing_off are all on-site and available for assignment.
+      if (hasShiftData && shiftStatusByWorker.get(w.id) === undefined) return false;
+      return true;
+    })
     .map((w) => ({ ...w, teamIds: [] as number[] }));
 
   return { date, teams: rosterTeams, unassigned };
@@ -1043,6 +1070,134 @@ router.delete("/dpr/daily-assignments/:id", async (req, res): Promise<void> => {
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   await db.delete(dprDailyAssignmentsTable).where(eq(dprDailyAssignmentsTable.id, params.data.id));
   res.status(204).send();
+});
+
+// ── Shift Attendance ──────────────────────────────────────────────────────────
+
+router.get("/dpr/shift-attendance", async (req, res): Promise<void> => {
+  const query = GetDprShiftAttendanceQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const { date } = query.data;
+
+  const [workers, statusRows, teamRows] = await Promise.all([
+    db.select().from(dprWorkersTable).where(eq(dprWorkersTable.active, true)).orderBy(dprWorkersTable.lastName, dprWorkersTable.firstName),
+    db.select().from(dprWorkerShiftStatusTable).where(eq(dprWorkerShiftStatusTable.date, date)),
+    db.select().from(dprTeamWorkersTable),
+  ]);
+
+  const statusByWorker = new Map(statusRows.map((r) => [r.workerId, r]));
+  const teamsByWorker = new Map<number, number[]>();
+  for (const a of teamRows) {
+    if (!teamsByWorker.has(a.workerId)) teamsByWorker.set(a.workerId, []);
+    teamsByWorker.get(a.workerId)!.push(a.teamId);
+  }
+
+  const result = workers.map((w) => {
+    const s = statusByWorker.get(w.id);
+    return {
+      id: w.id,
+      firstName: w.firstName,
+      lastName: w.lastName,
+      role: w.role,
+      company: w.company,
+      active: w.active,
+      teamIds: teamsByWorker.get(w.id) ?? [],
+      shiftStatus: (s?.status ?? "off_shift") as "off_shift" | "signing_on" | "on_shift" | "signing_off",
+      signOnTime: s?.signOnTime ?? null,
+      signOffTime: s?.signOffTime ?? null,
+    };
+  });
+
+  res.json(ListDprShiftAttendanceResponse.parse(serialize(result)));
+});
+
+router.put("/dpr/shift-attendance/:workerId", async (req, res): Promise<void> => {
+  const params = UpdateDprShiftAttendanceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = UpdateDprShiftAttendanceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { date, status, signOnTime, signOffTime } = body.data;
+  const workerId = params.data.workerId;
+
+  // off_shift = no record in the table (implicit default) — delete if present
+  if (status === "off_shift") {
+    await db
+      .delete(dprWorkerShiftStatusTable)
+      .where(and(eq(dprWorkerShiftStatusTable.workerId, workerId), eq(dprWorkerShiftStatusTable.date, date)));
+    res.json({ workerId, date, status: "off_shift" });
+    return;
+  }
+
+  const [row] = await db
+    .insert(dprWorkerShiftStatusTable)
+    .values({ workerId, date, status, signOnTime: signOnTime ?? null, signOffTime: signOffTime ?? null })
+    .onConflictDoUpdate({
+      target: [dprWorkerShiftStatusTable.workerId, dprWorkerShiftStatusTable.date],
+      set: { status, signOnTime: signOnTime ?? null, signOffTime: signOffTime ?? null },
+    })
+    .returning();
+
+  res.json(serialize(row));
+});
+
+router.post("/dpr/shift-attendance/copy-from-previous", async (req, res): Promise<void> => {
+  const query = CopyDprShiftAttendanceQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const { date } = query.data;
+
+  // Compute previous calendar day
+  const [year, month, day] = date.split("-").map(Number);
+  const prevDate = new Date(year, month - 1, day - 1);
+  const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-${String(prevDate.getDate()).padStart(2, "0")}`;
+
+  // Get previous day's on_shift records
+  const prevOnShift = await db
+    .select()
+    .from(dprWorkerShiftStatusTable)
+    .where(and(eq(dprWorkerShiftStatusTable.date, prevDateStr), eq(dprWorkerShiftStatusTable.status, "on_shift")));
+
+  if (prevOnShift.length === 0) {
+    res.json(CopyDprShiftAttendanceResponse.parse({ copied: 0 }));
+    return;
+  }
+
+  // Find workers who already have a record for today
+  const todayRecords = await db
+    .select({ workerId: dprWorkerShiftStatusTable.workerId })
+    .from(dprWorkerShiftStatusTable)
+    .where(eq(dprWorkerShiftStatusTable.date, date));
+  const alreadyToday = new Set(todayRecords.map((r) => r.workerId));
+
+  const toInsert = prevOnShift
+    .filter((r) => !alreadyToday.has(r.workerId))
+    .map((r) => ({ workerId: r.workerId, date, status: "on_shift" as const }));
+
+  if (toInsert.length > 0) {
+    await db.insert(dprWorkerShiftStatusTable).values(toInsert).onConflictDoNothing();
+  }
+
+  res.json(CopyDprShiftAttendanceResponse.parse({ copied: toInsert.length }));
+});
+
+router.get("/dpr/shift-attendance/session", async (req, res): Promise<void> => {
+  const query = GetDprShiftSessionQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const { date } = query.data;
+  const [row] = await db.select().from(dprShiftSessionTable).where(eq(dprShiftSessionTable.date, date));
+  res.json(DprShiftSessionResponse.parse({ saved: !!row, savedAt: row?.savedAt ?? null }));
+});
+
+router.post("/dpr/shift-attendance/save", async (req, res): Promise<void> => {
+  const body = SaveDprShiftAttendanceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const { date } = body.data;
+  const savedAt = new Date().toISOString();
+  await db
+    .insert(dprShiftSessionTable)
+    .values({ date, savedAt })
+    .onConflictDoUpdate({ target: dprShiftSessionTable.date, set: { savedAt } });
+  res.json(DprShiftSessionResponse.parse({ saved: true, savedAt }));
 });
 
 // ── DPR Workers ───────────────────────────────────────────────────────────────

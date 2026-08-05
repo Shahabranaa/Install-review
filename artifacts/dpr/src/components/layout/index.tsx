@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { CaptureNavProvider, useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Redirect, Link, useLocation } from "wouter";
 import {
-  Loader2, ClipboardList, CheckSquare, Users, Settings2,
+  Loader2, ClipboardList, CheckSquare, Users,
   ChevronLeft, ChevronRight, Lock, CheckCircle2,
 } from "lucide-react";
 import {
@@ -117,6 +117,7 @@ function TopNav() {
       icon: <Users className="w-3.5 h-3.5" />,
       show: !!isAdmin,
       badge: 0,
+      active: location === "/team-setup",
     },
     {
       href: "/",
@@ -124,6 +125,7 @@ function TopNav() {
       icon: <ClipboardList className="w-3.5 h-3.5" />,
       show: true,
       badge: 0,
+      active: location === "/",
     },
     {
       href: "/clarify",
@@ -131,37 +133,36 @@ function TopNav() {
       icon: <CheckSquare className="w-3.5 h-3.5" />,
       show: true,
       badge: clarifyBadge,
+      active: location === "/clarify",
     },
   ];
+
 
   return (
     <nav className="border-b border-border bg-background shrink-0 px-2">
       <div className="flex items-stretch">
         {tabs
           .filter((t) => t.show)
-          .map((tab) => {
-            const isActive = location === tab.href;
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
-                  isActive
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-                )}
-              >
-                {tab.icon}
-                {tab.label}
-                {tab.badge > 0 && (
-                  <span className="ml-0.5 bg-primary/10 text-primary border border-primary/20 text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none">
-                    {tab.badge}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+          .map((tab) => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+                tab.active
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+              {tab.badge > 0 && (
+                <span className="ml-0.5 bg-primary/10 text-primary border border-primary/20 text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none">
+                  {tab.badge}
+                </span>
+              )}
+            </Link>
+          ))}
       </div>
     </nav>
   );
