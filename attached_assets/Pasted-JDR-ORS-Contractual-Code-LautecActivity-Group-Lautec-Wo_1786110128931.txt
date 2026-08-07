@@ -1,0 +1,118 @@
+JDR/ORS	Contractual Code	LautecActivity Group	Lautec Work_Activity (Corresponding)	LautecActivity Group	JDR Work_Activity	Contractual Code	Generic Comments to be added
+JDR	EWT	Effective Working Time	Mobilisation	Effective Working Time	Mobilisation	EWT	- Initial Tower setup
+JDR	EWT	Effective Working Time	Pre-Termination Testing	Effective Working Time	Testing - Pre-Termination	EWT	-Phase ID
+JDR	EWT	Effective Working Time	Pre-Termination Testing	Effective Working Time	Testing - Pre-Termination	EWT	-TDR Uni-Directional
+JDR	EWT	Effective Working Time	Pre-Termination Testing	Effective Working Time	Testing - Pre-Termination	EWT	-OTDR
+JDR	EWT	Effective Working Time	Pre-Termination Testing	Effective Working Time	Testing - Pre-Termination	EWT	-Sheath Test 10KV
+JDR	EWT	Effective Working Time	Pre-Works SIP Set up / Asset protection	Effective Working Time	Setup	EWT	- As-Found
+JDR	EWT	Effective Working Time	Pre-Works SIP Set up / Asset protection	Effective Working Time	Setup	EWT	- Asset Protection
+JDR	EWT	Effective Working Time	Pre-Works SIP Set up / Asset protection	Effective Working Time	Setup	EWT	-Removal of waste and sheeting
+JDR	EWT	Effective Working Time	Mechanical - Cable stripping	Effective Working Time	Cable Prep / Stripping	EWT	-Cable Stripping
+JDR	EWT	Effective Working Time	Mechanical - Cable stripping	Effective Working Time	Cable Prep / Stripping	EWT	-Housekeeping
+JDR	EWT	Effective Working Time	Mechanical - Hang-off	Effective Working Time	Hang-off	EWT	-Hang Off Installation
+JDR	EWT	Effective Working Time	Mechanical - Hang-off	Effective Working Time	Hang-off	EWT	-Resin Pour (Not Applicable for SIPs)
+JDR	EWT	Effective Working Time	Electrical - Cable routing	Effective Working Time	Cable heating/straightening	EWT	-Heating Power Core
+JDR	EWT	Effective Working Time	Electrical - Cable routing	Effective Working Time	Cable heating/straightening	EWT	-Applying Straightening Channels/Cooling
+JDR	EWT	Effective Working Time	Electrical - Cable routing	Effective Working Time	Cable Routing - HV & Cleating	EWT	-Soft Routing
+JDR	EWT	Effective Working Time	Electrical - Cable routing	Effective Working Time	Cable Routing - HV & Cleating	EWT	-Routing
+JDR	EWT	Effective Working Time	Electrical - Cable routing	Effective Working Time	Cable Routing - HV & Cleating	EWT	-Cleating
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	Open/Close 8VM1	EWT	-Open Environmental Bag
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	Open/Close 8VM1	EWT	-Reseal Environmental Bag
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L1 Prep
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L1 Install Product
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L1 Plug in / Connection
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L2 Prep
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L2 Install Product
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L2 Plug in / Connection
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L3 Prep
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L3 Install Product
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-L3 Plug in / Connection
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-Temporary Caps Installed ready for Plug-In
+JDR	EWT	Effective Working Time	Electrical - Termination	Effective Working Time	HV Termination	EWT	-Earthing
+JDR	EWT	Effective Working Time	Fibre Optic	Effective Working Time	FO installation / routing	EWT	-FO Routing (inc Service loop)
+JDR	EWT	Effective Working Time	Fibre Optic	Effective Working Time	FO installation / routing	EWT	-Gland Installation
+JDR	EWT	Effective Working Time	Fibre Optic	Effective Working Time	FO termination	EWT	-Dressing Fibres
+JDR	EWT	Effective Working Time	Fibre Optic	Effective Working Time	FO termination	EWT	-Splicing
+JDR	EWT	Effective Working Time	Fibre Optic	Effective Working Time	FO termination	EWT	-Earthing
+JDR	EWT	Effective Working Time	General husbandry	Effective Working Time	General Husbandry	EWT	-Tidying up the position during the completion of other works to maintain a suitable working environment
+JDR	EWT	Effective Working Time	ORS TBC	Effective Working Time	Labelling Cables	EWT	- Application of RDS-PP Labelling
+JDR	EWT	Effective Working Time	Post-Termination Testing	Effective Working Time	Testing - Post-Termination (FO)	EWT	-SIP to SIP OTDR/iOLM
+JDR	EWT	Effective Working Time	Post-Termination Testing	Effective Working Time	Testing - Post-Termination (FO)	EWT	-String Testing OTDR/iOLM
+JDR	EWT	Effective Working Time	Post-Termination Testing	Effective Working Time	Testing - Post-Termination (FO)	EWT	-Testing of Splices prior to SAT
+JDR	EWT	Effective Working Time	Post-Termination Testing	Effective Working Time	Testing - Post-Termination (HV)	EWT	- Earth Verification
+JDR	EWT	Effective Working Time	ORS TBC	Effective Working Time	Hand back	EWT	-JDR QC
+JDR	EWT	Effective Working Time	ORS TBC	Effective Working Time	Hand back	EWT	- As-Left
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Setup Commissioning/Decommissioning	EWT	-Initial first setup of equipment on OCS
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Setup Commissioning/Decommissioning	EWT	-Final or additionla pack up and storage of equipment on OCS
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Test Lead Route/Re-Route	EWT	-Iniitial RTS test lead setup
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Test Lead Route/Re-Route	EWT	-Re-Route RTS test lead
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Testing	EWT	-RTS Setup
+JDR	EWT	Effective Working Time	Resonance Testing	Effective Working Time	RTS Testing	EWT	- RTS Testing
+JDR	EWT	Effective Working Time	Demobilisation	Effective Working Time	Demobilisation	EWT	- Packing of Equipment ready for removal from location and final clean up
+JDR	EWT	Effective Working Time	TBT / POWRA	Effective Working Time	HSE - Toolbox Talk	EWT	
+JDR	EWT	Effective Working Time	Welfare break on location	Effective Working Time	Welfare Break	EWT	- Welfare Break
+JDR	EWT	Effective Working Time	ORS TBC	Effective Working Time	Waiting on Technical Information	EWT	- Waiting on JDR technical feedback
+JDR	EWT	Effective Working Time	ORS TBC	Effective Working Time	Other - (Refer to Comments)	EWT	
+JDR	EWT	Effective Working Time	Other (CDT)	Effective Working Time	Waiting on Team Member/s	EWT	
+JDR	EWT	Non-Working Time	Waiting on material, equipment or documentation (CDT)	Non-Working Time	Waiting on Material/Equipment	EWT	
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Campaign Mobilisation	NWT	- Onshore/Port activities to prepare for offshore campaign
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Standby - Crew Change Related Activities	NWT	-Heli crew Change
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Standby - Crew Change Related Activities	NWT	-Onboarding
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Port Call (Excluding Transit)	NWT	
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Transit to / from Field	NWT	- Transit to port
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Transit to / from Field	NWT	- Transit to field
+ORS	NWT	Non-Working Time	Transit to/from field	Non-Working Time	Transit – Offshore Personnel Transfer	NWT	
+ORS	NWT	Non-Working Time	HSE - Other (PPE check, time out for safety, etc.)	Non-Working Time	HSE - Time out for Safety	NWT	-Contractor HSE standby
+ORS	NWT	Non-Working Time	HSE - Other (PPE check, time out for safety, etc.)	Non-Working Time	HSE - Time out for Safety	NWT	-Client HSE standby
+ORS	NWT	Non-Working Time	Standby (EDT) - Waiting on Transfer / No Work Location Available	Non-Working Time	Work Location Not Available	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Waiting on Transfer / No Work Location Available	Non-Working Time	RTS Delay	NWT	- Client unable to facilitate RTS test following JDR official communication on readiness
+ORS	NWT	Non-Working Time	Standby (EDT) - Waiting on Transfer / Transfer of other Scopes	Non-Working Time	Waiting on Transfer (Offshore)	NWT	- Waiting on Transfer to Asset
+ORS	NWT	Non-Working Time	Standby (EDT) - Waiting on Transfer / Transfer of other Scopes	Non-Working Time	Waiting on Transfer (Offshore)	NWT	- Waiting on Transfer to Vessel
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Other - (Refer to Comments)	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Delay - Other Vessel Scopes	NWT	- Delays caused by other scopes operating from same vessel as JDR
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Technical Breakdown	NWT	-SOV Technical Breakdown
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Technical Breakdown	NWT	-CTV Technical Breakdown
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on Access	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on Site Services / Infrastructure	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on SAPs / Electrical Safety Docs	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on OCS SWG De-Gassing	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on scaffolding	NWT	-Awaiting errection
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on scaffolding	NWT	-Awaiting modifications
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on scaffolding	NWT	-Awaiting striking
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on scaffolding	NWT	-Awaiting certification
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Waiting on Technical Information	NWT	- Waiting on Employer technical feedback
+ORS	NWT	Non-Working Time	Waiting on material, equipment or documentation (EDT)	Non-Working Time	Waiting on Material/Equipment	NWT	
+ORS	NWT	Non-Working Time	Standby (EDT) - Other	Non-Working Time	Other - (Refer to Comments)	NWT	
+ORS	NWT	Non-Working Time	ORS TBC	Non-Working Time	Client Downtime	NWT	
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Lifting Operations - Offshore	NWT	- SOV Lifting Ops
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Lifting Operations - Offshore	NWT	- CTV Lifting Ops
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Personnel Transfer - Offshore	NWT	- Personnel Transfer to Asset
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Personnel Transfer - Offshore	NWT	- Personnel Transfer to Vessel
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Transfer by CTV	NWT	- Transit to SIP
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Transfer by CTV	NWT	- Transit to OCS
+ORS	NWT	Non-Working Time	Standby (LT) - Transfer to / from Location	Non-Working Time	Transfer by CTV	NWT	- Transit to SOV
+ORS	NWT	Non-Working Time	ORS TBC	Non-Working Time	Delay - Late Collection by Previous Shift	NWT	- Team completed previous shift late and suitable rest required
+ORS	WDT	Non-Working Time	Standby (WDT) - Weather downtime	Non-Working Time	Waiting on Weather	WDT	-Standby on location due to weather
+ORS	WDT	Non-Working Time	Standby (WDT) - Weather downtime	Non-Working Time	Waiting on Weather	WDT	-Standby on vessel due to weather
+JDR	EWT	Re-Work	Mobilisation	Re-Work	Re-Work	EWT	Mobilisation
+JDR	EWT	Re-Work	Pre-Termination Testing	Re-Work	Re-Work	EWT	Pre-Termination Testing
+JDR	EWT	Re-Work	Pre-Works SIP Set up / Asset protection	Re-Work	Re-Work	EWT	Pre-Works SIP Set up / Asset protection
+JDR	EWT	Re-Work	Mechanical - Cable stripping	Re-Work	Re-Work	EWT	Mechanical - Cable stripping
+JDR	EWT	Re-Work	Mechanical - Hang-off	Re-Work	Re-Work	EWT	Mechanical - Hang-off
+JDR	EWT	Re-Work	Electrical - Cable routing	Re-Work	Re-Work	EWT	Electrical - Cable routing
+JDR	EWT	Re-Work	Electrical - Termination	Re-Work	Re-Work	EWT	Electrical - Termination
+JDR	EWT	Re-Work	Fibre Optic	Re-Work	Re-Work	EWT	Fibre Optic
+JDR	EWT	Re-Work	General husbandry	Re-Work	Re-Work	EWT	General husbandry
+JDR	EWT	Re-Work	Post-Termination Testing	Re-Work	Re-Work	EWT	Post-Termination Testing
+JDR	EWT	Re-Work	Resonance Testing	Re-Work	Re-Work	EWT	Resonance Testing
+JDR	EWT	Re-Work	Variation	Re-Work	Re-Work	EWT	Variation
+JDR	EWT	Re-Work	Demobilisation	Re-Work	Re-Work	EWT	Demobilisation
+ORS	NWT	Extra Work	Mobilisation	Extra Work	Additional Mobilization Setup	NWT	- Additional mobilization of asset - contractor unable to finalize location on previous visit, due to factors outside their control
+ORS	NWT	Extra Work	Electrical - Termination	Extra Work	Additional 8VM1 Works	NWT	- Additional open or close of seal bags not connected as part of T&T scope of work
+ORS	NWT	Extra Work	Electrical - Termination	Extra Work	Additional 8VM1 Works	NWT	- Reconfigure GIS Gland Plates
+ORS	NWT	Extra Work	General husbandry	Extra Work	Interruption for Weather	NWT	-Housekeeping before/after a period of weather downtime
+ORS	NWT	Extra Work	Demobilisation	Extra Work	Additional Demobilization Setup	NWT	- Additional de-mobilization of asset - contractor unable to finalize location on previous visit, due to factors outside their control
+ORS	NWT (VO)	Extra Work	ORS TBC	Extra Work	CMS Removal, Storage & Reinstallation (VO)	NWT (VO)	- Removal and Storage of CMS
+ORS	NWT (VO)	Extra Work	ORS TBC	Extra Work	CMS Removal, Storage & Reinstallation (VO)	NWT (VO)	- Reinstallation of CMS
+ORS	NWT (VO)	Extra Work	ORS TBC	Extra Work	CMS MBR Rectification Works (VO)	NWT (VO)	- Rectify pre-installed CMS MBR issues
+ORS	NWT (VO)	Extra Work	ORS TBC	Extra Work	PT100 Sensor Installation (VO)	NWT (VO)	- Installation of PT100 Sensors
