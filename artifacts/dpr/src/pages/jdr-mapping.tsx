@@ -838,20 +838,22 @@ export default function JdrMappingPage() {
               {visibleActivities.length === 0 && <EmptyHint text="No activities." />}
             </DrillColumn>
 
-            {/* Column 4 — JDR COMMENT */}
+            {/* Column 4 — JDR CODE / COMMENT */}
             <DrillColumn
-              label="JDR COMMENT"
+              label="JDR CODE / COMMENT"
               count={visibleJdrCodes.length}
               onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
             >
               {visibleJdrCodes.map((j) => (
                 <CommentRow
                   key={j.id}
+                  jdrWorkActivity={j.jdrWorkActivity}
+                  contractualCode={j.contractualCode}
                   comment={j.genericComment}
                   onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
                   onDelete={() => deleteJdrCode.mutate({ id: j.id })}
                   deletePending={deleteJdrCode.isPending}
-                  deleteDescription={`Delete JDR code "${j.contractualCode}"?`}
+                  deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
                 />
               ))}
               {visibleJdrCodes.length === 0 && <EmptyHint text="No JDR comments." />}
@@ -1077,21 +1079,43 @@ function DrillCard({
 // ─── JDR Comment row — plain text list ───────────────────────────────────────
 
 function CommentRow({
+  jdrWorkActivity,
+  contractualCode,
   comment,
   onEdit,
   onDelete,
   deletePending,
   deleteDescription,
 }: {
+  jdrWorkActivity: string;
+  contractualCode: string;
   comment: string;
   onEdit: () => void;
   onDelete: () => void;
   deletePending: boolean;
   deleteDescription: string;
 }) {
+  const isOrsted = contractualCode.toUpperCase() === "ORSTED";
   return (
-    <div className="group relative flex items-center px-4 py-2.5 border-b border-border/40 hover:bg-muted/20 transition-colors">
-      <span className="text-sm text-foreground/85 pr-14 leading-snug">{comment}</span>
+    <div className="group relative flex flex-col gap-0.5 px-4 py-3 border-b border-border/40 hover:bg-muted/20 transition-colors">
+      {contractualCode && (
+        <span
+          className={cn(
+            "absolute top-3 right-8 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
+            isOrsted
+              ? "bg-amber-500/20 text-amber-400"
+              : "bg-primary/20 text-primary"
+          )}
+        >
+          {contractualCode}
+        </span>
+      )}
+      <div className={cn("text-sm font-medium leading-snug", contractualCode ? "pr-14" : "pr-8")}>
+        {jdrWorkActivity}
+      </div>
+      <div className="text-xs text-muted-foreground mt-0.5">
+        {comment ? comment : <span className="italic opacity-50">No comment set</span>}
+      </div>
       <div
         className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0"
         onClick={(e) => e.stopPropagation()}
@@ -1297,8 +1321,7 @@ function JdrCodeDialog({
     form.lautecActivity.trim() &&
     form.lautecActivityGroup.trim() &&
     form.jdrWorkActivity.trim() &&
-    form.contractualCode.trim() &&
-    form.genericComment.trim();
+    form.contractualCode.trim();
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
