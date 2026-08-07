@@ -38,8 +38,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Loader2, Plus, Pencil, Trash2, Search, X } from "lucide-react";
+import {
+  Loader2, Plus, Pencil, Trash2, Search, X, Check, ChevronsUpDown,
+  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +64,7 @@ export default function JdrMappingPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [showAllLocations, setShowAllLocations] = useState(false);
 
   const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
   const activityById = useMemo(() => new Map(activities.map((a) => [a.id, a])), [activities]);
@@ -77,7 +83,6 @@ export default function JdrMappingPage() {
   const activityCount = (activityId: number) =>
     jdrCodes.filter((j) => j.activityId === activityId).length;
 
-  // Derive badge label for each activity from its linked JDR codes' contractual code
   const activityBadge = useMemo(() => {
     const map = new Map<number, string>();
     activities.forEach((a) => {
@@ -118,20 +123,17 @@ export default function JdrMappingPage() {
   }, [groups, groupIdsWithMatch]);
 
   const visibleTypes = term ? types.filter((t) => typeIdsWithMatch.has(t.id)) : types;
-
   const visibleGroups = groups.filter((g) => {
     if (selectedTypeId != null && g.activityTypeId !== selectedTypeId) return false;
     if (term && !groupIdsWithMatch.has(g.id)) return false;
     return true;
   });
-
   const visibleActivities = activities.filter((a) => {
     if (selectedGroupId != null && a.activityGroupId !== selectedGroupId) return false;
     if (selectedGroupId == null && selectedTypeId != null && typeOfGroup(a.activityGroupId) !== selectedTypeId) return false;
     if (term && !activityIdsWithMatch.has(a.id)) return false;
     return true;
   });
-
   const visibleJdrCodes = jdrCodes.filter((j) => {
     if (selectedActivityId != null && j.activityId !== selectedActivityId) return false;
     if (selectedActivityId == null && selectedGroupId != null && activityById.get(j.activityId ?? -1)?.activityGroupId !== selectedGroupId) return false;
@@ -153,31 +155,21 @@ export default function JdrMappingPage() {
     setSelectedActivityId((prev) => (prev === id ? null : id));
   }
 
-  // ── Type CRUD ──
+  // ── CRUD mutations ─────────────────────────────────────────────────────────
   const createType = useCreateDprActivityType({
     mutation: {
       onMutate: async ({ data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
         const tempId = -(Date.now());
-        queryClient.setQueriesData<DprActivityType[]>(
-          { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }])
-        );
+        queryClient.setQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() }, (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }]));
         return { snapshot, tempId };
       },
       onSuccess: (created, _, ctx) => {
-        queryClient.setQueriesData<DprActivityType[]>(
-          { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => old ? [...old.filter(t => t.id !== ctx?.tempId), created] : [created]
-        );
-        toast({ title: "Category created" });
-        setTypeDialog(null);
+        queryClient.setQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() }, (old) => old ? [...old.filter(t => t.id !== ctx?.tempId), created] : [created]);
+        toast({ title: "Category created" }); setTypeDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to create", description: e.message, variant: "destructive" }); },
     },
   });
   const updateType = useUpdateDprActivityType({
@@ -185,24 +177,14 @@ export default function JdrMappingPage() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
-        queryClient.setQueriesData<DprActivityType[]>(
-          { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => old?.map((t) => (t.id === id ? { ...t, ...data } : t))
-        );
+        queryClient.setQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() }, (old) => old?.map((t) => (t.id === id ? { ...t, ...data } : t)));
         return { snapshot };
       },
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprActivityType[]>(
-          { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => old?.map((t) => (t.id === updated.id ? updated : t))
-        );
-        toast({ title: "Category updated" });
-        setTypeDialog(null);
+        queryClient.setQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() }, (old) => old?.map((t) => (t.id === updated.id ? updated : t)));
+        toast({ title: "Category updated" }); setTypeDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to update", description: e.message, variant: "destructive" }); },
     },
   });
   const deleteType = useDeleteDprActivityType({
@@ -210,21 +192,13 @@ export default function JdrMappingPage() {
       onMutate: async ({ id }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivityTypesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() });
-        queryClient.setQueriesData<DprActivityType[]>(
-          { queryKey: getListDprActivityTypesQueryKey() },
-          (old) => old?.filter((t) => t.id !== id)
-        );
+        queryClient.setQueriesData<DprActivityType[]>({ queryKey: getListDprActivityTypesQueryKey() }, (old) => old?.filter((t) => t.id !== id));
         return { snapshot };
       },
       onSuccess: () => toast({ title: "Category deleted" }),
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete", description: e.message, variant: "destructive" }); },
     },
   });
-
-  // ── Group CRUD ──
   const createGroup = useCreateDprActivityGroup({
     mutation: {
       onMutate: async ({ data }) => {
@@ -232,24 +206,14 @@ export default function JdrMappingPage() {
         const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
         const tempId = -(Date.now());
         const tempEntry: DprActivityGroup = { id: tempId, name: data.name, activityTypeId: data.activityTypeId ?? null };
-        queryClient.setQueriesData<DprActivityGroup[]>(
-          { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => (old ? [...old, tempEntry] : [tempEntry])
-        );
+        queryClient.setQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() }, (old) => (old ? [...old, tempEntry] : [tempEntry]));
         return { snapshot, tempId };
       },
       onSuccess: (created, _, ctx) => {
-        queryClient.setQueriesData<DprActivityGroup[]>(
-          { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => old ? [...old.filter(g => g.id !== ctx?.tempId), created] : [created]
-        );
-        toast({ title: "Activity group created" });
-        setGroupDialog(null);
+        queryClient.setQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() }, (old) => old ? [...old.filter(g => g.id !== ctx?.tempId), created] : [created]);
+        toast({ title: "Activity group created" }); setGroupDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to create", description: e.message, variant: "destructive" }); },
     },
   });
   const updateGroup = useUpdateDprActivityGroup({
@@ -257,24 +221,14 @@ export default function JdrMappingPage() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivityGroupsQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
-        queryClient.setQueriesData<DprActivityGroup[]>(
-          { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => old?.map((g) => (g.id === id ? { ...g, ...data } : g))
-        );
+        queryClient.setQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() }, (old) => old?.map((g) => (g.id === id ? { ...g, ...data } : g)));
         return { snapshot };
       },
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprActivityGroup[]>(
-          { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => old?.map((g) => (g.id === updated.id ? updated : g))
-        );
-        toast({ title: "Activity group updated" });
-        setGroupDialog(null);
+        queryClient.setQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() }, (old) => old?.map((g) => (g.id === updated.id ? updated : g)));
+        toast({ title: "Activity group updated" }); setGroupDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to update", description: e.message, variant: "destructive" }); },
     },
   });
   const deleteGroup = useDeleteDprActivityGroup({
@@ -282,46 +236,27 @@ export default function JdrMappingPage() {
       onMutate: async ({ id }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivityGroupsQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() });
-        queryClient.setQueriesData<DprActivityGroup[]>(
-          { queryKey: getListDprActivityGroupsQueryKey() },
-          (old) => old?.filter((g) => g.id !== id)
-        );
+        queryClient.setQueriesData<DprActivityGroup[]>({ queryKey: getListDprActivityGroupsQueryKey() }, (old) => old?.filter((g) => g.id !== id));
         return { snapshot };
       },
       onSuccess: () => toast({ title: "Activity group deleted" }),
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete", description: e.message, variant: "destructive" }); },
     },
   });
-
-  // ── Activity CRUD ──
   const createActivity = useCreateDprActivity({
     mutation: {
       onMutate: async ({ data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
         const tempId = -(Date.now());
-        const tempEntry: DprActivity = { id: tempId, name: data.name, activityGroupId: data.activityGroupId };
-        queryClient.setQueriesData<DprActivity[]>(
-          { queryKey: getListDprActivitiesQueryKey() },
-          (old) => (old ? [...old, tempEntry] : [tempEntry])
-        );
+        queryClient.setQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() }, (old) => (old ? [...old, { id: tempId, name: data.name, activityGroupId: data.activityGroupId }] : [{ id: tempId, name: data.name, activityGroupId: data.activityGroupId }]));
         return { snapshot, tempId };
       },
       onSuccess: (created, _, ctx) => {
-        queryClient.setQueriesData<DprActivity[]>(
-          { queryKey: getListDprActivitiesQueryKey() },
-          (old) => old ? [...old.filter(a => a.id !== ctx?.tempId), created] : [created]
-        );
-        toast({ title: "Activity created" });
-        setActivityDialog(null);
+        queryClient.setQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() }, (old) => old ? [...old.filter(a => a.id !== ctx?.tempId), created] : [created]);
+        toast({ title: "Activity created" }); setActivityDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to create", description: e.message, variant: "destructive" }); },
     },
   });
   const updateActivity = useUpdateDprActivity({
@@ -329,24 +264,14 @@ export default function JdrMappingPage() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
-        queryClient.setQueriesData<DprActivity[]>(
-          { queryKey: getListDprActivitiesQueryKey() },
-          (old) => old?.map((a) => (a.id === id ? { ...a, ...data } : a))
-        );
+        queryClient.setQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() }, (old) => old?.map((a) => (a.id === id ? { ...a, ...data } : a)));
         return { snapshot };
       },
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprActivity[]>(
-          { queryKey: getListDprActivitiesQueryKey() },
-          (old) => old?.map((a) => (a.id === updated.id ? updated : a))
-        );
-        toast({ title: "Activity updated" });
-        setActivityDialog(null);
+        queryClient.setQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() }, (old) => old?.map((a) => (a.id === updated.id ? updated : a)));
+        toast({ title: "Activity updated" }); setActivityDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to update", description: e.message, variant: "destructive" }); },
     },
   });
   const deleteActivity = useDeleteDprActivity({
@@ -354,54 +279,27 @@ export default function JdrMappingPage() {
       onMutate: async ({ id }) => {
         await queryClient.cancelQueries({ queryKey: getListDprActivitiesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() });
-        queryClient.setQueriesData<DprActivity[]>(
-          { queryKey: getListDprActivitiesQueryKey() },
-          (old) => old?.filter((a) => a.id !== id)
-        );
+        queryClient.setQueriesData<DprActivity[]>({ queryKey: getListDprActivitiesQueryKey() }, (old) => old?.filter((a) => a.id !== id));
         return { snapshot };
       },
       onSuccess: () => toast({ title: "Activity deleted" }),
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete", description: e.message, variant: "destructive" }); },
     },
   });
-
-  // ── JDR Code CRUD ──
   const createJdrCode = useCreateDprJdrCode({
     mutation: {
       onMutate: async ({ data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
         const tempId = -(Date.now());
-        const tempEntry: DprJdrCode = {
-          id: tempId,
-          lautecActivity: data.lautecActivity,
-          lautecActivityGroup: data.lautecActivityGroup,
-          jdrWorkActivity: data.jdrWorkActivity,
-          contractualCode: data.contractualCode,
-          genericComment: data.genericComment,
-          activityId: data.activityId ?? null,
-        };
-        queryClient.setQueriesData<DprJdrCode[]>(
-          { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => (old ? [...old, tempEntry] : [tempEntry])
-        );
+        queryClient.setQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() }, (old) => (old ? [...old, { id: tempId, lautecActivity: data.lautecActivity, lautecActivityGroup: data.lautecActivityGroup, jdrWorkActivity: data.jdrWorkActivity, contractualCode: data.contractualCode, genericComment: data.genericComment, activityId: data.activityId ?? null }] : []));
         return { snapshot, tempId };
       },
       onSuccess: (created, _, ctx) => {
-        queryClient.setQueriesData<DprJdrCode[]>(
-          { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => old ? [...old.filter(c => c.id !== ctx?.tempId), created] : [created]
-        );
-        toast({ title: "JDR code created" });
-        setJdrDialog(null);
+        queryClient.setQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() }, (old) => old ? [...old.filter(c => c.id !== ctx?.tempId), created] : [created]);
+        toast({ title: "JDR code created" }); setJdrDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to create", description: e.message, variant: "destructive" }); },
     },
   });
   const updateJdrCode = useUpdateDprJdrCode({
@@ -409,24 +307,14 @@ export default function JdrMappingPage() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
-        queryClient.setQueriesData<DprJdrCode[]>(
-          { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => old?.map((c) => (c.id === id ? { ...c, ...data } : c))
-        );
+        queryClient.setQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() }, (old) => old?.map((c) => (c.id === id ? { ...c, ...data } : c)));
         return { snapshot };
       },
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprJdrCode[]>(
-          { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => old?.map((c) => (c.id === updated.id ? updated : c))
-        );
-        toast({ title: "JDR code updated" });
-        setJdrDialog(null);
+        queryClient.setQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() }, (old) => old?.map((c) => (c.id === updated.id ? updated : c)));
+        toast({ title: "JDR code updated" }); setJdrDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to update", description: e.message, variant: "destructive" }); },
     },
   });
   const deleteJdrCode = useDeleteDprJdrCode({
@@ -434,45 +322,27 @@ export default function JdrMappingPage() {
       onMutate: async ({ id }) => {
         await queryClient.cancelQueries({ queryKey: getListDprJdrCodesQueryKey() });
         const snapshot = queryClient.getQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() });
-        queryClient.setQueriesData<DprJdrCode[]>(
-          { queryKey: getListDprJdrCodesQueryKey() },
-          (old) => old?.filter((c) => c.id !== id)
-        );
+        queryClient.setQueriesData<DprJdrCode[]>({ queryKey: getListDprJdrCodesQueryKey() }, (old) => old?.filter((c) => c.id !== id));
         return { snapshot };
       },
       onSuccess: () => toast({ title: "JDR code deleted" }),
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete", description: e.message, variant: "destructive" }); },
     },
   });
-
-  // ── Location CRUD ──
   const createLocation = useCreateDprLocation({
     mutation: {
       onMutate: async ({ data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
         const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
         const tempId = -(Date.now());
-        queryClient.setQueriesData<DprLocation[]>(
-          { queryKey: getListDprLocationsQueryKey() },
-          (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }])
-        );
+        queryClient.setQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() }, (old) => (old ? [...old, { id: tempId, name: data.name }] : [{ id: tempId, name: data.name }]));
         return { snapshot, tempId };
       },
       onSuccess: (created, _, ctx) => {
-        queryClient.setQueriesData<DprLocation[]>(
-          { queryKey: getListDprLocationsQueryKey() },
-          (old) => old ? [...old.filter((l) => l.id !== ctx?.tempId), created] : [created]
-        );
-        toast({ title: "Location created" });
-        setLocationDialog(null);
+        queryClient.setQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() }, (old) => old ? [...old.filter((l) => l.id !== ctx?.tempId), created] : [created]);
+        toast({ title: "Location created" }); setLocationDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to create", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to create", description: e.message, variant: "destructive" }); },
     },
   });
   const updateLocation = useUpdateDprLocation({
@@ -480,24 +350,14 @@ export default function JdrMappingPage() {
       onMutate: async ({ id, data }) => {
         await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
         const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
-        queryClient.setQueriesData<DprLocation[]>(
-          { queryKey: getListDprLocationsQueryKey() },
-          (old) => old?.map((l) => (l.id === id ? { ...l, ...data } : l))
-        );
+        queryClient.setQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() }, (old) => old?.map((l) => (l.id === id ? { ...l, ...data } : l)));
         return { snapshot };
       },
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprLocation[]>(
-          { queryKey: getListDprLocationsQueryKey() },
-          (old) => old?.map((l) => (l.id === updated.id ? updated : l))
-        );
-        toast({ title: "Location updated" });
-        setLocationDialog(null);
+        queryClient.setQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() }, (old) => old?.map((l) => (l.id === updated.id ? updated : l)));
+        toast({ title: "Location updated" }); setLocationDialog(null);
       },
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to update", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to update", description: e.message, variant: "destructive" }); },
     },
   });
   const deleteLocation = useDeleteDprLocation({
@@ -505,28 +365,15 @@ export default function JdrMappingPage() {
       onMutate: async ({ id }) => {
         await queryClient.cancelQueries({ queryKey: getListDprLocationsQueryKey() });
         const snapshot = queryClient.getQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() });
-        queryClient.setQueriesData<DprLocation[]>(
-          { queryKey: getListDprLocationsQueryKey() },
-          (old) => old?.filter((l) => l.id !== id)
-        );
+        queryClient.setQueriesData<DprLocation[]>({ queryKey: getListDprLocationsQueryKey() }, (old) => old?.filter((l) => l.id !== id));
         return { snapshot };
       },
       onSuccess: () => toast({ title: "Location deleted" }),
-      onError: (e, _, ctx) => {
-        ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        toast({ title: "Failed to delete", description: e.message, variant: "destructive" });
-      },
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete", description: e.message, variant: "destructive" }); },
     },
   });
 
-  const [typeDialog, setTypeDialog] = useState<{ editing: DprActivityType | null } | null>(null);
-  const [groupDialog, setGroupDialog] = useState<{ editing: DprActivityGroup | null; defaultTypeId: number | null } | null>(null);
-  const [activityDialog, setActivityDialog] = useState<{ editing: DprActivity | null; defaultGroupId: number | null } | null>(null);
-  const [jdrDialog, setJdrDialog] = useState<{ editing: DprJdrCode | null; defaultActivityId: number | null } | null>(null);
-  const [locationDialog, setLocationDialog] = useState<{ editing: DprLocation | null } | null>(null);
-  const [showAllLocations, setShowAllLocations] = useState(false);
-
-  // ── Teams ──
+  // ── Teams ──────────────────────────────────────────────────────────────────
   const teamsKey = ["/api/dpr/teams"];
   const { data: teams = [] } = useQuery({
     queryKey: teamsKey,
@@ -536,424 +383,407 @@ export default function JdrMappingPage() {
       return res.json() as Promise<{ id: number; name: string }[]>;
     },
   });
-  const [teamDialog, setTeamDialog] = useState<{ editing: { id: number; name: string } | null } | null>(null);
-
   const createTeam = useMutation({
     mutationFn: (name: string) => fetch("/api/dpr/teams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
-    onMutate: async (name) => {
-      const prev = queryClient.getQueryData(teamsKey);
-      queryClient.setQueryData(teamsKey, (old: any[]) => [...(old ?? []), { id: -(Date.now()), name }]);
-      return { prev };
-    },
+    onMutate: async (name) => { const prev = queryClient.getQueryData(teamsKey); queryClient.setQueryData(teamsKey, (old: any[]) => [...(old ?? []), { id: -(Date.now()), name }]); return { prev }; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); setTeamDialog(null); toast({ title: "Team created" }); },
     onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to create team", variant: "destructive" }); },
   });
   const updateTeam = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) => fetch(`/api/dpr/teams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
-    onMutate: async ({ id, name }) => {
-      const prev = queryClient.getQueryData(teamsKey);
-      queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).map((t) => t.id === id ? { ...t, name } : t));
-      return { prev };
-    },
+    onMutate: async ({ id, name }) => { const prev = queryClient.getQueryData(teamsKey); queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).map((t) => t.id === id ? { ...t, name } : t)); return { prev }; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); setTeamDialog(null); toast({ title: "Team updated" }); },
     onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to update team", variant: "destructive" }); },
   });
   const deleteTeam = useMutation({
     mutationFn: (id: number) => fetch(`/api/dpr/teams/${id}`, { method: "DELETE" }),
-    onMutate: async (id) => {
-      const prev = queryClient.getQueryData(teamsKey);
-      queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).filter((t) => t.id !== id));
-      return { prev };
-    },
+    onMutate: async (id) => { const prev = queryClient.getQueryData(teamsKey); queryClient.setQueryData(teamsKey, (old: any[]) => (old ?? []).filter((t) => t.id !== id)); return { prev }; },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: teamsKey }); toast({ title: "Team deleted" }); },
     onError: (_e, _v, ctx: any) => { queryClient.setQueryData(teamsKey, ctx?.prev); toast({ title: "Failed to delete team", variant: "destructive" }); },
   });
 
-  const LOCATION_PAGE = 25;
+  // ── Dialog state ──────────────────────────────────────────────────────────
+  const [typeDialog, setTypeDialog] = useState<{ editing: DprActivityType | null } | null>(null);
+  const [groupDialog, setGroupDialog] = useState<{ editing: DprActivityGroup | null; defaultTypeId: number | null } | null>(null);
+  const [activityDialog, setActivityDialog] = useState<{ editing: DprActivity | null; defaultGroupId: number | null } | null>(null);
+  const [jdrDialog, setJdrDialog] = useState<{ editing: DprJdrCode | null; defaultActivityId: number | null } | null>(null);
+  const [locationDialog, setLocationDialog] = useState<{ editing: DprLocation | null } | null>(null);
+  const [teamDialog, setTeamDialog] = useState<{ editing: { id: number; name: string } | null } | null>(null);
+
+  // breadcrumb
+  const selectedType = selectedTypeId != null ? types.find((t) => t.id === selectedTypeId) : null;
+  const selectedGroup = selectedGroupId != null ? groups.find((g) => g.id === selectedGroupId) : null;
+  const selectedActivity = selectedActivityId != null ? activities.find((a) => a.id === selectedActivityId) : null;
+  const hasFilter = selectedType || selectedGroup || selectedActivity;
+
+  const LOCATION_PAGE = 20;
   const visibleLocations = showAllLocations ? locations : locations.slice(0, LOCATION_PAGE);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Page header */}
-      <header className="px-6 py-4 border-b border-border shrink-0">
-        <h1 className="text-lg font-bold tracking-tight">JDR Mapping</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Click a card to drill down. Use + Add to create new entries at any level.
-        </p>
-      </header>
+    <div className="flex flex-col h-full bg-muted/20">
 
-      {/* Search bar */}
-      <div className="px-6 py-3 border-b border-border shrink-0">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <header className="px-5 py-3.5 border-b border-border/70 shrink-0 bg-card flex items-center gap-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+            <Network className="w-3.5 h-3.5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold tracking-tight leading-none">JDR Mapping</h1>
+            <p className="text-[11px] text-muted-foreground mt-0.5 leading-none">Activity hierarchy &amp; comment mapping</p>
+          </div>
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Search */}
+        <div className="relative w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search comments or activities"
-            className="pl-8 pr-8 h-8 text-sm bg-muted/40 border-border"
+            placeholder="Search codes or comments…"
+            className="pl-7 pr-7 h-7 text-xs bg-muted/40 border-border/60 rounded-md"
           />
           {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
+            <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+              <X className="w-3 h-3" />
             </button>
           )}
         </div>
-        {(selectedTypeId != null || selectedGroupId != null || selectedActivityId != null) && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
-            <span>Filtered by selection.</span>
-            <button
-              className="underline hover:text-foreground"
-              onClick={() => { setSelectedTypeId(null); setSelectedGroupId(null); setSelectedActivityId(null); }}
-            >
-              Clear
-            </button>
-          </div>
-        )}
-      </div>
+      </header>
 
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4 flex flex-col gap-4 min-h-0">
-          {/* ── Teams panel ──────────────────────────────────────── */}
-          <div className="border border-border rounded-lg overflow-hidden shrink-0">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Teams</span>
-                <span className="text-[11px] text-muted-foreground/50">({teams.length})</span>
-              </div>
-              <Button
-                size="sm" variant="ghost"
-                className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setTeamDialog({ editing: null })}
-              >
-                <Plus className="w-3 h-3" /> Add
-              </Button>
-            </div>
-            {teams.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-6 bg-card">No teams yet.</div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-0 divide-x divide-y divide-border bg-card">
-                {teams.map((team) => (
-                  <div key={team.id} className="group relative flex items-center px-3 py-2.5 hover:bg-muted/25 transition-colors">
-                    <span className="text-sm font-medium truncate pr-10">{team.name}</span>
-                    <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0" onClick={(e) => e.stopPropagation()}>
-                      <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setTeamDialog({ editing: team })}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete team "{team.name}"?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will also delete all role slots and daily assignments for this team. Timesheet entries referencing it will lose their team link.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => deleteTeam.mutate(team.id)}
-                              disabled={deleteTeam.isPending}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              {deleteTeam.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="flex-1 overflow-auto min-h-0 flex flex-col gap-3 p-4">
 
-          {/* ── Locations panel ─────────────────────────────────── */}
-          <div className="border border-border rounded-lg overflow-hidden shrink-0">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Locations
-                </span>
-                <span className="text-[11px] text-muted-foreground/50">({locations.length})</span>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setLocationDialog({ editing: null })}
-              >
-                <Plus className="w-3 h-3" />
-                Add
-              </Button>
-            </div>
-            {locations.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-6 bg-card">No locations yet.</div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-0 divide-x divide-y divide-border bg-card">
+          {/* ── Config strip: Teams + Locations ─────────────────────── */}
+          <div className="grid grid-cols-2 gap-3 shrink-0">
+            {/* Teams */}
+            <ConfigPanel
+              icon={<Users className="w-3.5 h-3.5" />}
+              label="Teams"
+              count={teams.length}
+              onAdd={() => setTeamDialog({ editing: null })}
+            >
+              {teams.length === 0
+                ? <span className="text-[11px] text-muted-foreground italic">No teams yet</span>
+                : teams.map((team) => (
+                  <Chip
+                    key={team.id}
+                    label={team.name}
+                    onEdit={() => setTeamDialog({ editing: team })}
+                    onDelete={() => deleteTeam.mutate(team.id)}
+                    deletePending={deleteTeam.isPending}
+                    deleteDescription={`Delete team "${team.name}"? This will also remove all role slots and daily assignments.`}
+                  />
+                ))
+              }
+            </ConfigPanel>
+
+            {/* Locations */}
+            <ConfigPanel
+              icon={<MapPin className="w-3.5 h-3.5" />}
+              label="Locations"
+              count={locations.length}
+              onAdd={() => setLocationDialog({ editing: null })}
+            >
+              {locations.length === 0
+                ? <span className="text-[11px] text-muted-foreground italic">No locations yet</span>
+                : <>
                   {visibleLocations.map((loc) => (
-                    <div
+                    <Chip
                       key={loc.id}
-                      className="group relative flex items-center px-3 py-2.5 hover:bg-muted/25 transition-colors"
-                    >
-                      <span className="text-sm font-medium truncate pr-10">{loc.name}</span>
-                      <div
-                        className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setLocationDialog({ editing: loc })}>
-                          <Pencil className="w-3 h-3" />
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                              <AlertDialogDescription>Delete location "{loc.name}"? Existing timesheet entries that reference it will lose their location link.</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteLocation.mutate({ id: loc.id })}
-                                disabled={deleteLocation.isPending}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                {deleteLocation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </div>
+                      label={loc.name}
+                      onEdit={() => setLocationDialog({ editing: loc })}
+                      onDelete={() => deleteLocation.mutate({ id: loc.id })}
+                      deletePending={deleteLocation.isPending}
+                      deleteDescription={`Delete location "${loc.name}"? Timesheet entries referencing it will lose their location link.`}
+                    />
                   ))}
-                </div>
-                {locations.length > LOCATION_PAGE && (
-                  <div className="border-t border-border bg-card px-4 py-2">
+                  {locations.length > LOCATION_PAGE && (
                     <button
                       onClick={() => setShowAllLocations((v) => !v)}
-                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                      className="text-[11px] text-primary hover:underline ml-0.5"
                     >
-                      {showAllLocations
-                        ? "Show fewer"
-                        : `Show all ${locations.length} locations`}
+                      {showAllLocations ? "Show fewer" : `+${locations.length - LOCATION_PAGE} more`}
                     </button>
-                  </div>
-                )}
-              </>
-            )}
+                  )}
+                </>
+              }
+            </ConfigPanel>
           </div>
 
-          {/* ── JDR hierarchy grid ──────────────────────────────── */}
-          <div className="flex-1 min-h-0 overflow-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 h-full divide-y sm:divide-y-0 sm:divide-x divide-border border border-border rounded-lg overflow-hidden">
+          {/* ── Hierarchy columns ────────────────────────────────────── */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border/70 overflow-hidden bg-card shadow-sm">
 
-            {/* Column 1 — CATEGORY */}
-            <DrillColumn
-              label="CATEGORY"
-              count={visibleTypes.length}
-              onAdd={() => setTypeDialog({ editing: null })}
-            >
-              {visibleTypes.map((t) => (
-                <DrillCard
-                  key={t.id}
-                  title={t.name}
-                  subtitle={`${typeCount(t.id)} codes`}
-                  selected={selectedTypeId === t.id}
-                  onClick={() => selectType(t.id)}
-                  onEdit={() => setTypeDialog({ editing: t })}
-                  onDelete={() => deleteType.mutate({ id: t.id })}
-                  deletePending={deleteType.isPending}
-                  deleteDescription={`Delete category "${t.name}"? This may affect activity groups linked to it.`}
-                />
-              ))}
-              {visibleTypes.length === 0 && <EmptyHint text="No categories." />}
-            </DrillColumn>
+            {/* Breadcrumb / filter bar */}
+            <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/50 bg-muted/30 shrink-0 min-h-[32px]">
+              {hasFilter ? (
+                <>
+                  <span className="text-[11px] text-muted-foreground">Filtered:</span>
+                  {selectedType && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                      <Layers className="w-3 h-3 text-muted-foreground" />
+                      {selectedType.name}
+                    </span>
+                  )}
+                  {selectedGroup && (
+                    <>
+                      <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                        <FolderOpen className="w-3 h-3 text-muted-foreground" />
+                        {selectedGroup.name}
+                      </span>
+                    </>
+                  )}
+                  {selectedActivity && (
+                    <>
+                      <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                        <Zap className="w-3 h-3 text-muted-foreground" />
+                        {selectedActivity.name}
+                      </span>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setSelectedTypeId(null); setSelectedGroupId(null); setSelectedActivityId(null); }}
+                    className="ml-1 text-[11px] text-muted-foreground hover:text-foreground underline transition-colors"
+                  >
+                    Clear
+                  </button>
+                </>
+              ) : (
+                <span className="text-[11px] text-muted-foreground/60">
+                  {search ? `Showing results for "${search}"` : "Click a row to drill down"}
+                </span>
+              )}
+            </div>
 
-            {/* Column 2 — ACTIVITY GROUP */}
-            <DrillColumn
-              label="ACTIVITY GROUP"
-              count={visibleGroups.length}
-              onAdd={() => setGroupDialog({ editing: null, defaultTypeId: selectedTypeId })}
-            >
-              {visibleGroups.map((g) => {
-                const typeName = types.find((t) => t.id === g.activityTypeId)?.name;
-                return (
+            {/* 4 columns */}
+            <div className="flex-1 min-h-0 grid grid-cols-4 divide-x divide-border/60">
+
+              {/* Col 1 — Category */}
+              <DrillColumn
+                step="01"
+                icon={<Layers className="w-3.5 h-3.5" />}
+                label="Category"
+                count={visibleTypes.length}
+                onAdd={() => setTypeDialog({ editing: null })}
+              >
+                {visibleTypes.map((t) => (
                   <DrillCard
-                    key={g.id}
-                    title={g.name}
-                    subtitle={`${typeName ? typeName + " • " : ""}${groupCount(g.id)} codes`}
-                    selected={selectedGroupId === g.id}
-                    onClick={() => selectGroup(g.id)}
-                    onEdit={() => setGroupDialog({ editing: g, defaultTypeId: g.activityTypeId ?? null })}
-                    onDelete={() => deleteGroup.mutate({ id: g.id })}
-                    deletePending={deleteGroup.isPending}
-                    deleteDescription={`Delete activity group "${g.name}"? This may affect activities linked to it.`}
+                    key={t.id}
+                    title={t.name}
+                    meta={`${typeCount(t.id)} codes`}
+                    selected={selectedTypeId === t.id}
+                    onClick={() => selectType(t.id)}
+                    onEdit={() => setTypeDialog({ editing: t })}
+                    onDelete={() => deleteType.mutate({ id: t.id })}
+                    deletePending={deleteType.isPending}
+                    deleteDescription={`Delete category "${t.name}"? This may affect activity groups linked to it.`}
                   />
-                );
-              })}
-              {visibleGroups.length === 0 && <EmptyHint text="No activity groups." />}
-            </DrillColumn>
+                ))}
+                {visibleTypes.length === 0 && <EmptyHint />}
+              </DrillColumn>
 
-            {/* Column 3 — ACTIVITY */}
-            <DrillColumn
-              label="ACTIVITY"
-              count={visibleActivities.length}
-              onAdd={() => setActivityDialog({ editing: null, defaultGroupId: selectedGroupId })}
-            >
-              {visibleActivities.map((a) => {
-                const groupName = groups.find((g) => g.id === a.activityGroupId)?.name;
-                const badge = activityBadge.get(a.id);
-                return (
-                  <DrillCard
-                    key={a.id}
-                    title={a.name}
-                    subtitle={`${groupName ?? ""}${groupName && activityCount(a.id) ? " • " : ""}${activityCount(a.id)} codes`}
-                    badge={badge}
-                    selected={selectedActivityId === a.id}
-                    onClick={() => selectActivity(a.id)}
-                    onEdit={() => setActivityDialog({ editing: a, defaultGroupId: a.activityGroupId })}
-                    onDelete={() => deleteActivity.mutate({ id: a.id })}
-                    deletePending={deleteActivity.isPending}
-                    deleteDescription={`Delete activity "${a.name}"? This may affect JDR codes linked to it.`}
+              {/* Col 2 — Activity Group */}
+              <DrillColumn
+                step="02"
+                icon={<FolderOpen className="w-3.5 h-3.5" />}
+                label="Activity Group"
+                count={visibleGroups.length}
+                onAdd={() => setGroupDialog({ editing: null, defaultTypeId: selectedTypeId })}
+              >
+                {visibleGroups.map((g) => {
+                  const typeName = types.find((t) => t.id === g.activityTypeId)?.name;
+                  return (
+                    <DrillCard
+                      key={g.id}
+                      title={g.name}
+                      meta={typeName}
+                      secondary={`${groupCount(g.id)} codes`}
+                      selected={selectedGroupId === g.id}
+                      onClick={() => selectGroup(g.id)}
+                      onEdit={() => setGroupDialog({ editing: g, defaultTypeId: g.activityTypeId ?? null })}
+                      onDelete={() => deleteGroup.mutate({ id: g.id })}
+                      deletePending={deleteGroup.isPending}
+                      deleteDescription={`Delete activity group "${g.name}"? This may affect activities linked to it.`}
+                    />
+                  );
+                })}
+                {visibleGroups.length === 0 && <EmptyHint />}
+              </DrillColumn>
+
+              {/* Col 3 — Activity */}
+              <DrillColumn
+                step="03"
+                icon={<Zap className="w-3.5 h-3.5" />}
+                label="Activity"
+                count={visibleActivities.length}
+                onAdd={() => setActivityDialog({ editing: null, defaultGroupId: selectedGroupId })}
+              >
+                {visibleActivities.map((a) => {
+                  const badge = activityBadge.get(a.id);
+                  return (
+                    <DrillCard
+                      key={a.id}
+                      title={a.name}
+                      meta={`${activityCount(a.id)} codes`}
+                      badge={badge}
+                      selected={selectedActivityId === a.id}
+                      onClick={() => selectActivity(a.id)}
+                      onEdit={() => setActivityDialog({ editing: a, defaultGroupId: a.activityGroupId })}
+                      onDelete={() => deleteActivity.mutate({ id: a.id })}
+                      deletePending={deleteActivity.isPending}
+                      deleteDescription={`Delete activity "${a.name}"? This may affect JDR codes linked to it.`}
+                    />
+                  );
+                })}
+                {visibleActivities.length === 0 && <EmptyHint />}
+              </DrillColumn>
+
+              {/* Col 4 — JDR Code */}
+              <DrillColumn
+                step="04"
+                icon={<Tag className="w-3.5 h-3.5" />}
+                label="JDR Code"
+                count={visibleJdrCodes.length}
+                onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
+              >
+                {visibleJdrCodes.map((j) => (
+                  <JdrCodeRow
+                    key={j.id}
+                    jdrWorkActivity={j.jdrWorkActivity}
+                    contractualCode={j.contractualCode}
+                    comment={j.genericComment}
+                    onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
+                    onDelete={() => deleteJdrCode.mutate({ id: j.id })}
+                    deletePending={deleteJdrCode.isPending}
+                    deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
                   />
-                );
-              })}
-              {visibleActivities.length === 0 && <EmptyHint text="No activities." />}
-            </DrillColumn>
+                ))}
+                {visibleJdrCodes.length === 0 && <EmptyHint />}
+              </DrillColumn>
 
-            {/* Column 4 — JDR CODE / COMMENT */}
-            <DrillColumn
-              label="JDR CODE / COMMENT"
-              count={visibleJdrCodes.length}
-              onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
-            >
-              {visibleJdrCodes.map((j) => (
-                <CommentRow
-                  key={j.id}
-                  jdrWorkActivity={j.jdrWorkActivity}
-                  contractualCode={j.contractualCode}
-                  comment={j.genericComment}
-                  onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
-                  onDelete={() => deleteJdrCode.mutate({ id: j.id })}
-                  deletePending={deleteJdrCode.isPending}
-                  deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
-                />
-              ))}
-              {visibleJdrCodes.length === 0 && <EmptyHint text="No JDR comments." />}
-            </DrillColumn>
-
+            </div>
           </div>
-          </div>{/* end overflow-x-auto grid wrapper */}
         </div>
       )}
 
+      {/* ── Dialogs ──────────────────────────────────────────────────── */}
       {teamDialog && (
-        <TeamDialog
-          editing={teamDialog.editing}
-          onClose={() => setTeamDialog(null)}
-          onSave={(name) =>
-            teamDialog.editing
-              ? updateTeam.mutate({ id: teamDialog.editing.id, name })
-              : createTeam.mutate(name)
-          }
-          saving={createTeam.isPending || updateTeam.isPending}
-        />
+        <TeamDialog editing={teamDialog.editing} onClose={() => setTeamDialog(null)}
+          onSave={(name) => teamDialog.editing ? updateTeam.mutate({ id: teamDialog.editing.id, name }) : createTeam.mutate(name)}
+          saving={createTeam.isPending || updateTeam.isPending} />
       )}
       {locationDialog && (
-        <LocationDialog
-          editing={locationDialog.editing}
-          onClose={() => setLocationDialog(null)}
-          onSave={(name) =>
-            locationDialog.editing
-              ? updateLocation.mutate({ id: locationDialog.editing.id, data: { name } })
-              : createLocation.mutate({ data: { name } })
-          }
-          saving={createLocation.isPending || updateLocation.isPending}
-        />
+        <LocationDialog editing={locationDialog.editing} onClose={() => setLocationDialog(null)}
+          onSave={(name) => locationDialog.editing ? updateLocation.mutate({ id: locationDialog.editing.id, data: { name } }) : createLocation.mutate({ data: { name } })}
+          saving={createLocation.isPending || updateLocation.isPending} />
       )}
       {typeDialog && (
-        <TypeDialog
-          editing={typeDialog.editing}
-          onClose={() => setTypeDialog(null)}
-          onSave={(name) =>
-            typeDialog.editing
-              ? updateType.mutate({ id: typeDialog.editing.id, data: { name } })
-              : createType.mutate({ data: { name } })
-          }
-          saving={createType.isPending || updateType.isPending}
-        />
+        <TypeDialog editing={typeDialog.editing} onClose={() => setTypeDialog(null)}
+          onSave={(name) => typeDialog.editing ? updateType.mutate({ id: typeDialog.editing.id, data: { name } }) : createType.mutate({ data: { name } })}
+          saving={createType.isPending || updateType.isPending} />
       )}
       {groupDialog && (
-        <GroupDialog
-          editing={groupDialog.editing}
-          defaultTypeId={groupDialog.defaultTypeId}
-          types={types}
-          onClose={() => setGroupDialog(null)}
-          onSave={(data) =>
-            groupDialog.editing
-              ? updateGroup.mutate({ id: groupDialog.editing.id, data })
-              : createGroup.mutate({ data })
-          }
-          saving={createGroup.isPending || updateGroup.isPending}
-        />
+        <GroupDialog editing={groupDialog.editing} defaultTypeId={groupDialog.defaultTypeId} types={types} onClose={() => setGroupDialog(null)}
+          onSave={(data) => groupDialog.editing ? updateGroup.mutate({ id: groupDialog.editing.id, data }) : createGroup.mutate({ data })}
+          saving={createGroup.isPending || updateGroup.isPending} />
       )}
       {activityDialog && (
-        <ActivityDialog
-          editing={activityDialog.editing}
-          defaultGroupId={activityDialog.defaultGroupId}
-          groups={groups}
-          onClose={() => setActivityDialog(null)}
-          onSave={(data) =>
-            activityDialog.editing
-              ? updateActivity.mutate({ id: activityDialog.editing.id, data })
-              : createActivity.mutate({ data })
-          }
-          saving={createActivity.isPending || updateActivity.isPending}
-        />
+        <ActivityDialog editing={activityDialog.editing} defaultGroupId={activityDialog.defaultGroupId} groups={groups} onClose={() => setActivityDialog(null)}
+          onSave={(data) => activityDialog.editing ? updateActivity.mutate({ id: activityDialog.editing.id, data }) : createActivity.mutate({ data })}
+          saving={createActivity.isPending || updateActivity.isPending} />
       )}
       {jdrDialog && (
-        <JdrCodeDialog
-          editing={jdrDialog.editing}
-          defaultActivityId={jdrDialog.defaultActivityId}
-          activities={activities}
-          onClose={() => setJdrDialog(null)}
-          onSave={(data) =>
-            jdrDialog.editing
-              ? updateJdrCode.mutate({ id: jdrDialog.editing.id, data })
-              : createJdrCode.mutate({ data })
-          }
-          saving={createJdrCode.isPending || updateJdrCode.isPending}
-        />
+        <JdrCodeDialog editing={jdrDialog.editing} defaultActivityId={jdrDialog.defaultActivityId} activities={activities} allJdrCodes={jdrCodes} onClose={() => setJdrDialog(null)}
+          onSave={(data) => jdrDialog.editing ? updateJdrCode.mutate({ id: jdrDialog.editing.id, data }) : createJdrCode.mutate({ data })}
+          saving={createJdrCode.isPending || updateJdrCode.isPending} />
       )}
     </div>
   );
 }
 
-// ─── Column shell ─────────────────────────────────────────────────────────────
+// ─── Config Panel (Teams / Locations) ────────────────────────────────────────
 
-function DrillColumn({
-  label,
-  count,
-  onAdd,
-  children,
-}: {
+function ConfigPanel({ icon, label, count, onAdd, children }: {
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  onAdd: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-card overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50 bg-muted/20">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          {icon}
+          <span className="text-[11px] font-semibold uppercase tracking-widest">{label}</span>
+          <span className="text-[11px] text-muted-foreground/50 font-normal">({count})</span>
+        </div>
+        <Button size="sm" variant="ghost"
+          className="h-5 px-2 gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          onClick={onAdd}>
+          <Plus className="w-3 h-3" />Add
+        </Button>
+      </div>
+      <div className="px-3 py-2.5 flex flex-wrap gap-1.5 min-h-[42px] items-start">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── Chip (Team / Location item) ─────────────────────────────────────────────
+
+function Chip({ label, onEdit, onDelete, deletePending, deleteDescription }: {
+  label: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  deletePending: boolean;
+  deleteDescription: string;
+}) {
+  return (
+    <div className="group inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border/60 bg-background text-xs font-medium text-foreground/80 hover:border-border hover:bg-muted/30 transition-all">
+      <span className="leading-none">{label}</span>
+      <div className="hidden group-hover:flex items-center gap-0 ml-0.5">
+        <button onClick={onEdit} className="w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+          <Pencil className="w-2.5 h-2.5" />
+        </button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button className="w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+              <Trash2 className="w-2.5 h-2.5" />
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>{deleteDescription}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={onDelete} disabled={deletePending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
+
+// ─── Drill column ─────────────────────────────────────────────────────────────
+
+function DrillColumn({ step, icon, label, count, onAdd, children }: {
+  step: string;
+  icon: React.ReactNode;
   label: string;
   count: number;
   onAdd: () => void;
@@ -961,21 +791,20 @@ function DrillColumn({
 }) {
   return (
     <div className="flex flex-col min-h-0 bg-card">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            {label}
-          </span>
-          <span className="text-[11px] text-muted-foreground/50">({count})</span>
+      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border/50 bg-muted/20 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-muted-foreground/40 tracking-widest font-mono leading-none">{step}</span>
+          <div className="w-px h-3 bg-border/60" />
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            {icon}
+            <span className="text-[11px] font-semibold uppercase tracking-widest">{label}</span>
+          </div>
+          <span className="text-[11px] text-muted-foreground/40 font-mono">({count})</span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-          onClick={onAdd}
-        >
-          <Plus className="w-3 h-3" />
-          Add
+        <Button size="sm" variant="ghost"
+          className="h-5 px-2 gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          onClick={onAdd}>
+          <Plus className="w-3 h-3" />Add
         </Button>
       </div>
       <div className="flex-1 overflow-y-auto">{children}</div>
@@ -983,21 +812,12 @@ function DrillColumn({
   );
 }
 
-// ─── Drill card (Category / Activity Group / Activity) ────────────────────────
+// ─── Drill card (Category / Group / Activity) ─────────────────────────────────
 
-function DrillCard({
-  title,
-  subtitle,
-  badge,
-  selected,
-  onClick,
-  onEdit,
-  onDelete,
-  deletePending,
-  deleteDescription,
-}: {
+function DrillCard({ title, meta, secondary, badge, selected, onClick, onEdit, onDelete, deletePending, deleteDescription }: {
   title: string;
-  subtitle?: string;
+  meta?: string;
+  secondary?: string;
   badge?: string;
   selected?: boolean;
   onClick: () => void;
@@ -1012,44 +832,37 @@ function DrillCard({
     <div
       onClick={onClick}
       className={cn(
-        "group relative flex flex-col gap-0.5 px-4 py-3 cursor-pointer border-b border-border/40 transition-colors select-none",
+        "group relative flex flex-col gap-0.5 px-3.5 py-2.5 cursor-pointer border-b border-border/30 transition-all select-none",
         selected
-          ? "bg-primary/10 border-l-[3px] border-l-primary"
-          : "hover:bg-muted/25 border-l-[3px] border-l-transparent"
+          ? "bg-primary/8 border-l-2 border-l-primary pl-3"
+          : "hover:bg-muted/30 border-l-2 border-l-transparent"
       )}
     >
-      {/* Contractual code badge — top right */}
       {badge && (
-        <span
-          className={cn(
-            "absolute top-3 right-8 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
-            isOrsted
-              ? "bg-amber-500/20 text-amber-400"
-              : "bg-primary/20 text-primary"
-          )}
-        >
+        <span className={cn(
+          "absolute top-2.5 right-7 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
+          isOrsted ? "bg-amber-500/15 text-amber-500" : "bg-primary/15 text-primary"
+        )}>
           {badge}
         </span>
       )}
-
-      <div className={cn("text-sm font-medium leading-snug", badge ? "pr-14" : "pr-8")}>
+      <div className={cn("text-[13px] font-medium leading-snug text-foreground/90", badge ? "pr-12" : "pr-6")}>
         {title}
       </div>
-      {subtitle && (
-        <div className="text-xs text-muted-foreground mt-0.5">{subtitle}</div>
+      {(meta || secondary) && (
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+          {meta && <span>{meta}</span>}
+          {meta && secondary && <span className="text-muted-foreground/30">·</span>}
+          {secondary && <span>{secondary}</span>}
+        </div>
       )}
-
-      {/* Hover actions */}
-      <div
-        className="absolute top-2 right-1 hidden group-hover:flex items-center gap-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onEdit}>
+      <div className="absolute top-2 right-1 hidden group-hover:flex items-center" onClick={(e) => e.stopPropagation()}>
+        <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onEdit}>
           <Pencil className="w-3 h-3" />
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+            <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-destructive">
               <Trash2 className="w-3 h-3" />
             </Button>
           </AlertDialogTrigger>
@@ -1060,13 +873,8 @@ function DrillCard({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={onDelete}
-                disabled={deletePending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                Delete
+              <AlertDialogAction onClick={onDelete} disabled={deletePending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Delete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1076,17 +884,9 @@ function DrillCard({
   );
 }
 
-// ─── JDR Comment row — plain text list ───────────────────────────────────────
+// ─── JDR Code row ─────────────────────────────────────────────────────────────
 
-function CommentRow({
-  jdrWorkActivity,
-  contractualCode,
-  comment,
-  onEdit,
-  onDelete,
-  deletePending,
-  deleteDescription,
-}: {
+function JdrCodeRow({ jdrWorkActivity, contractualCode, comment, onEdit, onDelete, deletePending, deleteDescription }: {
   jdrWorkActivity: string;
   contractualCode: string;
   comment: string;
@@ -1095,37 +895,37 @@ function CommentRow({
   deletePending: boolean;
   deleteDescription: string;
 }) {
-  const isOrsted = contractualCode.toUpperCase() === "ORSTED";
+  const code = contractualCode.toUpperCase();
+  const isOrsted = code.includes("ORSTED") || code === "NWT" || code.includes("NWT");
+  const isWdt = code === "WDT";
+
   return (
-    <div className="group relative flex flex-col gap-0.5 px-4 py-3 border-b border-border/40 hover:bg-muted/20 transition-colors">
+    <div className="group relative flex flex-col gap-0.5 px-3.5 py-2.5 border-b border-border/30 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
       {contractualCode && (
-        <span
-          className={cn(
-            "absolute top-3 right-8 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
-            isOrsted
-              ? "bg-amber-500/20 text-amber-400"
-              : "bg-primary/20 text-primary"
-          )}
-        >
+        <span className={cn(
+          "absolute top-2.5 right-7 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
+          isWdt ? "bg-orange-500/15 text-orange-500" :
+          isOrsted ? "bg-amber-500/15 text-amber-500" :
+          "bg-primary/15 text-primary"
+        )}>
           {contractualCode}
         </span>
       )}
-      <div className={cn("text-sm font-medium leading-snug", contractualCode ? "pr-14" : "pr-8")}>
+      <div className={cn("text-[13px] font-medium leading-snug text-foreground/90", contractualCode ? "pr-12" : "pr-6")}>
         {jdrWorkActivity}
       </div>
-      <div className="text-xs text-muted-foreground mt-0.5">
-        {comment ? comment : <span className="italic opacity-50">No comment set</span>}
-      </div>
-      <div
-        className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onEdit}>
+      {comment ? (
+        <div className="text-[11px] text-muted-foreground/80 leading-snug pr-6 italic">{comment}</div>
+      ) : (
+        <div className="text-[11px] text-muted-foreground/35 leading-snug pr-6">No comment set</div>
+      )}
+      <div className="absolute top-2 right-1 hidden group-hover:flex items-center" onClick={(e) => e.stopPropagation()}>
+        <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onEdit}>
           <Pencil className="w-3 h-3" />
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-5 w-5 text-destructive hover:text-destructive">
+            <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-destructive">
               <Trash2 className="w-3 h-3" />
             </Button>
           </AlertDialogTrigger>
@@ -1136,13 +936,8 @@ function CommentRow({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={onDelete}
-                disabled={deletePending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                Delete
+              <AlertDialogAction onClick={onDelete} disabled={deletePending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {deletePending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Delete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1152,36 +947,34 @@ function CommentRow({
   );
 }
 
-function EmptyHint({ text }: { text: string }) {
-  return <div className="text-xs text-muted-foreground text-center py-8">{text}</div>;
+function EmptyHint() {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 gap-1.5 text-muted-foreground/40">
+      <div className="w-6 h-6 rounded border-2 border-dashed border-muted-foreground/20 flex items-center justify-center">
+        <Plus className="w-3 h-3" />
+      </div>
+      <span className="text-[11px]">Nothing here yet</span>
+    </div>
+  );
 }
 
 // ─── Dialogs ──────────────────────────────────────────────────────────────────
 
-function TypeDialog({
-  editing,
-  onClose,
-  onSave,
-  saving,
-}: {
-  editing: DprActivityType | null;
-  onClose: () => void;
-  onSave: (name: string) => void;
-  saving: boolean;
-}) {
+function TypeDialog({ editing, onClose, onSave, saving }: { editing: DprActivityType | null; onClose: () => void; onSave: (name: string) => void; saving: boolean }) {
   const [name, setName] = useState(editing?.name ?? "");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>{editing ? "Edit Category" : "New Category"}</DialogTitle></DialogHeader>
-        <div className="space-y-2">
-          <Label>Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Working Time" autoFocus />
+        <div className="space-y-1.5">
+          <Label className="text-xs">Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Effective Working Time" autoFocus
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave(name.trim())} />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1189,46 +982,30 @@ function TypeDialog({
   );
 }
 
-function GroupDialog({
-  editing,
-  defaultTypeId,
-  types,
-  onClose,
-  onSave,
-  saving,
-}: {
-  editing: DprActivityGroup | null;
-  defaultTypeId: number | null;
-  types: DprActivityType[];
-  onClose: () => void;
-  onSave: (data: { name: string; activityTypeId: number | null }) => void;
-  saving: boolean;
-}) {
+function GroupDialog({ editing, defaultTypeId, types, onClose, onSave, saving }: { editing: DprActivityGroup | null; defaultTypeId: number | null; types: DprActivityType[]; onClose: () => void; onSave: (data: { name: string; activityTypeId: number | null }) => void; saving: boolean }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [activityTypeId, setActivityTypeId] = useState<number | null>(editing?.activityTypeId ?? defaultTypeId);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>{editing ? "Edit Activity Group" : "New Activity Group"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-2">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Effective Working Time" autoFocus />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mobilisation" autoFocus />
           </div>
-          <div className="space-y-2">
-            <Label>Category</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Category</Label>
             <Select value={activityTypeId?.toString() || ""} onValueChange={(v) => setActivityTypeId(parseInt(v))}>
-              <SelectTrigger><SelectValue placeholder="Select Category" /></SelectTrigger>
-              <SelectContent>
-                {types.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
-              </SelectContent>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select category" /></SelectTrigger>
+              <SelectContent>{types.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave({ name: name.trim(), activityTypeId })} disabled={!name.trim() || saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave({ name: name.trim(), activityTypeId })} disabled={!name.trim() || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1236,49 +1013,30 @@ function GroupDialog({
   );
 }
 
-function ActivityDialog({
-  editing,
-  defaultGroupId,
-  groups,
-  onClose,
-  onSave,
-  saving,
-}: {
-  editing: DprActivity | null;
-  defaultGroupId: number | null;
-  groups: DprActivityGroup[];
-  onClose: () => void;
-  onSave: (data: { name: string; activityGroupId: number }) => void;
-  saving: boolean;
-}) {
+function ActivityDialog({ editing, defaultGroupId, groups, onClose, onSave, saving }: { editing: DprActivity | null; defaultGroupId: number | null; groups: DprActivityGroup[]; onClose: () => void; onSave: (data: { name: string; activityGroupId: number }) => void; saving: boolean }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [activityGroupId, setActivityGroupId] = useState<number | null>(editing?.activityGroupId ?? defaultGroupId);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>{editing ? "Edit Activity" : "New Activity"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-2">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mobilisation" autoFocus />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HV Termination" autoFocus />
           </div>
-          <div className="space-y-2">
-            <Label>Activity Group</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Activity Group</Label>
             <Select value={activityGroupId?.toString() || ""} onValueChange={(v) => setActivityGroupId(parseInt(v))}>
-              <SelectTrigger><SelectValue placeholder="Select Activity Group" /></SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-              </SelectContent>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select activity group" /></SelectTrigger>
+              <SelectContent>{groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() => activityGroupId != null && onSave({ name: name.trim(), activityGroupId })}
-            disabled={!name.trim() || !activityGroupId || saving}
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => activityGroupId != null && onSave({ name: name.trim(), activityGroupId })} disabled={!name.trim() || !activityGroupId || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1286,26 +1044,83 @@ function ActivityDialog({
   );
 }
 
-function JdrCodeDialog({
-  editing,
-  defaultActivityId,
-  activities,
-  onClose,
-  onSave,
-  saving,
-}: {
+/** Combobox that lets users pick an existing value OR type a brand-new one. */
+function FreeCombobox({ value, onChange, options, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = query.trim()
+    ? options.filter((o) => o.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  const showCreate = query.trim() && !options.some((o) => o.toLowerCase() === query.toLowerCase());
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setQuery(""); }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-9 w-full justify-between font-normal text-sm"
+        >
+          <span className={cn("truncate", !value && "text-muted-foreground")}>
+            {value || placeholder || "Select or type…"}
+          </span>
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search or type new…"
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>
+              {showCreate ? null : "No results."}
+            </CommandEmpty>
+            <CommandGroup>
+              {showCreate && (
+                <CommandItem
+                  key="__create__"
+                  value={query}
+                  onSelect={() => { onChange(query); setOpen(false); setQuery(""); }}
+                  className="text-primary font-medium"
+                >
+                  <Plus className="mr-2 h-3.5 w-3.5" />Use "{query}"
+                </CommandItem>
+              )}
+              {filtered.map((opt) => (
+                <CommandItem
+                  key={opt}
+                  value={opt}
+                  onSelect={() => { onChange(opt); setOpen(false); setQuery(""); }}
+                >
+                  <Check className={cn("mr-2 h-3.5 w-3.5", value === opt ? "opacity-100" : "opacity-0")} />
+                  {opt}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function JdrCodeDialog({ editing, defaultActivityId, activities, allJdrCodes, onClose, onSave, saving }: {
   editing: DprJdrCode | null;
   defaultActivityId: number | null;
   activities: DprActivity[];
+  allJdrCodes: DprJdrCode[];
   onClose: () => void;
-  onSave: (data: {
-    lautecActivity: string;
-    lautecActivityGroup: string;
-    jdrWorkActivity: string;
-    contractualCode: string;
-    genericComment: string;
-    activityId: number | null;
-  }) => void;
+  onSave: (data: { lautecActivity: string; lautecActivityGroup: string; jdrWorkActivity: string; contractualCode: string; genericComment: string; activityId: number | null }) => void;
   saving: boolean;
 }) {
   const [form, setForm] = useState({
@@ -1316,64 +1131,87 @@ function JdrCodeDialog({
     genericComment: editing?.genericComment ?? "",
     activityId: editing?.activityId ?? defaultActivityId,
   });
+  const isValid = form.lautecActivity.trim() && form.lautecActivityGroup.trim() && form.jdrWorkActivity.trim() && form.contractualCode.trim();
 
-  const isValid =
-    form.lautecActivity.trim() &&
-    form.lautecActivityGroup.trim() &&
-    form.jdrWorkActivity.trim() &&
-    form.contractualCode.trim();
+  // Derive unique Lautec options from existing JDR codes
+  const groupOptions = useMemo(
+    () => [...new Set(allJdrCodes.map((c) => c.lautecActivityGroup).filter(Boolean))].sort(),
+    [allJdrCodes]
+  );
+  const activityOptions = useMemo(() => {
+    const codes = form.lautecActivityGroup.trim()
+      ? allJdrCodes.filter((c) => c.lautecActivityGroup === form.lautecActivityGroup)
+      : allJdrCodes;
+    return [...new Set(codes.map((c) => c.lautecActivity).filter(Boolean))].sort();
+  }, [allJdrCodes, form.lautecActivityGroup]);
+
+  const field = (key: string, label: string, placeholder?: string, hint?: string) => (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      {hint && <p className="text-[11px] text-muted-foreground -mt-1">{hint}</p>}
+      <Input value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} />
+    </div>
+  );
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{editing ? "Edit JDR Code" : "New JDR Code"}</DialogTitle></DialogHeader>
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          <div className="space-y-2">
-            <Label>Lautec Activity</Label>
-            <Input value={form.lautecActivity} onChange={(e) => setForm({ ...form, lautecActivity: e.target.value })} autoFocus />
+        <DialogHeader><DialogTitle className="text-base">{editing ? "Edit JDR Code" : "New JDR Code"}</DialogTitle></DialogHeader>
+        <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+
+          {/* Lautec fields */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Lautec Reference</p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Lautec Activity Group</Label>
+              <FreeCombobox
+                value={form.lautecActivityGroup}
+                onChange={(v) => setForm({ ...form, lautecActivityGroup: v, lautecActivity: "" })}
+                options={groupOptions}
+                placeholder="e.g. Effective Working Time"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Lautec Activity</Label>
+              <FreeCombobox
+                value={form.lautecActivity}
+                onChange={(v) => setForm({ ...form, lautecActivity: v })}
+                options={activityOptions}
+                placeholder="e.g. Electrical - Termination"
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Lautec Activity Group</Label>
-            <Input value={form.lautecActivityGroup} onChange={(e) => setForm({ ...form, lautecActivityGroup: e.target.value })} />
+
+          <div className="border-t border-border/50" />
+
+          {/* JDR fields */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">JDR Code</p>
+            <div className="grid grid-cols-2 gap-3">
+              {field("contractualCode", "Contractual Code", "EWT / NWT / WDT")}
+              {field("jdrWorkActivity", "JDR Work Activity", "e.g. HV Termination")}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Generic Comment <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input value={form.genericComment} onChange={(e) => setForm({ ...form, genericComment: e.target.value })} placeholder="Standard comment text shown to workers" />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>JDR Work Activity</Label>
-            <Input value={form.jdrWorkActivity} onChange={(e) => setForm({ ...form, jdrWorkActivity: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Contractual Code</Label>
-            <Input value={form.contractualCode} onChange={(e) => setForm({ ...form, contractualCode: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Generic Comment</Label>
-            <Input value={form.genericComment} onChange={(e) => setForm({ ...form, genericComment: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Linked Activity</Label>
+
+          <div className="border-t border-border/50" />
+
+          {/* Linked activity */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Linked Activity <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <Select value={form.activityId?.toString() || ""} onValueChange={(v) => setForm({ ...form, activityId: parseInt(v) })}>
-              <SelectTrigger><SelectValue placeholder="Select Activity" /></SelectTrigger>
-              <SelectContent>
-                {activities.map((a) => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
-              </SelectContent>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Select activity to link" /></SelectTrigger>
+              <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() =>
-              onSave({
-                lautecActivity: form.lautecActivity.trim(),
-                lautecActivityGroup: form.lautecActivityGroup.trim(),
-                jdrWorkActivity: form.jdrWorkActivity.trim(),
-                contractualCode: form.contractualCode.trim(),
-                genericComment: form.genericComment.trim(),
-                activityId: form.activityId,
-              })
-            }
-            disabled={!isValid || saving}
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave({ lautecActivity: form.lautecActivity.trim(), lautecActivityGroup: form.lautecActivityGroup.trim(), jdrWorkActivity: form.jdrWorkActivity.trim(), contractualCode: form.contractualCode.trim(), genericComment: form.genericComment.trim(), activityId: form.activityId })} disabled={!isValid || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1381,38 +1219,21 @@ function JdrCodeDialog({
   );
 }
 
-function TeamDialog({
-  editing,
-  onClose,
-  onSave,
-  saving,
-}: {
-  editing: { id: number; name: string } | null;
-  onClose: () => void;
-  onSave: (name: string) => void;
-  saving: boolean;
-}) {
+function TeamDialog({ editing, onClose, onSave, saving }: { editing: { id: number; name: string } | null; onClose: () => void; onSave: (name: string) => void; saving: boolean }) {
   const [name, setName] = useState(editing?.name ?? "");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xs">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Rename Team" : "New Team"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2">
-          <Label>Team name</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Team 1"
-            autoFocus
-            onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave(name.trim())}
-          />
+        <DialogHeader><DialogTitle>{editing ? "Rename Team" : "New Team"}</DialogTitle></DialogHeader>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Team name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Team Alpha" autoFocus
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave(name.trim())} />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1420,37 +1241,20 @@ function TeamDialog({
   );
 }
 
-function LocationDialog({
-  editing,
-  onClose,
-  onSave,
-  saving,
-}: {
-  editing: DprLocation | null;
-  onClose: () => void;
-  onSave: (name: string) => void;
-  saving: boolean;
-}) {
+function LocationDialog({ editing, onClose, onSave, saving }: { editing: DprLocation | null; onClose: () => void; onSave: (name: string) => void; saving: boolean }) {
   const [name, setName] = useState(editing?.name ?? "");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit Location" : "New Location"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2">
-          <Label>Name</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. BLP 39, OSS East, Port of Hull"
-            autoFocus
-          />
+      <DialogContent className="max-w-xs">
+        <DialogHeader><DialogTitle>{editing ? "Edit Location" : "New Location"}</DialogTitle></DialogHeader>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. BLP 39, OSS East, Port of Hull" autoFocus />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
