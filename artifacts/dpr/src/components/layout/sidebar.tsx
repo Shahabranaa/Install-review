@@ -9,7 +9,7 @@ import {
 } from "date-fns";
 import {
   LogOut, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Layers,
+  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Layers, ScrollText,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -336,9 +336,38 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* spacer pushes footer to bottom */}
       <div className="flex-1" />
 
-      {/* ── JDR Mapping link (admin only) ── */}
+      {/* ── Admin links (Logs + JDR Mapping) ── */}
       {isAdmin && (
-        <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex justify-center" : "px-3 py-2")}>
+        <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-1" : "px-3 py-2 space-y-0.5")}>
+          {/* Logs link */}
+          {collapsed ? (
+            <Link
+              href="/logs"
+              title="Activity Log"
+              className={cn(
+                "p-2 rounded-md transition-colors flex items-center justify-center",
+                location === "/logs"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+              )}
+            >
+              <ScrollText className="w-4 h-4" />
+            </Link>
+          ) : (
+            <Link
+              href="/logs"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full",
+                location === "/logs"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+              )}
+            >
+              <ScrollText className="w-4 h-4" />
+              Logs
+            </Link>
+          )}
+          {/* JDR Mapping link */}
           {collapsed ? (
             <Link
               href="/jdr-mapping"

@@ -1,5 +1,5 @@
-import { Router, type IRouter } from "express";
-import { eq, and, gte, lte, inArray, sql, isNull, isNotNull, or, type SQL } from "drizzle-orm";
+import { Router, type IRouter, type Request } from "express";
+import { eq, and, gte, lte, inArray, sql, isNull, isNotNull, or, desc, type SQL } from "drizzle-orm";
 import {
   db,
   dprLocationsTable,
@@ -17,6 +17,7 @@ import {
   dprRosterVisibleTeamsTable,
   dprWorkerShiftStatusTable,
   dprShiftSessionTable,
+  dprActivityLogsTable,
 } from "@workspace/db";
 import {
   ListDprActivityGroupsQueryParams,
@@ -102,6 +103,35 @@ import {
 import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
+
+// ── Activity logging helper ───────────────────────────────────────────────────
+function actorFromReq(req: Request) {
+  return {
+    actorId: req.session?.userId ?? null,
+    actorName: req.session?.displayName ?? req.session?.username ?? "Unknown",
+  };
+}
+
+async function logAction(req: Request, opts: {
+  action: string;
+  page: string;
+  detail: string;
+  entryId?: number | null;
+  teamId?: number | null;
+}) {
+  try {
+    await db.insert(dprActivityLogsTable).values({
+      ...actorFromReq(req),
+      action: opts.action,
+      page: opts.page,
+      detail: opts.detail,
+      entryId: opts.entryId ?? null,
+      teamId: opts.teamId ?? null,
+    });
+  } catch {
+    // Never let logging errors break the main request
+  }
+}
 
 function parseId(raw: unknown): number | null {
   const n = parseInt(String(raw), 10);
@@ -587,6 +617,13 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
     .values({ ...parsed.data, stage: "draft" })
     .returning();
   const withJoins = await withRelations(entry);
+  void logAction(req, {
+    action: "entry_created",
+    page: "capture",
+    detail: `Created entry #${entry.id} for team ${entry.teamId ?? "?"} on ${String(entry.date).substring(0, 10)}`,
+    entryId: entry.id,
+    teamId: entry.teamId,
+  });
   res.status(201).json(GetDprTimesheetEntryResponse.parse(serialize(withJoins)));
 });
 
@@ -741,6 +778,13 @@ router.post("/dpr/timesheet-entries/lock", async (req, res): Promise<void> => {
     .where(inArray(dprTimesheetEntriesTable.id, ids))
     .returning();
 
+  void logAction(req, {
+    action: "entries_locked",
+    page: "capture",
+    detail: `Locked ${updated.length} entr${updated.length === 1 ? "y" : "ies"} for team ${teamId} on ${date} (sent to Clarify queue)`,
+    teamId,
+  });
+
   const withJoins = await Promise.all(updated.map(withRelations));
   res.json(LockDprTimesheetEntriesResponse.parse(serialize(withJoins)));
 });
@@ -837,6 +881,23 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Timesheet entry not found" });
     return;
   }
+  // Determine action label from what changed
+  const d = parsed.data as Record<string, unknown>;
+  let action = "entry_updated";
+  let page = "capture";
+  let detail = `Updated entry #${entry.id}`;
+  if (d.stage === "clarified") {
+    action = "entry_clarified"; page = "clarify";
+    detail = `Clarified entry #${entry.id} (team ${entry.teamId ?? "?"})`;
+  } else if (d.activityId != null || d.activityGroupId != null) {
+    detail = `Set activity on entry #${entry.id}`;
+  } else if (d.genericComment != null || d.jdrCodeId != null) {
+    action = "entry_jdr_set"; page = "clarify";
+    detail = `Set JDR/generic comment on entry #${entry.id}`;
+  } else if (d.startTime != null || d.endTime != null || d.breakMinutes != null) {
+    detail = `Updated times on entry #${entry.id}`;
+  }
+  void logAction(req, { action, page, detail, entryId: entry.id, teamId: entry.teamId });
   const withJoins = await withRelations(entry);
   res.json(UpdateDprTimesheetEntryResponse.parse(serialize(withJoins)));
 });
@@ -855,6 +916,13 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Timesheet entry not found" });
     return;
   }
+  void logAction(req, {
+    action: "entry_deleted",
+    page: "capture",
+    detail: `Deleted entry #${entry.id} (team ${entry.teamId ?? "?"} · ${String(entry.date).substring(0, 10)})`,
+    entryId: entry.id,
+    teamId: entry.teamId,
+  });
   res.sendStatus(204);
 });
 
@@ -1285,6 +1353,33 @@ router.put("/dpr/workers/:id/teams", async (req, res): Promise<void> => {
   const result = await workerWithTeams(workerId);
   if (!result) { res.status(404).json({ error: "Worker not found" }); return; }
   res.json(SetDprWorkerTeamsResponse.parse(serialize(result)));
+});
+
+// ── Activity Logs (admin only) ────────────────────────────────────────────────
+
+router.get("/dpr/activity-logs", async (req, res): Promise<void> => {
+  if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
+    res.status(403).json({ error: "Admin access required" }); return;
+  }
+  const limit = Math.min(parseInt(String(req.query.limit ?? "200"), 10), 500);
+  const page = req.query.page ? parseInt(String(req.query.page), 10) : 0;
+  const logs = await db
+    .select()
+    .from(dprActivityLogsTable)
+    .orderBy(desc(dprActivityLogsTable.createdAt))
+    .limit(limit)
+    .offset(page * limit);
+  res.json(logs.map((l) => ({
+    id: l.id,
+    actorId: l.actorId,
+    actorName: l.actorName,
+    action: l.action,
+    page: l.page,
+    detail: l.detail,
+    entryId: l.entryId,
+    teamId: l.teamId,
+    createdAt: l.createdAt,
+  })));
 });
 
 export default router;

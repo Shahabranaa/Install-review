@@ -13,6 +13,7 @@ import CapturePage from "@/pages/capture";
 import ClarifyPage from "@/pages/clarify";
 import JdrMappingPage from "@/pages/jdr-mapping";
 import TeamSetupPage from "@/pages/team-setup";
+import LogsPage from "@/pages/logs";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +61,13 @@ function Router() {
         <AppLayout>
           <AdminOnly>
             <JdrMappingPage />
+          </AdminOnly>
+        </AppLayout>
+      </Route>
+      <Route path="/logs">
+        <AppLayout>
+          <AdminOnly>
+            <LogsPage />
           </AdminOnly>
         </AppLayout>
       </Route>
