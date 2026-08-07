@@ -8,6 +8,7 @@ import { AppLayout } from "@/components/layout";
 import { Redirect } from "wouter";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import SetPasswordPage from "@/pages/set-password";
 import CapturePage from "@/pages/capture";
 import ClarifyPage from "@/pages/clarify";
 import JdrMappingPage from "@/pages/jdr-mapping";
@@ -34,6 +35,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginPage} />
+      <Route path="/set-password" component={SetPasswordPage} />
       <Route path="/">
         <AppLayout>
           <CapturePage />

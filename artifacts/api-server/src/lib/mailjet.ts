@@ -189,6 +189,34 @@ export function buildLoginInfoHtml(opts: {
 </html>`;
 }
 
+export function buildDprInviteHtml(opts: {
+  userName: string;
+  setPasswordUrl: string;
+}): string {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:Arial,sans-serif;background:#f9fafb;margin:0;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
+    <div style="background:#1d4ed8;padding:24px;">
+      <h1 style="color:#ffffff;margin:0;font-size:20px;">DPR Timesheets — Account Invitation</h1>
+    </div>
+    <div style="padding:24px;">
+      <p style="color:#111827;margin-top:0;">Hi <strong>${opts.userName}</strong>,</p>
+      <p style="color:#374151;">An account has been created for you on <strong>DPR Timesheets</strong>. Click the button below to set your password and start logging. This link expires in 48 hours.</p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${opts.setPasswordUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:600;">Set your password &rarr;</a>
+      </div>
+      <p style="color:#6b7280;font-size:12px;">If the button doesn't work, copy and paste this link into your browser:<br><a href="${opts.setPasswordUrl}" style="color:#1d4ed8;word-break:break-all;">${opts.setPasswordUrl}</a></p>
+      <p style="color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:24px;">
+        If you weren't expecting this email, you can ignore it. Your account won't be activated until you click the link above.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 export function buildCustomEmailHtml(opts: {
   bodyHtml: string;
   trackingPixelUrl: string;

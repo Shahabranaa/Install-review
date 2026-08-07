@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
+import crypto, { createHash } from "crypto";
 import { eq, or } from "drizzle-orm";
 import { db, usersTable, workersTable } from "@workspace/db";
 import { serialize } from "../lib/serialize";
@@ -218,6 +218,41 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     title: user.title,
     accessLevel: user.accessLevel,
   });
+});
+
+// POST /api/auth/accept-invite
+// Validates the raw invite token, sets the user's password, and activates the account.
+router.post("/auth/accept-invite", async (req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  const { token, password } = req.body as { token?: string; password?: string };
+
+  if (!token?.trim() || !password?.trim() || password.length < 6) {
+    res.status(400).json({ error: "token and password (min 6 chars) are required" });
+    return;
+  }
+
+  const hashedToken = createHash("sha256").update(token.trim()).digest("hex");
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.inviteToken, hashedToken));
+
+  if (!user) {
+    res.status(404).json({ error: "Invalid or expired invite link" });
+    return;
+  }
+  if (user.inviteTokenExpiresAt && user.inviteTokenExpiresAt < new Date()) {
+    res.status(410).json({ error: "This invite link has expired. Ask your administrator to resend the invite." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await db.update(usersTable).set({
+    passwordHash,
+    active: true,
+    inviteToken: null,
+    inviteTokenExpiresAt: null,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id));
+
+  res.json({ ok: true, username: user.username });
 });
 
 // POST /api/auth/logout

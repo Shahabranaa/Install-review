@@ -1,8 +1,11 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import bcrypt from "bcryptjs";
+import crypto, { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { serialize } from "../lib/serialize";
+import { sendEmail, buildDprInviteHtml } from "../lib/mailjet";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -23,9 +26,57 @@ function safeUser(user: typeof usersTable.$inferSelect) {
     title: user.title,
     accessLevel: user.accessLevel,
     active: user.active,
+    invitePending: !user.passwordHash,   // true = invite sent but not yet accepted
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
+}
+
+/** Derive the DPR app base URL from the incoming request headers. */
+function getDprBaseUrl(req: Request): string {
+  const proto = Array.isArray(req.headers["x-forwarded-proto"])
+    ? req.headers["x-forwarded-proto"][0]
+    : (req.headers["x-forwarded-proto"] ?? (req.secure ? "https" : "http"));
+  const host = Array.isArray(req.headers["x-forwarded-host"])
+    ? req.headers["x-forwarded-host"][0]
+    : (req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost");
+  return `${proto}://${host}/dpr`;
+}
+
+async function generateAndSendInvite(
+  req: Request,
+  user: typeof usersTable.$inferSelect
+): Promise<{ success: boolean; error?: string }> {
+  // Generate a raw token, store its SHA-256 hash
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+  await db.update(usersTable).set({
+    inviteToken: hashedToken,
+    inviteTokenExpiresAt: expiresAt,
+    active: false,   // stays inactive until they accept the invite
+  }).where(eq(usersTable.id, user.id));
+
+  if (!user.email) {
+    return { success: false, error: "No email address on this user — cannot send invite" };
+  }
+
+  const setPasswordUrl = `${getDprBaseUrl(req)}/set-password?token=${rawToken}`;
+  const result = await sendEmail({
+    toEmail: user.email,
+    toName: user.displayName,
+    subject: "You've been invited to DPR Timesheets",
+    htmlBody: buildDprInviteHtml({
+      userName: user.displayName,
+      setPasswordUrl,
+    }),
+  });
+
+  if (!result.success) {
+    logger.warn({ userId: user.id, error: result.error }, "Invite email failed to send");
+  }
+  return result;
 }
 
 // GET /api/users — list all users (admin only)
@@ -34,46 +85,79 @@ router.get("/users", requireAdmin, async (_req, res): Promise<void> => {
   res.json(serialize(users.map(safeUser)));
 });
 
-// POST /api/users — create a new user (admin only)
+// POST /api/users — create a new user and send invite email (admin only)
 router.post("/users", requireAdmin, async (req, res): Promise<void> => {
-  const { username, password, displayName, email, title, accessLevel } = req.body as {
+  const { username, displayName, email, title, accessLevel } = req.body as {
     username?: string;
-    password?: string;
     displayName?: string;
     email?: string;
     title?: string;
     accessLevel?: string;
   };
 
-  if (!username?.trim() || !password?.trim() || !displayName?.trim()) {
-    res.status(400).json({ error: "username, password, and displayName are required" });
+  if (!username?.trim() || !displayName?.trim()) {
+    res.status(400).json({ error: "username and displayName are required" });
     return;
   }
-
-  if (!["admin", "reviewer", "viewer"].includes(accessLevel ?? "")) {
+  if (!email?.trim()) {
+    res.status(400).json({ error: "email is required to send the invite" });
+    return;
+  }
+  if (accessLevel && !["admin", "reviewer", "viewer"].includes(accessLevel)) {
     res.status(400).json({ error: "accessLevel must be admin, reviewer, or viewer" });
     return;
   }
 
   // Check username uniqueness
-  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username));
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username.trim()));
   if (existing.length > 0) {
-    res.status(409).json({ error: "Username already exists" });
+    res.status(409).json({ error: "Username already taken" });
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
   const [user] = await db.insert(usersTable).values({
-    username,
-    passwordHash,
-    displayName,
-    email: email ?? null,
-    title: title ?? null,
-    accessLevel: accessLevel ?? "viewer",
-    active: true,
+    username: username.trim(),
+    passwordHash: null,   // set when they accept the invite
+    displayName: displayName.trim(),
+    email: email.trim(),
+    title: title?.trim() ?? null,
+    accessLevel: accessLevel ?? "reviewer",
+    active: false,  // activated on invite acceptance
   }).returning();
 
-  res.status(201).json(serialize(safeUser(user)));
+  const emailResult = await generateAndSendInvite(req, user);
+
+  const responseUser = safeUser(await db.select().from(usersTable).where(eq(usersTable.id, user.id)).then(r => r[0]));
+  res.status(201).json({
+    user: serialize(responseUser),
+    emailSent: emailResult.success,
+    emailError: emailResult.error ?? null,
+  });
+});
+
+// POST /api/users/:id/resend-invite — regenerate token and resend email (admin only)
+router.post("/users/:id/resend-invite", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid user id" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id));
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (user.passwordHash) {
+    res.status(400).json({ error: "User has already accepted their invite" });
+    return;
+  }
+  if (!user.email) {
+    res.status(400).json({ error: "User has no email address" });
+    return;
+  }
+
+  const emailResult = await generateAndSendInvite(req, user);
+  if (!emailResult.success) {
+    res.status(502).json({ error: emailResult.error ?? "Failed to send email" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // PATCH /api/users/:id — update a user (admin only)

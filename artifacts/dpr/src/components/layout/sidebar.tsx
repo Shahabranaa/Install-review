@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import { UserManagementSheet } from "./UserManagementDialog";
 
 import {
   format, subDays, parseISO, startOfMonth, endOfMonth,
@@ -39,6 +40,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { logout, user, isAdmin } = useAuth();
   const { activeDate, setActiveDate } = useCaptureNav();
   const [location] = useLocation();
+  const [userMgmtOpen, setUserMgmtOpen] = useState(false);
 
   // Calendar month state — default to today's month
   const [calMonth, setCalMonth] = useState<Date>(() => startOfMonth(new Date()));
@@ -370,13 +372,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>
         {!collapsed && (
-          <div className="flex items-center gap-3 px-3 py-2 mb-2">
+          <div
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 mb-2 rounded-md transition-colors",
+              isAdmin ? "cursor-pointer hover:bg-sidebar-accent/60" : "cursor-default"
+            )}
+            onClick={() => isAdmin && setUserMgmtOpen(true)}
+            title={isAdmin ? "Manage users" : undefined}
+          >
             <div className="w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase shrink-0">
               {user?.displayName?.[0] || "U"}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.displayName}</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">
+                {isAdmin ? "Click to manage users" : (user?.email ?? "")}
+              </p>
             </div>
           </div>
         )}
@@ -384,7 +395,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <>
             <div
               title={user?.displayName || ""}
-              className="w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase cursor-default"
+              onClick={() => isAdmin && setUserMgmtOpen(true)}
+              className={cn(
+                "w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase",
+                isAdmin ? "cursor-pointer hover:ring-2 hover:ring-primary/40" : "cursor-default"
+              )}
             >
               {user?.displayName?.[0] || "U"}
             </div>
@@ -406,6 +421,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </button>
         )}
       </div>
+
+      <UserManagementSheet open={userMgmtOpen} onClose={() => setUserMgmtOpen(false)} />
     </div>
   );
 }
