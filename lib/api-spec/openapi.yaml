@@ -2658,6 +2658,8 @@ components:
         billingParty:
           type: ["string", "null"]
           enum: [jdr, orsted, null]
+        genericComment:
+          type: ["string", "null"]
         combinedComment:
           type: ["string", "null"]
         stage:
@@ -2732,6 +2734,8 @@ components:
         billingParty:
           type: ["string", "null"]
           enum: [jdr, orsted, null]
+        genericComment:
+          type: ["string", "null"]
         combinedComment:
           type: ["string", "null"]
         stage:

@@ -1297,6 +1297,7 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
+  "genericComment": zod.string().nullable().optional(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1361,6 +1362,7 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
+  "genericComment": zod.string().nullable().optional(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1388,6 +1390,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()).optional(),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
+  "genericComment": zod.string().nullable().optional(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
@@ -1414,6 +1417,7 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
+  "genericComment": zod.string().nullable().optional(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),

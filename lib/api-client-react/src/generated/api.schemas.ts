@@ -526,6 +526,8 @@ export interface DprTimesheetEntry {
   /** @nullable */
   billingParty?: DprTimesheetEntryBillingParty;
   /** @nullable */
+  genericComment?: string | null;
+  /** @nullable */
   combinedComment?: string | null;
   stage: DprTimesheetEntryStage;
   createdAt: string;
@@ -608,6 +610,8 @@ export interface DprTimesheetEntryUpdate {
   jdrCodeIds?: number[];
   /** @nullable */
   billingParty?: DprTimesheetEntryUpdateBillingParty;
+  /** @nullable */
+  genericComment?: string | null;
   /** @nullable */
   combinedComment?: string | null;
   stage?: DprTimesheetEntryUpdateStage;

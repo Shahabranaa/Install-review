@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Timer, Download,
 } from "lucide-react";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
@@ -32,7 +33,7 @@ import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { TeamSetupGate } from "@/components/team-setup-gate";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
-const COL_COUNT = 9; // # Start End Duration Location Notes ActivityGroup JDRCode Action
+const COL_COUNT = 10; // # Start End Duration Location Notes ActivityGroup GenericComment JDRCode Action
 
 // ─── Team pills (mirrors Capture's FilterPills) ───────────────────────────────
 function ClarifyPills({
@@ -346,16 +347,17 @@ export default function ClarifyPage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[1000px]">
+            <Table className="table-fixed w-full min-w-[1100px]">
               <colgroup>
                 <col style={{ width: 36 }} />  {/* # */}
-                <col className="w-[7%]" />   {/* Start */}
-                <col className="w-[7%]" />   {/* End */}
-                <col className="w-[6%]" />   {/* Duration */}
-                <col className="w-[11%]" />  {/* Location */}
+                <col className="w-[6%]" />   {/* Start */}
+                <col className="w-[6%]" />   {/* End */}
+                <col className="w-[5%]" />   {/* Duration */}
+                <col className="w-[9%]" />   {/* Location */}
                 <col />                       {/* Notes — flex */}
-                <col style={{ width: 200 }} /> {/* Activity Group */}
-                <col style={{ width: 240 }} /> {/* JDR Code */}
+                <col style={{ width: 160 }} /> {/* Activity Group */}
+                <col style={{ width: 200 }} /> {/* Generic Comment */}
+                <col style={{ width: 200 }} /> {/* JDR Code */}
                 <col style={{ width: 44 }} />  {/* Action */}
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
@@ -367,6 +369,7 @@ export default function ClarifyPage() {
                   <TableHead>Location</TableHead>
                   <TableHead>Comment</TableHead>
                   <TableHead className="pr-4">Activity Group</TableHead>
+                  <TableHead>Generic Comment</TableHead>
                   <TableHead>JDR Code</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -498,6 +501,12 @@ function ClarifiedRow({ entry, activityGroups, rowIndex }: { entry: DprTimesheet
       <TableCell className="text-sm text-muted-foreground pr-4">
         {group?.name || <span className="text-muted-foreground/40">—</span>}
       </TableCell>
+      {/* Generic Comment */}
+      <TableCell className="text-sm text-muted-foreground truncate">
+        {entry.genericComment
+          ? <span className="line-clamp-2">{entry.genericComment}</span>
+          : <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
       {/* JDR Code */}
       <TableCell className="text-sm text-muted-foreground">
         {code ? <span className="font-mono text-xs">{code.contractualCode}</span> : <span className="text-muted-foreground/40">—</span>}
@@ -522,6 +531,7 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
   const { toast } = useToast();
 
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
+  const [genericComment, setGenericComment] = useState<string>(entry.genericComment ?? "");
 
   // Filter codes to this entry's activity group (via activities relationship)
   const filteredCodes = useMemo(() => {
@@ -531,6 +541,38 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
     );
     return allJdrCodes.filter(c => c.activityId != null && activityIdsInGroup.has(c.activityId));
   }, [allJdrCodes, allActivities, entry.activityGroupId]);
+
+  // Generic Comment options — scoped to filteredCodes so the auto-linked code
+  // always appears in the adjacent JDR selector.  The combobox value is the JDR
+  // code ID (string) so the match is unambiguous.  When the same comment text
+  // belongs to more than one eligible code (e.g. "Earthing" appears in both HV
+  // Termination and FO Termination), each gets its own disambiguated label
+  // ("Earthing (HV Termination)" / "Earthing (FO termination)") instead of
+  // silently resolving to the first match.
+  const commentOptions = useMemo((): ComboboxOption[] => {
+    // Group codes by comment text to detect duplicates
+    const byComment = new Map<string, DprJdrCode[]>();
+    for (const code of filteredCodes) {
+      const gc = code.genericComment;
+      if (!gc || !gc.trim()) continue;
+      if (!byComment.has(gc)) byComment.set(gc, []);
+      byComment.get(gc)!.push(code);
+    }
+
+    const opts: ComboboxOption[] = [];
+    for (const [comment, codes] of byComment) {
+      if (codes.length === 1) {
+        opts.push({ value: String(codes[0].id), label: comment });
+      } else {
+        // Append jdrWorkActivity to disambiguate
+        for (const code of codes) {
+          opts.push({ value: String(code.id), label: `${comment} (${code.jdrWorkActivity})` });
+        }
+      }
+    }
+
+    return opts.sort((a, b) => a.label.localeCompare(b.label));
+  }, [filteredCodes]);
 
   // Resolve the selected code's activityId for saving
   const selectedCodeObj = useMemo(
@@ -585,6 +627,7 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
         activityGroupId: resolvedGroupId,
         activityId: selectedCodeObj?.activityId ?? null,
         jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
+        genericComment: genericComment || null,
         stage: "clarified",
       }
     });
@@ -633,6 +676,26 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
       <TableCell className="text-sm text-muted-foreground pr-4">
         {activityGroups.find(g => g.id === entry.activityGroupId)?.name
           ?? <span className="text-muted-foreground/40">—</span>}
+      </TableCell>
+      {/* Generic Comment — searchable combobox */}
+      <TableCell>
+        <Combobox
+          options={commentOptions}
+          value={jdrCodeId?.toString() || ""}
+          onValueChange={(val) => {
+            // val is the code ID (string) — unambiguous even for duplicate comment texts
+            const matchedCode = filteredCodes.find(c => String(c.id) === val);
+            if (matchedCode) {
+              setJdrCodeId(matchedCode.id);
+              setGenericComment(matchedCode.genericComment ?? "");
+            }
+          }}
+          placeholder="Select comment…"
+          searchPlaceholder="Search comments…"
+          emptyText="No matching comment."
+          className="w-[280px]"
+          triggerClassName="text-xs"
+        />
       </TableCell>
       {/* JDR Code — plain Select */}
       <TableCell>
