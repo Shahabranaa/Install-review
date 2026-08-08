@@ -1241,7 +1241,7 @@ router.get("/dpr/shift-attendance", async (req, res): Promise<void> => {
       id: w.id,
       firstName: w.firstName,
       lastName: w.lastName,
-      role: w.role,
+      roles: w.roles,
       company: w.company,
       active: w.active,
       teamIds: teamsByWorker.get(w.id) ?? [],
@@ -1395,15 +1395,24 @@ router.delete("/dpr/workers/:id", async (req, res): Promise<void> => {
 router.patch("/dpr/workers/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
-  const { active } = req.body as { active?: boolean };
-  if (typeof active !== "boolean") { res.status(400).json({ error: "active must be a boolean" }); return; }
+  const { active, firstName, lastName, roles, company } = req.body as {
+    active?: boolean; firstName?: string; lastName?: string; roles?: string[]; company?: string | null;
+  };
+  const updates: Record<string, unknown> = {};
+  if (typeof active === "boolean") updates.active = active;
+  if (typeof firstName === "string") updates.firstName = firstName;
+  if (typeof lastName === "string") updates.lastName = lastName;
+  if (Array.isArray(roles)) updates.roles = roles;
+  if (company !== undefined) updates.company = company;
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
   const [updated] = await db
     .update(dprWorkersTable)
-    .set({ active })
+    .set(updates)
     .where(eq(dprWorkersTable.id, id))
     .returning();
   if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
-  res.json({ ...updated, teamIds: [] });
+  const teamIds = (await db.select({ teamId: dprTeamWorkersTable.teamId }).from(dprTeamWorkersTable).where(eq(dprTeamWorkersTable.workerId, id))).map(r => r.teamId);
+  res.json(ListDprWorkersResponseItem.parse(serialize({ ...updated, teamIds })));
 });
 
 router.put("/dpr/workers/:id/teams", async (req, res): Promise<void> => {

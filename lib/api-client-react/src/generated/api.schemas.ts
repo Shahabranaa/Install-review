@@ -374,7 +374,7 @@ export interface DprWorker {
   id: number;
   firstName: string;
   lastName: string;
-  role?: string | null;
+  roles: string[];
   company?: string | null;
   active: boolean;
   teamIds: number[];
@@ -412,8 +412,9 @@ export interface ClearDprRosterBody {
 export interface DprWorkerInput {
   firstName: string;
   lastName: string;
-  role?: string | null;
+  roles?: string[];
   company?: string | null;
+  active?: boolean;
 }
 
 export interface DprWorkerTeamsBody {

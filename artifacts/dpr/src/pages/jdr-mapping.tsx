@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   useListDprActivityTypes,
   useCreateDprActivityType,
@@ -31,6 +31,12 @@ import {
   DprActivity,
   DprJdrCode,
   DprLocation,
+  useListDprWorkers,
+  useCreateDprWorker,
+  useDeleteDprWorker,
+  getListDprWorkersQueryKey,
+  DprWorker,
+  DprWorkerInput,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -47,6 +53,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { PREDEFINED_ROLES, roleColor, roleAbbr } from "@/lib/roles";
 
 export default function JdrMappingPage() {
   const { toast } = useToast();
@@ -57,8 +64,49 @@ export default function JdrMappingPage() {
   const { data: activities = [], isLoading: activitiesLoading } = useListDprActivities({});
   const { data: jdrCodes = [], isLoading: jdrCodesLoading } = useListDprJdrCodes({});
   const { data: locations = [], isLoading: locationsLoading } = useListDprLocations();
+  const { data: workers = [] } = useListDprWorkers({ query: { refetchOnMount: "always" } });
 
   const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading || locationsLoading;
+
+  const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities">("activities");
+  const [workerDialog, setWorkerDialog] = useState<{ editing: DprWorker | null } | null>(null);
+  const allKnownRoles = useMemo(() => {
+    const set = new Set<string>();
+    workers.forEach((w) => (w.roles ?? []).forEach((r) => set.add(r)));
+    return [...set].sort();
+  }, [workers]);
+
+  // ── Worker mutations ────────────────────────────────────────────────────────
+  const createWorker = useCreateDprWorker({
+    mutation: {
+      onSuccess: (created) => {
+        queryClient.setQueriesData<DprWorker[]>({ queryKey: getListDprWorkersQueryKey() }, (old) => old ? [...old, created] : [created]);
+        toast({ title: "Worker added" }); setWorkerDialog(null);
+      },
+      onError: (e) => toast({ title: "Failed to add worker", description: e.message, variant: "destructive" }),
+    },
+  });
+  const updateWorker = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<DprWorkerInput> }) =>
+      fetch(`/api/dpr/workers/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data), credentials: "include" }).then((r) => r.json()),
+    onSuccess: (updated: DprWorker) => {
+      queryClient.setQueriesData<DprWorker[]>({ queryKey: getListDprWorkersQueryKey() }, (old) => old?.map((w) => w.id === updated.id ? updated : w));
+      toast({ title: "Worker updated" }); setWorkerDialog(null);
+    },
+    onError: (e) => toast({ title: "Failed to update worker", description: e.message, variant: "destructive" }),
+  });
+  const deleteWorker = useDeleteDprWorker({
+    mutation: {
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: getListDprWorkersQueryKey() });
+        const snapshot = queryClient.getQueriesData<DprWorker[]>({ queryKey: getListDprWorkersQueryKey() });
+        queryClient.setQueriesData<DprWorker[]>({ queryKey: getListDprWorkersQueryKey() }, (old) => old?.filter((w) => w.id !== id));
+        return { snapshot };
+      },
+      onSuccess: () => toast({ title: "Worker deleted" }),
+      onError: (e, _, ctx) => { ctx?.snapshot?.forEach(([key, data]) => queryClient.setQueryData(key, data)); toast({ title: "Failed to delete worker", description: e.message, variant: "destructive" }); },
+    },
+  });
 
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
@@ -458,223 +506,407 @@ export default function JdrMappingPage() {
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-auto min-h-0 flex flex-col gap-3 p-4">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
-          {/* ── Config strip: Teams + Locations ─────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 shrink-0">
-            {/* Teams */}
-            <ConfigPanel
-              icon={<Users className="w-3.5 h-3.5" />}
-              label="Teams"
-              count={teams.length}
-              onAdd={() => setTeamDialog({ editing: null })}
-            >
-              {teams.length === 0
-                ? <span className="text-[11px] text-muted-foreground italic">No teams yet</span>
-                : teams.map((team) => (
-                  <Chip
-                    key={team.id}
-                    label={team.name}
-                    onEdit={() => setTeamDialog({ editing: team })}
-                    onDelete={() => deleteTeam.mutate(team.id)}
-                    deletePending={deleteTeam.isPending}
-                    deleteDescription={`Delete team "${team.name}"? This will also remove all role slots and daily assignments.`}
-                  />
-                ))
-              }
-            </ConfigPanel>
+          {/* ══ Tab bar ══ */}
+          <div className="flex items-center gap-0 px-4 border-b border-border/50 bg-background shrink-0">
+            {([ 
+              { id: "teams",      label: "Teams",      icon: <Users className="w-3.5 h-3.5" />,   count: teams.length },
+              { id: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" />,  count: locations.length },
+              { id: "roles",      label: "Roles",      icon: <Tag className="w-3.5 h-3.5" />,     count: PREDEFINED_ROLES.length },
+              { id: "workers",    label: "Workers",    icon: <Users className="w-3.5 h-3.5" />,   count: workers.filter((w) => w.active).length },
+              { id: "activities", label: "Activities", icon: <Network className="w-3.5 h-3.5" />, count: jdrCodes.length },
+            ] as const).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
+                  activeTab === tab.id
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+                <span className="text-[10px] text-muted-foreground/50 font-mono ml-0.5">({tab.count})</span>
+              </button>
+            ))}
+          </div>
 
-            {/* Locations */}
-            <ConfigPanel
-              icon={<MapPin className="w-3.5 h-3.5" />}
-              label="Locations"
-              count={locations.length}
-              onAdd={() => setLocationDialog({ editing: null })}
-            >
-              {locations.length === 0
-                ? <span className="text-[11px] text-muted-foreground italic">No locations yet</span>
-                : <>
-                  {visibleLocations.map((loc) => (
-                    <Chip
-                      key={loc.id}
-                      label={loc.name}
-                      onEdit={() => setLocationDialog({ editing: loc })}
-                      onDelete={() => deleteLocation.mutate({ id: loc.id })}
-                      deletePending={deleteLocation.isPending}
-                      deleteDescription={`Delete location "${loc.name}"? Timesheet entries referencing it will lose their location link.`}
+          {/* ══ Tab content ══ */}
+          {activeTab !== "activities" ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-6">
+
+              {/* ── Teams ── */}
+              {activeTab === "teams" && (
+                <div className="max-w-4xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-muted-foreground" />
+                      <h2 className="text-[13px] font-semibold text-foreground">Teams</h2>
+                      <span className="text-[11px] text-muted-foreground/50 font-mono">({teams.length})</span>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTeamDialog({ editing: null })} className="h-7 text-[11px] gap-1">
+                      <Plus className="w-3 h-3" /> Add team
+                    </Button>
+                  </div>
+                  {teams.length === 0
+                    ? <p className="text-[12px] text-muted-foreground italic">No teams yet — add one to get started.</p>
+                    : <div className="flex flex-wrap gap-2">
+                      {teams.map((team) => (
+                        <Chip
+                          key={team.id}
+                          label={team.name}
+                          onEdit={() => setTeamDialog({ editing: team })}
+                          onDelete={() => deleteTeam.mutate(team.id)}
+                          deletePending={deleteTeam.isPending}
+                          deleteDescription={`Delete team "${team.name}"? This will also remove all role slots and daily assignments.`}
+                        />
+                      ))}
+                    </div>
+                  }
+                </div>
+              )}
+
+              {/* ── Locations ── */}
+              {activeTab === "locations" && (
+                <div className="max-w-4xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <h2 className="text-[13px] font-semibold text-foreground">Locations</h2>
+                      <span className="text-[11px] text-muted-foreground/50 font-mono">({locations.length})</span>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setLocationDialog({ editing: null })} className="h-7 text-[11px] gap-1">
+                      <Plus className="w-3 h-3" /> Add location
+                    </Button>
+                  </div>
+                  {locations.length === 0
+                    ? <p className="text-[12px] text-muted-foreground italic">No locations yet.</p>
+                    : <>
+                      <div className="flex flex-wrap gap-2">
+                        {visibleLocations.map((loc) => (
+                          <Chip
+                            key={loc.id}
+                            label={loc.name}
+                            onEdit={() => setLocationDialog({ editing: loc })}
+                            onDelete={() => deleteLocation.mutate({ id: loc.id })}
+                            deletePending={deleteLocation.isPending}
+                            deleteDescription={`Delete location "${loc.name}"? Timesheet entries referencing it will lose their location link.`}
+                          />
+                        ))}
+                      </div>
+                      {locations.length > LOCATION_PAGE && (
+                        <button
+                          onClick={() => setShowAllLocations((v) => !v)}
+                          className="mt-3 text-[11px] text-primary hover:underline"
+                        >
+                          {showAllLocations ? "Show fewer" : `+${locations.length - LOCATION_PAGE} more`}
+                        </button>
+                      )}
+                    </>
+                  }
+                </div>
+              )}
+
+              {/* ── Roles ── */}
+              {activeTab === "roles" && (
+                <div className="max-w-4xl">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Tag className="w-4 h-4 text-muted-foreground" />
+                    <h2 className="text-[13px] font-semibold text-foreground">Roles</h2>
+                    <span className="text-[11px] text-muted-foreground/50 font-mono">({PREDEFINED_ROLES.length})</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {PREDEFINED_ROLES.map((abbr) => (
+                      <span
+                        key={abbr}
+                        className={cn("inline-flex items-center px-3 py-1 rounded-lg border text-[12px] font-bold tracking-wide", roleColor(abbr))}
+                      >
+                        {abbr}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Workers ── */}
+              {activeTab === "workers" && (() => {
+                const teamWorkers = new Map<number, DprWorker[]>();
+                const unassigned: DprWorker[] = [];
+                const activeWorkers = workers.filter((w) => w.active);
+                for (const w of activeWorkers) {
+                  if (!w.teamIds || w.teamIds.length === 0) {
+                    unassigned.push(w);
+                  } else {
+                    for (const tid of w.teamIds) {
+                      if (!teamWorkers.has(tid)) teamWorkers.set(tid, []);
+                      teamWorkers.get(tid)!.push(w);
+                    }
+                  }
+                }
+                const sections: { label: string; rows: DprWorker[]; dim?: boolean }[] = [
+                  ...teams.filter((t) => teamWorkers.has(t.id)).map((t) => ({ label: t.name, rows: teamWorkers.get(t.id)! })),
+                  ...(unassigned.length > 0 ? [{ label: "Unassigned", rows: unassigned, dim: true }] : []),
+                ];
+                return (
+                  <div className="max-w-2xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                        <h2 className="text-[13px] font-semibold text-foreground">Workers</h2>
+                        <span className="text-[11px] text-muted-foreground/50 font-mono">({activeWorkers.length} active)</span>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setWorkerDialog({ editing: null })} className="h-7 text-[11px] gap-1">
+                        <Plus className="w-3 h-3" /> Add worker
+                      </Button>
+                    </div>
+                    {workers.length === 0
+                      ? <p className="text-[12px] text-muted-foreground italic">No workers yet — add one to get started.</p>
+                      : <div className="rounded-xl border border-border/70 bg-card overflow-hidden shadow-sm">
+                        <table className="w-full text-[12px] border-collapse">
+                          <thead className="sticky top-0 z-10 bg-muted/30">
+                            <tr className="border-b border-border/40">
+                              <th className="text-left px-4 py-2 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">Name</th>
+                              <th className="text-left px-4 py-2 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">Role</th>
+                              <th className="text-left px-4 py-2 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider w-20">Abbr</th>
+                              <th className="w-16" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sections.map(({ label, rows, dim }) => (
+                              <Fragment key={label}>
+                                <tr className="bg-muted/20">
+                                  <td colSpan={4} className="px-4 py-1.5">
+                                    <span className={cn("text-[10px] font-semibold uppercase tracking-widest", dim ? "text-muted-foreground/40" : "text-muted-foreground")}>{label}</span>
+                                  </td>
+                                </tr>
+                                {rows.map((w) => {
+                                  return (
+                                    <tr key={w.id} className={cn("border-t border-border/20 hover:bg-muted/10 transition-colors group", !w.active && "opacity-50")}>
+                                      <td className="px-4 py-2 text-foreground/80">{w.firstName} {w.lastName}</td>
+                                      <td className="px-4 py-2 text-foreground/60 text-[12px]">
+                                        {(w.roles ?? []).length ? (w.roles ?? []).join(", ") : <span className="text-muted-foreground/40 italic">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        {(w.roles ?? []).length
+                                          ? <div className="flex flex-wrap gap-1">{(w.roles ?? []).map((r) => { const a = roleAbbr(r); return <span key={r} className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold tracking-wide", roleColor(a))}>{a}</span>; })}</div>
+                                          : <span className="text-muted-foreground/40 italic text-[11px]">—</span>
+                                        }
+                                      </td>
+                                      <td className="px-2 py-1.5">
+                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setWorkerDialog({ editing: w })}>
+                                            <Pencil className="w-3 h-3" />
+                                          </Button>
+                                          <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                              <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" disabled={deleteWorker.isPending}>
+                                                <Trash2 className="w-3 h-3" />
+                                              </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                              <AlertDialogHeader>
+                                                <AlertDialogTitle>Delete worker?</AlertDialogTitle>
+                                                <AlertDialogDescription>This will permanently remove {w.firstName} {w.lastName} and cannot be undone.</AlertDialogDescription>
+                                              </AlertDialogHeader>
+                                              <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => deleteWorker.mutate({ id: w.id })} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+                                              </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                          </AlertDialog>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </Fragment>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                );
+              })()}
+
+            </div>
+          ) : (
+            /* ══ Activities tab: full-height hierarchy ══ */
+            <div className="flex-1 min-h-0 flex flex-col p-4">
+            <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border/70 overflow-hidden bg-card shadow-sm">
+
+              {/* Breadcrumb / filter bar */}
+              <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/50 bg-muted/30 shrink-0 min-h-[32px]">
+                {hasFilter ? (
+                  <>
+                    <span className="text-[11px] text-muted-foreground">Filtered:</span>
+                    {selectedType && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                        <Layers className="w-3 h-3 text-muted-foreground" />
+                        {selectedType.name}
+                      </span>
+                    )}
+                    {selectedGroup && (
+                      <>
+                        <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                          <FolderOpen className="w-3 h-3 text-muted-foreground" />
+                          {selectedGroup.name}
+                        </span>
+                      </>
+                    )}
+                    {selectedActivity && (
+                      <>
+                        <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+                          <Zap className="w-3 h-3 text-muted-foreground" />
+                          {selectedActivity.name}
+                        </span>
+                      </>
+                    )}
+                    <button
+                      onClick={() => { setSelectedTypeId(null); setSelectedGroupId(null); setSelectedActivityId(null); }}
+                      className="ml-1 text-[11px] text-muted-foreground hover:text-foreground underline transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground/60">
+                    {search ? `Showing results for "${search}"` : "Click a row to drill down"}
+                  </span>
+                )}
+              </div>
+
+              {/* 4 columns */}
+              <div className="flex-1 min-h-0 grid grid-cols-4 divide-x divide-border/60">
+
+                {/* Col 1 — Category */}
+                <DrillColumn
+                  step="01"
+                  icon={<Layers className="w-3.5 h-3.5" />}
+                  label="Category"
+                  count={visibleTypes.length}
+                  onAdd={() => setTypeDialog({ editing: null })}
+                >
+                  {visibleTypes.map((t) => (
+                    <DrillCard
+                      key={t.id}
+                      title={t.name}
+                      meta={`${typeCount(t.id)} codes`}
+                      selected={selectedTypeId === t.id}
+                      onClick={() => selectType(t.id)}
+                      onEdit={() => setTypeDialog({ editing: t })}
+                      onDelete={() => deleteType.mutate({ id: t.id })}
+                      deletePending={deleteType.isPending}
+                      deleteDescription={`Delete category "${t.name}"? This may affect activity groups linked to it.`}
                     />
                   ))}
-                  {locations.length > LOCATION_PAGE && (
-                    <button
-                      onClick={() => setShowAllLocations((v) => !v)}
-                      className="text-[11px] text-primary hover:underline ml-0.5"
-                    >
-                      {showAllLocations ? "Show fewer" : `+${locations.length - LOCATION_PAGE} more`}
-                    </button>
-                  )}
-                </>
-              }
-            </ConfigPanel>
-          </div>
+                  {visibleTypes.length === 0 && <EmptyHint />}
+                </DrillColumn>
 
-          {/* ── Hierarchy columns ────────────────────────────────────── */}
-          <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border/70 overflow-hidden bg-card shadow-sm">
+                {/* Col 2 — Activity Group */}
+                <DrillColumn
+                  step="02"
+                  icon={<FolderOpen className="w-3.5 h-3.5" />}
+                  label="Activity Group"
+                  count={visibleGroups.length}
+                  onAdd={() => setGroupDialog({ editing: null, defaultTypeId: selectedTypeId })}
+                >
+                  {visibleGroups.map((g) => {
+                    const typeName = types.find((t) => t.id === g.activityTypeId)?.name;
+                    return (
+                      <DrillCard
+                        key={g.id}
+                        title={g.name}
+                        meta={typeName}
+                        secondary={`${groupCount(g.id)} codes`}
+                        selected={selectedGroupId === g.id}
+                        onClick={() => selectGroup(g.id)}
+                        onEdit={() => setGroupDialog({ editing: g, defaultTypeId: g.activityTypeId ?? null })}
+                        onDelete={() => deleteGroup.mutate({ id: g.id })}
+                        deletePending={deleteGroup.isPending}
+                        deleteDescription={`Delete activity group "${g.name}"? This may affect activities linked to it.`}
+                      />
+                    );
+                  })}
+                  {visibleGroups.length === 0 && <EmptyHint />}
+                </DrillColumn>
 
-            {/* Breadcrumb / filter bar */}
-            <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/50 bg-muted/30 shrink-0 min-h-[32px]">
-              {hasFilter ? (
-                <>
-                  <span className="text-[11px] text-muted-foreground">Filtered:</span>
-                  {selectedType && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
-                      <Layers className="w-3 h-3 text-muted-foreground" />
-                      {selectedType.name}
-                    </span>
-                  )}
-                  {selectedGroup && (
-                    <>
-                      <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
-                        <FolderOpen className="w-3 h-3 text-muted-foreground" />
-                        {selectedGroup.name}
-                      </span>
-                    </>
-                  )}
-                  {selectedActivity && (
-                    <>
-                      <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground/80">
-                        <Zap className="w-3 h-3 text-muted-foreground" />
-                        {selectedActivity.name}
-                      </span>
-                    </>
-                  )}
-                  <button
-                    onClick={() => { setSelectedTypeId(null); setSelectedGroupId(null); setSelectedActivityId(null); }}
-                    className="ml-1 text-[11px] text-muted-foreground hover:text-foreground underline transition-colors"
-                  >
-                    Clear
-                  </button>
-                </>
-              ) : (
-                <span className="text-[11px] text-muted-foreground/60">
-                  {search ? `Showing results for "${search}"` : "Click a row to drill down"}
-                </span>
-              )}
-            </div>
+                {/* Col 3 — Activity */}
+                <DrillColumn
+                  step="03"
+                  icon={<Zap className="w-3.5 h-3.5" />}
+                  label="Activity"
+                  count={visibleActivities.length}
+                  onAdd={() => setActivityDialog({ editing: null, defaultGroupId: selectedGroupId })}
+                >
+                  {visibleActivities.map((a) => {
+                    const badge = activityBadge.get(a.id);
+                    return (
+                      <DrillCard
+                        key={a.id}
+                        title={a.name}
+                        meta={`${activityCount(a.id)} codes`}
+                        badge={badge}
+                        selected={selectedActivityId === a.id}
+                        onClick={() => selectActivity(a.id)}
+                        onEdit={() => setActivityDialog({ editing: a, defaultGroupId: a.activityGroupId })}
+                        onDelete={() => deleteActivity.mutate({ id: a.id })}
+                        deletePending={deleteActivity.isPending}
+                        deleteDescription={`Delete activity "${a.name}"? This may affect JDR codes linked to it.`}
+                      />
+                    );
+                  })}
+                  {visibleActivities.length === 0 && <EmptyHint />}
+                </DrillColumn>
 
-            {/* 4 columns */}
-            <div className="flex-1 min-h-0 grid grid-cols-4 divide-x divide-border/60">
-
-              {/* Col 1 — Category */}
-              <DrillColumn
-                step="01"
-                icon={<Layers className="w-3.5 h-3.5" />}
-                label="Category"
-                count={visibleTypes.length}
-                onAdd={() => setTypeDialog({ editing: null })}
-              >
-                {visibleTypes.map((t) => (
-                  <DrillCard
-                    key={t.id}
-                    title={t.name}
-                    meta={`${typeCount(t.id)} codes`}
-                    selected={selectedTypeId === t.id}
-                    onClick={() => selectType(t.id)}
-                    onEdit={() => setTypeDialog({ editing: t })}
-                    onDelete={() => deleteType.mutate({ id: t.id })}
-                    deletePending={deleteType.isPending}
-                    deleteDescription={`Delete category "${t.name}"? This may affect activity groups linked to it.`}
-                  />
-                ))}
-                {visibleTypes.length === 0 && <EmptyHint />}
-              </DrillColumn>
-
-              {/* Col 2 — Activity Group */}
-              <DrillColumn
-                step="02"
-                icon={<FolderOpen className="w-3.5 h-3.5" />}
-                label="Activity Group"
-                count={visibleGroups.length}
-                onAdd={() => setGroupDialog({ editing: null, defaultTypeId: selectedTypeId })}
-              >
-                {visibleGroups.map((g) => {
-                  const typeName = types.find((t) => t.id === g.activityTypeId)?.name;
-                  return (
-                    <DrillCard
-                      key={g.id}
-                      title={g.name}
-                      meta={typeName}
-                      secondary={`${groupCount(g.id)} codes`}
-                      selected={selectedGroupId === g.id}
-                      onClick={() => selectGroup(g.id)}
-                      onEdit={() => setGroupDialog({ editing: g, defaultTypeId: g.activityTypeId ?? null })}
-                      onDelete={() => deleteGroup.mutate({ id: g.id })}
-                      deletePending={deleteGroup.isPending}
-                      deleteDescription={`Delete activity group "${g.name}"? This may affect activities linked to it.`}
+                {/* Col 4 — JDR Code */}
+                <DrillColumn
+                  step="04"
+                  icon={<Tag className="w-3.5 h-3.5" />}
+                  label="JDR Code"
+                  count={visibleJdrCodes.length}
+                  onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
+                >
+                  {visibleJdrCodes.map((j) => (
+                    <JdrCodeRow
+                      key={j.id}
+                      jdrWorkActivity={j.jdrWorkActivity}
+                      contractualCode={j.contractualCode}
+                      comment={j.genericComment}
+                      onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
+                      onDelete={() => deleteJdrCode.mutate({ id: j.id })}
+                      deletePending={deleteJdrCode.isPending}
+                      deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
                     />
-                  );
-                })}
-                {visibleGroups.length === 0 && <EmptyHint />}
-              </DrillColumn>
+                  ))}
+                  {visibleJdrCodes.length === 0 && <EmptyHint />}
+                </DrillColumn>
 
-              {/* Col 3 — Activity */}
-              <DrillColumn
-                step="03"
-                icon={<Zap className="w-3.5 h-3.5" />}
-                label="Activity"
-                count={visibleActivities.length}
-                onAdd={() => setActivityDialog({ editing: null, defaultGroupId: selectedGroupId })}
-              >
-                {visibleActivities.map((a) => {
-                  const badge = activityBadge.get(a.id);
-                  return (
-                    <DrillCard
-                      key={a.id}
-                      title={a.name}
-                      meta={`${activityCount(a.id)} codes`}
-                      badge={badge}
-                      selected={selectedActivityId === a.id}
-                      onClick={() => selectActivity(a.id)}
-                      onEdit={() => setActivityDialog({ editing: a, defaultGroupId: a.activityGroupId })}
-                      onDelete={() => deleteActivity.mutate({ id: a.id })}
-                      deletePending={deleteActivity.isPending}
-                      deleteDescription={`Delete activity "${a.name}"? This may affect JDR codes linked to it.`}
-                    />
-                  );
-                })}
-                {visibleActivities.length === 0 && <EmptyHint />}
-              </DrillColumn>
-
-              {/* Col 4 — JDR Code */}
-              <DrillColumn
-                step="04"
-                icon={<Tag className="w-3.5 h-3.5" />}
-                label="JDR Code"
-                count={visibleJdrCodes.length}
-                onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
-              >
-                {visibleJdrCodes.map((j) => (
-                  <JdrCodeRow
-                    key={j.id}
-                    jdrWorkActivity={j.jdrWorkActivity}
-                    contractualCode={j.contractualCode}
-                    comment={j.genericComment}
-                    onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
-                    onDelete={() => deleteJdrCode.mutate({ id: j.id })}
-                    deletePending={deleteJdrCode.isPending}
-                    deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
-                  />
-                ))}
-                {visibleJdrCodes.length === 0 && <EmptyHint />}
-              </DrillColumn>
-
+              </div>
             </div>
-          </div>
+            </div>
+          )}
+
         </div>
       )}
 
       {/* ── Dialogs ──────────────────────────────────────────────────── */}
+      {workerDialog && (
+        <WorkerDialog
+          editing={workerDialog.editing}
+          knownRoles={allKnownRoles}
+          onClose={() => setWorkerDialog(null)}
+          onSave={(data) => workerDialog.editing
+            ? updateWorker.mutate({ id: workerDialog.editing.id, data })
+            : createWorker.mutate({ data })}
+          saving={createWorker.isPending || updateWorker.isPending}
+        />
+      )}
       {teamDialog && (
         <TeamDialog editing={teamDialog.editing} onClose={() => setTeamDialog(null)}
           onSave={(name) => teamDialog.editing ? updateTeam.mutate({ id: teamDialog.editing.id, name }) : createTeam.mutate(name)}
@@ -1234,6 +1466,124 @@ function TeamDialog({ editing, onClose, onSave, saving }: { editing: { id: numbe
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={() => onSave(name.trim())} disabled={!name.trim() || saving}>
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Worker Dialog ────────────────────────────────────────────────────────────
+
+function WorkerDialog({ editing, knownRoles, onClose, onSave, saving }: {
+  editing: DprWorker | null;
+  knownRoles: string[];
+  onClose: () => void;
+  onSave: (data: DprWorkerInput) => void;
+  saving: boolean;
+}) {
+  const [firstName, setFirstName] = useState(editing?.firstName ?? "");
+  const [lastName, setLastName] = useState(editing?.lastName ?? "");
+  const [roles, setRoles] = useState<string[]>(editing?.roles ?? []);
+  const [company, setCompany] = useState(editing?.company ?? "");
+  const [roleInput, setRoleInput] = useState("");
+  const [roleDropOpen, setRoleDropOpen] = useState(false);
+
+  const suggestions = knownRoles.filter(
+    (r) => !roles.includes(r) && r.toLowerCase().includes(roleInput.toLowerCase())
+  );
+
+  const addRole = (role: string) => {
+    const t = role.trim();
+    if (t && !roles.includes(t)) setRoles((prev) => [...prev, t]);
+    setRoleInput("");
+    setRoleDropOpen(false);
+  };
+  const removeRole = (role: string) => setRoles((prev) => prev.filter((r) => r !== role));
+
+  const valid = firstName.trim().length > 0 || lastName.trim().length > 0;
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>{editing ? "Edit Worker" : "Add Worker"}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">First Name</Label>
+              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First" autoFocus />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Last Name</Label>
+              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Roles</Label>
+            {roles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {roles.map((r) => {
+                  const a = roleAbbr(r);
+                  return (
+                    <span key={r} className={cn("inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[11px] font-medium", roleColor(a))}>
+                      <span className="font-bold text-[10px]">{a}</span>
+                      <span className="opacity-70">{r}</span>
+                      <button type="button" onClick={() => removeRole(r)} className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <div className="relative">
+              <Input
+                value={roleInput}
+                onChange={(e) => { setRoleInput(e.target.value); setRoleDropOpen(true); }}
+                onFocus={() => setRoleDropOpen(true)}
+                onBlur={() => setTimeout(() => setRoleDropOpen(false), 150)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && roleInput.trim()) { e.preventDefault(); addRole(roleInput); }
+                  if (e.key === "Escape") { setRoleDropOpen(false); setRoleInput(""); }
+                }}
+                placeholder="Type a role, press Enter to add…"
+                className="h-8 text-[12px]"
+              />
+              {roleDropOpen && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border border-border rounded-md shadow-lg py-1 max-h-36 overflow-y-auto">
+                  {suggestions.map((r) => {
+                    const a = roleAbbr(r);
+                    return (
+                      <button key={r} type="button" onMouseDown={() => addRole(r)}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-muted text-[12px]">
+                        <span className={cn("text-[9px] font-bold px-1 py-0.5 rounded border w-7 text-center", roleColor(a))}>{a}</span>
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Company</Label>
+            <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. JDR, Allstead" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={!valid || saving}
+            onClick={() => onSave({
+              firstName: firstName.trim(),
+              lastName: lastName.trim(),
+              roles,
+              company: company.trim() || null,
+              active: editing?.active ?? true,
+            })}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+            {editing ? "Save" : "Add worker"}
           </Button>
         </DialogFooter>
       </DialogContent>

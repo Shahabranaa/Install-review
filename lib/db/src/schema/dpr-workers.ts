@@ -6,7 +6,7 @@ export const dprWorkersTable = pgTable("dpr_workers", {
   id: serial("id").primaryKey(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
-  role: text("role"),
+  roles: text("roles").array().notNull().default([]),
   company: text("company"),
   active: boolean("active").notNull().default(true),
 });

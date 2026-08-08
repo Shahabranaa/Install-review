@@ -840,7 +840,7 @@ export const GetDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -851,7 +851,7 @@ export const GetDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -881,7 +881,7 @@ export const CopyDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -892,7 +892,7 @@ export const CopyDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -1013,7 +1013,7 @@ export const ListDprWorkersResponseItem = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -1027,7 +1027,7 @@ export const ListDprWorkersResponse = zod.array(ListDprWorkersResponseItem)
 export const CreateDprWorkerBody = zod.object({
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()).default([]),
   "company": zod.string().nullish()
 })
 
@@ -1038,7 +1038,7 @@ export const CreateDprWorkerBody = zod.object({
 export const ImportDprWorkersBodyItem = zod.object({
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()).default([]),
   "company": zod.string().nullish()
 })
 export const ImportDprWorkersBody = zod.array(ImportDprWorkersBodyItem)
@@ -1072,7 +1072,7 @@ export const SetDprWorkerTeamsResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.string().nullish(),
+  "roles": zod.array(zod.string()),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())

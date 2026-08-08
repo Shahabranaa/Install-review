@@ -69,52 +69,7 @@ function jsonBody(body: unknown): RequestInit {
   return { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
-/** Up to 3-char uppercase abbreviation from a role string */
-function roleAbbr(role: string): string {
-  const words = role.trim().split(/\s+/);
-  // If the first word is already a short abbreviation (e.g. "HV", "FO", "CT"), use it as-is
-  if (words[0].length <= 3) return words[0].toUpperCase();
-  // Single long word: take first 3 chars
-  if (words.length === 1) return role.substring(0, 3).toUpperCase();
-  // Multiple words with a long first word: use initials
-  return words.map((w) => w[0]).join("").substring(0, 3).toUpperCase();
-}
-
-/** Deterministic colour token for a role abbreviation */
-const ROLE_COLORS: Record<string, string> = {
-  HV:  "bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800",
-  HVJ: "bg-blue-50   text-blue-700   border-blue-200   dark:bg-blue-950/40  dark:text-blue-300  dark:border-blue-800",
-  FO:  "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800",
-  FOJ: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800",
-  CT:  "bg-amber-50  text-amber-700  border-amber-200  dark:bg-amber-950/40  dark:text-amber-300  dark:border-amber-800",
-  CAB: "bg-amber-50  text-amber-700  border-amber-200  dark:bg-amber-950/40  dark:text-amber-300  dark:border-amber-800",
-  OIM: "bg-rose-50   text-rose-700   border-rose-200   dark:bg-rose-950/40   dark:text-rose-300   dark:border-rose-800",
-  DOI: "bg-cyan-50   text-cyan-700   border-cyan-200   dark:bg-cyan-950/40   dark:text-cyan-300   dark:border-cyan-800",
-  SUP: "bg-pink-50   text-pink-700   border-pink-200   dark:bg-pink-950/40   dark:text-pink-300   dark:border-pink-800",
-  DC:  "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800",
-  HSE: "bg-teal-50   text-teal-700   border-teal-200   dark:bg-teal-950/40   dark:text-teal-300   dark:border-teal-800",
-  ASS: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800",
-  MEL: "bg-lime-50   text-lime-700   border-lime-200   dark:bg-lime-950/40   dark:text-lime-300   dark:border-lime-800",
-  SCA: "bg-sky-50    text-sky-700    border-sky-200    dark:bg-sky-950/40    dark:text-sky-300    dark:border-sky-800",
-  SCF: "bg-sky-50    text-sky-700    border-sky-200    dark:bg-sky-950/40    dark:text-sky-300    dark:border-sky-800",
-  WF:  "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
-};
-const FALLBACK_COLORS = [
-  "bg-slate-50   text-slate-700   border-slate-200   dark:bg-slate-950/40  dark:text-slate-300  dark:border-slate-700",
-  "bg-zinc-50    text-zinc-700    border-zinc-200    dark:bg-zinc-950/40   dark:text-zinc-300   dark:border-zinc-700",
-  "bg-stone-50   text-stone-700   border-stone-200   dark:bg-stone-950/40  dark:text-stone-300  dark:border-stone-700",
-];
-
-/** Predefined role abbreviations shown in the role picker grid */
-const PREDEFINED_ROLES = Object.keys(ROLE_COLORS) as string[];
-const _dynamicRoleMap = new Map<string, string>();
-function roleColor(abbr: string): string {
-  if (ROLE_COLORS[abbr]) return ROLE_COLORS[abbr];
-  if (!_dynamicRoleMap.has(abbr)) {
-    _dynamicRoleMap.set(abbr, FALLBACK_COLORS[_dynamicRoleMap.size % FALLBACK_COLORS.length]);
-  }
-  return _dynamicRoleMap.get(abbr)!;
-}
+import { ROLE_COLORS, PREDEFINED_ROLES, roleColor, roleAbbr } from "@/lib/roles";
 
 // ─── CSV parser ────────────────────────────────────────────────────────────────
 
@@ -213,7 +168,7 @@ function ManageWorkersDialog({ open, onClose }: { open: boolean; onClose: () => 
                 {workers.map((w, i) => (
                   <tr key={w.id} className={cn("group", i % 2 === 0 ? "bg-background" : "bg-muted/20", !w.active && "opacity-50")}>
                     <td className="px-3 py-2 font-medium text-sm">{w.firstName} {w.lastName}</td>
-                    <td className="px-3 py-2 text-sm text-muted-foreground">{w.role ?? "—"}</td>
+                    <td className="px-3 py-2 text-sm text-muted-foreground">{w.roles.length ? w.roles.join(", ") : "—"}</td>
                     <td className="px-3 py-2 text-sm text-muted-foreground">{w.company ?? "—"}</td>
                     <td className="px-3 py-2">
                       <Switch
@@ -286,7 +241,7 @@ function SlotTypeahead({
 
   const slotAbbr = roleAbbr(slotRole);
   const roleFilteredWorkers = useMemo(
-    () => allWorkers.filter((w) => roleAbbr(w.role ?? "") === slotAbbr),
+    () => allWorkers.filter((w) => w.roles.some((r) => roleAbbr(r) === slotAbbr) || (w.roles.length === 0 && slotAbbr === "?")),
     [allWorkers, slotAbbr],
   );
 
@@ -294,7 +249,7 @@ function SlotTypeahead({
     const q = query.toLowerCase().trim();
     if (!q) return roleFilteredWorkers.slice(0, 8);
     return roleFilteredWorkers
-      .filter((w) => `${w.firstName} ${w.lastName}`.toLowerCase().includes(q) || (w.role ?? "").toLowerCase().includes(q))
+      .filter((w) => `${w.firstName} ${w.lastName}`.toLowerCase().includes(q) || w.roles.some((r) => r.toLowerCase().includes(q)))
       .slice(0, 8);
   }, [query, roleFilteredWorkers]);
 
@@ -322,7 +277,7 @@ function SlotTypeahead({
       {focused && matches.length > 0 && (
         <div className="absolute top-full left-0 z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px] max-h-48 overflow-y-auto">
           {matches.map((w) => {
-            const abbr = roleAbbr(w.role ?? "?");
+            const abbr = w.roles.length ? roleAbbr(w.roles[0]) : "?";
             return (
               <button
                 key={w.id}
@@ -773,7 +728,7 @@ function AvailablePanel({
     const q = search.toLowerCase();
     return !q ? workers : workers.filter((w) =>
       `${w.firstName} ${w.lastName}`.toLowerCase().includes(q) ||
-      (w.role ?? "").toLowerCase().includes(q)
+      w.roles.some((r) => r.toLowerCase().includes(q))
     );
   }, [workers, search]);
 
@@ -829,7 +784,7 @@ function AvailablePanel({
               <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60">{company}</span>
             </div>
             {companyWorkers.map((w) => {
-              const abbr = roleAbbr(w.role ?? "?");
+              const abbr = w.roles.length ? roleAbbr(w.roles[0]) : "?";
               const isSelected = selectedId === w.id;
               return (
                 <button
