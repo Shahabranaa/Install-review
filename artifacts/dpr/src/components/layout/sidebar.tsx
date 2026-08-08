@@ -336,7 +336,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* spacer pushes footer to bottom */}
       <div className="flex-1" />
 
-      {/* ── Admin links (Logs + JDR Mapping) ── */}
+      {/* ── Admin links (Logs + DPR Mapping) ── */}
       {isAdmin && (
         <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-1" : "px-3 py-2 space-y-0.5")}>
           {/* Logs link */}
@@ -367,11 +367,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               Logs
             </Link>
           )}
-          {/* JDR Mapping link */}
+          {/* DPR Mapping link */}
           {collapsed ? (
             <Link
               href="/jdr-mapping"
-              title="JDR Mapping"
+              title="DPR Mapping"
               className={cn(
                 "p-2 rounded-md transition-colors flex items-center justify-center",
                 location === "/jdr-mapping"
@@ -392,7 +392,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               )}
             >
               <Layers className="w-4 h-4" />
-              JDR Mapping
+              DPR Mapping
             </Link>
           )}
         </div>

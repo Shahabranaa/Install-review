@@ -43,7 +43,7 @@ const ACTION_META: Record<string, { label: string; icon: React.ElementType; colo
 const PAGE_LABEL: Record<string, string> = {
   capture: "Capture",
   clarify: "Clarify",
-  jdr_mapping: "JDR Mapping",
+  jdr_mapping: "DPR Mapping",
 };
 
 function ActionChip({ action }: { action: string }) {

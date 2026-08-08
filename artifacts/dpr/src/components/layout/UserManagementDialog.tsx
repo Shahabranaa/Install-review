@@ -276,7 +276,7 @@ function NewUserDialog({ onClose, onSave, saving }: {
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle className="text-base">Invite New User</DialogTitle></DialogHeader>
         <p className="text-[12px] text-muted-foreground -mt-1">
-          An invite email will be sent so they can set their own password. They'll have access to all pages <strong>except</strong> JDR Mapping.
+          An invite email will be sent so they can set their own password. They'll have access to all pages <strong>except</strong> DPR Mapping.
         </p>
         <div className="space-y-3 pt-1">
           <div className="space-y-1.5">
@@ -386,7 +386,7 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
               </Button>
             </div>
             <p className="text-[12px] text-muted-foreground">
-              Invited users receive an email to set their own password. They can access all pages except JDR Mapping.
+              Invited users receive an email to set their own password. They can access all pages except DPR Mapping.
             </p>
           </SheetHeader>
 

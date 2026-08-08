@@ -477,7 +477,7 @@ export default function JdrMappingPage() {
             <Network className="w-3.5 h-3.5 text-primary" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold tracking-tight leading-none">JDR Mapping</h1>
+            <h1 className="text-sm font-semibold tracking-tight leading-none">DPR Mapping</h1>
             <p className="text-[11px] text-muted-foreground mt-0.5 leading-none">Activity hierarchy &amp; comment mapping</p>
           </div>
         </div>
@@ -864,11 +864,11 @@ export default function JdrMappingPage() {
                   {visibleActivities.length === 0 && <EmptyHint />}
                 </DrillColumn>
 
-                {/* Col 4 — JDR Code */}
+                {/* Col 4 — Code */}
                 <DrillColumn
                   step="04"
                   icon={<Tag className="w-3.5 h-3.5" />}
-                  label="JDR Code"
+                  label="Code"
                   count={visibleJdrCodes.length}
                   onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
                 >
