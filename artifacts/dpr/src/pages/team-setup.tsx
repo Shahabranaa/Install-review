@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
@@ -14,7 +14,22 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound, Link2, Link2Off } from "lucide-react";
+import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound, Link2, Link2Off, GripVertical } from "lucide-react";
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +104,9 @@ const FALLBACK_COLORS = [
   "bg-zinc-50    text-zinc-700    border-zinc-200    dark:bg-zinc-950/40   dark:text-zinc-300   dark:border-zinc-700",
   "bg-stone-50   text-stone-700   border-stone-200   dark:bg-stone-950/40  dark:text-stone-300  dark:border-stone-700",
 ];
+
+/** Predefined role abbreviations shown in the role picker grid */
+const PREDEFINED_ROLES = Object.keys(ROLE_COLORS) as string[];
 const _dynamicRoleMap = new Map<string, string>();
 function roleColor(abbr: string): string {
   if (ROLE_COLORS[abbr]) return ROLE_COLORS[abbr];
@@ -325,38 +343,243 @@ function SlotTypeahead({
   );
 }
 
+// ─── Shared role picker content ───────────────────────────────────────────────
+
+function RolePickerContent({
+  title,
+  submitLabel,
+  isPending,
+  onSelect,
+}: {
+  title: string;
+  submitLabel: string;
+  isPending: boolean;
+  onSelect: (role: string) => void;
+}) {
+  const [custom, setCustom] = useState("");
+
+  return (
+    <div className="w-56">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
+
+      {/* Predefined role grid */}
+      <div className="grid grid-cols-4 gap-1 mb-3">
+        {PREDEFINED_ROLES.map((abbr) => (
+          <button
+            key={abbr}
+            disabled={isPending}
+            onClick={() => { setCustom(""); onSelect(abbr); }}
+            className={cn(
+              "text-[10px] font-bold px-1 py-1.5 rounded border text-center transition-colors hover:opacity-80 active:scale-95",
+              roleColor(abbr),
+            )}
+          >
+            {abbr}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom role text entry */}
+      <p className="text-[10px] text-muted-foreground mb-1">Custom role</p>
+      <div className="flex gap-1">
+        <Input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="e.g. HP Jointer"
+          className="h-7 text-xs flex-1"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && custom.trim()) {
+              onSelect(custom.trim());
+              setCustom("");
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          className="h-7 text-xs px-2"
+          disabled={!custom.trim() || isPending}
+          onClick={() => { onSelect(custom.trim()); setCustom(""); }}
+        >
+          {submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Add Role popover ─────────────────────────────────────────────────────────
 
 function AddRoleButton({ teamId, onAdded }: { teamId: number; onAdded: () => void }) {
   const [open, setOpen] = useState(false);
-  const [role, setRole] = useState("");
   const mutation = useMutation({
     mutationFn: (r: string) => apiFetch(`/api/dpr/team-role-slots/${teamId}`, { method: "POST", ...jsonBody({ role: r }) }),
-    onSuccess: () => { onAdded(); setRole(""); setOpen(false); },
+    onSuccess: () => { onAdded(); setOpen(false); },
   });
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setRole(""); }}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded hover:bg-muted/50 w-full">
           <Plus className="w-3 h-3" /> Add role
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-3" align="start">
-        <p className="text-xs font-medium mb-2">New role</p>
-        <Input
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          placeholder="e.g. HV Jointer"
-          className="h-7 text-xs mb-2"
-          autoFocus
-          onKeyDown={(e) => { if (e.key === "Enter" && role.trim()) mutation.mutate(role.trim()); }}
+      <PopoverContent className="p-3" align="start">
+        <RolePickerContent
+          title="Pick a role"
+          submitLabel="Add"
+          isPending={mutation.isPending}
+          onSelect={(r) => mutation.mutate(r)}
         />
-        <Button size="sm" className="w-full h-7 text-xs" onClick={() => mutation.mutate(role.trim())} disabled={!role.trim() || mutation.isPending}>
-          Add
-        </Button>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// ─── Sortable slot row ────────────────────────────────────────────────────────
+
+function SortableSlotRow({
+  slot,
+  teamId,
+  selectedWorkerId,
+  allWorkers,
+  editingSlotId,
+  roleEditSlotId,
+  isReordering,
+  onRowClick,
+  onAssign,
+  onUnassign,
+  onDelete,
+  onRoleChange,
+  setEditingSlotId,
+  setRoleEditSlotId,
+}: {
+  slot: RosterSlot;
+  teamId: number;
+  selectedWorkerId: number | null;
+  allWorkers: DprWorker[];
+  editingSlotId: number | null;
+  roleEditSlotId: number | null;
+  isReordering: boolean;
+  onRowClick: () => void;
+  onAssign: (workerId: number) => void;
+  onUnassign: () => void;
+  onDelete: () => void;
+  onRoleChange: (role: string) => void;
+  setEditingSlotId: (id: number | null) => void;
+  setRoleEditSlotId: (id: number | null) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slot.slotId, disabled: isReordering });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  const abbr = roleAbbr(slot.role);
+  const isEmpty = !slot.worker;
+  const isEditing = editingSlotId === slot.slotId;
+  const isRoleEditing = roleEditSlotId === slot.slotId;
+  const canQuickAssign = isEmpty && selectedWorkerId !== null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-1 px-1 py-[5px] border-b border-border/40 group transition-colors",
+        isDragging && "opacity-50 z-50 bg-background shadow-md",
+        canQuickAssign && !isEditing && !isRoleEditing && "cursor-pointer hover:bg-primary/5",
+        isEditing && "bg-muted/30 ring-1 ring-inset ring-primary/30",
+        !isEmpty && !canQuickAssign && !isEditing && !isRoleEditing && "hover:bg-muted/40",
+        isEmpty && !canQuickAssign && !isEditing && !isRoleEditing && "cursor-text hover:bg-muted/20",
+      )}
+      onClick={() => {
+        if (isRoleEditing) return;
+        onRowClick();
+      }}
+    >
+      {/* Drag handle — disabled while a reorder is in flight to prevent ordering races */}
+      <span
+        {...attributes}
+        {...(isReordering ? {} : listeners)}
+        className={cn(
+          "flex-shrink-0 p-0.5 touch-none",
+          isReordering
+            ? "cursor-not-allowed text-muted-foreground/15"
+            : "cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground/60"
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="w-3 h-3" />
+      </span>
+
+      {/* Role badge — clickable to edit role */}
+      <Popover open={isRoleEditing} onOpenChange={(o) => { setRoleEditSlotId(o ? slot.slotId : null); }}>
+        <PopoverTrigger asChild>
+          <button
+            className={cn(
+              "flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border w-9 text-center tracking-wide hover:opacity-70 transition-opacity",
+              roleColor(abbr),
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRoleEditSlotId(isRoleEditing ? null : slot.slotId);
+            }}
+            title="Change role"
+          >
+            {abbr}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="p-3" align="start" onClick={(e) => e.stopPropagation()}>
+          <RolePickerContent
+            title="Change role"
+            submitLabel="Set"
+            isPending={false}
+            onSelect={(r) => { onRoleChange(r); setRoleEditSlotId(null); }}
+          />
+        </PopoverContent>
+      </Popover>
+
+      {/* Name or typeahead */}
+      {isEditing ? (
+        <SlotTypeahead
+          allWorkers={allWorkers}
+          slotRole={slot.role}
+          onSelect={(workerId) => { onAssign(workerId); setEditingSlotId(null); }}
+          onCancel={() => setEditingSlotId(null)}
+        />
+      ) : slot.worker ? (
+        <span className="flex-1 text-xs font-medium text-foreground truncate leading-tight">
+          {slot.worker.firstName} {slot.worker.lastName}
+        </span>
+      ) : (
+        <span className={cn(
+          "flex-1 text-[11px] truncate",
+          canQuickAssign ? "text-primary font-medium" : "text-muted-foreground/40 italic"
+        )}>
+          {canQuickAssign ? "← place here" : "Tap to assign…"}
+        </span>
+      )}
+
+      {/* Hover actions */}
+      {!isEditing && !isRoleEditing && (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity">
+          {slot.worker && slot.assignmentId && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onUnassign(); }}
+              title="Remove assignment"
+              className="p-0.5 rounded hover:bg-muted/80"
+            >
+              <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            title="Delete role slot"
+            className="p-0.5 rounded hover:bg-muted/80"
+          >
+            <Trash2 className="w-2.5 h-2.5 text-muted-foreground/40 hover:text-destructive" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -376,13 +599,79 @@ function TeamPanel({
   isBottom?: boolean;
 }) {
   const [editingSlotId, setEditingSlotId] = useState<number | null>(null);
+  const [roleEditSlotId, setRoleEditSlotId] = useState<number | null>(null);
+
+  // Local slot state for optimistic updates (delete, reorder, role edit)
+  const [localSlots, setLocalSlots] = useState<RosterSlot[]>(() => team.slots);
+
+  // Sync when server data changes (e.g. after refresh)
+  const prevSlotsRef = useRef(team.slots);
+  useEffect(() => {
+    if (prevSlotsRef.current !== team.slots) {
+      prevSlotsRef.current = team.slots;
+      setLocalSlots(team.slots);
+    }
+  }, [team.slots]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Atomic batch reorder — single DB transaction, dragging disabled while pending
+  const reorderMutation = useMutation({
+    mutationFn: (order: { slotId: number; displayOrder: number }[]) =>
+      apiFetch(`/api/dpr/team-role-slots/${team.teamId}/reorder`, { method: "PATCH", ...jsonBody({ order }) }),
+    onError: () => {
+      // Revert to server state if the batch fails
+      setLocalSlots(team.slots);
+    },
+  });
+
+  const patchRoleMutation = useMutation({
+    mutationFn: ({ slotId, role }: { slotId: number; role: string }) =>
+      apiFetch(`/api/dpr/team-role-slots/${team.teamId}/${slotId}`, { method: "PATCH", ...jsonBody({ role }) }),
+    onError: () => {
+      setLocalSlots(team.slots);
+    },
+  });
 
   const deleteSlotMutation = useMutation({
     mutationFn: (slotId: number) => apiFetch(`/api/dpr/team-role-slots/${team.teamId}/${slotId}`, { method: "DELETE" }),
-    onSuccess: onSlotDeleted,
+    onMutate: (slotId) => {
+      // Optimistic: remove immediately
+      setLocalSlots((prev) => prev.filter((s) => s.slotId !== slotId));
+    },
+    onError: () => {
+      // Revert on error
+      setLocalSlots(team.slots);
+    },
+    onSuccess: () => {
+      onSlotDeleted();
+    },
   });
 
-  const filledCount = team.slots.filter((s) => s.worker).length;
+  const isReordering = reorderMutation.isPending;
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setLocalSlots((prev) => {
+      const oldIndex = prev.findIndex((s) => s.slotId === active.id);
+      const newIndex = prev.findIndex((s) => s.slotId === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      const reordered = arrayMove(prev, oldIndex, newIndex);
+      const newOrder = reordered.map((slot, idx) => ({ slotId: slot.slotId, displayOrder: idx }));
+      // Single atomic PATCH — no race between multiple parallel requests
+      reorderMutation.mutate(newOrder);
+      return reordered.map((slot, idx) => ({ ...slot, displayOrder: idx }));
+    });
+  }
+
+  function handleRoleChange(slotId: number, newRole: string) {
+    setLocalSlots((prev) => prev.map((s) => s.slotId === slotId ? { ...s, role: newRole } : s));
+    patchRoleMutation.mutate({ slotId, role: newRole });
+  }
+
+  const filledCount = localSlots.filter((s) => s.worker).length;
 
   return (
     <div className={cn("flex flex-col", !isBottom && "border-b border-border")}>
@@ -390,93 +679,52 @@ function TeamPanel({
       <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
         <span className="text-xs font-semibold text-foreground tracking-tight">{team.teamName}</span>
         <span className="text-[10px] text-muted-foreground tabular-nums">
-          {filledCount}/{team.slots.length}
+          {filledCount}/{localSlots.length}
         </span>
       </div>
 
       {/* Slots */}
-      {team.slots.length === 0 && (
+      {localSlots.length === 0 && (
         <div className="px-3 py-2 text-[11px] text-muted-foreground/50 italic">No roles yet</div>
       )}
-      {team.slots.map((slot) => {
-        const abbr = roleAbbr(slot.role);
-        const isEmpty = !slot.worker;
-        const isEditing = editingSlotId === slot.slotId;
-        const canQuickAssign = isEmpty && selectedWorkerId !== null;
 
-        return (
-          <div
-            key={slot.slotId}
-            className={cn(
-              "flex items-center gap-2 px-2 py-[5px] border-b border-border/40 group transition-colors",
-              canQuickAssign && !isEditing && "cursor-pointer hover:bg-primary/5",
-              isEditing && "bg-muted/30 ring-1 ring-inset ring-primary/30",
-              !isEmpty && !canQuickAssign && !isEditing && "hover:bg-muted/40",
-              isEmpty && !canQuickAssign && !isEditing && "cursor-text hover:bg-muted/20",
-            )}
-            onClick={() => {
-              if (canQuickAssign) {
-                setEditingSlotId(null);
-                onAssign(slot.slotId, selectedWorkerId!);
-                return;
-              }
-              if (isEditing) return;
-              if (isEmpty) setEditingSlotId(slot.slotId);
-            }}
-          >
-            {/* Role badge */}
-            <span className={cn(
-              "flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border w-9 text-center tracking-wide",
-              roleColor(abbr)
-            )}>
-              {abbr}
-            </span>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={localSlots.map((s) => s.slotId)} strategy={verticalListSortingStrategy}>
+          {localSlots.map((slot) => {
+            const isEmpty = !slot.worker;
+            const isEditing = editingSlotId === slot.slotId;
+            const canQuickAssign = isEmpty && selectedWorkerId !== null;
 
-            {/* Name or typeahead */}
-            {isEditing ? (
-              <SlotTypeahead
+            return (
+              <SortableSlotRow
+                key={slot.slotId}
+                slot={slot}
+                teamId={team.teamId}
+                selectedWorkerId={selectedWorkerId}
                 allWorkers={allWorkers}
-                slotRole={slot.role}
-                onSelect={(workerId) => { onAssign(slot.slotId, workerId); setEditingSlotId(null); }}
-                onCancel={() => setEditingSlotId(null)}
+                editingSlotId={editingSlotId}
+                roleEditSlotId={roleEditSlotId}
+                isReordering={isReordering}
+                onRowClick={() => {
+                  if (canQuickAssign) {
+                    setEditingSlotId(null);
+                    onAssign(slot.slotId, selectedWorkerId!);
+                    return;
+                  }
+                  if (isEditing) return;
+                  if (isEmpty) setEditingSlotId(slot.slotId);
+                }}
+                onAssign={(workerId) => { onAssign(slot.slotId, workerId); }}
+                onUnassign={() => { if (slot.assignmentId) onUnassign(slot.assignmentId); }}
+                onDelete={() => deleteSlotMutation.mutate(slot.slotId)}
+                onRoleChange={(newRole) => handleRoleChange(slot.slotId, newRole)}
+                setEditingSlotId={setEditingSlotId}
+                setRoleEditSlotId={setRoleEditSlotId}
               />
-            ) : slot.worker ? (
-              <span className="flex-1 text-xs font-medium text-foreground truncate leading-tight">
-                {slot.worker.firstName} {slot.worker.lastName}
-              </span>
-            ) : (
-              <span className={cn(
-                "flex-1 text-[11px] truncate",
-                canQuickAssign ? "text-primary font-medium" : "text-muted-foreground/40 italic"
-              )}>
-                {canQuickAssign ? "← place here" : "Type a name…"}
-              </span>
-            )}
-
-            {/* Hover actions */}
-            {!isEditing && (
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity">
-                {slot.worker && slot.assignmentId && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onUnassign(slot.assignmentId!); }}
-                    title="Remove assignment"
-                    className="p-0.5 rounded hover:bg-muted/80"
-                  >
-                    <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
-                  </button>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteSlotMutation.mutate(slot.slotId); }}
-                  title="Delete role slot"
-                  className="p-0.5 rounded hover:bg-muted/80"
-                >
-                  <Trash2 className="w-2.5 h-2.5 text-muted-foreground/40 hover:text-destructive" />
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </SortableContext>
+      </DndContext>
 
       {/* Add role */}
       <div className="px-1 py-1">

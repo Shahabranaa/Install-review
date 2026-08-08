@@ -343,6 +343,20 @@ export interface DprTeamRoleSlotInput {
   role: string;
 }
 
+export interface DprTeamRoleSlotPatch {
+  role?: string;
+  displayOrder?: number;
+}
+
+export type ReorderDprTeamRoleSlotsBodyOrderItem = {
+  slotId: number;
+  displayOrder: number;
+};
+
+export interface ReorderDprTeamRoleSlotsBody {
+  order: ReorderDprTeamRoleSlotsBodyOrderItem[];
+}
+
 export interface DprDailyAssignment {
   id: number;
   date: string;
@@ -419,6 +433,10 @@ export interface DprLocation {
 export interface DprTeam {
   id: number;
   name: string;
+  description?: string | null;
+  shiftStartTime?: string | null;
+  shiftEndTime?: string | null;
+  backTeamId?: number | null;
 }
 
 export interface DprLocationInput {

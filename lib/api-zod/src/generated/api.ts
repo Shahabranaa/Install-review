@@ -937,6 +937,42 @@ export const CreateDprTeamRoleSlotBody = zod.object({
 
 
 /**
+ * @summary Atomically reorder all role slots for a team
+ */
+export const ReorderDprTeamRoleSlotsParams = zod.object({
+  "teamId": zod.coerce.number()
+})
+
+export const ReorderDprTeamRoleSlotsBody = zod.object({
+  "order": zod.array(zod.object({
+  "slotId": zod.number(),
+  "displayOrder": zod.number()
+}))
+})
+
+
+/**
+ * @summary Update a role slot (role name or display order)
+ */
+export const PatchDprTeamRoleSlotParams = zod.object({
+  "teamId": zod.coerce.number(),
+  "slotId": zod.coerce.number()
+})
+
+export const PatchDprTeamRoleSlotBody = zod.object({
+  "role": zod.string().optional(),
+  "displayOrder": zod.number().optional()
+})
+
+export const PatchDprTeamRoleSlotResponse = zod.object({
+  "id": zod.number(),
+  "teamId": zod.number(),
+  "role": zod.string(),
+  "displayOrder": zod.number()
+})
+
+
+/**
  * @summary Delete a role slot from a team
  */
 export const DeleteDprTeamRoleSlotParams = zod.object({
@@ -1049,10 +1085,10 @@ export const SetDprWorkerTeamsResponse = zod.object({
 export const ListDprTeamsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "description": zod.string().nullable(),
-  "shiftStartTime": zod.string().nullable(),
-  "shiftEndTime": zod.string().nullable(),
-  "backTeamId": zod.number().nullable(),
+  "description": zod.string().nullish(),
+  "shiftStartTime": zod.string().nullish(),
+  "shiftEndTime": zod.string().nullish(),
+  "backTeamId": zod.number().nullish()
 })
 export const ListDprTeamsResponse = zod.array(ListDprTeamsResponseItem)
 
@@ -1286,7 +1322,11 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),
-  "name": zod.string()
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "shiftStartTime": zod.string().nullish(),
+  "shiftEndTime": zod.string().nullish(),
+  "backTeamId": zod.number().nullish()
 }).optional(),
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
@@ -1301,7 +1341,7 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
-  "genericComment": zod.string().nullable().optional(),
+  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1351,7 +1391,11 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),
-  "name": zod.string()
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "shiftStartTime": zod.string().nullish(),
+  "shiftEndTime": zod.string().nullish(),
+  "backTeamId": zod.number().nullish()
 }).optional(),
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
@@ -1366,7 +1410,7 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
-  "genericComment": zod.string().nullable().optional(),
+  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),
@@ -1394,7 +1438,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()).optional(),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
-  "genericComment": zod.string().nullable().optional(),
+  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
@@ -1406,7 +1450,11 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "teamId": zod.number().nullish(),
   "team": zod.object({
   "id": zod.number(),
-  "name": zod.string()
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "shiftStartTime": zod.string().nullish(),
+  "shiftEndTime": zod.string().nullish(),
+  "backTeamId": zod.number().nullish()
 }).optional(),
   "startTime": zod.string().nullish(),
   "endTime": zod.string().nullish(),
@@ -1421,7 +1469,7 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "activityId": zod.number().nullish(),
   "jdrCodeIds": zod.array(zod.number()),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish(),
-  "genericComment": zod.string().nullable().optional(),
+  "genericComment": zod.string().nullish(),
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']),
   "createdAt": zod.string(),

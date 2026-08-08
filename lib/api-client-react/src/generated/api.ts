@@ -47,6 +47,7 @@ import type {
   DprTeam,
   DprTeamRoleSlot,
   DprTeamRoleSlotInput,
+  DprTeamRoleSlotPatch,
   DprTimesheetEntry,
   DprTimesheetEntryInput,
   DprTimesheetEntryUpdate,
@@ -82,6 +83,7 @@ import type {
   Project,
   RejectImageBody,
   RejectPhaseBody,
+  ReorderDprTeamRoleSlotsBody,
   ReviewDecision,
   Site,
   UpdateImageBody,
@@ -3656,6 +3658,152 @@ export const useCreateDprTeamRoleSlot = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateDprTeamRoleSlotMutationOptions(options));
+    }
+
+export const getReorderDprTeamRoleSlotsUrl = (teamId: number,) => {
+
+
+
+
+  return `/api/dpr/team-role-slots/${teamId}/reorder`
+}
+
+/**
+ * @summary Atomically reorder all role slots for a team
+ */
+export const reorderDprTeamRoleSlots = async (teamId: number,
+    reorderDprTeamRoleSlotsBody: ReorderDprTeamRoleSlotsBody, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getReorderDprTeamRoleSlotsUrl(teamId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reorderDprTeamRoleSlotsBody,)
+  }
+);}
+
+
+
+
+export const getReorderDprTeamRoleSlotsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>, TError,{teamId: number;data: BodyType<ReorderDprTeamRoleSlotsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>, TError,{teamId: number;data: BodyType<ReorderDprTeamRoleSlotsBody>}, TContext> => {
+
+const mutationKey = ['reorderDprTeamRoleSlots'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>, {teamId: number;data: BodyType<ReorderDprTeamRoleSlotsBody>}> = (props) => {
+          const {teamId,data} = props ?? {};
+
+          return  reorderDprTeamRoleSlots(teamId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderDprTeamRoleSlotsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>>
+    export type ReorderDprTeamRoleSlotsMutationBody = BodyType<ReorderDprTeamRoleSlotsBody>
+    export type ReorderDprTeamRoleSlotsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Atomically reorder all role slots for a team
+ */
+export const useReorderDprTeamRoleSlots = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>, TError,{teamId: number;data: BodyType<ReorderDprTeamRoleSlotsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderDprTeamRoleSlots>>,
+        TError,
+        {teamId: number;data: BodyType<ReorderDprTeamRoleSlotsBody>},
+        TContext
+      > => {
+      return useMutation(getReorderDprTeamRoleSlotsMutationOptions(options));
+    }
+
+export const getPatchDprTeamRoleSlotUrl = (teamId: number,
+    slotId: number,) => {
+
+
+
+
+  return `/api/dpr/team-role-slots/${teamId}/${slotId}`
+}
+
+/**
+ * @summary Update a role slot (role name or display order)
+ */
+export const patchDprTeamRoleSlot = async (teamId: number,
+    slotId: number,
+    dprTeamRoleSlotPatch: DprTeamRoleSlotPatch, options?: RequestInit): Promise<DprTeamRoleSlot> => {
+
+  return customFetch<DprTeamRoleSlot>(getPatchDprTeamRoleSlotUrl(teamId,slotId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dprTeamRoleSlotPatch,)
+  }
+);}
+
+
+
+
+export const getPatchDprTeamRoleSlotMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchDprTeamRoleSlot>>, TError,{teamId: number;slotId: number;data: BodyType<DprTeamRoleSlotPatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof patchDprTeamRoleSlot>>, TError,{teamId: number;slotId: number;data: BodyType<DprTeamRoleSlotPatch>}, TContext> => {
+
+const mutationKey = ['patchDprTeamRoleSlot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof patchDprTeamRoleSlot>>, {teamId: number;slotId: number;data: BodyType<DprTeamRoleSlotPatch>}> = (props) => {
+          const {teamId,slotId,data} = props ?? {};
+
+          return  patchDprTeamRoleSlot(teamId,slotId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PatchDprTeamRoleSlotMutationResult = NonNullable<Awaited<ReturnType<typeof patchDprTeamRoleSlot>>>
+    export type PatchDprTeamRoleSlotMutationBody = BodyType<DprTeamRoleSlotPatch>
+    export type PatchDprTeamRoleSlotMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a role slot (role name or display order)
+ */
+export const usePatchDprTeamRoleSlot = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchDprTeamRoleSlot>>, TError,{teamId: number;slotId: number;data: BodyType<DprTeamRoleSlotPatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof patchDprTeamRoleSlot>>,
+        TError,
+        {teamId: number;slotId: number;data: BodyType<DprTeamRoleSlotPatch>},
+        TContext
+      > => {
+      return useMutation(getPatchDprTeamRoleSlotMutationOptions(options));
     }
 
 export const getDeleteDprTeamRoleSlotUrl = (teamId: number,

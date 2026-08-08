@@ -1091,7 +1091,56 @@ paths:
               schema:
                 $ref: "#/components/schemas/DprTeamRoleSlot"
 
+  /dpr/team-role-slots/{teamId}/reorder:
+    patch:
+      operationId: reorderDprTeamRoleSlots
+      tags: [dpr]
+      summary: Atomically reorder all role slots for a team
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderDprTeamRoleSlotsBody"
+      responses:
+        "204":
+          description: Reordered
+
   /dpr/team-role-slots/{teamId}/{slotId}:
+    patch:
+      operationId: patchDprTeamRoleSlot
+      tags: [dpr]
+      summary: Update a role slot (role name or display order)
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: slotId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DprTeamRoleSlotPatch"
+      responses:
+        "200":
+          description: Updated slot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DprTeamRoleSlot"
     delete:
       operationId: deleteDprTeamRoleSlot
       tags: [dpr]
@@ -2324,6 +2373,29 @@ components:
           type: string
       required: [role]
 
+    DprTeamRoleSlotPatch:
+      type: object
+      properties:
+        role:
+          type: string
+        displayOrder:
+          type: integer
+
+    ReorderDprTeamRoleSlotsBody:
+      type: object
+      properties:
+        order:
+          type: array
+          items:
+            type: object
+            properties:
+              slotId:
+                type: integer
+              displayOrder:
+                type: integer
+            required: [slotId, displayOrder]
+      required: [order]
+
     DprDailyAssignment:
       type: object
       properties:
@@ -2494,6 +2566,18 @@ components:
           type: integer
         name:
           type: string
+        description:
+          type: string
+          nullable: true
+        shiftStartTime:
+          type: string
+          nullable: true
+        shiftEndTime:
+          type: string
+          nullable: true
+        backTeamId:
+          type: integer
+          nullable: true
       required:
         - id
         - name

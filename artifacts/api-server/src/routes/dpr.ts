@@ -87,6 +87,9 @@ import {
   ListDprTeamRoleSlotsParams,
   CreateDprTeamRoleSlotParams,
   CreateDprTeamRoleSlotBody,
+  ReorderDprTeamRoleSlotsBody,
+  PatchDprTeamRoleSlotParams,
+  PatchDprTeamRoleSlotBody,
   DeleteDprTeamRoleSlotParams,
   UpsertDprDailyAssignmentBody,
   DeleteDprDailyAssignmentParams,
@@ -1118,6 +1121,55 @@ router.post("/dpr/team-role-slots/:teamId", async (req, res): Promise<void> => {
     .values({ teamId: params.data.teamId, role: body.data.role, displayOrder: nextOrder })
     .returning();
   res.status(201).json(slot);
+});
+
+router.patch("/dpr/team-role-slots/:teamId/reorder", async (req, res): Promise<void> => {
+  const params = ListDprTeamRoleSlotsParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = ReorderDprTeamRoleSlotsBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Update all slots atomically in a single transaction
+  await db.transaction(async (tx) => {
+    for (const item of body.data.order) {
+      await tx
+        .update(dprTeamRoleSlotsTable)
+        .set({ displayOrder: item.displayOrder })
+        .where(
+          and(
+            eq(dprTeamRoleSlotsTable.id, item.slotId),
+            eq(dprTeamRoleSlotsTable.teamId, params.data.teamId)
+          )
+        );
+    }
+  });
+  res.status(204).send();
+});
+
+router.patch("/dpr/team-role-slots/:teamId/:slotId", async (req, res): Promise<void> => {
+  const params = PatchDprTeamRoleSlotParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = PatchDprTeamRoleSlotBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const updates: Partial<{ role: string; displayOrder: number }> = {};
+  if (body.data.role !== undefined) updates.role = body.data.role;
+  if (body.data.displayOrder !== undefined) updates.displayOrder = body.data.displayOrder;
+
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "No updates provided" }); return; }
+
+  const [slot] = await db
+    .update(dprTeamRoleSlotsTable)
+    .set(updates)
+    .where(
+      and(
+        eq(dprTeamRoleSlotsTable.id, params.data.slotId),
+        eq(dprTeamRoleSlotsTable.teamId, params.data.teamId)
+      )
+    )
+    .returning();
+  if (!slot) { res.status(404).json({ error: "Slot not found" }); return; }
+  res.json(slot);
 });
 
 router.delete("/dpr/team-role-slots/:teamId/:slotId", async (req, res): Promise<void> => {
