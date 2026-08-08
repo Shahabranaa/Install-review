@@ -12,11 +12,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound, Link2, Link2Off } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Team { id: number; name: string }
+interface Team {
+  id: number;
+  name: string;
+  description: string | null;
+  shiftStartTime: string | null;
+  shiftEndTime: string | null;
+  backTeamId: number | null;
+}
 interface TeamDateException { id: number; teamId: number; date: string; status: string }
 
 interface DprWorker {
@@ -939,6 +948,224 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
   );
 }
 
+// ─── Helper: add 12 hours to an HH:MM string ─────────────────────────────────
+function addTwelveHours(time: string): string {
+  const [hStr, mStr] = time.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (isNaN(h) || isNaN(m)) return "";
+  const totalMins = h * 60 + m + 12 * 60;
+  const newH = Math.floor(totalMins / 60) % 24;
+  const newM = totalMins % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+}
+
+// ─── Team configuration card ──────────────────────────────────────────────────
+
+function TeamConfigCard({ team, allTeams }: { team: Team; allTeams: Team[] }) {
+  const qc = useQueryClient();
+  const teamsKey = ["/api/dpr/teams"];
+
+  const [description, setDescription] = useState(team.description ?? "");
+  const [shiftStart, setShiftStart] = useState(team.shiftStartTime ?? "");
+  const [shiftEnd, setShiftEnd] = useState(team.shiftEndTime ?? "");
+
+  // Keep local state in sync if parent data refreshes (e.g. after save)
+  const prevTeamRef = useRef(team);
+  if (prevTeamRef.current !== team) {
+    prevTeamRef.current = team;
+    setDescription(team.description ?? "");
+    setShiftStart(team.shiftStartTime ?? "");
+    setShiftEnd(team.shiftEndTime ?? "");
+  }
+
+  const patchMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch(`/api/dpr/teams/${team.id}`, { method: "PATCH", ...jsonBody(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: teamsKey }),
+  });
+
+  function saveField(body: Record<string, unknown>) {
+    patchMutation.mutate(body);
+  }
+
+  // Back-team: the linked team (could be team.backTeamId pointing to another, or another pointing to this)
+  const linkedTeam = allTeams.find((t) => t.id === team.backTeamId) ?? null;
+  // Also detect if another team points back to us (so we can show the badge even when this team is the "target")
+  const reverseLinkedTeam = allTeams.find((t) => t.backTeamId === team.id) ?? null;
+  const effectiveLinkedTeam = linkedTeam ?? reverseLinkedTeam;
+
+  // Dropdown options: exclude self; exclude teams already linked to each other (unless already linked to this team)
+  const backTeamOptions = allTeams.filter((t) => {
+    if (t.id === team.id) return false;
+    // Allow current selection
+    if (t.id === team.backTeamId) return true;
+    // Exclude teams that already have a back-team that isn't this team
+    if (t.backTeamId !== null && t.backTeamId !== team.id) return false;
+    // Exclude teams that are pointed to by another team (unless that team is us)
+    const pointsToT = allTeams.find((x) => x.id !== team.id && x.backTeamId === t.id);
+    if (pointsToT) return false;
+    return true;
+  });
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+      {/* Team name header */}
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-sm">{team.name}</span>
+        {effectiveLinkedTeam && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+            <Link2 className="w-2.5 h-2.5" />
+            Linked with {effectiveLinkedTeam.name}
+          </span>
+        )}
+      </div>
+
+      {/* Description */}
+      <div>
+        <Label className="text-xs mb-1 block text-muted-foreground">Description</Label>
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onBlur={() => saveField({ description: description.trim() || null })}
+          placeholder="What is this team doing today?"
+          className="text-sm resize-none h-16 min-h-0"
+          rows={2}
+        />
+      </div>
+
+      {/* Shift times */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs mb-1 block text-muted-foreground">Shift start</Label>
+          <Input
+            type="time"
+            value={shiftStart}
+            onChange={(e) => {
+              setShiftStart(e.target.value);
+              if (e.target.value) {
+                const auto = addTwelveHours(e.target.value);
+                setShiftEnd(auto);
+              }
+            }}
+            onBlur={() => saveField({ shiftStartTime: shiftStart || null, shiftEndTime: shiftEnd || null })}
+            className="h-8 text-sm"
+          />
+        </div>
+        <div>
+          <Label className="text-xs mb-1 block text-muted-foreground">Shift end</Label>
+          <Input
+            type="time"
+            value={shiftEnd}
+            onChange={(e) => setShiftEnd(e.target.value)}
+            onBlur={() => saveField({ shiftEndTime: shiftEnd || null })}
+            className="h-8 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Back-team link */}
+      <div>
+        <Label className="text-xs mb-1 block text-muted-foreground">Linked back team</Label>
+        {reverseLinkedTeam && !linkedTeam ? (
+          // This team is the target — show read-only indicator
+          <div className="flex items-center gap-2 h-8 px-3 rounded-md border border-border bg-muted/30 text-xs text-muted-foreground">
+            <Link2 className="w-3 h-3 flex-shrink-0" />
+            <span>Linked from <span className="font-medium text-foreground">{reverseLinkedTeam.name}</span></span>
+          </div>
+        ) : (
+          <Select
+            value={team.backTeamId ? String(team.backTeamId) : "none"}
+            onValueChange={(val) => {
+              const backTeamId = val === "none" ? null : Number(val);
+              saveField({ backTeamId });
+            }}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="No linked team" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Link2Off className="w-3 h-3" /> No linked team
+                </span>
+              </SelectItem>
+              {backTeamOptions.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                  {t.shiftStartTime && (
+                    <span className="ml-1.5 text-muted-foreground text-xs">({t.shiftStartTime})</span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Teams setup tab ──────────────────────────────────────────────────────────
+
+function TeamsSetupTab({ teams, isLoading }: { teams: Team[]; isLoading: boolean }) {
+  const qc = useQueryClient();
+  const [newTeamName, setNewTeamName] = useState("");
+  const addMutation = useMutation({
+    mutationFn: (name: string) =>
+      apiFetch("/api/dpr/teams", { method: "POST", ...jsonBody({ name }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/dpr/teams"] });
+      setNewTeamName("");
+    },
+  });
+
+  return (
+    <div className="p-6 max-w-2xl space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Configure each team's description, shift hours, and back-team pairing. Changes auto-save on blur.
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading teams…
+        </div>
+      )}
+
+      {!isLoading && teams.length === 0 && (
+        <p className="text-sm text-muted-foreground py-4 text-center">No teams yet. Add one below.</p>
+      )}
+
+      <div className="space-y-3">
+        {teams.map((team) => (
+          <TeamConfigCard key={team.id} team={team} allTeams={teams} />
+        ))}
+      </div>
+
+      {/* Add team */}
+      <div className="flex items-center gap-2 pt-2">
+        <Input
+          value={newTeamName}
+          onChange={(e) => setNewTeamName(e.target.value)}
+          placeholder="New team name…"
+          className="h-8 text-sm max-w-xs"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newTeamName.trim()) addMutation.mutate(newTeamName.trim());
+          }}
+        />
+        <Button
+          size="sm"
+          className="h-8 text-xs gap-1"
+          onClick={() => addMutation.mutate(newTeamName.trim())}
+          disabled={!newTeamName.trim() || addMutation.isPending}
+        >
+          <Plus className="w-3.5 h-3.5" /> Add team
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Schedule tab ─────────────────────────────────────────────────────────────
 
 function ScheduleTab({ date, teams }: { date: string; teams: Team[] }) {
@@ -1219,7 +1446,7 @@ export default function TeamSetupPage() {
   const { activeDate } = useCaptureNav();
   const date = activeDate ?? format(new Date(), "yyyy-MM-dd");
 
-  const { data: teams = [] } = useQuery<Team[]>({
+  const { data: teams = [], isLoading: teamsLoading } = useQuery<Team[]>({
     queryKey: ["/api/dpr/teams"],
     queryFn: ({ signal }) => apiFetch("/api/dpr/teams", { signal }),
   });
@@ -1239,6 +1466,7 @@ export default function TeamSetupPage() {
             <TabsTrigger value="sign-on" className="text-xs px-4">Sign On</TabsTrigger>
             <TabsTrigger value="roster" className="text-xs px-4">Workers</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs px-4">Schedule</TabsTrigger>
+            <TabsTrigger value="teams" className="text-xs px-4">Teams</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1252,6 +1480,10 @@ export default function TeamSetupPage() {
 
         <TabsContent value="schedule" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
           <ScheduleTab date={date} teams={teams} />
+        </TabsContent>
+
+        <TabsContent value="teams" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
+          <TeamsSetupTab teams={teams} isLoading={teamsLoading} />
         </TabsContent>
       </Tabs>
     </div>

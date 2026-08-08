@@ -1048,7 +1048,11 @@ export const SetDprWorkerTeamsResponse = zod.object({
  */
 export const ListDprTeamsResponseItem = zod.object({
   "id": zod.number(),
-  "name": zod.string()
+  "name": zod.string(),
+  "description": zod.string().nullable(),
+  "shiftStartTime": zod.string().nullable(),
+  "shiftEndTime": zod.string().nullable(),
+  "backTeamId": zod.number().nullable(),
 })
 export const ListDprTeamsResponse = zod.array(ListDprTeamsResponseItem)
 

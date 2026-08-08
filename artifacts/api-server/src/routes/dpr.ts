@@ -163,7 +163,7 @@ function makeTTLCache<T>(ttlMs: number) {
 const TTL = 60_000;
 const refCache = {
   locations:      makeTTLCache<{ id: number; name: string }[]>(TTL),
-  teams:          makeTTLCache<{ id: number; name: string }[]>(TTL),
+  teams:          makeTTLCache<(typeof dprTeamsTable.$inferSelect)[]>(TTL),
   activityTypes:  makeTTLCache<(typeof dprActivityTypesTable.$inferSelect)[]>(TTL),
   activityGroups: makeTTLCache<(typeof dprActivityGroupsTable.$inferSelect)[]>(TTL),
   activities:     makeTTLCache<(typeof dprActivitiesTable.$inferSelect)[]>(TTL),
@@ -254,9 +254,24 @@ router.post("/dpr/teams", async (req, res): Promise<void> => {
 router.patch("/dpr/teams/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
-  const { name } = req.body as { name?: string };
-  if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
-  const [updated] = await db.update(dprTeamsTable).set({ name: name.trim() }).where(eq(dprTeamsTable.id, id)).returning();
+  const body = req.body as {
+    name?: string;
+    description?: string | null;
+    shiftStartTime?: string | null;
+    shiftEndTime?: string | null;
+    backTeamId?: number | null;
+  };
+  const updates: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    if (!body.name?.trim()) { res.status(400).json({ error: "name cannot be empty" }); return; }
+    updates.name = body.name.trim();
+  }
+  if (body.description !== undefined) updates.description = body.description ?? null;
+  if (body.shiftStartTime !== undefined) updates.shiftStartTime = body.shiftStartTime ?? null;
+  if (body.shiftEndTime !== undefined) updates.shiftEndTime = body.shiftEndTime ?? null;
+  if (body.backTeamId !== undefined) updates.backTeamId = body.backTeamId ?? null;
+  if (Object.keys(updates).length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+  const [updated] = await db.update(dprTeamsTable).set(updates).where(eq(dprTeamsTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Team not found" }); return; }
   refCache.teams.invalidate();
   res.json(updated);
