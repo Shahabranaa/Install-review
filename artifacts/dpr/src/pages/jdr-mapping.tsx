@@ -53,7 +53,11 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { PREDEFINED_ROLES, roleColor, roleAbbr } from "@/lib/roles";
+import { PREDEFINED_ROLES, roleColor, roleAbbr, roleLabel, COLOR_PRESETS, colorPresetClasses } from "@/lib/roles";
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface CustomRole { id: number; abbr: string; name: string; color: string | null; }
 
 export default function JdrMappingPage() {
   const { toast } = useToast();
@@ -66,15 +70,37 @@ export default function JdrMappingPage() {
   const { data: locations = [], isLoading: locationsLoading } = useListDprLocations();
   const { data: workers = [] } = useListDprWorkers({ query: { refetchOnMount: "always" } });
 
+  const { data: customRoles = [], refetch: refetchCustomRoles } = useQuery<CustomRole[]>({
+    queryKey: ["dpr-custom-roles"],
+    queryFn: () => fetch(`${API_BASE}/api/dpr/custom-roles`, { credentials: "include" }).then((r) => r.json()),
+  });
+
   const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading || locationsLoading;
 
   const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities">("activities");
   const [workerDialog, setWorkerDialog] = useState<{ editing: DprWorker | null } | null>(null);
+  const [roleDialog, setRoleDialog] = useState<{ abbr: string; name: string; color: string; saving: boolean; error: string | null } | null>(null);
+
   const allKnownRoles = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>([...PREDEFINED_ROLES, ...customRoles.map((r) => r.abbr)]);
     workers.forEach((w) => (w.roles ?? []).forEach((r) => set.add(r)));
     return [...set].sort();
-  }, [workers]);
+  }, [workers, customRoles]);
+
+  const createCustomRole = useMutation({
+    mutationFn: ({ abbr, name, color }: { abbr: string; name: string; color: string }) =>
+      fetch(`${API_BASE}/api/dpr/custom-roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ abbr, name, color }), credentials: "include" })
+        .then(async (r) => { if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed"); } return r.json(); }),
+    onSuccess: () => { refetchCustomRoles(); setRoleDialog(null); toast({ title: "Role added" }); },
+    onError: (e) => setRoleDialog((d) => d ? { ...d, saving: false, error: e.message } : d),
+  });
+
+  const deleteCustomRole = useMutation({
+    mutationFn: (abbr: string) =>
+      fetch(`${API_BASE}/api/dpr/custom-roles/${encodeURIComponent(abbr)}`, { method: "DELETE", credentials: "include" }),
+    onSuccess: () => { refetchCustomRoles(); toast({ title: "Role removed" }); },
+    onError: (e) => toast({ title: "Failed to remove role", description: e.message, variant: "destructive" }),
+  });
 
   // ── Worker mutations ────────────────────────────────────────────────────────
   const createWorker = useCreateDprWorker({
@@ -612,21 +638,86 @@ export default function JdrMappingPage() {
 
               {/* ── Roles ── */}
               {activeTab === "roles" && (
-                <div className="max-w-4xl">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Tag className="w-4 h-4 text-muted-foreground" />
-                    <h2 className="text-[13px] font-semibold text-foreground">Roles</h2>
-                    <span className="text-[11px] text-muted-foreground/50 font-mono">({PREDEFINED_ROLES.length})</span>
+                <div className="max-w-2xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-muted-foreground" />
+                      <h2 className="text-[13px] font-semibold text-foreground">Roles</h2>
+                      <span className="text-[11px] text-muted-foreground/50 font-mono">({PREDEFINED_ROLES.length + customRoles.length})</span>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setRoleDialog({ abbr: "", name: "", color: COLOR_PRESETS[0].key, saving: false, error: null })} className="h-7 text-[11px] gap-1">
+                      <Plus className="w-3 h-3" /> Add role
+                    </Button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {PREDEFINED_ROLES.map((abbr) => (
-                      <span
-                        key={abbr}
-                        className={cn("inline-flex items-center px-3 py-1 rounded-lg border text-[12px] font-bold tracking-wide", roleColor(abbr))}
-                      >
-                        {abbr}
-                      </span>
-                    ))}
+                  <div className="rounded-xl border border-border/70 bg-card overflow-hidden shadow-sm">
+                    <table className="w-full text-[12px] border-collapse">
+                      <thead className="bg-muted/30">
+                        <tr className="border-b border-border/40">
+                          <th className="text-left px-4 py-2 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider w-20">Abbr</th>
+                          <th className="text-left px-4 py-2 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">Role Name</th>
+                          <th className="w-10" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* ── Built-in section ── */}
+                        <tr className="bg-muted/20">
+                          <td colSpan={3} className="px-4 py-1.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Built-in · {PREDEFINED_ROLES.length}</span>
+                          </td>
+                        </tr>
+                        {PREDEFINED_ROLES.map((abbr) => (
+                          <tr key={abbr} className="border-t border-border/20 hover:bg-muted/10 transition-colors">
+                            <td className="px-4 py-2">
+                              <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold tracking-wide", roleColor(abbr))}>
+                                {abbr}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-foreground/80">{roleLabel(abbr)}</td>
+                            <td />
+                          </tr>
+                        ))}
+                        {/* ── Custom section ── */}
+                        <tr className="bg-muted/20">
+                          <td colSpan={3} className="px-4 py-1.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Custom · {customRoles.length}</span>
+                          </td>
+                        </tr>
+                        {customRoles.length === 0 && (
+                          <tr className="border-t border-border/20">
+                            <td colSpan={3} className="px-4 py-3 text-[12px] text-muted-foreground/50 italic">No custom roles yet — click Add role to create one.</td>
+                          </tr>
+                        )}
+                        {customRoles.map((role) => (
+                          <tr key={role.abbr} className="border-t border-border/20 hover:bg-muted/10 transition-colors">
+                            <td className="px-4 py-2">
+                              <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold tracking-wide", colorPresetClasses(role.color))}>
+                                {role.abbr}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-foreground/80">{role.name}</td>
+                            <td className="px-2 py-1.5 text-right">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remove "{role.abbr}"?</AlertDialogTitle>
+                                    <AlertDialogDescription>This removes the <strong>{role.name}</strong> role definition. Workers who already have this role assigned will not be affected.</AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => deleteCustomRole.mutate(role.abbr)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remove</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -691,7 +782,7 @@ export default function JdrMappingPage() {
                                       </td>
                                       <td className="px-4 py-2">
                                         {(w.roles ?? []).length
-                                          ? <div className="flex flex-wrap gap-1">{(w.roles ?? []).map((r) => { const a = roleAbbr(r); return <span key={r} className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold tracking-wide", roleColor(a))}>{a}</span>; })}</div>
+                                          ? <div className="flex flex-wrap gap-1">{(w.roles ?? []).map((r) => { const a = roleAbbr(r); return <span key={r} className={cn("inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 rounded border text-[10px]", roleColor(a))}><span className="font-bold tracking-wide">{a}</span><span className="opacity-60">{roleLabel(a)}</span></span>; })}</div>
                                           : <span className="text-muted-foreground/40 italic text-[11px]">—</span>
                                         }
                                       </td>
@@ -896,6 +987,95 @@ export default function JdrMappingPage() {
       )}
 
       {/* ── Dialogs ──────────────────────────────────────────────────── */}
+      {roleDialog && (
+        <Dialog open onOpenChange={(o) => !o && setRoleDialog(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>Add Role</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              {/* Live chip preview */}
+              <div className="flex items-center justify-center py-3 rounded-lg bg-muted/30 border border-border/40">
+                <span className={cn(
+                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[13px] transition-all",
+                  colorPresetClasses(roleDialog.color)
+                )}>
+                  <span className="font-bold tracking-wide">{roleDialog.abbr || "—"}</span>
+                  <span className="opacity-60">{roleDialog.name || "Role name"}</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Abbreviation</Label>
+                  <Input
+                    value={roleDialog.abbr}
+                    onChange={(e) => setRoleDialog((d) => d ? { ...d, abbr: e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 5), error: null } : d)}
+                    placeholder="ENG"
+                    autoFocus
+                    className="font-mono text-center tracking-widest uppercase font-bold"
+                    maxLength={5}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Full Name</Label>
+                  <Input
+                    value={roleDialog.name}
+                    onChange={(e) => setRoleDialog((d) => d ? { ...d, name: e.target.value, error: null } : d)}
+                    placeholder="Engineer"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && roleDialog.abbr.trim() && roleDialog.name.trim() && !roleDialog.saving) {
+                        setRoleDialog((d) => d ? { ...d, saving: true } : d);
+                        createCustomRole.mutate({ abbr: roleDialog.abbr.trim(), name: roleDialog.name.trim(), color: roleDialog.color });
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Color swatches */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Colour</Label>
+                <div className="flex flex-wrap gap-2">
+                  {COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      title={preset.key}
+                      onClick={() => setRoleDialog((d) => d ? { ...d, color: preset.key } : d)}
+                      className={cn(
+                        "w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center",
+                        roleDialog.color === preset.key
+                          ? "border-foreground scale-110 shadow-md"
+                          : "border-transparent hover:border-foreground/40 hover:scale-105"
+                      )}
+                      style={{ backgroundColor: preset.swatch }}
+                    >
+                      {roleDialog.color === preset.key && (
+                        <Check className="w-3 h-3 text-white drop-shadow" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {roleDialog.error && <p className="text-[12px] text-destructive">{roleDialog.error}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={() => setRoleDialog(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={!roleDialog.abbr.trim() || !roleDialog.name.trim() || roleDialog.saving}
+                onClick={() => {
+                  setRoleDialog((d) => d ? { ...d, saving: true } : d);
+                  createCustomRole.mutate({ abbr: roleDialog.abbr.trim(), name: roleDialog.name.trim(), color: roleDialog.color });
+                }}
+              >
+                {roleDialog.saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+                Add role
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       {workerDialog && (
         <WorkerDialog
           editing={workerDialog.editing}
@@ -1528,7 +1708,7 @@ function WorkerDialog({ editing, knownRoles, onClose, onSave, saving }: {
                   return (
                     <span key={r} className={cn("inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded border text-[11px] font-medium", roleColor(a))}>
                       <span className="font-bold text-[10px]">{a}</span>
-                      <span className="opacity-70">{r}</span>
+                      <span className="opacity-70">{roleLabel(a)}</span>
                       <button type="button" onClick={() => removeRole(r)} className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity">
                         <X className="w-3 h-3" />
                       </button>

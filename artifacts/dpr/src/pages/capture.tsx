@@ -718,6 +718,7 @@ export default function CapturePage() {
   const [pasteDateFormat, setPasteDateFormat] = useState<DateFormat>("mdy");
   const [pendingRows, setPendingRows] = useState<PendingRow[] | null>(null);
   const [isSavingBulk, setIsSavingBulk] = useState(false);
+  const [highlightEntryId, setHighlightEntryId] = useState<number | null>(null);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Date / team filter — sourced from shared sidebar context so the sidebar date
@@ -726,6 +727,23 @@ export default function CapturePage() {
 
   // Auto-select first visible team when teams load (date defaults to today via context)
   const defaultsApplied = useRef(false);
+
+  // On mount: read URL params so the activity log can link directly to a date/entry
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get("date");
+    const highlightParam = params.get("highlight");
+    if (dateParam) {
+      setActiveDate(dateParam);
+      defaultsApplied.current = true; // prevent auto-team-select so all teams remain visible
+      setActiveTeamId(null);
+    }
+    if (highlightParam) {
+      const id = parseInt(highlightParam, 10);
+      if (!isNaN(id)) setHighlightEntryId(id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (defaultsApplied.current) return;
     if (visibleTeams.length === 0) return;
@@ -735,6 +753,16 @@ export default function CapturePage() {
 
   // Clear selection whenever filters change so the bulk toolbar stays accurate
   useEffect(() => { setSelectedIds(new Set()); }, [activeDate, activeTeamId]);
+
+  // Scroll to and highlight an entry linked from the activity log
+  useEffect(() => {
+    if (!highlightEntryId || loadingEntries) return;
+    const el = document.getElementById(`entry-${highlightEntryId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = setTimeout(() => setHighlightEntryId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightEntryId, loadingEntries]);
 
   const handleTeamClick = (id: number) =>
     setActiveTeamId(activeTeamId === id ? null : id);
@@ -1405,10 +1433,12 @@ export default function CapturePage() {
                   return (
                     <TableRow
                       key={entry.id}
+                      id={`entry-${entry.id}`}
                       className={cn(
                         "transition-colors",
                         isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/20",
-                        selectMode ? "cursor-pointer" : ""
+                        selectMode ? "cursor-pointer" : "",
+                        highlightEntryId === entry.id ? "ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : ""
                       )}
                       onClick={selectMode ? () => toggleSelectRow(entry.id) : undefined}
                       style={{ minHeight: 52 }}
@@ -1709,7 +1739,7 @@ export default function CapturePage() {
                       </TableCell>
                     </TableRow>
                     {filteredLockedEntries.map((entry, idx) => (
-                      <TableRow key={`locked-${entry.id}`} className="opacity-50 bg-muted/5">
+                      <TableRow key={`locked-${entry.id}`} id={`entry-${entry.id}`} className={cn("opacity-50 bg-muted/5", highlightEntryId === entry.id ? "!opacity-100 ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : "")}>
                         {selectMode && <TableCell className="w-[36px]" />}
                         <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{filteredEntries.length + idx + 1}</TableCell>
                         {showDateCol && (

@@ -52,3 +52,4 @@ export * from "./dpr-activity-logs";
 export * from "./dpr-roster-visible-teams";
 export * from "./dpr-worker-shift-status";
 export * from "./dpr-shift-session";
+export * from "./dpr-custom-roles";

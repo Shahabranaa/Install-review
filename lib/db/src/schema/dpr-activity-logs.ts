@@ -13,6 +13,8 @@ export const dprActivityLogsTable = pgTable("dpr_activity_logs", {
   detail: text("detail").notNull(),
   /** Optional reference to the affected timesheet entry */
   entryId: integer("entry_id"),
+  /** Date of the affected timesheet entry (YYYY-MM-DD) */
+  entryDate: text("entry_date"),
   /** Optional reference to the affected team */
   teamId: integer("team_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

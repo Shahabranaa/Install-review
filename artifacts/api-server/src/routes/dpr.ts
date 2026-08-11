@@ -18,7 +18,9 @@ import {
   dprWorkerShiftStatusTable,
   dprShiftSessionTable,
   dprActivityLogsTable,
+  dprCustomRolesTable,
 } from "@workspace/db";
+import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
   ListDprActivityGroupsResponse,
@@ -120,6 +122,7 @@ async function logAction(req: Request, opts: {
   page: string;
   detail: string;
   entryId?: number | null;
+  entryDate?: string | null;
   teamId?: number | null;
 }) {
   try {
@@ -129,6 +132,7 @@ async function logAction(req: Request, opts: {
       page: opts.page,
       detail: opts.detail,
       entryId: opts.entryId ?? null,
+      entryDate: opts.entryDate ?? null,
       teamId: opts.teamId ?? null,
     });
   } catch {
@@ -640,6 +644,7 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
     page: "capture",
     detail: `Created entry #${entry.id} for team ${entry.teamId ?? "?"} on ${String(entry.date).substring(0, 10)}`,
     entryId: entry.id,
+    entryDate: String(entry.date).substring(0, 10),
     teamId: entry.teamId,
   });
   res.status(201).json(GetDprTimesheetEntryResponse.parse(serialize(withJoins)));
@@ -800,6 +805,7 @@ router.post("/dpr/timesheet-entries/lock", async (req, res): Promise<void> => {
     action: "entries_locked",
     page: "capture",
     detail: `Locked ${updated.length} entr${updated.length === 1 ? "y" : "ies"} for team ${teamId} on ${date} (sent to Clarify queue)`,
+    entryDate: date,
     teamId,
   });
 
@@ -908,14 +914,32 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     action = "entry_clarified"; page = "clarify";
     detail = `Clarified entry #${entry.id} (team ${entry.teamId ?? "?"})`;
   } else if (d.activityId != null || d.activityGroupId != null) {
-    detail = `Set activity on entry #${entry.id}`;
+    let activityName: string | null = null;
+    if (entry.activityId != null) {
+      let acts = refCache.activities.get();
+      if (!acts) {
+        acts = await db.select().from(dprActivitiesTable).orderBy(dprActivitiesTable.name);
+        refCache.activities.set(acts);
+      }
+      activityName = acts.find((a) => a.id === entry.activityId)?.name ?? null;
+    } else if (entry.activityGroupId != null) {
+      let groups = refCache.activityGroups.get();
+      if (!groups) {
+        groups = await db.select().from(dprActivityGroupsTable).orderBy(dprActivityGroupsTable.name);
+        refCache.activityGroups.set(groups);
+      }
+      activityName = groups.find((g) => g.id === entry.activityGroupId)?.name ?? null;
+    }
+    detail = activityName
+      ? `Set activity "${activityName}" on entry #${entry.id}`
+      : `Set activity on entry #${entry.id}`;
   } else if (d.genericComment != null || d.jdrCodeId != null) {
     action = "entry_jdr_set"; page = "clarify";
     detail = `Set JDR/generic comment on entry #${entry.id}`;
   } else if (d.startTime != null || d.endTime != null || d.breakMinutes != null) {
     detail = `Updated times on entry #${entry.id}`;
   }
-  void logAction(req, { action, page, detail, entryId: entry.id, teamId: entry.teamId });
+  void logAction(req, { action, page, detail, entryId: entry.id, entryDate: String(entry.date).substring(0, 10), teamId: entry.teamId });
   const withJoins = await withRelations(entry);
   res.json(UpdateDprTimesheetEntryResponse.parse(serialize(withJoins)));
 });
@@ -939,6 +963,7 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     page: "capture",
     detail: `Deleted entry #${entry.id} (team ${entry.teamId ?? "?"} · ${String(entry.date).substring(0, 10)})`,
     entryId: entry.id,
+    entryDate: String(entry.date).substring(0, 10),
     teamId: entry.teamId,
   });
   res.sendStatus(204);
@@ -1453,9 +1478,41 @@ router.get("/dpr/activity-logs", async (req, res): Promise<void> => {
     page: l.page,
     detail: l.detail,
     entryId: l.entryId,
+    entryDate: l.entryDate ?? null,
     teamId: l.teamId,
     createdAt: l.createdAt,
   })));
+});
+
+// ── Custom Roles ──────────────────────────────────────────────────────────────
+
+const CreateCustomRoleBody = z.object({
+  abbr: z.string().min(1).max(5).transform((s) => s.toUpperCase()),
+  name: z.string().min(1).max(80),
+  color: z.string().optional().nullable(),
+});
+
+router.get("/dpr/custom-roles", async (_req, res): Promise<void> => {
+  const rows = await db.select().from(dprCustomRolesTable).orderBy(dprCustomRolesTable.abbr);
+  res.json(rows.map((r) => ({ id: r.id, abbr: r.abbr, name: r.name, color: r.color ?? null })));
+});
+
+router.post("/dpr/custom-roles", async (req, res): Promise<void> => {
+  const body = CreateCustomRoleBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  try {
+    const [row] = await db.insert(dprCustomRolesTable).values({ abbr: body.data.abbr, name: body.data.name, color: body.data.color ?? null }).returning();
+    res.status(201).json({ id: row.id, abbr: row.abbr, name: row.name, color: row.color ?? null });
+  } catch (err: any) {
+    if (err?.code === "23505") { res.status(409).json({ error: `Abbreviation "${body.data.abbr}" already exists` }); return; }
+    throw err;
+  }
+});
+
+router.delete("/dpr/custom-roles/:abbr", async (req, res): Promise<void> => {
+  const abbr = req.params.abbr.toUpperCase();
+  await db.delete(dprCustomRolesTable).where(eq(dprCustomRolesTable.abbr, abbr));
+  res.status(204).end();
 });
 
 export default router;

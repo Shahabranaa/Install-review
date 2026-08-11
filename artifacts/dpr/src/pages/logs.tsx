@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,31 @@ interface ActivityLog {
   page: string;
   detail: string;
   entryId: number | null;
+  entryDate: string | null;
   teamId: number | null;
   createdAt: string;
+}
+
+function DetailWithLink({ log, navigate }: { log: ActivityLog; navigate: (to: string) => void }) {
+  if (!log.entryId || !log.entryDate) return <>{log.detail}</>;
+  const parts = log.detail.split(/(entry #\d+)/);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^entry #\d+$/.test(part) ? (
+          <button
+            key={i}
+            className="text-primary underline-offset-2 underline hover:no-underline font-medium"
+            onClick={() => navigate(`/?date=${log.entryDate}&highlight=${log.entryId}`)}
+          >
+            {part}
+          </button>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
 }
 
 async function fetchLogs(): Promise<ActivityLog[]> {
@@ -56,6 +80,7 @@ function ActionChip({ action }: { action: string }) {
 }
 
 export default function LogsPage() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [pageFilter, setPageFilter] = useState<string>("all");
 
@@ -185,7 +210,7 @@ export default function LogsPage() {
                         {PAGE_LABEL[log.page] ?? log.page}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground">{log.detail}</p>
+                    <p className="text-sm text-muted-foreground"><DetailWithLink log={log} navigate={navigate} /></p>
                   </div>
 
                   {/* Timestamp */}

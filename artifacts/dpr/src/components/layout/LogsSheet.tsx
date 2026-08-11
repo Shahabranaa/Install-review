@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +22,31 @@ interface ActivityLog {
   page: string;
   detail: string;
   entryId: number | null;
+  entryDate: string | null;
   teamId: number | null;
   createdAt: string;
+}
+
+function DetailWithLink({ log, navigate }: { log: ActivityLog; navigate: (to: string) => void }) {
+  if (!log.entryId || !log.entryDate) return <>{log.detail}</>;
+  const parts = log.detail.split(/(entry #\d+)/);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^entry #\d+$/.test(part) ? (
+          <button
+            key={i}
+            className="text-primary underline-offset-2 underline hover:no-underline font-medium"
+            onClick={() => navigate(`/?date=${log.entryDate}&highlight=${log.entryId}`)}
+          >
+            {part}
+          </button>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
 }
 
 async function fetchLogs(): Promise<ActivityLog[]> {
@@ -58,6 +82,7 @@ function ActionChip({ action }: { action: string }) {
 }
 
 export function LogsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [pageFilter, setPageFilter] = useState<string>("all");
 
@@ -185,7 +210,7 @@ export function LogsSheet({ open, onClose }: { open: boolean; onClose: () => voi
                           {PAGE_LABEL[log.page] ?? log.page}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground leading-snug">{log.detail}</p>
+                      <p className="text-xs text-muted-foreground leading-snug"><DetailWithLink log={log} navigate={navigate} /></p>
                       <p className="text-[10px] text-muted-foreground/50">
                         {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
                         {" · "}

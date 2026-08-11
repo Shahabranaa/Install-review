@@ -1,10 +1,10 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Copy, Plus, Loader2, CheckCircle2, Save, RotateCcw } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, Save, RotateCcw } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,6 @@ const STATUS_LABELS: Record<ShiftStatus, string> = {
   signing_off: "Signing Off",
 };
 
-// Colours for each target-state button
 const STATUS_BTN: Record<ShiftStatus, string> = {
   off_shift:   "text-muted-foreground border-border hover:bg-muted/60",
   signing_on:  "text-emerald-700 border-emerald-200 hover:bg-emerald-50",
@@ -155,7 +154,7 @@ function WorkerCard({ worker, onMutate }: WorkerCardProps) {
         <div className="pl-11 text-[10px] text-muted-foreground">Signing off {worker.signOffTime}</div>
       )}
 
-      {/* Move-to buttons — all other states */}
+      {/* Move-to buttons */}
       <div className="pl-11 flex flex-wrap gap-1">
         {otherStatuses.map((target) => (
           <button
@@ -284,56 +283,89 @@ function AddWorkerTypeahead({
   );
 }
 
-// ─── Column ───────────────────────────────────────────────────────────────────
+// ─── Sub-section divider ──────────────────────────────────────────────────────
 
-const COLUMN_CONFIG: Record<ShiftStatus, { title: string; subtitle: string; accentClass: string }> = {
-  off_shift:   { title: "Off Shift",   subtitle: "Not working today",  accentClass: "border-border" },
-  signing_on:  { title: "Signing On",  subtitle: "Arriving today",     accentClass: "border-emerald-300" },
-  on_shift:    { title: "On Shift",    subtitle: "Currently on site",  accentClass: "border-blue-300" },
-  signing_off: { title: "Signing Off", subtitle: "Leaving today",      accentClass: "border-orange-300" },
-};
+function SubSectionHeader({ label, count, accentClass }: { label: string; count: number; accentClass: string }) {
+  return (
+    <div className={cn("flex items-center gap-2 px-1 py-1 mb-1")}>
+      <span className={cn("text-[10px] font-semibold uppercase tracking-widest", accentClass)}>{label}</span>
+      <span className="text-[10px] text-muted-foreground/60 tabular-nums">({count})</span>
+      <div className="flex-1 border-t border-dashed border-border/50" />
+    </div>
+  );
+}
 
-function AttendanceColumn({
-  status,
-  workers,
-  offShiftWorkers,
-  date,
-  queryKey,
-  onMutate,
-}: {
-  status: ShiftStatus;
-  workers: ShiftWorker[];
+// ─── Shift panel (replaces 4 columns with 2) ──────────────────────────────────
+
+interface ShiftPanelProps {
+  panel: "on_shift" | "off_shift";
+  /** Workers in the transition sub-section (signing_on | signing_off) */
+  transitioning: ShiftWorker[];
+  /** Workers in the steady state (on_shift | off_shift) */
+  steady: ShiftWorker[];
   offShiftWorkers: ShiftWorker[];
   date: string;
   queryKey: unknown[];
   onMutate: (workerId: number, status: ShiftStatus) => void;
-}) {
-  const cfg = COLUMN_CONFIG[status];
+}
+
+function ShiftPanel({ panel, transitioning, steady, offShiftWorkers, date, queryKey, onMutate }: ShiftPanelProps) {
+  const isOnShift = panel === "on_shift";
+
+  const panelTitle      = isOnShift ? "On Shift"  : "Off Shift";
+  const panelSubtitle   = isOnShift ? "Currently on site" : "Not working today";
+  const panelAccent     = isOnShift ? "border-blue-300"   : "border-border";
+  const transitionLabel = isOnShift ? "Signing on"  : "Signing off";
+  const transitionAccent = isOnShift ? "text-emerald-600" : "text-orange-600";
+  const transitionStatus: "signing_on" | "signing_off" = isOnShift ? "signing_on" : "signing_off";
+  const total = transitioning.length + steady.length;
 
   return (
     <div className="flex flex-col flex-1 min-w-0 border-r last:border-r-0 border-border">
-      {/* Column header */}
-      <div className={cn("px-3 py-2.5 border-b-2", cfg.accentClass)}>
+      {/* Panel header */}
+      <div className={cn("px-3 py-2.5 border-b-2", panelAccent)}>
         <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-semibold text-foreground">{cfg.title}</span>
-          <span className="text-xs text-muted-foreground tabular-nums">({workers.length})</span>
+          <span className="text-sm font-semibold text-foreground">{panelTitle}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">({total})</span>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5">{cfg.subtitle}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{panelSubtitle}</p>
       </div>
 
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        {workers.map((w) => (
+        {/* Transition sub-section — at the top */}
+        {transitioning.length > 0 && (
+          <>
+            <SubSectionHeader label={transitionLabel} count={transitioning.length} accentClass={transitionAccent} />
+            {transitioning.map((w) => (
+              <WorkerCard key={w.id} worker={w} onMutate={onMutate} />
+            ))}
+            {/* typeahead sits right below the transition group */}
+            <div className="pt-0.5 pb-1">
+              <AddWorkerTypeahead
+                offShiftWorkers={offShiftWorkers}
+                targetStatus={transitionStatus}
+                date={date}
+                queryKey={queryKey}
+              />
+            </div>
+            {/* Divider before steady state */}
+            {steady.length > 0 && <div className="border-t border-border/30 my-1" />}
+          </>
+        )}
+
+        {/* Steady-state workers */}
+        {steady.map((w) => (
           <WorkerCard key={w.id} worker={w} onMutate={onMutate} />
         ))}
       </div>
 
-      {/* Add typeahead at bottom of signing_on and signing_off columns */}
-      {(status === "signing_on" || status === "signing_off") && (
+      {/* Add typeahead at bottom when no transition workers yet */}
+      {transitioning.length === 0 && (
         <div className="p-2 border-t border-border">
           <AddWorkerTypeahead
             offShiftWorkers={offShiftWorkers}
-            targetStatus={status}
+            targetStatus={transitionStatus}
             date={date}
             queryKey={queryKey}
           />
@@ -370,7 +402,6 @@ export default function SignOnPage() {
         }),
       }),
     onMutate: async ({ workerId, status }) => {
-      // Cancel any in-flight refetch so it doesn't overwrite our optimistic update
       await qc.cancelQueries({ queryKey });
       const prev = qc.getQueryData<ShiftWorker[]>(queryKey);
       qc.setQueryData<ShiftWorker[]>(queryKey, (old = []) =>
@@ -379,7 +410,7 @@ export default function SignOnPage() {
             ? {
                 ...w,
                 shiftStatus: status,
-                signOnTime: status === "signing_on" ? nowHHMM() : status === "on_shift" ? w.signOnTime : w.signOnTime,
+                signOnTime: status === "signing_on" ? nowHHMM() : w.signOnTime,
                 signOffTime: status === "signing_off" ? nowHHMM() : w.signOffTime,
               }
             : w
@@ -388,11 +419,9 @@ export default function SignOnPage() {
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
-      // Roll back on failure
       if (ctx?.prev) qc.setQueryData(queryKey, ctx.prev);
     },
     onSettled: () => {
-      // Sync with server once the mutation resolves (success or error)
       qc.invalidateQueries({ queryKey });
     },
   });
@@ -408,15 +437,40 @@ export default function SignOnPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
+  // ── Auto-copy from yesterday on first load of a fresh day ─────────────────
+  // A "fresh day" = every worker is still off_shift (no DB rows written yet)
+  // AND the session hasn't been explicitly saved. We track per-date so a manual
+  // reset doesn't trigger another auto-copy on the same render cycle.
+  const autoCopiedDate = useRef<string | null>(null);
+  const copyMutateRef = useRef(copyMutation.mutate);
+  copyMutateRef.current = copyMutation.mutate;
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (session === undefined) return;              // session query still loading
+    if (autoCopiedDate.current === date) return;    // already attempted for this date
+    if (session.saved) return;                      // day deliberately saved, leave it alone
+    if (workers.length === 0) return;               // no workers configured
+    if (workers.some((w) => w.shiftStatus !== "off_shift")) return; // already has activity
+
+    autoCopiedDate.current = date;
+    copyMutateRef.current();
+  }, [isLoading, session, workers, date]);
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
   const [confirmReset, setConfirmReset] = useState(false);
   const resetMutation = useMutation({
     mutationFn: () => apiFetch(`/api/dpr/shift-attendance?date=${date}`, { method: "DELETE" }),
     onSuccess: () => {
       setConfirmReset(false);
+      // Mark that we've already "auto-copied" for this date so the effect
+      // doesn't re-fire immediately after the reset empties everyone.
+      autoCopiedDate.current = date;
       qc.invalidateQueries({ queryKey });
     },
   });
 
+  // ── Save ──────────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: () => apiFetch("/api/dpr/shift-attendance/save", { method: "POST", ...jsonBody({ date }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: sessionKey }),
@@ -426,7 +480,7 @@ export default function SignOnPage() {
     updateMutation.mutate({ workerId, status });
   }
 
-  // Group workers by status
+  // ── Group workers ─────────────────────────────────────────────────────────
   const byStatus: Record<ShiftStatus, ShiftWorker[]> = {
     off_shift: [],
     signing_on: [],
@@ -438,7 +492,6 @@ export default function SignOnPage() {
   }
 
   const totalOnSite = byStatus.signing_on.length + byStatus.on_shift.length + byStatus.signing_off.length;
-  const COLUMNS: ShiftStatus[] = ["off_shift", "signing_on", "on_shift", "signing_off"];
 
   if (isLoading) {
     return (
@@ -452,23 +505,12 @@ export default function SignOnPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Stats bar */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/20 flex-wrap">
-        <StatChip label="Off Shift" count={byStatus.off_shift.length} />
-        <StatChip label="Signing On" count={byStatus.signing_on.length} />
-        <StatChip label="On Shift" count={byStatus.on_shift.length} />
-        <StatChip label="Signing Off" count={byStatus.signing_off.length} />
+        <StatChip label="On Shift" count={byStatus.on_shift.length + byStatus.signing_on.length} />
+        <StatChip label="Off Shift" count={byStatus.off_shift.length + byStatus.signing_off.length} />
         <span className="mx-1 text-border">|</span>
         <StatChip label="Total on site" count={totalOnSite} highlight />
+
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1.5"
-            onClick={() => copyMutation.mutate()}
-            disabled={copyMutation.isPending}
-          >
-            {copyMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Copy className="w-3 h-3" />}
-            Copy from previous day
-          </Button>
           {confirmReset ? (
             <div className="flex items-center gap-1">
               <span className="text-xs text-destructive font-medium">Move all to Off Shift?</span>
@@ -515,19 +557,26 @@ export default function SignOnPage() {
         </div>
       </div>
 
-      {/* 4-column board */}
+      {/* 2-panel board: On Shift | Off Shift */}
       <div className="flex-1 flex overflow-hidden">
-        {COLUMNS.map((status) => (
-          <AttendanceColumn
-            key={status}
-            status={status}
-            workers={byStatus[status]}
-            offShiftWorkers={byStatus.off_shift}
-            date={date}
-            queryKey={queryKey}
-            onMutate={handleMutate}
-          />
-        ))}
+        <ShiftPanel
+          panel="on_shift"
+          transitioning={byStatus.signing_on}
+          steady={byStatus.on_shift}
+          offShiftWorkers={byStatus.off_shift}
+          date={date}
+          queryKey={queryKey}
+          onMutate={handleMutate}
+        />
+        <ShiftPanel
+          panel="off_shift"
+          transitioning={byStatus.signing_off}
+          steady={byStatus.off_shift}
+          offShiftWorkers={byStatus.off_shift}
+          date={date}
+          queryKey={queryKey}
+          onMutate={handleMutate}
+        />
       </div>
     </div>
   );
