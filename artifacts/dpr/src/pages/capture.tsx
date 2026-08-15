@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -433,6 +433,187 @@ const COL = {
   actions: "text-right",
 };
 
+// ─── WhatsApp Capture Panel ───────────────────────────────────────────────────
+
+interface WhatsAppRow {
+  date: string; team: string; start: string; end: string;
+  location: string; notes: string; rowHash: string; imported: boolean;
+}
+
+function WhatsAppCapturePanel({ teams, locations }: { teams: DprTeam[]; locations: DprLocation[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
+  const [lastFetched, setLastFetched] = useState<Date | null>(null);
+
+  const { data: rows = [], isFetching, refetch, error } = useQuery<WhatsAppRow[]>({
+    queryKey: ["/api/dpr/whatsapp-rows"],
+    queryFn: () =>
+      fetch("/api/dpr/whatsapp-rows", { credentials: "include" }).then(async (r) => {
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed to fetch"); }
+        return r.json();
+      }),
+    staleTime: Infinity,  // never auto-refresh — fetch is manual only
+    enabled: false,
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (toImport: WhatsAppRow[]) =>
+      fetch("/api/dpr/whatsapp-rows/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rows: toImport }),
+      }).then(async (r) => { if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed"); } return r.json(); }),
+    onSuccess: (data) => {
+      toast({ title: `${data.imported} row${data.imported !== 1 ? "s" : ""} imported`, description: "Switch to the Timesheet tab to see the new draft entries." });
+      setSelectedHashes(new Set());
+      refetch();
+      queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey({}) });
+    },
+    onError: (e: Error) => toast({ title: "Import failed", description: e.message, variant: "destructive" }),
+  });
+
+  const unimported = rows.filter((r) => !r.imported);
+  const allSelected = unimported.length > 0 && unimported.every((r) => selectedHashes.has(r.rowHash));
+  const someSelected = selectedHashes.size > 0;
+
+  function toggleRow(hash: string) {
+    setSelectedHashes((prev) => { const next = new Set(prev); next.has(hash) ? next.delete(hash) : next.add(hash); return next; });
+  }
+  function toggleAll() {
+    setSelectedHashes(allSelected ? new Set() : new Set(unimported.map((r) => r.rowHash)));
+  }
+  async function handleRefresh() {
+    await refetch();
+    setLastFetched(new Date());
+  }
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {/* Action bar */}
+      <div className="shrink-0 px-4 sm:px-6 py-2.5 border-b border-border bg-muted/20 flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-medium">WhatsApp Bot Submissions</span>
+          {rows.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {unimported.length} unimported · {rows.length - unimported.length} done
+            </span>
+          )}
+        </div>
+        {lastFetched && (
+          <span className="text-[11px] text-muted-foreground/60 hidden sm:inline">
+            Last fetched {lastFetched.toLocaleTimeString()}
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {someSelected && (
+            <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => importMutation.mutate(rows.filter((r) => selectedHashes.has(r.rowHash)))} disabled={importMutation.isPending}>
+              {importMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Import {selectedHashes.size} to Capture
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleRefresh} disabled={isFetching}>
+            {isFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            {rows.length === 0 && !isFetching ? "Load rows" : "Refresh"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Table / states */}
+      <div className="flex-1 overflow-auto">
+        {error ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground p-8 text-center">
+            <AlertTriangle className="w-8 h-8 text-destructive/60" />
+            <p className="text-sm font-medium">{(error as Error).message}</p>
+            <p className="text-xs text-muted-foreground/60">
+              Make sure <code className="bg-muted rounded px-1">GOOGLE_SERVICE_ACCOUNT_JSON</code> is configured and the sheet is shared with the service account.
+            </p>
+            <Button variant="outline" size="sm" onClick={handleRefresh}>Try again</Button>
+          </div>
+        ) : isFetching ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground p-8 text-center">
+            <MessageSquare className="w-10 h-10 opacity-20" />
+            <p className="text-sm">Click <strong>Load rows</strong> to fetch the latest bot submissions from Google Sheets.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-background border-b border-border">
+              <TableRow>
+                <TableHead className="w-10">
+                  <button type="button" onClick={toggleAll} className="flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+                    {allSelected ? <CheckCheck className="w-4 h-4 text-primary" /> : someSelected ? <Minus className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
+                  </button>
+                </TableHead>
+                <TableHead className="whitespace-nowrap">Date</TableHead>
+                <TableHead>Team</TableHead>
+                <TableHead className="whitespace-nowrap">Start</TableHead>
+                <TableHead className="whitespace-nowrap">End</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead className="text-right w-24">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const selected = selectedHashes.has(row.rowHash);
+                const teamMatched = teams.some((t) => t.name.trim().toLowerCase() === row.team.trim().toLowerCase());
+                const locationMatched = locations.some((l) => l.name.trim().toLowerCase() === row.location.trim().toLowerCase());
+                return (
+                  <TableRow
+                    key={row.rowHash}
+                    className={cn("transition-colors", !row.imported && "cursor-pointer", selected && "bg-primary/5", row.imported && "opacity-60")}
+                    onClick={() => !row.imported && toggleRow(row.rowHash)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {row.imported
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />
+                        : <Checkbox checked={selected} onCheckedChange={() => toggleRow(row.rowHash)} />
+                      }
+                    </TableCell>
+                    <TableCell className="text-sm font-mono whitespace-nowrap">{row.date}</TableCell>
+                    <TableCell>
+                      <span className={cn("text-sm", row.team && !teamMatched && "text-amber-600 font-medium")}>
+                        {row.team || <span className="text-muted-foreground/40 italic text-xs">—</span>}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">{row.start}</TableCell>
+                    <TableCell className="text-sm font-mono">{row.end}</TableCell>
+                    <TableCell>
+                      <span className={cn("text-sm", row.location && !locationMatched && "text-amber-600 font-medium")}>
+                        {row.location || <span className="text-muted-foreground/40 italic text-xs">—</span>}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[240px] truncate text-muted-foreground">{row.notes}</TableCell>
+                    <TableCell className="text-right">
+                      {row.imported && (
+                        <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-200">Imported</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+
+      {/* Unmatched warning */}
+      {rows.some((r) => !r.imported && r.team && !teams.some((t) => t.name.trim().toLowerCase() === r.team.trim().toLowerCase())) && (
+        <div className="shrink-0 px-4 py-2 border-t border-border bg-amber-500/5 flex items-center gap-2 text-xs text-amber-700">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Amber team/location names don't match any record — they'll be left blank on import for you to fill in.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -660,6 +841,7 @@ export default function CapturePage() {
   const bulkApproveMutation = useUpdateDprTimesheetEntry({ mutation: {} });
 
   // Lock all draft entries for the active team+date → captured
+  const [captureTab, setCaptureTab] = useState<"timesheet" | "whatsapp">("timesheet");
   const [isLocking, setIsLocking] = useState(false);
   const handleLock = async () => {
     if (!activeDate || !activeTeamId || filteredEntries.length === 0) return;
@@ -1140,27 +1322,53 @@ export default function CapturePage() {
             Click any cell to edit it directly, like a spreadsheet.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
-            className={cn("gap-1.5", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
-          >
-            <CheckSquare className="w-4 h-4" />
-            <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setPasteOpen(true)} className="gap-1.5">
-            <ClipboardPaste className="w-4 h-4" />
-            <span className="hidden xs:inline">Paste Rows</span>
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5">
-            <Download className="w-4 h-4" />
-            <span className="hidden xs:inline">Export CSV</span>
-          </Button>
-        </div>
+        {captureTab === "timesheet" && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
+              className={cn("gap-1.5", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
+            >
+              <CheckSquare className="w-4 h-4" />
+              <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPasteOpen(true)} className="gap-1.5">
+              <ClipboardPaste className="w-4 h-4" />
+              <span className="hidden xs:inline">Paste Rows</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5">
+              <Download className="w-4 h-4" />
+              <span className="hidden xs:inline">Export CSV</span>
+            </Button>
+          </div>
+        )}
       </header>
 
+      {/* Tab bar */}
+      <div className="flex items-center border-b border-border bg-background shrink-0 px-4 sm:px-6">
+        {(["timesheet", "whatsapp"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setCaptureTab(tab)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+              captureTab === tab
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab === "whatsapp" && <MessageSquare className="w-3.5 h-3.5" />}
+            {tab === "timesheet" ? "Timesheet" : "WhatsApp"}
+          </button>
+        ))}
+      </div>
+
+      {captureTab === "whatsapp" ? (
+        <WhatsAppCapturePanel teams={teams} locations={locations} />
+      ) : (
+      <>
       {needsTeamSetup && activeDateForVisible && (
         <TeamSetupGate date={activeDateForVisible} />
       )}
@@ -2007,6 +2215,8 @@ export default function CapturePage() {
         </DialogContent>
       </Dialog>
       </div>{/* end needsTeamSetup wrapper */}
+      </>
+      )}
     </div>
   );
 }

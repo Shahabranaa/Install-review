@@ -28,3 +28,5 @@ channel = "stable-25_05"
 [userenv.shared]
 WORKER_PORTAL_URL = "https://workforce.spx.site/worker-portal"
 NEON_DATABASE_URL = "postgresql://neondb_owner:npg_TfVkq6cmhKo2@ep-sparkling-field-abzweqe3-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+GOOGLE_SHEET_GID = "1853640306"
+GOOGLE_SHEET_ID = "1pnCPVUNsWVzee4h6DwZFNebhc-HPwhFeDAhh1nTIdaI"

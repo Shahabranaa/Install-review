@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { eq, and, gte, lte, inArray, sql, isNull, isNotNull, or, desc, type SQL } from "drizzle-orm";
+import { createHash } from "crypto";
 import {
   db,
   dprLocationsTable,
@@ -19,7 +20,9 @@ import {
   dprShiftSessionTable,
   dprActivityLogsTable,
   dprCustomRolesTable,
+  dprWhatsappImportsTable,
 } from "@workspace/db";
+import { fetchSheetRows } from "../googleSheets.js";
 import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
@@ -1513,6 +1516,119 @@ router.delete("/dpr/custom-roles/:abbr", async (req, res): Promise<void> => {
   const abbr = req.params.abbr.toUpperCase();
   await db.delete(dprCustomRolesTable).where(eq(dprCustomRolesTable.abbr, abbr));
   res.status(204).end();
+});
+
+// ── WhatsApp Bot Import ───────────────────────────────────────────────────────
+
+/** Normalise DD/MM/YYYY (or DD-MM-YYYY / DD.MM.YYYY) → YYYY-MM-DD. */
+function normaliseSheetDate(raw: string): string {
+  const m = raw.trim().match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  if (m) {
+    const day   = m[1].padStart(2, "0");
+    const month = m[2].padStart(2, "0");
+    const year  = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${year}-${month}-${day}`;
+  }
+  return raw.trim(); // fallback — leave as-is
+}
+
+const ImportWhatsappRowsBody = z.object({
+  rows: z.array(z.object({
+    date:     z.string(),
+    team:     z.string(),
+    start:    z.string(),
+    end:      z.string(),
+    location: z.string(),
+    notes:    z.string(),
+    rowHash:  z.string().length(64),
+  })),
+});
+
+router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
+  const sheetId = process.env.GOOGLE_SHEET_ID;
+  const gid     = process.env.GOOGLE_SHEET_GID;
+  if (!sheetId || !gid) {
+    res.status(503).json({ error: "Google Sheet not configured — set GOOGLE_SHEET_ID and GOOGLE_SHEET_GID." });
+    return;
+  }
+
+  let rawRows: string[][];
+  try {
+    rawRows = await fetchSheetRows(sheetId, gid);
+  } catch (err: any) {
+    const msg: string = err?.message ?? String(err);
+    if (msg.includes("GOOGLE_SERVICE_ACCOUNT_JSON")) {
+      res.status(503).json({ error: "Google service account not configured — provide GOOGLE_SERVICE_ACCOUNT_JSON secret." });
+      return;
+    }
+    throw err;
+  }
+
+  // Skip header row; drop entirely-empty rows
+  const dataRows = rawRows.slice(1).filter((row) => row.some((c) => c !== ""));
+
+  const rowsWithHash = dataRows.map((row) => {
+    const [date = "", team = "", start = "", end = "", location = "", notes = ""] = row;
+    const rowHash = createHash("sha256").update(`${date}|${team}|${start}|${end}`).digest("hex");
+    return { date, team, start, end, location, notes, rowHash };
+  });
+
+  // Look up which rows are already imported
+  const existingImports = await db
+    .select({ rowHash: dprWhatsappImportsTable.rowHash })
+    .from(dprWhatsappImportsTable);
+  const importedHashes = new Set(existingImports.map((r) => r.rowHash));
+
+  res.json(rowsWithHash.map((row) => ({ ...row, imported: importedHashes.has(row.rowHash) })));
+});
+
+router.post("/dpr/whatsapp-rows/import", async (req, res): Promise<void> => {
+  const parsed = ImportWhatsappRowsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const teams     = await db.select().from(dprTeamsTable);
+  const locations = await db.select().from(dprLocationsTable);
+
+  // Existing imports (idempotency check)
+  const existing = new Set(
+    (await db.select({ rowHash: dprWhatsappImportsTable.rowHash }).from(dprWhatsappImportsTable))
+      .map((r) => r.rowHash)
+  );
+
+  let importedCount = 0;
+  const results: { rowHash: string; entryId?: number; skipped?: boolean }[] = [];
+
+  for (const row of parsed.data.rows) {
+    if (existing.has(row.rowHash)) {
+      results.push({ rowHash: row.rowHash, skipped: true });
+      continue;
+    }
+
+    const teamMatch     = teams.find((t) => t.name.trim().toLowerCase() === row.team.trim().toLowerCase());
+    const locationMatch = locations.find((l) => l.name.trim().toLowerCase() === row.location.trim().toLowerCase());
+    const date          = normaliseSheetDate(row.date);
+
+    const [entry] = await db
+      .insert(dprTimesheetEntriesTable)
+      .values({
+        date,
+        teamId:     teamMatch?.id     ?? null,
+        startTime:  row.start || null,
+        endTime:    row.end   || null,
+        locationId: locationMatch?.id ?? null,
+        notes:      row.notes || null,
+        stage:      "draft",
+        jdrCodeIds: [],
+      })
+      .returning();
+
+    await db.insert(dprWhatsappImportsTable).values({ rowHash: row.rowHash, entryId: entry.id });
+    existing.add(row.rowHash);
+    importedCount++;
+    results.push({ rowHash: row.rowHash, entryId: entry.id });
+  }
+
+  res.json({ imported: importedCount, results });
 });
 
 export default router;
