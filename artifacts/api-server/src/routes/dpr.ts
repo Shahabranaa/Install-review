@@ -1577,13 +1577,47 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
     ? rowsWithHash.filter((row) => normaliseSheetDate(row.date) === dateFilter)
     : rowsWithHash;
 
-  // Look up which rows are already imported
-  const existingImports = await db
-    .select({ rowHash: dprWhatsappImportsTable.rowHash })
-    .from(dprWhatsappImportsTable);
-  const importedHashes = new Set(existingImports.map((r) => r.rowHash));
+  // Match each sheet row against existing timesheet entries by date + team + start + end time.
+  // This works regardless of how the row was imported (paste flow, direct, etc.).
+  const allTeams = await getTeams();
+  const teamNameToId = new Map(allTeams.map((t) => [t.name.trim().toLowerCase(), t.id]));
 
-  res.json(filtered.map((row) => ({ ...row, imported: importedHashes.has(row.rowHash) })));
+  const uniqueDates = [...new Set(filtered.map((r) => normaliseSheetDate(r.date)))];
+
+  type EntryStage = "draft" | "captured" | "clarified";
+  const stageRank: Record<EntryStage, number> = { draft: 0, captured: 1, clarified: 2 };
+
+  const stageMap = new Map<string, EntryStage>();
+  if (uniqueDates.length > 0) {
+    const entries = await db
+      .select({
+        date:      dprTimesheetEntriesTable.date,
+        teamId:    dprTimesheetEntriesTable.teamId,
+        startTime: dprTimesheetEntriesTable.startTime,
+        endTime:   dprTimesheetEntriesTable.endTime,
+        stage:     dprTimesheetEntriesTable.stage,
+      })
+      .from(dprTimesheetEntriesTable)
+      .where(inArray(dprTimesheetEntriesTable.date, uniqueDates));
+
+    for (const e of entries) {
+      if (!e.teamId || !e.startTime || !e.endTime) continue;
+      const key = `${e.date}|${e.teamId}|${e.startTime.trim()}|${e.endTime.trim()}`;
+      const existing = stageMap.get(key);
+      if (!existing || stageRank[e.stage] > stageRank[existing]) {
+        stageMap.set(key, e.stage);
+      }
+    }
+  }
+
+  res.json(filtered.map((row) => {
+    const normDate = normaliseSheetDate(row.date);
+    const teamId   = teamNameToId.get(row.team.trim().toLowerCase()) ?? null;
+    const stage    = teamId
+      ? (stageMap.get(`${normDate}|${teamId}|${row.start.trim()}|${row.end.trim()}`) ?? null)
+      : null;
+    return { ...row, stage };
+  }));
 });
 
 router.post("/dpr/whatsapp-rows/import", async (req, res): Promise<void> => {

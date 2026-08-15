@@ -438,7 +438,8 @@ const COL = {
 interface WhatsAppRow {
   rowIndex: number;
   date: string; team: string; start: string; end: string;
-  location: string; notes: string; rowHash: string; imported: boolean;
+  location: string; notes: string; rowHash: string;
+  stage: "draft" | "captured" | "clarified" | null;
 }
 
 function WhatsAppCapturePanel({
@@ -469,7 +470,7 @@ function WhatsAppCapturePanel({
     enabled: false,
   });
 
-  const unimported = rows.filter((r) => !r.imported);
+  const unimported = rows.filter((r) => !r.stage);
   const allSelected = unimported.length > 0 && unimported.every((r) => selectedHashes.has(r.rowHash));
   const someSelected = unimported.some((r) => selectedHashes.has(r.rowHash));
 
@@ -566,11 +567,11 @@ function WhatsAppCapturePanel({
                 return (
                   <TableRow
                     key={row.rowIndex}
-                    className={cn("transition-colors", !row.imported && "cursor-pointer", selected && "bg-primary/5", row.imported && "opacity-60")}
-                    onClick={() => !row.imported && toggleRow(row.rowHash)}
+                    className={cn("transition-colors", !row.stage && "cursor-pointer", selected && "bg-primary/5", row.stage && "opacity-60")}
+                    onClick={() => !row.stage && toggleRow(row.rowHash)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {row.imported
+                      {row.stage
                         ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />
                         : <Checkbox checked={selected} onCheckedChange={() => toggleRow(row.rowHash)} />
                       }
@@ -590,9 +591,9 @@ function WhatsAppCapturePanel({
                     </TableCell>
                     <TableCell className="text-sm max-w-[240px] truncate text-muted-foreground">{row.notes}</TableCell>
                     <TableCell className="text-right">
-                      {row.imported && (
-                        <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-200">Imported</Badge>
-                      )}
+                      {row.stage === "draft"     && <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-700 border-amber-200">In Draft</Badge>}
+                      {row.stage === "captured"  && <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-700 border-blue-200">In Clarify</Badge>}
+                      {row.stage === "clarified" && <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 border-emerald-200">Clarified</Badge>}
                     </TableCell>
                   </TableRow>
                 );
@@ -603,7 +604,7 @@ function WhatsAppCapturePanel({
       </div>
 
       {/* Unmatched warning */}
-      {rows.some((r) => !r.imported && r.team && !teams.some((t) => t.name.trim().toLowerCase() === r.team.trim().toLowerCase())) && (
+      {rows.some((r) => !r.stage && r.team && !teams.some((t) => t.name.trim().toLowerCase() === r.team.trim().toLowerCase())) && (
         <div className="shrink-0 px-4 py-2 border-t border-border bg-amber-500/5 flex items-center gap-2 text-xs text-amber-700">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           Amber team/location names don't match any record — they'll be left blank on import for you to fill in.
