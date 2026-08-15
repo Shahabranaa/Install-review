@@ -441,9 +441,14 @@ interface WhatsAppRow {
   location: string; notes: string; rowHash: string; imported: boolean;
 }
 
-function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam[]; locations: DprLocation[]; activeDate: string | null }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+function WhatsAppCapturePanel({
+  teams, locations, activeDate, onSendToCapture,
+}: {
+  teams: DprTeam[];
+  locations: DprLocation[];
+  activeDate: string | null;
+  onSendToCapture: (rows: WhatsAppRow[]) => void;
+}) {
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
 
@@ -464,23 +469,6 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
     enabled: false,
   });
 
-  const importMutation = useMutation({
-    mutationFn: (hashes: string[]) =>
-      fetch("/api/dpr/whatsapp-rows/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ rowHashes: hashes }),
-      }).then(async (r) => { if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed"); } return r.json(); }),
-    onSuccess: (data) => {
-      toast({ title: `${data.imported} row${data.imported !== 1 ? "s" : ""} imported`, description: "Switch to the Timesheet tab to see the new draft entries." });
-      setSelectedHashes(new Set());
-      refetch();
-      queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey({}) });
-    },
-    onError: (e: Error) => toast({ title: "Import failed", description: e.message, variant: "destructive" }),
-  });
-
   const unimported = rows.filter((r) => !r.imported);
   const allSelected = unimported.length > 0 && unimported.every((r) => selectedHashes.has(r.rowHash));
   const someSelected = unimported.some((r) => selectedHashes.has(r.rowHash));
@@ -494,6 +482,10 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
   async function handleRefresh() {
     await refetch();
     setLastFetched(new Date());
+  }
+  function handleSendSelected() {
+    const selected = rows.filter((r) => selectedHashes.has(r.rowHash));
+    onSendToCapture(selected);
   }
 
   return (
@@ -516,9 +508,9 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
         )}
         <div className="ml-auto flex items-center gap-2">
           {someSelected && (
-            <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => importMutation.mutate([...selectedHashes])} disabled={importMutation.isPending}>
-              {importMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-              Import {selectedHashes.size} to Capture
+            <Button size="sm" className="h-7 text-xs gap-1.5" onClick={handleSendSelected}>
+              <ClipboardPaste className="w-3 h-3" />
+              Review & Import ({selectedHashes.size})
             </Button>
           )}
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleRefresh} disabled={isFetching}>
@@ -1373,7 +1365,25 @@ export default function CapturePage() {
       </div>
 
       {captureTab === "whatsapp" ? (
-        <WhatsAppCapturePanel teams={teams} locations={locations} activeDate={activeDate} />
+        <WhatsAppCapturePanel
+          teams={teams}
+          locations={locations}
+          activeDate={activeDate}
+          onSendToCapture={(selectedRows) => {
+            // Format as tab-separated text matching the paste dialog's column order:
+            // Date, Team, Start, End, Location, Notes
+            const tsv = selectedRows
+              .map((r) => [r.date, r.team, r.start, r.end, r.location, r.notes].join("\t"))
+              .join("\n");
+            // Use DD/MM/YYYY format and parse immediately (avoids stale pasteDateFormat closure)
+            const fmt: DateFormat = "dmy";
+            setPasteText(tsv);
+            setPasteDateFormat(fmt);
+            setPendingRows(parsePastedText(tsv, teams, locations, defaultActivityTypeId, defaultGroupId, fmt));
+            setCaptureTab("timesheet");
+            setPasteOpen(true);
+          }}
+        />
       ) : (
       <>
       {needsTeamSetup && activeDateForVisible && (
