@@ -441,16 +441,6 @@ interface WhatsAppRow {
   location: string; notes: string; rowHash: string; imported: boolean;
 }
 
-/** Mirrors the server-side normaliser — converts DD/MM/YYYY (and variants) to YYYY-MM-DD. */
-function normaliseSheetDateClient(raw: string): string | null {
-  const m = raw.trim().match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
-  if (!m) return null;
-  const day   = m[1].padStart(2, "0");
-  const month = m[2].padStart(2, "0");
-  const year  = m[3].length === 2 ? `20${m[3]}` : m[3];
-  return `${year}-${month}-${day}`;
-}
-
 function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam[]; locations: DprLocation[]; activeDate: string | null }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -460,10 +450,13 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
   // Clear selection whenever the active date changes
   useEffect(() => { setSelectedHashes(new Set()); }, [activeDate]);
 
+  // Each date gets its own cache slot — switching dates naturally shows the "Load rows" state
+  // until the user fetches. The server filters by date so client-side normalisation isn't needed.
+  const dateParam = activeDate ? `?date=${activeDate}` : "";
   const { data: rows = [], isFetching, refetch, error } = useQuery<WhatsAppRow[]>({
-    queryKey: ["/api/dpr/whatsapp-rows"],
+    queryKey: ["/api/dpr/whatsapp-rows", activeDate ?? "all"],
     queryFn: () =>
-      fetch("/api/dpr/whatsapp-rows", { credentials: "include" }).then(async (r) => {
+      fetch(`/api/dpr/whatsapp-rows${dateParam}`, { credentials: "include" }).then(async (r) => {
         if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed to fetch"); }
         return r.json();
       }),
@@ -488,12 +481,7 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
     onError: (e: Error) => toast({ title: "Import failed", description: e.message, variant: "destructive" }),
   });
 
-  // When a date is active, show only rows whose sheet date matches it
-  const visibleRows = activeDate
-    ? rows.filter((r) => normaliseSheetDateClient(r.date) === activeDate)
-    : rows;
-
-  const unimported = visibleRows.filter((r) => !r.imported);
+  const unimported = rows.filter((r) => !r.imported);
   const allSelected = unimported.length > 0 && unimported.every((r) => selectedHashes.has(r.rowHash));
   const someSelected = unimported.some((r) => selectedHashes.has(r.rowHash));
 
@@ -515,12 +503,9 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
         <div className="flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">WhatsApp Bot Submissions</span>
-          {visibleRows.length > 0 && (
+          {rows.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              {unimported.length} unimported · {visibleRows.length - unimported.length} done
-              {activeDate && rows.length !== visibleRows.length && (
-                <span className="ml-1 opacity-60">· filtered to this date</span>
-              )}
+              {unimported.length} unimported · {rows.length - unimported.length} done
             </span>
           )}
         </div>
@@ -563,12 +548,6 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
             <MessageSquare className="w-10 h-10 opacity-20" />
             <p className="text-sm">Click <strong>Load rows</strong> to fetch the latest bot submissions from Google Sheets.</p>
           </div>
-        ) : visibleRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground p-8 text-center">
-            <MessageSquare className="w-10 h-10 opacity-20" />
-            <p className="text-sm">No WhatsApp submissions found for this date.</p>
-            <p className="text-xs text-muted-foreground/60">Switch to a different date or click Refresh to reload the sheet.</p>
-          </div>
         ) : (
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background border-b border-border">
@@ -588,7 +567,7 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRows.map((row) => {
+              {rows.map((row) => {
                 const selected = selectedHashes.has(row.rowHash);
                 const teamMatched = teams.some((t) => t.name.trim().toLowerCase() === row.team.trim().toLowerCase());
                 const locationMatched = locations.some((l) => l.name.trim().toLowerCase() === row.location.trim().toLowerCase());
@@ -632,7 +611,7 @@ function WhatsAppCapturePanel({ teams, locations, activeDate }: { teams: DprTeam
       </div>
 
       {/* Unmatched warning */}
-      {visibleRows.some((r) => !r.imported && r.team && !teams.some((t) => t.name.trim().toLowerCase() === r.team.trim().toLowerCase())) && (
+      {rows.some((r) => !r.imported && r.team && !teams.some((t) => t.name.trim().toLowerCase() === r.team.trim().toLowerCase())) && (
         <div className="shrink-0 px-4 py-2 border-t border-border bg-amber-500/5 flex items-center gap-2 text-xs text-amber-700">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           Amber team/location names don't match any record — they'll be left blank on import for you to fill in.

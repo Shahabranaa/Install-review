@@ -1558,6 +1558,10 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
     throw err;
   }
 
+  // Optional ?date=YYYY-MM-DD filter — server normalises the sheet's raw date string so it works
+  // regardless of the spreadsheet's locale or date formatting.
+  const dateFilter = typeof req.query.date === "string" ? req.query.date.trim() : null;
+
   // Skip header row; drop entirely-empty rows
   const dataRows = rawRows.slice(1).filter((row) => row.some((c) => c !== ""));
 
@@ -1568,13 +1572,18 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
     return { rowIndex: idx, date, team, start, end, location, notes, rowHash };
   });
 
+  // Filter by date if requested — normalise the raw sheet date to YYYY-MM-DD for comparison
+  const filtered = dateFilter
+    ? rowsWithHash.filter((row) => normaliseSheetDate(row.date) === dateFilter)
+    : rowsWithHash;
+
   // Look up which rows are already imported
   const existingImports = await db
     .select({ rowHash: dprWhatsappImportsTable.rowHash })
     .from(dprWhatsappImportsTable);
   const importedHashes = new Set(existingImports.map((r) => r.rowHash));
 
-  res.json(rowsWithHash.map((row) => ({ ...row, imported: importedHashes.has(row.rowHash) })));
+  res.json(filtered.map((row) => ({ ...row, imported: importedHashes.has(row.rowHash) })));
 });
 
 router.post("/dpr/whatsapp-rows/import", async (req, res): Promise<void> => {
