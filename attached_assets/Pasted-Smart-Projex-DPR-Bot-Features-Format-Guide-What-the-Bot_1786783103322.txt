@@ -1,0 +1,91 @@
+Smart-Projex DPR Bot
+Features & Format Guide
+
+
+What the Bot Can Do
+ Smart Header Parsing
+The bot reads your DPR header and automatically extracts:
+Team Name — identifies which team the report belongs to.
+Starting Location — applies it to all activities until a new location appears.
+Shift Start & End Time — sets the shift window and validates all activities fall within it.
+Shift Date — locks the date for the entire report. Supports DD/MM/YYYY, DD-MM-YYYY, and DD.MM.YYYY.
+More Features
+ Location Cascading
+You only need to provide the location once in the header. The bot automatically carries it forward to every activity — no need to repeat it on every line. When an activity says Transfer to BLP55, the bot picks up BLP55 as the new location and cascades it to the next activities.
+
+Note: Please write the Location Name
+ Gap Detection
+If there is a missing time window between two activities (e.g. one ends at 13:20 and the next starts at 14:20), the bot flags the 1-hour gap and asks you to fill it before the report can be submitted.
+ Overlap Detection
+If two activities have conflicting times, the bot detects the overlap and highlights exactly which activities clash — so you can fix them quickly.
+ Midnight Crossover Handling
+Night shifts that cross midnight (e.g. 17:30 - 05:30) are handled automatically. The bot knows that 00:00 comes after 23:30 and keeps the date consistent throughout.
+ Activity Merging
+If two activities need to be combined into one, simply say Merge activity 3 and 4. The bot merges them in a single step and renumbers everything automatically.
+ Add, Remove & Modify Activities
+Add: Add activity: 18:00-19:00 FO prep, location OSS. Insert before activity 4.
+Remove: Remove activity 5 — the bot deletes it and renumbers.
+Modify: Change activity 4 end time to 21:10 — only that one activity is changed, nothing else.
+ Automatic Renumbering
+After any merge, add, or delete, the bot automatically renumbers all activities so the list stays clean and sequential.
+ One-Tap Export to Google Sheets
+Once everything looks correct, reply Approved and the bot logs the finalised timesheet directly to Google Sheets.
+
+
+DPR Message Format
+Please follow this format when sending your DPR:
+Team 2 DPR,
+Starting Location: EAST
+Shift start/ end time: 17:30-05:30
+Shift Date: 08/08/2026
+ 
+17:30 - 18:00 TBT and checklists
+18:00 - 22:15 HV terms OSS-53 L1L2L3
+22:15 - 23:00 Welfare break
+23:00 - 03:30 …
+03:30 - 05:30 …
+
+Header
+Line
+What to Write
+Example
+1
+Team name
+Team 2 DPR,
+2
+Starting location
+Starting Location: EAST
+3
+Shift time window
+Shift start/ end time: 17:30-05:30
+4
+Shift date
+Shift Date: 08/08/2026
+
+
+Activities
+One activity per line.
+Format: HH:MM - HH:MM Description
+Keep them in chronological order with no gaps.
+For transfers, write Transfer to [Location] — the bot picks up the destination automatically.
+
+
+Quick Command Reference
+What You Want
+What to Type
+Change a time
+Change activity 4 end time to 21:10
+Merge two activities
+Merge activity 3 and 4
+Add an activity
+Add activity: 18:00-19:00 FO prep, location OSS. Insert before activity 4.
+Remove an activity
+Remove activity 5
+See current summary
+Show summary
+Approve & export
+Approved
+Start over
+Quit
+
+
