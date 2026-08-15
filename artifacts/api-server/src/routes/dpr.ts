@@ -1579,7 +1579,11 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
 
   // Match each sheet row against existing timesheet entries by date + team + start + end time.
   // This works regardless of how the row was imported (paste flow, direct, etc.).
-  const allTeams = await getTeams();
+  let allTeams = refCache.teams.get();
+  if (!allTeams) {
+    allTeams = await db.select().from(dprTeamsTable);
+    refCache.teams.set(allTeams);
+  }
   const teamNameToId = new Map(allTeams.map((t) => [t.name.trim().toLowerCase(), t.id]));
 
   const uniqueDates = [...new Set(filtered.map((r) => normaliseSheetDate(r.date)))];
