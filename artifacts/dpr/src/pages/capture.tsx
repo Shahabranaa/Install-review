@@ -15,7 +15,7 @@ import {
   DprTeam,
   DprLocation,
 } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -458,12 +458,12 @@ function WhatsAppCapturePanel({ teams, locations }: { teams: DprTeam[]; location
   });
 
   const importMutation = useMutation({
-    mutationFn: (toImport: WhatsAppRow[]) =>
+    mutationFn: (hashes: string[]) =>
       fetch("/api/dpr/whatsapp-rows/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ rows: toImport }),
+        body: JSON.stringify({ rowHashes: hashes }),
       }).then(async (r) => { if (!r.ok) { const e = await r.json(); throw new Error(e.error ?? "Failed"); } return r.json(); }),
     onSuccess: (data) => {
       toast({ title: `${data.imported} row${data.imported !== 1 ? "s" : ""} imported`, description: "Switch to the Timesheet tab to see the new draft entries." });
@@ -509,7 +509,7 @@ function WhatsAppCapturePanel({ teams, locations }: { teams: DprTeam[]; location
         )}
         <div className="ml-auto flex items-center gap-2">
           {someSelected && (
-            <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => importMutation.mutate(rows.filter((r) => selectedHashes.has(r.rowHash)))} disabled={importMutation.isPending}>
+            <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => importMutation.mutate([...selectedHashes])} disabled={importMutation.isPending}>
               {importMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
               Import {selectedHashes.size} to Capture
             </Button>

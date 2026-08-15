@@ -1533,15 +1533,9 @@ function normaliseSheetDate(raw: string): string {
 }
 
 const ImportWhatsappRowsBody = z.object({
-  rows: z.array(z.object({
-    date:     z.string(),
-    team:     z.string(),
-    start:    z.string(),
-    end:      z.string(),
-    location: z.string(),
-    notes:    z.string(),
-    rowHash:  z.string().length(64),
-  })),
+  // Client only sends the hashes it wants to import — row data is re-fetched
+  // and validated server-side so the server is the authoritative source.
+  rowHashes: z.array(z.string().length(64)).min(1),
 });
 
 router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
@@ -1569,7 +1563,8 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
 
   const rowsWithHash = dataRows.map((row) => {
     const [date = "", team = "", start = "", end = "", location = "", notes = ""] = row;
-    const rowHash = createHash("sha256").update(`${date}|${team}|${start}|${end}`).digest("hex");
+    // Hash covers ALL six fields so rows that share only timing but differ in location/notes are distinct.
+    const rowHash = createHash("sha256").update(`${date}|${team}|${start}|${end}|${location}|${notes}`).digest("hex");
     return { date, team, start, end, location, notes, rowHash };
   });
 
@@ -1586,49 +1581,104 @@ router.post("/dpr/whatsapp-rows/import", async (req, res): Promise<void> => {
   const parsed = ImportWhatsappRowsBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const teams     = await db.select().from(dprTeamsTable);
-  const locations = await db.select().from(dprLocationsTable);
+  const sheetId = process.env.GOOGLE_SHEET_ID;
+  const gid     = process.env.GOOGLE_SHEET_GID;
+  if (!sheetId || !gid) {
+    res.status(503).json({ error: "Google Sheet not configured." }); return;
+  }
 
-  // Existing imports (idempotency check)
-  const existing = new Set(
-    (await db.select({ rowHash: dprWhatsappImportsTable.rowHash }).from(dprWhatsappImportsTable))
-      .map((r) => r.rowHash)
-  );
+  // Re-fetch the sheet so row data and hashes are server-authoritative
+  let rawRows: string[][];
+  try {
+    rawRows = await fetchSheetRows(sheetId, gid);
+  } catch (err: any) {
+    const msg: string = err?.message ?? String(err);
+    if (msg.includes("GOOGLE_SERVICE_ACCOUNT_JSON")) {
+      res.status(503).json({ error: "Google service account not configured." }); return;
+    }
+    throw err;
+  }
+
+  // Build server-side hash → row map (hash covers ALL six source fields to avoid collisions
+  // between rows that share timing but differ in location or notes).
+  const sheetRowMap = new Map<string, { date: string; team: string; start: string; end: string; location: string; notes: string }>();
+  for (const row of rawRows.slice(1).filter((r) => r.some((c) => c !== ""))) {
+    const [date = "", team = "", start = "", end = "", location = "", notes = ""] = row;
+    const hash = createHash("sha256").update(`${date}|${team}|${start}|${end}|${location}|${notes}`).digest("hex");
+    sheetRowMap.set(hash, { date, team, start, end, location, notes });
+  }
+
+  // Only process hashes that appear in the live sheet (server validation)
+  const toProcess = parsed.data.rowHashes.filter((h) => sheetRowMap.has(h));
+  if (toProcess.length === 0) {
+    res.json({ imported: 0, skipped: parsed.data.rowHashes.length, results: [] }); return;
+  }
+
+  const [teams, locations] = await Promise.all([
+    db.select().from(dprTeamsTable),
+    db.select().from(dprLocationsTable),
+  ]);
 
   let importedCount = 0;
   const results: { rowHash: string; entryId?: number; skipped?: boolean }[] = [];
 
-  for (const row of parsed.data.rows) {
-    if (existing.has(row.rowHash)) {
-      results.push({ rowHash: row.rowHash, skipped: true });
-      continue;
-    }
+  // Sentinel used to signal a "already imported" rollback without masking real errors.
+  const ALREADY_IMPORTED = Symbol("ALREADY_IMPORTED");
 
+  for (const rowHash of toProcess) {
+    const row = sheetRowMap.get(rowHash)!;
     const teamMatch     = teams.find((t) => t.name.trim().toLowerCase() === row.team.trim().toLowerCase());
     const locationMatch = locations.find((l) => l.name.trim().toLowerCase() === row.location.trim().toLowerCase());
     const date          = normaliseSheetDate(row.date);
 
-    const [entry] = await db
-      .insert(dprTimesheetEntriesTable)
-      .values({
-        date,
-        teamId:     teamMatch?.id     ?? null,
-        startTime:  row.start || null,
-        endTime:    row.end   || null,
-        locationId: locationMatch?.id ?? null,
-        notes:      row.notes || null,
-        stage:      "draft",
-        jdrCodeIds: [],
-      })
-      .returning();
+    let entry: { id: number } | null = null;
+    try {
+      entry = await db.transaction(async (tx) => {
+        // Create the draft timesheet entry inside the transaction.
+        const [newEntry] = await tx
+          .insert(dprTimesheetEntriesTable)
+          .values({
+            date,
+            teamId:     teamMatch?.id     ?? null,
+            startTime:  row.start || null,
+            endTime:    row.end   || null,
+            locationId: locationMatch?.id ?? null,
+            notes:      row.notes || null,
+            stage:      "draft",
+            jdrCodeIds: [],
+          })
+          .returning();
 
-    await db.insert(dprWhatsappImportsTable).values({ rowHash: row.rowHash, entryId: entry.id });
-    existing.add(row.rowHash);
-    importedCount++;
-    results.push({ rowHash: row.rowHash, entryId: entry.id });
+        // Atomically claim the hash. If another concurrent transaction already inserted
+        // this row_hash (unique constraint), onConflictDoNothing returns no rows.
+        // Throwing causes the whole transaction — including the entry insert — to roll back.
+        const [marker] = await tx
+          .insert(dprWhatsappImportsTable)
+          .values({ rowHash, entryId: newEntry.id })
+          .onConflictDoNothing()
+          .returning();
+
+        if (!marker) throw ALREADY_IMPORTED;
+        return newEntry;
+      });
+    } catch (err) {
+      if (err === ALREADY_IMPORTED) {
+        // Concurrent duplicate — entry rolled back, treat as skipped.
+        entry = null;
+      } else {
+        throw err;
+      }
+    }
+
+    if (entry) {
+      importedCount++;
+      results.push({ rowHash, entryId: entry.id });
+    } else {
+      results.push({ rowHash, skipped: true });
+    }
   }
 
-  res.json({ imported: importedCount, results });
+  res.json({ imported: importedCount, skipped: results.filter((r) => r.skipped).length, results });
 });
 
 export default router;
