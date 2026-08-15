@@ -1561,11 +1561,11 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
   // Skip header row; drop entirely-empty rows
   const dataRows = rawRows.slice(1).filter((row) => row.some((c) => c !== ""));
 
-  const rowsWithHash = dataRows.map((row) => {
+  const rowsWithHash = dataRows.map((row, idx) => {
     const [date = "", team = "", start = "", end = "", location = "", notes = ""] = row;
     // Hash covers ALL six fields so rows that share only timing but differ in location/notes are distinct.
     const rowHash = createHash("sha256").update(`${date}|${team}|${start}|${end}|${location}|${notes}`).digest("hex");
-    return { date, team, start, end, location, notes, rowHash };
+    return { rowIndex: idx, date, team, start, end, location, notes, rowHash };
   });
 
   // Look up which rows are already imported
