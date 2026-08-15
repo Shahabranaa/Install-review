@@ -14,8 +14,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound, Link2, Link2Off, GripVertical, TableProperties } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { CalendarDays, Copy, Trash2, Plus, X, Upload, Settings2, ChevronDown, Loader2, UsersRound, Link2, Link2Off, GripVertical } from "lucide-react";
 import {
   DndContext,
   DragEndEvent,
@@ -1646,104 +1645,6 @@ function TeamPickerDialog({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-// ─── Google Sheet Settings ────────────────────────────────────────────────────
-
-function GoogleSheetSettingsPanel() {
-  const { toast } = useToast();
-  const [sheetId, setSheetId]   = useState("");
-  const [sheetGid, setSheetGid] = useState("");
-  const [source, setSource]     = useState<"db" | "env" | null>(null);
-  const [saving, setSaving]     = useState(false);
-
-  const { isLoading } = useQuery({
-    queryKey: ["/api/settings/google-sheet"],
-    queryFn: () =>
-      fetch("/api/settings/google-sheet", { credentials: "include" })
-        .then((r) => r.json())
-        .then((d) => {
-          setSheetId(d.sheetId ?? "");
-          setSheetGid(d.sheetGid ?? "");
-          setSource(d.source ?? null);
-          return d;
-        }),
-  });
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const r = await fetch("/api/settings/google-sheet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sheetId: sheetId.trim(), sheetGid: sheetGid.trim() }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? "Save failed");
-      setSource("db");
-      toast({ title: "Saved", description: "Google Sheet settings updated." });
-    } catch (err: any) {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="max-w-lg mx-auto px-6 py-8 space-y-6">
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <TableProperties className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-base font-semibold">WhatsApp Bot Sheet</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Configure the Google Sheet the WhatsApp bot writes to. Values saved here take effect immediately without redeployment.
-        </p>
-        {source === "env" && (
-          <p className="mt-2 text-xs text-amber-700 bg-amber-500/10 border border-amber-200 rounded px-3 py-1.5">
-            Currently reading from environment variables. Saving here will override them.
-          </p>
-        )}
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sheet ID</Label>
-            <Input
-              value={sheetId}
-              onChange={(e) => setSheetId(e.target.value)}
-              placeholder="1pnCPVUNsWVzee4h6Dw..."
-              className="font-mono text-sm h-9"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Found in the sheet URL: docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sheet GID (tab ID)</Label>
-            <Input
-              value={sheetGid}
-              onChange={(e) => setSheetGid(e.target.value)}
-              placeholder="1853640306"
-              className="font-mono text-sm h-9"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Found in the sheet URL: …/edit#gid=<strong>GID</strong>
-            </p>
-          </div>
-
-          <Button type="submit" size="sm" disabled={saving || (!sheetId.trim() && !sheetGid.trim())}>
-            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : "Save"}
-          </Button>
-        </form>
-      )}
-    </div>
-  );
-}
 
 export default function TeamSetupPage() {
   const { activeDate } = useCaptureNav();
@@ -1770,7 +1671,6 @@ export default function TeamSetupPage() {
             <TabsTrigger value="roster" className="text-xs px-4">Workers</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs px-4">Schedule</TabsTrigger>
             <TabsTrigger value="teams" className="text-xs px-4">Teams</TabsTrigger>
-            <TabsTrigger value="settings" className="text-xs px-4">Settings</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1790,9 +1690,6 @@ export default function TeamSetupPage() {
           <TeamsSetupTab teams={teams} isLoading={teamsLoading} />
         </TabsContent>
 
-        <TabsContent value="settings" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
-          <GoogleSheetSettingsPanel />
-        </TabsContent>
       </Tabs>
     </div>
   );

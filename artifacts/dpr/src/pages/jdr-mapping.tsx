@@ -49,7 +49,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Loader2, Plus, Pencil, Trash2, Search, X, Check, ChevronsUpDown,
-  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight,
+  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight, TableProperties,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,101 @@ import { PREDEFINED_ROLES, roleColor, roleAbbr, roleLabel, COLOR_PRESETS, colorP
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface CustomRole { id: number; abbr: string; name: string; color: string | null; }
+
+// ─── Google Sheet Settings ────────────────────────────────────────────────────
+
+function GoogleSheetSettingsPanel() {
+  const { toast } = useToast();
+  const [sheetId, setSheetId]   = useState("");
+  const [sheetGid, setSheetGid] = useState("");
+  const [source, setSource]     = useState<"db" | "env" | null>(null);
+  const [saving, setSaving]     = useState(false);
+
+  const { isLoading } = useQuery({
+    queryKey: ["/api/settings/google-sheet"],
+    queryFn: () =>
+      fetch("/api/settings/google-sheet", { credentials: "include" })
+        .then((r) => r.json())
+        .then((d) => { setSheetId(d.sheetId ?? ""); setSheetGid(d.sheetGid ?? ""); setSource(d.source ?? null); return d; }),
+  });
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const r = await fetch("/api/settings/google-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sheetId: sheetId.trim(), sheetGid: sheetGid.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Save failed");
+      setSource("db");
+      toast({ title: "Saved", description: "Google Sheet settings updated." });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <TableProperties className="w-4 h-4 text-muted-foreground" />
+          <h2 className="text-[13px] font-semibold">WhatsApp Bot Sheet</h2>
+        </div>
+        <p className="text-[12px] text-muted-foreground">
+          Configure the Google Sheet the WhatsApp bot writes to. Values saved here take effect immediately without redeployment.
+        </p>
+        {source === "env" && (
+          <p className="mt-2 text-[11px] text-amber-700 bg-amber-500/10 border border-amber-200 rounded px-3 py-1.5">
+            Currently reading from environment variables. Saving here will override them.
+          </p>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium">Sheet ID</label>
+            <input
+              value={sheetId}
+              onChange={(e) => setSheetId(e.target.value)}
+              placeholder="1pnCPVUNsWVzee4h6Dw..."
+              className="w-full font-mono text-[12px] h-8 px-2.5 rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Found in the sheet URL: docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium">Sheet GID (tab ID)</label>
+            <input
+              value={sheetGid}
+              onChange={(e) => setSheetGid(e.target.value)}
+              placeholder="1853640306"
+              className="w-full font-mono text-[12px] h-8 px-2.5 rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Found in the sheet URL: …/edit#gid=<strong>GID</strong>
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={saving || (!sheetId.trim() && !sheetGid.trim())}
+            className="h-7 px-3 text-[11px] font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {saving ? <><Loader2 className="w-3 h-3 animate-spin" />Saving…</> : "Save"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 export default function JdrMappingPage() {
   const { toast } = useToast();
@@ -77,7 +172,7 @@ export default function JdrMappingPage() {
 
   const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading || locationsLoading;
 
-  const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities">("activities");
+  const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities" | "sheets">("activities");
   const [workerDialog, setWorkerDialog] = useState<{ editing: DprWorker | null } | null>(null);
   const [roleDialog, setRoleDialog] = useState<{ abbr: string; name: string; color: string; saving: boolean; error: string | null } | null>(null);
 
@@ -542,6 +637,7 @@ export default function JdrMappingPage() {
               { id: "roles",      label: "Roles",      icon: <Tag className="w-3.5 h-3.5" />,     count: PREDEFINED_ROLES.length },
               { id: "workers",    label: "Workers",    icon: <Users className="w-3.5 h-3.5" />,   count: workers.filter((w) => w.active).length },
               { id: "activities", label: "Activities", icon: <Network className="w-3.5 h-3.5" />, count: jdrCodes.length },
+              { id: "sheets",     label: "Sheets",     icon: <TableProperties className="w-3.5 h-3.5" />, count: null },
             ] as const).map((tab) => (
               <button
                 key={tab.id}
@@ -555,7 +651,7 @@ export default function JdrMappingPage() {
               >
                 {tab.icon}
                 {tab.label}
-                <span className="text-[10px] text-muted-foreground/50 font-mono ml-0.5">({tab.count})</span>
+                {tab.count !== null && <span className="text-[10px] text-muted-foreground/50 font-mono ml-0.5">({tab.count})</span>}
               </button>
             ))}
           </div>
@@ -822,6 +918,9 @@ export default function JdrMappingPage() {
                   </div>
                 );
               })()}
+
+              {/* ── Sheets ── */}
+              {activeTab === "sheets" && <GoogleSheetSettingsPanel />}
 
             </div>
           ) : (
