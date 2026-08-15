@@ -21,6 +21,7 @@ import {
   dprActivityLogsTable,
   dprCustomRolesTable,
   dprWhatsappImportsTable,
+  appSettingsTable,
 } from "@workspace/db";
 import { fetchSheetRows } from "../googleSheets.js";
 import { z } from "zod";
@@ -1539,10 +1540,14 @@ const ImportWhatsappRowsBody = z.object({
 });
 
 router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
-  const sheetId = process.env.GOOGLE_SHEET_ID;
-  const gid     = process.env.GOOGLE_SHEET_GID;
+  // DB wins over env var so admins can configure the sheet without a redeployment
+  const sheetCfg = await db.select().from(appSettingsTable)
+    .where(inArray(appSettingsTable.key, ["google_sheet_id", "google_sheet_gid"]));
+  const cfgMap = Object.fromEntries(sheetCfg.map((r) => [r.key, r.value]));
+  const sheetId = cfgMap["google_sheet_id"] || process.env.GOOGLE_SHEET_ID;
+  const gid     = cfgMap["google_sheet_gid"] || process.env.GOOGLE_SHEET_GID;
   if (!sheetId || !gid) {
-    res.status(503).json({ error: "Google Sheet not configured — set GOOGLE_SHEET_ID and GOOGLE_SHEET_GID." });
+    res.status(503).json({ error: "Google Sheet not configured — set GOOGLE_SHEET_ID and GOOGLE_SHEET_GID in Team Setup → Settings." });
     return;
   }
 

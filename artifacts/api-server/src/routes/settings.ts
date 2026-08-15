@@ -11,6 +11,9 @@ const KEY_BUCKET            = "wasabi_bucket_name";
 const KEY_REGION            = "wasabi_region";
 const ALL_KEYS              = [KEY_ACCESS_KEY_ID, KEY_SECRET_ACCESS_KEY, KEY_BUCKET, KEY_REGION] as const;
 
+const KEY_SHEET_ID  = "google_sheet_id";
+const KEY_SHEET_GID = "google_sheet_gid";
+
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
     res.status(403).json({ error: "Admin access required" });
@@ -91,6 +94,44 @@ router.post("/settings/wasabi", requireAdmin, async (req, res): Promise<void> =>
     }
 
     invalidateCredsCache();
+    res.json({ ok: true, updated: toUpsert.map((r) => r.key) });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/settings/google-sheet — return current Sheet ID + GID (admin only)
+// ---------------------------------------------------------------------------
+router.get("/settings/google-sheet", requireAdmin, async (_req, res): Promise<void> => {
+  try {
+    const rows = await db.select().from(appSettingsTable)
+      .where(inArray(appSettingsTable.key, [KEY_SHEET_ID, KEY_SHEET_GID]));
+    const m: Record<string, string> = {};
+    for (const r of rows) m[r.key] = r.value;
+    res.json({
+      sheetId:  m[KEY_SHEET_ID]  ?? process.env["GOOGLE_SHEET_ID"]  ?? "",
+      sheetGid: m[KEY_SHEET_GID] ?? process.env["GOOGLE_SHEET_GID"] ?? "",
+      source: Object.keys(m).length > 0 ? "db" : "env",
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/settings/google-sheet — upsert Sheet ID + GID (admin only)
+// ---------------------------------------------------------------------------
+router.post("/settings/google-sheet", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const { sheetId, sheetGid } = req.body as Record<string, string>;
+    const toUpsert: { key: string; value: string }[] = [];
+    if (sheetId?.trim())  toUpsert.push({ key: KEY_SHEET_ID,  value: sheetId.trim() });
+    if (sheetGid?.trim()) toUpsert.push({ key: KEY_SHEET_GID, value: sheetGid.trim() });
+    for (const { key, value } of toUpsert) {
+      await db.insert(appSettingsTable).values({ key, value })
+        .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
+    }
     res.json({ ok: true, updated: toUpsert.map((r) => r.key) });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
