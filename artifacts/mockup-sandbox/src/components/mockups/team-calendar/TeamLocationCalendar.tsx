@@ -12,10 +12,10 @@ import { useState } from "react";
 // ── Mock data ──────────────────────────────────────────────────────────────────
 
 const TEAMS = [
-  { id: 1, name: "Alpha" },
-  { id: 2, name: "Bravo" },
-  { id: 3, name: "Charlie" },
-  { id: 4, name: "Delta" },
+  { id: 1, name: "Team 01" },
+  { id: 2, name: "Team 02" },
+  { id: 3, name: "Team 03" },
+  { id: 4, name: "Team 04" },
 ];
 
 const SCOPES = [
