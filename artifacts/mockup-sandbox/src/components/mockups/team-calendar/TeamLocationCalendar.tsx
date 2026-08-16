@@ -222,23 +222,58 @@ export function TeamLocationCalendar() {
   return (
     <div className="min-h-screen bg-[#f4f5f7] font-sans text-slate-800 overflow-auto">
       {/* ── Top nav ── */}
-      <div className="bg-white border-b border-slate-200 flex items-center gap-6 px-6 h-11 sticky top-0 z-20">
-        <span className="text-[11px] font-bold tracking-[0.2em] text-slate-800">H O R I Z O N</span>
-        <div className="flex gap-1">
-          {["Map", "Planning ▾", "Site ▾", "Setup ▾", "Customise ▾"].map((n) => (
-            <button key={n} className={`px-3 py-1 text-[12px] rounded transition-colors ${n.startsWith("Planning") ? "text-blue-600 font-semibold border-b-2 border-blue-600" : "text-slate-500 hover:text-slate-700"}`}>{n}</button>
+      <div className="bg-sidebar border-b border-border flex items-center gap-0 px-3 h-[57px] sticky top-0 z-20">
+        {/* Logo */}
+        <div className="flex items-center gap-2 mr-6">
+          <div className="w-8 h-8 rounded bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0">
+            {/* clipboard icon */}
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+              <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+            </svg>
+          </div>
+          <div>
+            <p className="font-bold tracking-tight leading-none text-sidebar-foreground text-[14px]">DPR</p>
+            <p className="text-[9px] text-muted-foreground font-medium uppercase tracking-wider leading-none mt-0.5">Timesheets</p>
+          </div>
+        </div>
+
+        {/* Nav items */}
+        <div className="flex items-center h-full">
+          {[
+            { label: "Capture",      icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
+            { label: "Clarify",      icon: "M9 12l2 2 4-4M7 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2h-2M9 3h6M9 3a2 2 0 012-2h2a2 2 0 012 2" },
+            { label: "Planning",     icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", active: true },
+            { label: "Team Setup",   icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0" },
+            { label: "DPR Mapping",  icon: "M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" },
+          ].map(({ label, icon, active }) => (
+            <button
+              key={label}
+              className={`flex items-center gap-1.5 px-3 h-full text-[12px] font-medium border-b-2 transition-colors ${
+                active
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d={icon}/>
+              </svg>
+              {label}
+            </button>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-3 text-[11px] text-slate-500">
-          <span>andrew.spence.contractor@jd...</span>
-          <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 text-[10px]">Contractor</span>
+
+        <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="hidden sm:inline">andrew.spence@dpr.com</span>
+          <span className="px-2 py-0.5 bg-muted border border-border rounded text-[10px]">Supervisor</span>
         </div>
       </div>
 
       {/* ── Sub-nav ── */}
-      <div className="bg-white border-b border-slate-100 flex items-center gap-4 px-6 h-9 sticky top-11 z-20">
-        {["Campaigns", "Planning", "Lookahead"].map((t) => (
-          <button key={t} className={`text-[12px] pb-0.5 border-b-2 transition-colors ${t === "Lookahead" ? "border-blue-500 text-blue-600 font-semibold" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{t}</button>
+      <div className="bg-background border-b border-border/50 flex items-center gap-0 px-4 h-9 sticky top-[57px] z-20">
+        {["Overview", "Lookahead", "History"].map((t) => (
+          <button key={t} className={`px-4 h-full text-[12px] font-medium border-b-2 -mb-px transition-colors ${t === "Lookahead" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"}`}>{t}</button>
         ))}
       </div>
 
