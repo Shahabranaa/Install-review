@@ -325,8 +325,8 @@ function AddModal({ onAdd, onClose }: {
 
 // ── Activity card ─────────────────────────────────────────────────────────────
 function ActivityCard({ entry, onRemove }: { entry: Entry; onRemove: () => void }) {
-  const m  = SECTION_META[entry.section];
-  const st = STAGE[entry.stage] ?? STAGE.draft;
+  const m  = SECTION_META[entry.section] ?? SECTION_META["OCS"];
+  const st = STAGE[entry.stage]          ?? STAGE.draft;
   const [hover, setHover] = useState(false);
 
   return (
