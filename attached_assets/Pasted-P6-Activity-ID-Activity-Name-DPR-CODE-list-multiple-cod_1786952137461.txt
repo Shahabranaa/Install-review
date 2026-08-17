@@ -1,0 +1,62 @@
+P6 Activity ID	Activity Name	DPR CODE (list multiple codes if I've grouped tasks in such a way)
+1st end @ OCS		
+WF103630	MOB / As found	
+WF103635	Post Pull-In Test following In-Survey>> DC Voltage/OTDR/Phase Rotation	
+WF103640	OCS Protection & required rigging	
+WF103650	Perm Hangoff's & Stripping	
+WF103660	CMS (build/re-build/soft routing)	
+WF103670	Partial routing & cut/cleat of Cable (includes application of Fire Proofing)	
+WF103680	Heating of Cable	
+WF103690	Straightening bars on Cable	
+WF103700	Mount FO Box, install service loops and glands	
+WF103710	HV Terminations (up to plug-in)	
+WF103720	Connex Joints (containment/remove cleats/belly cable)	
+WF103730	FO Terminations	
+WF103740	HV Termination (plug-in)	
+WF103750	OTDR Testing (Part 1)	
+WF103755	RTS Testing	
+WF103760	OTDR Testing (Part 2)	
+WF103770	Connex Joints (remove & re-cleat cores)	
+WF103775	HV Terminations including Final plug-in and earthing (&resin)	
+WF103780	QC Inspection	
+>>2Cable<<		
+WF103800	MOB / As found	
+WF103805	Pre-Termination Testing	
+WF103810	SIP Protection	
+WF103820	Perm Hangoff's & Stripping (Earthing/Housekeeping) Cables1&2	
+WF103830	CMS modifications	
+WF103840	Routing & Cleating	
+WF103850	HV Prep Heating, Straightening and Cooling (Cable 1)	
+WF103860	HV Prep Heating, Straightening and Cooling (Cable 2)	
+WF103870	PT100 Installation	
+WF103900	Final Routing of Cables (check and finalise termination position before term)	
+WF103910	Termination of Cable 1	
+WF103920	Termination of Cable 2	
+WF103950	FO Terminations	
+WF103960	FO Testing	
+WF103970	Post Termination Testing (Earth verification)	
+WF103980	Internal QC JDR walk down	
+WF103983	JDR/ORST QC/As-Left	
+WF103990	DEMOB	
+WF104000	OTDR (Remedials)	
+>>1Cable<<		
+WF104010	MOB / As found	
+WF104015	Pre-Termination Testing	
+WF104020	SIP Protection	
+WF104030	Perm Hangoff's & Stripping	
+WF104040	CMS modifications	
+WF104050	Routing & Cleating	
+WF104060	HV Prep Heating, Straightening and Cooling (Cable 1)	
+WF104070	PT100 Installation	
+WF104080	Final Routing of Cables (check and finalise termination position before term)	
+WF104090	HV Terminations (inc Open/Close SWG and Earthing Bonding) Cable 1	
+WF104110	FO Terminations	
+WF104120	FO Testing	
+WF104130	Post Termination Testing (Earth verification)	
+WF104140	Internal QC JDR walk down	
+WF104145	JDR/ORST QC/As-Left	
+WF104150	DEMOB	
+WF104160	OTDR (Remedials)	
+String complete		
+WF126565	Termination of String complete	
+SERV33650	RTS Testing	
