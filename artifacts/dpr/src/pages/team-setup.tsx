@@ -70,6 +70,7 @@ function jsonBody(body: unknown): RequestInit {
 }
 
 import { ROLE_COLORS, PREDEFINED_ROLES, roleColor, roleAbbr } from "@/lib/roles";
+import { TeamPlanningCalendar } from "@/components/planning/TeamPlanningCalendar";
 
 // ─── CSV parser ────────────────────────────────────────────────────────────────
 
@@ -1671,6 +1672,7 @@ export default function TeamSetupPage() {
             <TabsTrigger value="roster" className="text-xs px-4">Workers</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs px-4">Schedule</TabsTrigger>
             <TabsTrigger value="teams" className="text-xs px-4">Teams</TabsTrigger>
+            <TabsTrigger value="planning" className="text-xs px-4">Planning</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1688,6 +1690,10 @@ export default function TeamSetupPage() {
 
         <TabsContent value="teams" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
           <TeamsSetupTab teams={teams} isLoading={teamsLoading} />
+        </TabsContent>
+
+        <TabsContent value="planning" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+          <TeamPlanningCalendar />
         </TabsContent>
 
       </Tabs>

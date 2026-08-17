@@ -21,6 +21,7 @@ import {
   dprActivityLogsTable,
   dprCustomRolesTable,
   dprWhatsappImportsTable,
+  dprTeamActivityPlansTable,
   appSettingsTable,
 } from "@workspace/db";
 import { fetchSheetRows } from "../googleSheets.js";
@@ -1731,6 +1732,54 @@ router.post("/dpr/whatsapp-rows/import", async (req, res): Promise<void> => {
   }
 
   res.json({ imported: importedCount, skipped: results.filter((r) => r.skipped).length, results });
+});
+
+// ─── Team Activity Plans (Planning Calendar) ──────────────────────────────────
+
+const CreateTeamActivityPlanBody = z.object({
+  date:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  teamId:       z.number().int().positive(),
+  locationName: z.string().min(1),
+  activityCode: z.string().min(1),
+  activityName: z.string().min(1),
+  section:      z.enum(["OCS", "2Cable", "1Cable", "String"]),
+  stage:        z.enum(["draft", "captured", "clarified"]).default("draft"),
+});
+
+router.get("/dpr/team-activity-plans", async (req, res): Promise<void> => {
+  const { startDate, endDate, teamId } = req.query as Record<string, string>;
+  const conditions: SQL[] = [];
+  if (startDate) conditions.push(gte(dprTeamActivityPlansTable.date, startDate));
+  if (endDate)   conditions.push(lte(dprTeamActivityPlansTable.date, endDate));
+  if (teamId)    conditions.push(eq(dprTeamActivityPlansTable.teamId, Number(teamId)));
+
+  const rows = await db
+    .select()
+    .from(dprTeamActivityPlansTable)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(dprTeamActivityPlansTable.date, dprTeamActivityPlansTable.teamId);
+  res.json(rows);
+});
+
+router.post("/dpr/team-activity-plans", async (req, res): Promise<void> => {
+  const parsed = CreateTeamActivityPlanBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(dprTeamActivityPlansTable).values(parsed.data).returning();
+  res.status(201).json(row);
+});
+
+router.delete("/dpr/team-activity-plans/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [row] = await db
+    .delete(dprTeamActivityPlansTable)
+    .where(eq(dprTeamActivityPlansTable.id, id))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  res.sendStatus(204);
 });
 
 export default router;
