@@ -1663,8 +1663,8 @@ export default function TeamSetupPage() {
   const signOnSaved = session?.saved ?? false;
 
   return (
-    <div className="flex flex-col h-full">
-      <Tabs defaultValue="sign-on" className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
+      <Tabs defaultValue="sign-on" className="flex flex-col flex-1 min-h-0">
         <div className="border-b border-border px-6 pt-4 flex-none">
           <h1 className="text-xl font-bold mb-3">Team Setup</h1>
           <TabsList className="h-8">
