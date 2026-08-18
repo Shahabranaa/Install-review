@@ -820,22 +820,22 @@ export default function JdrMappingPage() {
 
               {/* ── Workers ── */}
               {activeTab === "workers" && (() => {
-                const teamWorkers = new Map<number, DprWorker[]>();
-                const unassigned: DprWorker[] = [];
                 const activeWorkers = workers.filter((w) => w.active);
-                for (const w of activeWorkers) {
-                  if (!w.teamIds || w.teamIds.length === 0) {
-                    unassigned.push(w);
-                  } else {
-                    for (const tid of w.teamIds) {
-                      if (!teamWorkers.has(tid)) teamWorkers.set(tid, []);
-                      teamWorkers.get(tid)!.push(w);
-                    }
-                  }
+                const byRole = new Map<string, DprWorker[]>();
+                const sortedByName = [...activeWorkers].sort((a, b) =>
+                  `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
+                );
+                for (const w of sortedByName) {
+                  const role = (w.roles ?? []).length > 0 ? w.roles![0] : "Unassigned";
+                  if (!byRole.has(role)) byRole.set(role, []);
+                  byRole.get(role)!.push(w);
                 }
                 const sections: { label: string; rows: DprWorker[]; dim?: boolean }[] = [
-                  ...teams.filter((t) => teamWorkers.has(t.id)).map((t) => ({ label: t.name, rows: teamWorkers.get(t.id)! })),
-                  ...(unassigned.length > 0 ? [{ label: "Unassigned", rows: unassigned, dim: true }] : []),
+                  ...[...byRole.entries()]
+                    .filter(([r]) => r !== "Unassigned")
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([r, rows]) => ({ label: r, rows })),
+                  ...(byRole.has("Unassigned") ? [{ label: "Unassigned", rows: byRole.get("Unassigned")!, dim: true }] : []),
                 ];
                 return (
                   <div className="max-w-2xl">
