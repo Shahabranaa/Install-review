@@ -135,7 +135,7 @@ export default function WorkersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ComplianceStatus | "ALL">("ALL");
-  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "uniqueId", dir: "asc" });
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: "name", dir: "asc" });
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", siteId: "" });
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
@@ -205,9 +205,24 @@ export default function WorkersPage() {
       if (statusFilter !== "ALL" && w.complianceStatus !== statusFilter) return false;
       return true;
     });
-    return sortWorkers(filtered, sort.col, sort.dir);
+    // Sort by name within each group
+    const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    // Group by role name; unassigned goes last
+    const groups = new Map<string, typeof sorted>();
+    for (const w of sorted) {
+      const key = w.roleName ?? "Unassigned";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(w);
+    }
+    // Sort groups alphabetically, "Unassigned" always last
+    const sortedGroups = [...groups.entries()].sort(([a], [b]) => {
+      if (a === "Unassigned") return 1;
+      if (b === "Unassigned") return -1;
+      return a.localeCompare(b);
+    });
+    return sortedGroups;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawWorkers, complianceSummary, search, roleFilter, statusFilter, sort]);
+  }, [rawWorkers, complianceSummary, search, roleFilter, statusFilter]);
 
   const filteredInactive = useMemo(() => {
     const all = inactiveWorkers ?? [];
@@ -292,7 +307,7 @@ export default function WorkersPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {workerTab === "active"
-              ? `${displayWorkers.length} of ${rawWorkers?.length ?? 0} workers shown`
+              ? `${displayWorkers.reduce((n, [, g]) => n + g.length, 0)} of ${rawWorkers?.length ?? 0} workers shown`
               : `${filteredInactive.length}${search ? ` of ${inactiveCount}` : ""} deactivated workers`}
           </p>
         </div>
@@ -414,91 +429,97 @@ export default function WorkersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-muted/60 border-b">
-                    <SortTh label="ID"          col="uniqueId"         active={sort} onSort={toggleSort} />
-                    <SortTh label="Name"        col="name"             active={sort} onSort={toggleSort} className="min-w-[160px]" />
-                    <SortTh label="Role"        col="roleName"         active={sort} onSort={toggleSort} className="min-w-[160px]" />
-                    <th className={hCell}>Email</th>
+                    <th className={hCell}>ID</th>
+                    <th className={cn(hCell, "min-w-[160px]")}>Name</th>
+                    <th className={cn(hCell, "min-w-[180px]")}>Email</th>
                     <th className={hCell}>Tel No.</th>
                     <th className={hCell}>WINDA ID</th>
-                    <SortTh label="DOB"         col="dob"              active={sort} onSort={toggleSort} />
+                    <th className={hCell}>DOB</th>
                     <th className={hCell}>Passport No.</th>
-                    <SortTh label="Airport"     col="preferredAirport" active={sort} onSort={toggleSort} />
+                    <th className={hCell}>Airport</th>
                     <th className={hCell}>Qualifications</th>
-                    <SortTh label="Compliance"  col="complianceStatus" active={sort} onSort={toggleSort} />
-                    <SortTh label="Created"     col="createdAt"        active={sort} onSort={toggleSort} />
+                    <th className={hCell}>Compliance</th>
+                    <th className={hCell}>Created</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {displayWorkers.map((w) => {
-                    const cfg = complianceConfig(w.complianceStatus);
-                    const StatusIcon = cfg.icon;
-                    return (
-                      <tr key={w.id} className="hover:bg-muted/20 transition-colors">
-                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                          {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
-                        </td>
-                        <td className={cn(cell, "min-w-[160px]")}>
-                          <Link href={`/workers/${w.id}`}>
-                            <a className="font-medium hover:underline" data-testid={`link-worker-${w.id}`}>
-                              {w.name}
-                            </a>
-                          </Link>
-                        </td>
-                        <td className={cn(cell, "min-w-[160px]")}>
-                          {w.roleName
-                            ? <Badge variant="secondary" className="text-xs font-normal">{w.roleName}</Badge>
-                            : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className={cn(cell, "text-muted-foreground min-w-[180px]")}>
-                          {w.email ?? "—"}
-                        </td>
-                        <td className={cn(cell, "text-muted-foreground font-mono text-xs")}>
-                          {w.phone ?? "—"}
-                        </td>
-                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                          {w.windaId ?? "—"}
-                        </td>
-                        <td className={cn(cell, "text-muted-foreground text-xs")}>
-                          {w.dob ?? "—"}
-                        </td>
-                        <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
-                          {w.passportNo ?? "—"}
-                        </td>
-                        <td className={cn(cell, "text-muted-foreground text-xs")}>
-                          {w.preferredAirport ?? "—"}
-                        </td>
-                        <td className={cn(cell, "text-xs text-muted-foreground max-w-[180px]")}>
-                          {w.qualifications
-                            ? (
-                              <span className="block truncate" title={w.qualifications}>
-                                {w.qualifications}
-                              </span>
-                            )
-                            : "—"}
-                        </td>
-                        <td className={cell}>
-                          <Badge
-                            variant="outline"
-                            className={cn("text-[10px] flex items-center gap-1 w-fit", cfg.cls)}
-                          >
-                            <StatusIcon className="h-3 w-3" />
-                            {cfg.label}
-                          </Badge>
-                        </td>
-                        <td className={cn(cell, "text-muted-foreground text-xs whitespace-nowrap")}>
-                          {w.createdAt
-                            ? new Date(w.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-                            : "—"}
-                        </td>
-                        <td className="px-2 py-2">
-                          <Link href={`/workers/${w.id}`}>
-                            <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
-                          </Link>
+                  {displayWorkers.map(([roleName, workers]) => (
+                    <>
+                      <tr key={`group-${roleName}`} className="bg-muted/40">
+                        <td colSpan={12} className="px-3 py-1.5">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {roleName}
+                          </span>
+                          <span className="ml-2 text-[11px] text-muted-foreground/60">{workers.length}</span>
                         </td>
                       </tr>
-                    );
-                  })}
+                      {workers.map((w) => {
+                        const cfg = complianceConfig(w.complianceStatus);
+                        const StatusIcon = cfg.icon;
+                        return (
+                          <tr key={w.id} className="hover:bg-muted/20 transition-colors">
+                            <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                              {w.uniqueId ? w.uniqueId.replace(/^[A-Za-z_]+/, "") : "—"}
+                            </td>
+                            <td className={cn(cell, "min-w-[160px]")}>
+                              <Link href={`/workers/${w.id}`}>
+                                <a className="font-medium hover:underline" data-testid={`link-worker-${w.id}`}>
+                                  {w.name}
+                                </a>
+                              </Link>
+                            </td>
+                            <td className={cn(cell, "text-muted-foreground min-w-[180px]")}>
+                              {w.email ?? "—"}
+                            </td>
+                            <td className={cn(cell, "text-muted-foreground font-mono text-xs")}>
+                              {w.phone ?? "—"}
+                            </td>
+                            <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                              {w.windaId ?? "—"}
+                            </td>
+                            <td className={cn(cell, "text-muted-foreground text-xs")}>
+                              {w.dob ?? "—"}
+                            </td>
+                            <td className={cn(cell, "font-mono text-xs text-muted-foreground")}>
+                              {w.passportNo ?? "—"}
+                            </td>
+                            <td className={cn(cell, "text-muted-foreground text-xs")}>
+                              {w.preferredAirport ?? "—"}
+                            </td>
+                            <td className={cn(cell, "text-xs text-muted-foreground max-w-[180px]")}>
+                              {w.qualifications
+                                ? (
+                                  <span className="block truncate" title={w.qualifications}>
+                                    {w.qualifications}
+                                  </span>
+                                )
+                                : "—"}
+                            </td>
+                            <td className={cell}>
+                              <Badge
+                                variant="outline"
+                                className={cn("text-[10px] flex items-center gap-1 w-fit", cfg.cls)}
+                              >
+                                <StatusIcon className="h-3 w-3" />
+                                {cfg.label}
+                              </Badge>
+                            </td>
+                            <td className={cn(cell, "text-muted-foreground text-xs whitespace-nowrap")}>
+                              {w.createdAt
+                                ? new Date(w.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                                : "—"}
+                            </td>
+                            <td className="px-2 py-2">
+                              <Link href={`/workers/${w.id}`}>
+                                <a><ChevronRight className="h-4 w-4 text-muted-foreground" /></a>
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  ))}
                 </tbody>
               </table>
             </div>
