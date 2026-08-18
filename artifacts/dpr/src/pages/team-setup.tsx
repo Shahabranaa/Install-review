@@ -1676,23 +1676,23 @@ export default function TeamSetupPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="sign-on" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+        <TabsContent value="sign-on" className="flex-1 flex flex-col min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
           <SignOnPage />
         </TabsContent>
 
-        <TabsContent value="roster" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+        <TabsContent value="roster" className="flex-1 flex flex-col min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
           <RosterBoard date={date} signOnSaved={signOnSaved} />
         </TabsContent>
 
-        <TabsContent value="schedule" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
+        <TabsContent value="schedule" className="flex-1 flex flex-col min-h-0 overflow-auto m-0 data-[state=inactive]:hidden">
           <ScheduleTab date={date} teams={teams} />
         </TabsContent>
 
-        <TabsContent value="teams" className="flex-1 overflow-auto m-0 data-[state=inactive]:hidden">
+        <TabsContent value="teams" className="flex-1 flex flex-col min-h-0 overflow-auto m-0 data-[state=inactive]:hidden">
           <TeamsSetupTab teams={teams} isLoading={teamsLoading} />
         </TabsContent>
 
-        <TabsContent value="planning" className="flex-1 overflow-hidden m-0 data-[state=inactive]:hidden">
+        <TabsContent value="planning" className="flex-1 flex flex-col min-h-0 overflow-hidden m-0 data-[state=inactive]:hidden">
           <TeamPlanningCalendar />
         </TabsContent>
 
