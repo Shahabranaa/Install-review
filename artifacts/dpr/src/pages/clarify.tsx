@@ -18,7 +18,7 @@ import {
   DprJdrCode,
   DprTeam,
 } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,7 +30,6 @@ import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
-import { TeamSetupGate } from "@/components/team-setup-gate";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
 const COL_COUNT = 10; // # Start End Duration Location Notes ActivityGroup GenericComment JDRCode Action
@@ -106,18 +105,6 @@ function ClarifyPills({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClarifyPage() {
   const { activeDate, activeTeamId, setActiveTeamId } = useCaptureNav();
-
-  // Block page when team setup hasn't been done for the active date
-  const { data: visibleTeamsData } = useQuery<{ teamIds: number[] }>({
-    queryKey: ["/api/dpr/roster-visible-teams", activeDate],
-    queryFn: ({ signal }) =>
-      fetch(`/api/dpr/roster-visible-teams?date=${activeDate}`, { signal }).then((r) => r.json()),
-    enabled: !!activeDate,
-  });
-  const needsTeamSetup =
-    !!activeDate &&
-    visibleTeamsData !== undefined &&
-    visibleTeamsData.teamIds.length === 0;
 
   const { data: allEntries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
   const { data: teams = [] } = useListDprTeams();
@@ -278,10 +265,7 @@ export default function ClarifyPage() {
         </div>
       </header>
 
-      {needsTeamSetup && activeDate && (
-        <TeamSetupGate date={activeDate} />
-      )}
-      <div className={cn("flex flex-col flex-1 min-h-0 overflow-hidden", needsTeamSetup && "hidden")}>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* ── Team pills — mirrors Capture's FilterPills ── */}
       <ClarifyPills
         teams={lockedTeams}
@@ -449,7 +433,7 @@ export default function ClarifyPage() {
           Select a <strong className="text-foreground">JDR Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
         </p>
       </div>
-      </div>{/* end needsTeamSetup wrapper */}
+      </div>
     </div>
   );
 }
