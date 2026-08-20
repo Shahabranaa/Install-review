@@ -133,7 +133,7 @@ function ActivityGroupPicker({
   };
 
   return (
-    <div className="flex w-full min-w-0 items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold"
+    <div className="inline-flex items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold min-w-[190px]"
          style={{ borderColor: isWorking ? "rgb(22 163 74 / 0.4)" : "rgb(234 179 8 / 0.4)" }}>
       {/* Left — type toggle */}
       <button
@@ -141,7 +141,7 @@ function ActivityGroupPicker({
         onClick={handleTypeClick}
         title={canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
         className={cn(
-          "min-w-0 flex-1 items-center justify-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
+          "flex items-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
           isWorking
             ? "bg-green-500/10 text-green-400 border-r-green-600/30"
             : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
@@ -152,7 +152,7 @@ function ActivityGroupPicker({
           "w-1.5 h-1.5 rounded-full shrink-0 ring-1",
           isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
         )} />
-        <span className="min-w-0 truncate leading-none whitespace-nowrap">{kindLabel}</span>
+        <span className="leading-none whitespace-nowrap">{kindLabel}</span>
         {canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
       </button>
 
@@ -163,11 +163,11 @@ function ActivityGroupPicker({
           onClick={handleGroupClick}
           title={canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
           className={cn(
-            "min-w-0 flex-1 items-center justify-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
+            "flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
             canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
           )}
         >
-          <span className="min-w-0 truncate leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
+          <span className="leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
           {canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
         </button>
       ) : (
@@ -1563,21 +1563,21 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-max min-w-[1160px]">
+            <Table className="table-fixed w-full min-w-[1160px]">
               {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
                 {selectMode && <col style={{ width: 36 }} />}
                 <col style={{ width: 40 }} />{/* # */}
                 {showDateCol && <col style={{ width: 104 }} />}{/* Date */}
                 {showTeamCol && <col style={{ width: 92 }} />}{/* Team */}
-                <col style={{ width: 56 }} />{/* Status */}
-                <col style={{ width: 88 }} />{/* Start */}
-                <col style={{ width: 88 }} />{/* Finish */}
-                <col style={{ width: 88 }} />{/* Duration */}
-                <col style={{ width: 150 }} />{/* Location */}
-                <col style={{ width: 300 }} />{/* Comment */}
-                <col style={{ width: 250 }} />{/* Activity Group */}
-                <col style={{ width: 92 }} />{/* Actions */}
+                <col style={{ width: 60 }} />{/* Status */}
+                <col style={{ width: 72 }} />{/* Start */}
+                <col style={{ width: 72 }} />{/* Finish */}
+                <col style={{ width: 80 }} />{/* Duration */}
+                <col style={{ width: 130 }} />{/* Location */}
+                <col />{/* Comment — flexible */}
+                <col style={{ width: 270 }} />{/* Activity Group */}
+                <col style={{ width: 84 }} />{/* Actions */}
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
