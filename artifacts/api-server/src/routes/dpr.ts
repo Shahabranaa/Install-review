@@ -24,7 +24,7 @@ import {
   dprTeamActivityPlansTable,
   appSettingsTable,
 } from "@workspace/db";
-import { fetchSheetRows } from "../googleSheets.js";
+import { appendSheetRows, fetchSheetRows } from "../googleSheets.js";
 import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
@@ -113,6 +113,10 @@ import {
 import { serialize } from "../lib/serialize";
 
 const router: IRouter = Router();
+
+const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
+const CAPTURE_SHEET_GID = "0";
+const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"];
 
 // ── Activity logging helper ───────────────────────────────────────────────────
 function actorFromReq(req: Request) {
@@ -653,6 +657,90 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
     teamId: entry.teamId,
   });
   res.status(201).json(GetDprTimesheetEntryResponse.parse(serialize(withJoins)));
+});
+
+const SaveCaptureToSheetBody = z.object({
+  entryIds: z.array(z.number().int().positive()).min(1).max(500),
+});
+
+router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Promise<void> => {
+  if (!req.session?.userId || req.session.sessionType === "worker") {
+    res.status(401).json({ error: "An authenticated DPR user is required to save Capture rows." });
+    return;
+  }
+
+  const parsed = SaveCaptureToSheetBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const entryIds = [...new Set(parsed.data.entryIds)];
+  const entries = await fetchEntriesWithJoins(inArray(dprTimesheetEntriesTable.id, entryIds));
+  if (entries.length !== entryIds.length) {
+    res.status(404).json({ error: "One or more Capture rows could not be found." });
+    return;
+  }
+
+  const [activityTypes, activityGroups, activities] = await Promise.all([
+    refCache.activityTypes.get() ?? db.select().from(dprActivityTypesTable),
+    refCache.activityGroups.get() ?? db.select().from(dprActivityGroupsTable),
+    refCache.activities.get() ?? db.select().from(dprActivitiesTable),
+  ]);
+  if (!refCache.activityTypes.get()) refCache.activityTypes.set(activityTypes);
+  if (!refCache.activityGroups.get()) refCache.activityGroups.set(activityGroups);
+  if (!refCache.activities.get()) refCache.activities.set(activities);
+
+  const activityTypeById = new Map(activityTypes.map((item) => [item.id, item.name]));
+  const activityGroupById = new Map(activityGroups.map((item) => [item.id, item.name]));
+  const activityById = new Map(activities.map((item) => [item.id, item.name]));
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+  const values = entryIds.map((id) => {
+    const entry = entryById.get(id)!;
+    return [
+      activityTypeById.get(entry.activityTypeId ?? -1) ?? "",
+      activityById.get(entry.activityId ?? -1)
+        ?? activityGroupById.get(entry.activityGroupId ?? -1)
+        ?? "",
+      entry.location?.name ?? "",
+      entry.startTime ?? "",
+      entry.endTime ?? "",
+      entry.notes ?? "",
+    ];
+  });
+
+  try {
+    const appended = await appendSheetRows(
+      CAPTURE_SHEET_ID,
+      CAPTURE_SHEET_GID,
+      values,
+      CAPTURE_SHEET_HEADERS,
+    );
+    void logAction(req, {
+      action: "entries_saved_to_google_sheet",
+      page: "capture",
+      detail: `Saved ${appended} Capture row${appended === 1 ? "" : "s"} to Google Sheets.`,
+    });
+    res.json({ appended });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: number }).code;
+    if (message.includes("GOOGLE_SERVICE_ACCOUNT_JSON")) {
+      res.status(503).json({ error: "Google Sheets service account is not configured." });
+      return;
+    }
+    if (code === 403) {
+      res.status(503).json({ error: "Google Sheets permission denied. Share the target sheet with the service account as an Editor." });
+      return;
+    }
+    if (code === 404) {
+      res.status(503).json({ error: "The configured Google Sheet or its tab could not be found." });
+      return;
+    }
+    req.log.error({ err }, "Failed to save Capture rows to Google Sheets");
+    res.status(502).json({ error: message });
+  }
 });
 
 router.get("/dpr/timesheet-entries/summary", async (_req, res): Promise<void> => {

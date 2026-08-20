@@ -13,3 +13,4 @@
 - [DPR billing party & api-server restart](dpr-billing-party-and-api-restart.md) — JDR/Allstead is a standalone field on timesheet entries; restart api-server after schema/codegen changes before verifying via API.
 - [React Query hooks inside mapped row components](clarify-row-hooks-in-map.md) — calling the same useQuery hook in every row component blanks the page; hoist shared fetches to the parent and pass as props.
 - [DPR team setup is optional](dpr-optional-team-setup.md) — daily team selection narrows Capture when saved, but must never block Capture or Clarify.
+- [DPR Google Sheets exports](dpr-google-sheets-exports.md) — Capture uses the existing service-account Sheets API; do not introduce Replit’s connector.

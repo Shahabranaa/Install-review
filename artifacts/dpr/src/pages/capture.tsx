@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -889,6 +889,7 @@ export default function CapturePage() {
   const lastSavedCellRef = useRef<{ entryId: number; field: string } | null>(null);
 
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
   const [pasteDateFormat, setPasteDateFormat] = useState<DateFormat>("mdy");
@@ -1118,6 +1119,40 @@ export default function CapturePage() {
     downloadCsv(`DPR_Capture_${datePart}.csv`, csv);
   };
 
+  const handleSaveToGoogleSheet = async () => {
+    const visibleEntries = [...filteredEntries, ...filteredLockedEntries];
+    if (visibleEntries.length === 0) {
+      toast({ title: "No Capture rows to save", variant: "destructive" });
+      return;
+    }
+
+    setIsSavingToGoogleSheet(true);
+    try {
+      const response = await fetch("/api/dpr/timesheet-entries/save-to-google-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ entryIds: visibleEntries.map((entry) => entry.id) }),
+      });
+      const result = await response.json().catch(() => ({ error: "Could not save Capture rows to Google Sheets." }));
+      if (!response.ok) throw new Error(result.error ?? "Could not save Capture rows to Google Sheets.");
+
+      const appended = Number(result.appended ?? visibleEntries.length);
+      toast({
+        title: `${appended} Capture row${appended === 1 ? "" : "s"} saved to Google Sheet`,
+        description: "Rows were appended to the configured Capture tab.",
+      });
+    } catch (err) {
+      toast({
+        title: "Google Sheet save failed",
+        description: err instanceof Error ? err.message : "Could not save Capture rows to Google Sheets.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingToGoogleSheet(false);
+    }
+  };
+
   // ── Derived display flags ──
   const showDateCol = !activeDate;
   const showTeamCol = !activeTeamId;
@@ -1334,6 +1369,16 @@ export default function CapturePage() {
             <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5">
               <Download className="w-4 h-4" />
               <span className="hidden xs:inline">Export CSV</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSaveToGoogleSheet}
+              disabled={isSavingToGoogleSheet}
+              className="gap-1.5"
+            >
+              {isSavingToGoogleSheet ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
+              <span className="hidden xs:inline">Save to Sheet</span>
             </Button>
           </div>
         )}
