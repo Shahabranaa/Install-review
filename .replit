@@ -30,31 +30,3 @@ WORKER_PORTAL_URL = "https://workforce.spx.site/worker-portal"
 NEON_DATABASE_URL = "postgresql://neondb_owner:npg_TfVkq6cmhKo2@ep-sparkling-field-abzweqe3-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 GOOGLE_SHEET_GID = "1853640306"
 GOOGLE_SHEET_ID = "1pnCPVUNsWVzee4h6DwZFNebhc-HPwhFeDAhh1nTIdaI"
-
-[[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 19059
-externalPort = 3001
-
-[[ports]]
-localPort = 20171
-externalPort = 80
-
-[[ports]]
-localPort = 21728
-externalPort = 3003
-
-[[ports]]
-localPort = 23694
-externalPort = 3002
-
-[[ports]]
-localPort = 25230
-externalPort = 3000
