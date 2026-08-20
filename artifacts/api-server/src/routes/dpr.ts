@@ -24,7 +24,7 @@ import {
   dprTeamActivityPlansTable,
   appSettingsTable,
 } from "@workspace/db";
-import { fetchSheetRows } from "../googleSheets.js";
+import { appendSheetRowsToTab, fetchSheetRows, replaceSheetRowsByTab } from "../googleSheets.js";
 import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
@@ -114,6 +114,9 @@ import { serialize } from "../lib/serialize";
 import { dprEffectiveDate, scheduleDprDateSheetSync, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
 
 const router: IRouter = Router();
+
+const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
+const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"];
 
 // ── Activity logging helper ───────────────────────────────────────────────────
 function actorFromReq(req: Request) {
