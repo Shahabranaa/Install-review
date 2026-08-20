@@ -2,8 +2,10 @@ import { format, parseISO } from "date-fns";
 import { AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function TeamSetupGate({ date }: { date: string }) {
+  const { isAdmin } = useAuth();
   const dateLabel = (() => {
     try { return format(parseISO(date), "EEEE, d MMMM yyyy"); } catch { return date; }
   })();
@@ -20,9 +22,15 @@ export function TeamSetupGate({ date }: { date: string }) {
           <span className="font-medium text-foreground">{dateLabel}</span>.
           Please select the working teams before capturing or clarifying entries for this date.
         </p>
-        <Link href="/team-setup">
-          <Button>Go to Team Setup</Button>
-        </Link>
+        {isAdmin ? (
+          <Link href="/admin/team-setup">
+            <Button>Go to Team Setup</Button>
+          </Link>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Ask an administrator to complete the team setup for this date.
+          </p>
+        )}
       </div>
     </div>
   );

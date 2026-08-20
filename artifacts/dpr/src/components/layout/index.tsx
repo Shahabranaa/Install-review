@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { CaptureNavProvider, useCaptureNav } from "@/contexts/CaptureNavContext";
 import { Redirect, Link, useLocation } from "wouter";
 import {
-  Loader2, ClipboardList, CheckSquare, Users,
+  Loader2, ClipboardList, CheckSquare,
   ChevronLeft, ChevronRight, Lock, CheckCircle2,
 } from "lucide-react";
 import {
@@ -86,7 +86,6 @@ function DprHeader() {
 // ─── TopNav ───────────────────────────────────────────────────────────────────
 function TopNav() {
   const [location] = useLocation();
-  const { isAdmin } = useAuth();
   const { activeDate } = useCaptureNav();
 
   // Reuse the already-cached date-summary so the badge reflects the active
@@ -111,14 +110,6 @@ function TopNav() {
   const clarifyBadge = activeDateStats?.captured ?? 0;
 
   const tabs = [
-    {
-      href: "/team-setup",
-      label: "Team Setup",
-      icon: <Users className="w-3.5 h-3.5" />,
-      show: !!isAdmin,
-      badge: 0,
-      active: location === "/team-setup",
-    },
     {
       href: "/",
       label: "Capture",

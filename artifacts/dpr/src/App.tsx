@@ -14,6 +14,7 @@ import ClarifyPage from "@/pages/clarify";
 import JdrMappingPage from "@/pages/jdr-mapping";
 import TeamSetupPage from "@/pages/team-setup";
 import LogsPage from "@/pages/logs";
+import AdminPage from "@/pages/admin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,26 +49,42 @@ function Router() {
         </AppLayout>
       </Route>
       <Route path="/sign-on">
-        <Redirect to="/team-setup" />
+        <Redirect to="/admin/team-setup" />
       </Route>
       <Route path="/team-setup">
+        <Redirect to="/admin/team-setup" />
+      </Route>
+      <Route path="/jdr-mapping">
+        <Redirect to="/admin/dpr-mapping" />
+      </Route>
+      <Route path="/logs">
+        <Redirect to="/admin/logs" />
+      </Route>
+      <Route path="/admin/team-setup">
         <AppLayout>
           <AdminOnly>
             <TeamSetupPage />
           </AdminOnly>
         </AppLayout>
       </Route>
-      <Route path="/jdr-mapping">
+      <Route path="/admin/dpr-mapping">
         <AppLayout>
           <AdminOnly>
             <JdrMappingPage />
           </AdminOnly>
         </AppLayout>
       </Route>
-      <Route path="/logs">
+      <Route path="/admin/logs">
         <AppLayout>
           <AdminOnly>
             <LogsPage />
+          </AdminOnly>
+        </AppLayout>
+      </Route>
+      <Route path="/admin">
+        <AppLayout>
+          <AdminOnly>
+            <AdminPage />
           </AdminOnly>
         </AppLayout>
       </Route>

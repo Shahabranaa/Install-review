@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
-import { UserManagementSheet } from "./UserManagementDialog";
 
 import {
   format, subDays, parseISO, startOfMonth, endOfMonth,
@@ -9,9 +8,8 @@ import {
 } from "date-fns";
 import {
   LogOut, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Layers, ScrollText,
+  PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -37,10 +35,8 @@ interface DateSummaryResponse {
 const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { logout, user, isAdmin } = useAuth();
+  const { logout, user } = useAuth();
   const { activeDate, setActiveDate } = useCaptureNav();
-  const [location] = useLocation();
-  const [userMgmtOpen, setUserMgmtOpen] = useState(false);
 
   // Calendar month state — default to today's month
   const [calMonth, setCalMonth] = useState<Date>(() => startOfMonth(new Date()));
@@ -336,87 +332,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* spacer pushes footer to bottom */}
       <div className="flex-1" />
 
-      {/* ── Admin links (Logs + DPR Mapping) ── */}
-      {isAdmin && (
-        <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-1" : "px-3 py-2 space-y-0.5")}>
-          {/* Logs link */}
-          {collapsed ? (
-            <Link
-              href="/logs"
-              title="Activity Log"
-              className={cn(
-                "p-2 rounded-md transition-colors flex items-center justify-center",
-                location === "/logs"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-              )}
-            >
-              <ScrollText className="w-4 h-4" />
-            </Link>
-          ) : (
-            <Link
-              href="/logs"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full",
-                location === "/logs"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              )}
-            >
-              <ScrollText className="w-4 h-4" />
-              Logs
-            </Link>
-          )}
-          {/* DPR Mapping link */}
-          {collapsed ? (
-            <Link
-              href="/jdr-mapping"
-              title="DPR Mapping"
-              className={cn(
-                "p-2 rounded-md transition-colors flex items-center justify-center",
-                location === "/jdr-mapping"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-              )}
-            >
-              <Layers className="w-4 h-4" />
-            </Link>
-          ) : (
-            <Link
-              href="/jdr-mapping"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full",
-                location === "/jdr-mapping"
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              )}
-            >
-              <Layers className="w-4 h-4" />
-              DPR Mapping
-            </Link>
-          )}
-        </div>
-      )}
-
       {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>
         {!collapsed && (
           <div
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 mb-2 rounded-md transition-colors",
-              isAdmin ? "cursor-pointer hover:bg-sidebar-accent/60" : "cursor-default"
-            )}
-            onClick={() => isAdmin && setUserMgmtOpen(true)}
-            title={isAdmin ? "Manage users" : undefined}
+            className="flex items-center gap-3 px-3 py-2 mb-2 rounded-md"
           >
             <div className="w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase shrink-0">
               {user?.displayName?.[0] || "U"}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.displayName}</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate">
-                {isAdmin ? "Click to manage users" : (user?.email ?? "")}
-              </p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email ?? ""}</p>
             </div>
           </div>
         )}
@@ -424,11 +351,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <>
             <div
               title={user?.displayName || ""}
-              onClick={() => isAdmin && setUserMgmtOpen(true)}
-              className={cn(
-                "w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase",
-                isAdmin ? "cursor-pointer hover:ring-2 hover:ring-primary/40" : "cursor-default"
-              )}
+              className="w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-sidebar-foreground text-xs font-bold uppercase"
             >
               {user?.displayName?.[0] || "U"}
             </div>
@@ -450,8 +373,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </button>
         )}
       </div>
-
-      <UserManagementSheet open={userMgmtOpen} onClose={() => setUserMgmtOpen(false)} />
     </div>
   );
 }
