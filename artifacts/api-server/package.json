@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:dpr-sheet-sync": "node --import tsx --test src/lib/dpr-sheet-sync-queue.test.ts src/googleSheets.test.ts",
     "seed:cvow": "npx tsx src/seed-cvow.ts"
   },
   "dependencies": {

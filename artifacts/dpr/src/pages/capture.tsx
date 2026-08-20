@@ -133,7 +133,7 @@ function ActivityGroupPicker({
   };
 
   return (
-    <div className="inline-flex items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold min-w-[190px]"
+    <div className="flex w-full min-w-0 items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold"
          style={{ borderColor: isWorking ? "rgb(22 163 74 / 0.4)" : "rgb(234 179 8 / 0.4)" }}>
       {/* Left — type toggle */}
       <button
@@ -141,7 +141,7 @@ function ActivityGroupPicker({
         onClick={handleTypeClick}
         title={canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
         className={cn(
-          "flex items-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
+          "min-w-0 flex-1 items-center justify-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
           isWorking
             ? "bg-green-500/10 text-green-400 border-r-green-600/30"
             : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
@@ -152,7 +152,7 @@ function ActivityGroupPicker({
           "w-1.5 h-1.5 rounded-full shrink-0 ring-1",
           isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
         )} />
-        <span className="leading-none whitespace-nowrap">{kindLabel}</span>
+        <span className="min-w-0 truncate leading-none whitespace-nowrap">{kindLabel}</span>
         {canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
       </button>
 
@@ -163,11 +163,11 @@ function ActivityGroupPicker({
           onClick={handleGroupClick}
           title={canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
           className={cn(
-            "flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
+            "min-w-0 flex-1 items-center justify-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
             canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
           )}
         >
-          <span className="leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
+          <span className="min-w-0 truncate leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
           {canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
         </button>
       ) : (
@@ -1139,8 +1139,8 @@ export default function CapturePage() {
 
       const appended = Number(result.appended ?? visibleEntries.length);
       toast({
-        title: `${appended} Capture row${appended === 1 ? "" : "s"} saved to Google Sheet`,
-        description: "Rows were appended to date-specific tabs.",
+        title: `${appended} Capture row${appended === 1 ? "" : "s"} synced to Google Sheet`,
+        description: "Each date-specific Capture tab was refreshed without adding duplicates.",
       });
     } catch (err) {
       toast({
@@ -1563,21 +1563,21 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[1160px]">
+            <Table className="table-fixed w-max min-w-[1160px]">
               {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
                 {selectMode && <col style={{ width: 36 }} />}
                 <col style={{ width: 40 }} />{/* # */}
                 {showDateCol && <col style={{ width: 104 }} />}{/* Date */}
                 {showTeamCol && <col style={{ width: 92 }} />}{/* Team */}
-                <col style={{ width: 60 }} />{/* Status */}
-                <col style={{ width: 72 }} />{/* Start */}
-                <col style={{ width: 72 }} />{/* Finish */}
-                <col style={{ width: 80 }} />{/* Duration */}
-                <col style={{ width: 130 }} />{/* Location */}
-                <col />{/* Comment — flexible */}
-                <col style={{ width: 270 }} />{/* Activity Group */}
-                <col style={{ width: 84 }} />{/* Actions */}
+                <col style={{ width: 56 }} />{/* Status */}
+                <col style={{ width: 88 }} />{/* Start */}
+                <col style={{ width: 88 }} />{/* Finish */}
+                <col style={{ width: 88 }} />{/* Duration */}
+                <col style={{ width: 150 }} />{/* Location */}
+                <col style={{ width: 300 }} />{/* Comment */}
+                <col style={{ width: 250 }} />{/* Activity Group */}
+                <col style={{ width: 92 }} />{/* Actions */}
               </colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
@@ -1616,7 +1616,7 @@ export default function CapturePage() {
                         value={newRow.startTime}
                         onChange={(e) => { setNewRow({ ...newRow, startTime: e.target.value }); setNewRowErrors((e) => ({ ...e, startTime: undefined })); }}
                         onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, startTime: n } : r); }}
-                        className={cn("h-8 text-sm font-mono tabular-nums", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
+                        className={cn("h-8 min-w-[72px] text-sm font-mono tabular-nums", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.startTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.startTime}</p>}
                     </TableCell>
@@ -1627,12 +1627,12 @@ export default function CapturePage() {
                         value={newRow.endTime}
                         onChange={(e) => { setNewRow({ ...newRow, endTime: e.target.value }); setNewRowErrors((e) => ({ ...e, endTime: undefined })); }}
                         onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, endTime: n } : r); }}
-                        className={cn("h-8 text-sm font-mono tabular-nums", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
+                        className={cn("h-8 min-w-[72px] text-sm font-mono tabular-nums", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.endTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.endTime}</p>}
                     </TableCell>
                     <TableCell>
-                      <span className={cn("text-sm font-medium tabular-nums", formatDuration(newRow.startTime, newRow.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
+                      <span className={cn("whitespace-nowrap text-sm font-medium tabular-nums", formatDuration(newRow.startTime, newRow.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
                         {formatDuration(newRow.startTime, newRow.endTime)}
                       </span>
                     </TableCell>
@@ -1652,7 +1652,7 @@ export default function CapturePage() {
                         value={newRow.notes}
                         onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })}
                         placeholder="Notes..."
-                        className="h-8 text-sm"
+                        className="h-8 min-w-0 text-sm"
                         onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                       />
                     </TableCell>
@@ -1795,7 +1795,7 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "startTime")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
@@ -1822,7 +1822,7 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "endTime")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span

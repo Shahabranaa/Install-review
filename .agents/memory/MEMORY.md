@@ -14,3 +14,4 @@
 - [React Query hooks inside mapped row components](clarify-row-hooks-in-map.md) — calling the same useQuery hook in every row component blanks the page; hoist shared fetches to the parent and pass as props.
 - [DPR team setup is optional](dpr-optional-team-setup.md) — daily team selection narrows Capture when saved, but must never block Capture or Clarify.
 - [DPR Google Sheets exports](dpr-google-sheets-exports.md) — Capture uses the existing service-account Sheets API; do not introduce Replit’s connector.
+- [DPR date-tab sync serialization](dpr-date-tab-sync-serialization.md) — automatic and manual Sheet rebuilds share one queue so a stale write cannot win.

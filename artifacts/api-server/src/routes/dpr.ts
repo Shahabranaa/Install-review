@@ -24,7 +24,7 @@ import {
   dprTeamActivityPlansTable,
   appSettingsTable,
 } from "@workspace/db";
-import { appendSheetRowsToTab, fetchSheetRows, replaceSheetRowsByTab } from "../googleSheets.js";
+import { fetchSheetRows } from "../googleSheets.js";
 import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
@@ -111,12 +111,9 @@ import {
   GetDprShiftSessionQueryParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
-import { dprEffectiveDate, scheduleDprDateSheetSync } from "../lib/dpr-sheet-sync";
+import { dprEffectiveDate, scheduleDprDateSheetSync, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
 
 const router: IRouter = Router();
-
-const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
-const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"];
 
 // ── Activity logging helper ───────────────────────────────────────────────────
 function actorFromReq(req: Request) {
@@ -662,7 +659,6 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
 
 const SaveCaptureToSheetBody = z.object({
   entryIds: z.array(z.number().int().positive()).min(1).max(5_000),
-  replaceDateTabs: z.boolean().optional().default(false),
 });
 
 router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Promise<void> => {
@@ -684,63 +680,16 @@ router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Pro
     return;
   }
 
-  const [activityTypes, activityGroups, activities] = await Promise.all([
-    refCache.activityTypes.get() ?? db.select().from(dprActivityTypesTable),
-    refCache.activityGroups.get() ?? db.select().from(dprActivityGroupsTable),
-    refCache.activities.get() ?? db.select().from(dprActivitiesTable),
-  ]);
-  if (!refCache.activityTypes.get()) refCache.activityTypes.set(activityTypes);
-  if (!refCache.activityGroups.get()) refCache.activityGroups.set(activityGroups);
-  if (!refCache.activities.get()) refCache.activities.set(activities);
-
-  const activityTypeById = new Map(activityTypes.map((item) => [item.id, item.name]));
-  const activityGroupById = new Map(activityGroups.map((item) => [item.id, item.name]));
-  const activityById = new Map(activities.map((item) => [item.id, item.name]));
-  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
-
-  const valuesByDate = new Map<string, string[][]>();
-  entryIds.forEach((id) => {
-    const entry = entryById.get(id)!;
-    const effectiveDate = String(entry.shiftDate ?? entry.date).substring(0, 10);
-    const values = [
-      activityTypeById.get(entry.activityTypeId ?? -1) ?? "",
-      activityById.get(entry.activityId ?? -1)
-        ?? activityGroupById.get(entry.activityGroupId ?? -1)
-        ?? "",
-      entry.location?.name ?? "",
-      entry.startTime ?? "",
-      entry.endTime ?? "",
-      entry.notes ?? "",
-    ];
-    const dateRows = valuesByDate.get(effectiveDate) ?? [];
-    dateRows.push(values);
-    valuesByDate.set(effectiveDate, dateRows);
-  });
+  const dates = [...new Set(entries.map(dprEffectiveDate))];
 
   try {
-    let appended = 0;
-    if (parsed.data.replaceDateTabs) {
-      appended = await replaceSheetRowsByTab(
-        CAPTURE_SHEET_ID,
-        [...valuesByDate].map(([title, values]) => ({ title, values })),
-        CAPTURE_SHEET_HEADERS,
-      );
-    } else {
-      for (const [date, dateValues] of valuesByDate) {
-        appended += await appendSheetRowsToTab(
-          CAPTURE_SHEET_ID,
-          date,
-          dateValues,
-          CAPTURE_SHEET_HEADERS,
-        );
-      }
-    }
+    const appended = await syncDprDateTabsNow(...dates);
     void logAction(req, {
       action: "entries_saved_to_google_sheet",
       page: "capture",
-      detail: `${parsed.data.replaceDateTabs ? "Rebuilt" : "Saved"} ${appended} Capture row${appended === 1 ? "" : "s"} across ${valuesByDate.size} date tab${valuesByDate.size === 1 ? "" : "s"} in Google Sheets.`,
+      detail: `Synced ${appended} Capture row${appended === 1 ? "" : "s"} across ${dates.length} managed date tab${dates.length === 1 ? "" : "s"} in Google Sheets.`,
     });
-    res.json({ appended, tabs: [...valuesByDate.keys()] });
+    res.json({ appended, tabs: dates });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const code = (err as { code?: number }).code;

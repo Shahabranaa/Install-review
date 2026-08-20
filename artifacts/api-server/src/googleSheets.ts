@@ -174,6 +174,21 @@ export async function appendSheetRowsToTab(
   return response.data.updates?.updatedRows ?? values.length;
 }
 
+export function buildRawSheetTabValuesRequest(
+  tabs: Array<{ title: string; values: string[][] }>,
+  headers: string[],
+) {
+  return {
+    // DPR data can contain user-entered comments such as "=SUM(A1:A2)".
+    // RAW prevents Sheets from executing those values as formulas.
+    valueInputOption: "RAW" as const,
+    data: tabs.map((tab) => ({
+      range: `'${tab.title.replace(/'/g, "''")}'!A1`,
+      values: [headers, ...tab.values],
+    })),
+  };
+}
+
 /**
  * Rebuilds a set of named tabs in three batched operations: create missing
  * tabs, clear their old values, then write the supplied headers and rows.
@@ -217,13 +232,7 @@ export async function replaceSheetRowsByTab(
   });
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: sheetId,
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: tabs.map((tab) => ({
-        range: `'${tab.title.replace(/'/g, "''")}'!A1`,
-        values: [headers, ...tab.values],
-      })),
-    },
+    requestBody: buildRawSheetTabValuesRequest(tabs, headers),
   });
 
   return tabs.reduce((total, tab) => total + tab.values.length, 0);
