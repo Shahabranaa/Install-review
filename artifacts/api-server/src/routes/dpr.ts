@@ -111,6 +111,7 @@ import {
   GetDprShiftSessionQueryParams,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
+import { dprEffectiveDate, scheduleDprDateSheetSync } from "../lib/dpr-sheet-sync";
 
 const router: IRouter = Router();
 
@@ -647,6 +648,7 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
     .values({ ...parsed.data, stage: "draft" })
     .returning();
   const withJoins = await withRelations(entry);
+  scheduleDprDateSheetSync(dprEffectiveDate(entry));
   void logAction(req, {
     action: "entry_created",
     page: "capture",
@@ -1005,6 +1007,18 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "No fields to update" });
     return;
   }
+  const [previousEntry] = await db
+    .select({
+      date: dprTimesheetEntriesTable.date,
+      shiftDate: dprTimesheetEntriesTable.shiftDate,
+    })
+    .from(dprTimesheetEntriesTable)
+    .where(eq(dprTimesheetEntriesTable.id, params.data.id));
+  if (!previousEntry) {
+    res.status(404).json({ error: "Timesheet entry not found" });
+    return;
+  }
+  const previousDate = dprEffectiveDate(previousEntry);
   const [entry] = await db
     .update(dprTimesheetEntriesTable)
     .set({ ...parsed.data, updatedAt: new Date() })
@@ -1049,6 +1063,7 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     detail = `Updated times on entry #${entry.id}`;
   }
   void logAction(req, { action, page, detail, entryId: entry.id, entryDate: String(entry.date).substring(0, 10), teamId: entry.teamId });
+  scheduleDprDateSheetSync(previousDate, dprEffectiveDate(entry));
   const withJoins = await withRelations(entry);
   res.json(UpdateDprTimesheetEntryResponse.parse(serialize(withJoins)));
 });
@@ -1075,6 +1090,7 @@ router.delete("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     entryDate: String(entry.date).substring(0, 10),
     teamId: entry.teamId,
   });
+  scheduleDprDateSheetSync(dprEffectiveDate(entry));
   res.sendStatus(204);
 });
 
