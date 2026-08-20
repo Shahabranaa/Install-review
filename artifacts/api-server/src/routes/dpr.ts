@@ -24,7 +24,7 @@ import {
   dprTeamActivityPlansTable,
   appSettingsTable,
 } from "@workspace/db";
-import { appendSheetRows, fetchSheetRows } from "../googleSheets.js";
+import { appendSheetRowsToTab, fetchSheetRows, replaceSheetRowsByTab } from "../googleSheets.js";
 import { z } from "zod";
 import {
   ListDprActivityGroupsQueryParams,
@@ -115,7 +115,6 @@ import { serialize } from "../lib/serialize";
 const router: IRouter = Router();
 
 const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
-const CAPTURE_SHEET_GID = "0";
 const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"];
 
 // ── Activity logging helper ───────────────────────────────────────────────────
@@ -660,7 +659,8 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
 });
 
 const SaveCaptureToSheetBody = z.object({
-  entryIds: z.array(z.number().int().positive()).min(1).max(500),
+  entryIds: z.array(z.number().int().positive()).min(1).max(5_000),
+  replaceDateTabs: z.boolean().optional().default(false),
 });
 
 router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Promise<void> => {
@@ -696,9 +696,11 @@ router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Pro
   const activityById = new Map(activities.map((item) => [item.id, item.name]));
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
 
-  const values = entryIds.map((id) => {
+  const valuesByDate = new Map<string, string[][]>();
+  entryIds.forEach((id) => {
     const entry = entryById.get(id)!;
-    return [
+    const effectiveDate = String(entry.shiftDate ?? entry.date).substring(0, 10);
+    const values = [
       activityTypeById.get(entry.activityTypeId ?? -1) ?? "",
       activityById.get(entry.activityId ?? -1)
         ?? activityGroupById.get(entry.activityGroupId ?? -1)
@@ -708,21 +710,35 @@ router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Pro
       entry.endTime ?? "",
       entry.notes ?? "",
     ];
+    const dateRows = valuesByDate.get(effectiveDate) ?? [];
+    dateRows.push(values);
+    valuesByDate.set(effectiveDate, dateRows);
   });
 
   try {
-    const appended = await appendSheetRows(
-      CAPTURE_SHEET_ID,
-      CAPTURE_SHEET_GID,
-      values,
-      CAPTURE_SHEET_HEADERS,
-    );
+    let appended = 0;
+    if (parsed.data.replaceDateTabs) {
+      appended = await replaceSheetRowsByTab(
+        CAPTURE_SHEET_ID,
+        [...valuesByDate].map(([title, values]) => ({ title, values })),
+        CAPTURE_SHEET_HEADERS,
+      );
+    } else {
+      for (const [date, dateValues] of valuesByDate) {
+        appended += await appendSheetRowsToTab(
+          CAPTURE_SHEET_ID,
+          date,
+          dateValues,
+          CAPTURE_SHEET_HEADERS,
+        );
+      }
+    }
     void logAction(req, {
       action: "entries_saved_to_google_sheet",
       page: "capture",
-      detail: `Saved ${appended} Capture row${appended === 1 ? "" : "s"} to Google Sheets.`,
+      detail: `${parsed.data.replaceDateTabs ? "Rebuilt" : "Saved"} ${appended} Capture row${appended === 1 ? "" : "s"} across ${valuesByDate.size} date tab${valuesByDate.size === 1 ? "" : "s"} in Google Sheets.`,
     });
-    res.json({ appended });
+    res.json({ appended, tabs: [...valuesByDate.keys()] });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const code = (err as { code?: number }).code;
