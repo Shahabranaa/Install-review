@@ -26,9 +26,13 @@ async function getAuth() {
   return _authClient;
 }
 
-async function getSheetWithTitle(sheetId: string, gid: string) {
+async function getSheetsClient() {
   const auth = await getAuth();
-  const sheets = google.sheets({ version: "v4", auth: auth as never });
+  return google.sheets({ version: "v4", auth: auth as never });
+}
+
+async function getSheetWithTitle(sheetId: string, gid: string) {
+  const sheets = await getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   const sheet = meta.data.sheets?.find(
     (item) => String(item.properties?.sheetId) === String(gid)
@@ -103,4 +107,124 @@ export async function appendSheetRows(
   });
 
   return response.data.updates?.updatedRows ?? values.length;
+}
+
+/**
+ * Appends rows to a named tab, creating the tab when it does not exist.
+ * Existing tabs are validated against the expected header before writing.
+ */
+export async function appendSheetRowsToTab(
+  sheetId: string,
+  title: string,
+  values: string[][],
+  headers?: string[],
+): Promise<number> {
+  if (values.length === 0) return 0;
+
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets(properties(sheetId,title))",
+  });
+  const existing = meta.data.sheets?.find((sheet) => sheet.properties?.title === title);
+
+  if (!existing) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title } } }],
+      },
+    });
+  }
+
+  const escapedTitle = title.replace(/'/g, "''");
+  const endColumn = String.fromCharCode(64 + (headers?.length ?? values[0].length));
+
+  if (headers) {
+    const headerResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `'${escapedTitle}'!A1:${endColumn}1`,
+    });
+    const existingHeaders = (headerResponse.data.values?.[0] ?? [])
+      .map((cell) => String(cell).trim());
+
+    if (existingHeaders.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: `'${escapedTitle}'!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [headers] },
+      });
+    } else if (
+      existingHeaders.length !== headers.length ||
+      existingHeaders.some((header, index) => header !== headers[index])
+    ) {
+      throw new Error(`The "${title}" tab header must be: ${headers.join(", ")}`);
+    }
+  }
+
+  const response = await sheets.spreadsheets.values.append({
+    spreadsheetId: sheetId,
+    range: `'${escapedTitle}'!A:${endColumn}`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values },
+  });
+
+  return response.data.updates?.updatedRows ?? values.length;
+}
+
+/**
+ * Rebuilds a set of named tabs in three batched operations: create missing
+ * tabs, clear their old values, then write the supplied headers and rows.
+ * Tabs not named in `tabs` are never touched.
+ */
+export async function replaceSheetRowsByTab(
+  sheetId: string,
+  tabs: Array<{ title: string; values: string[][] }>,
+  headers: string[],
+): Promise<number> {
+  if (tabs.length === 0) return 0;
+
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets(properties(title))",
+  });
+  const existingTitles = new Set(
+    (meta.data.sheets ?? [])
+      .map((sheet) => sheet.properties?.title)
+      .filter((title): title is string => Boolean(title)),
+  );
+  const missingTitles = tabs
+    .map((tab) => tab.title)
+    .filter((title) => !existingTitles.has(title));
+
+  if (missingTitles.length > 0) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: {
+        requests: missingTitles.map((title) => ({ addSheet: { properties: { title } } })),
+      },
+    });
+  }
+
+  const endColumn = String.fromCharCode(64 + headers.length);
+  const rangeFor = (title: string) => `'${title.replace(/'/g, "''")}'!A:${endColumn}`;
+  await sheets.spreadsheets.values.batchClear({
+    spreadsheetId: sheetId,
+    requestBody: { ranges: tabs.map((tab) => rangeFor(tab.title)) },
+  });
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: tabs.map((tab) => ({
+        range: `'${tab.title.replace(/'/g, "''")}'!A1`,
+        values: [headers, ...tab.values],
+      })),
+    },
+  });
+
+  return tabs.reduce((total, tab) => total + tab.values.length, 0);
 }

@@ -1140,7 +1140,7 @@ export default function CapturePage() {
       const appended = Number(result.appended ?? visibleEntries.length);
       toast({
         title: `${appended} Capture row${appended === 1 ? "" : "s"} saved to Google Sheet`,
-        description: "Rows were appended to the configured Capture tab.",
+        description: "Rows were appended to date-specific tabs.",
       });
     } catch (err) {
       toast({
