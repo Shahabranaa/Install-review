@@ -31,7 +31,6 @@ import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
-import { TeamSetupGate } from "@/components/team-setup-gate";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -641,11 +640,6 @@ export default function CapturePage() {
     return teams.filter((t) => idSet.has(t.id));
   }, [teams, activeDateForVisible, visibleTeamsData]);
 
-  // True when a date is selected but team setup has not been completed for it
-  const needsTeamSetup =
-    !!activeDateForVisible &&
-    visibleTeamsData !== undefined &&
-    visibleTeamsData.teamIds.length === 0;
   const { data: activityTypes = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups({});
 
@@ -1387,10 +1381,7 @@ export default function CapturePage() {
         />
       ) : (
       <>
-      {needsTeamSetup && activeDateForVisible && (
-        <TeamSetupGate date={activeDateForVisible} />
-      )}
-      <div className={cn("flex flex-col flex-1 min-h-0 overflow-hidden", needsTeamSetup && "hidden")}>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Team filter pills */}
       <FilterPills
         teams={visibleTeams}
@@ -2232,7 +2223,7 @@ export default function CapturePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>{/* end needsTeamSetup wrapper */}
+      </div>
       </>
       )}
     </div>
