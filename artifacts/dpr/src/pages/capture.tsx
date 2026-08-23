@@ -301,6 +301,103 @@ function formatDateAsDmy(date: string): string {
   return iso ? `${iso[3]}-${iso[2]}-${iso[1]}` : date;
 }
 
+function normalizeDmyOrIsoDate(raw: string): string | null {
+  return normalizeIsoDate(raw) ?? normalizeDate(raw);
+}
+
+function formatDateForSelector(raw: string): string {
+  const normalized = normalizeDmyOrIsoDate(raw);
+  return normalized ? formatDateAsDmy(normalized) : raw;
+}
+
+function DmyDateInput({
+  value,
+  onChange,
+  onBlur,
+  className,
+  id,
+  ariaLabel,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  className?: string;
+  id?: string;
+  ariaLabel?: string;
+  autoFocus?: boolean;
+}) {
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const isFocusedRef = useRef(false);
+  const [displayValue, setDisplayValue] = useState(() => formatDateForSelector(value));
+
+  useEffect(() => {
+    if (!isFocusedRef.current) setDisplayValue(formatDateForSelector(value));
+  }, [value]);
+
+  const openPicker = () => {
+    const picker = pickerRef.current;
+    if (!picker) return;
+    if (typeof picker.showPicker === "function") picker.showPicker();
+    else picker.focus();
+  };
+
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <Input
+        id={id}
+        autoFocus={autoFocus}
+        type="text"
+        inputMode="numeric"
+        value={displayValue}
+        placeholder="DD-MM-YYYY"
+        maxLength={10}
+        aria-label={ariaLabel}
+        onFocus={() => { isFocusedRef.current = true; }}
+        onChange={(e) => {
+          setDisplayValue(e.target.value);
+          onChange(e.target.value);
+        }}
+        onBlur={() => {
+          isFocusedRef.current = false;
+          const normalized = normalizeDmyOrIsoDate(displayValue);
+          if (normalized) setDisplayValue(formatDateAsDmy(normalized));
+          onBlur?.();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+        }}
+        className={cn("pr-8", className)}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`Choose ${ariaLabel ?? "date"}`}
+        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={openPicker}
+      >
+        <Calendar className="h-3.5 w-3.5" />
+      </button>
+      <input
+        ref={pickerRef}
+        type="date"
+        tabIndex={-1}
+        aria-hidden="true"
+        value={normalizeDmyOrIsoDate(value) ?? ""}
+        onChange={(e) => {
+          const normalized = normalizeIsoDate(e.target.value);
+          if (!normalized) return;
+          const formatted = formatDateAsDmy(normalized);
+          setDisplayValue(formatted);
+          onChange(formatted);
+        }}
+        className="pointer-events-none absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0"
+      />
+    </div>
+  );
+}
+
 function normalizePax(raw: string): number | null {
   const trimmed = raw.trim();
   if (!trimmed || !/^\d+$/.test(trimmed)) return null;
@@ -1531,6 +1628,7 @@ export default function CapturePage() {
   const saveCell = (entryId: number, field: string, value: string) => {
     const entry = entries.find((e) => e.id === entryId);
     if (!entry) return;
+    const editedDate = field === "date" ? normalizeDmyOrIsoDate(value) : null;
     // Validate time fields before saving
     if ((field === "startTime" || field === "endTime") && value) {
       const err = validate48hTime(value);
@@ -1551,7 +1649,6 @@ export default function CapturePage() {
         ?? normalizeIsoDate(entry.shiftDate ?? "")
         ?? normalizeIsoDate(entry.date);
       const overnightDate = dprDate ? addIsoDays(dprDate, 1) : null;
-      const editedDate = normalizeIsoDate(value);
       if (!editedDate || !dprDate || (editedDate !== dprDate && editedDate !== overnightDate)) {
         toast({
           title: "Pasted date is outside the DPR window.",
@@ -1568,8 +1665,8 @@ export default function CapturePage() {
     if (field === "startTime") patch.startTime = value || undefined;
     else if (field === "endTime") patch.endTime = value || undefined;
     else if (field === "notes") patch.notes = value || undefined;
-    else if (field === "date") patch.date = normalizeIsoDate(value) ?? entry.date;
-    else if (field === "shiftDate") patch.shiftDate = value || entry.date; // fall back to raw date if cleared
+    else if (field === "date") patch.date = editedDate ?? entry.date;
+    else if (field === "shiftDate") patch.shiftDate = normalizeDmyOrIsoDate(value) ?? entry.date; // fall back to raw date if cleared
     else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
     else if (field === "pax") patch.pax = value.trim() ? normalizePax(value) : null;
     lastSavedCellRef.current = { entryId, field };
@@ -1633,13 +1730,14 @@ export default function CapturePage() {
   };
 
   const handleCopySourceDateChange = (value: string) => {
-    setCopySourceDate(value);
-    copySourceSelectionRef.current = value || null;
+    const normalizedValue = normalizeDate(value) ?? value;
+    setCopySourceDate(normalizedValue);
+    copySourceSelectionRef.current = normalizeIsoDate(normalizedValue) ? normalizedValue : null;
     setPendingCopy(null);
     setCopySourceStatus(null);
-    if (!value) return;
+    if (!normalizedValue) return;
 
-    const sourceDate = normalizeIsoDate(value);
+    const sourceDate = normalizeIsoDate(normalizedValue);
     const destinationDate = normalizeIsoDate(pasteShiftDate);
     if (!sourceDate || !destinationDate) {
       setCopySourceStatus({
@@ -2014,7 +2112,12 @@ export default function CapturePage() {
                     <TableCell className="w-[36px]" />
                     {showDateCol && (
                       <TableCell className={COL.date}>
-                        <Input type="date" lang="en-GB" value={newRow.date} onChange={(e) => setNewRow({ ...newRow, date: e.target.value })} className="h-8 text-sm" />
+                        <DmyDateInput
+                          value={newRow.date}
+                          onChange={(value) => setNewRow({ ...newRow, date: normalizeDate(value) ?? "" })}
+                          className="h-8 text-sm"
+                          ariaLabel="Date"
+                        />
                       </TableCell>
                     )}
                     {showTeamCol && (
@@ -2157,15 +2260,13 @@ export default function CapturePage() {
                       {showDateCol && (
                         <TableCell className={cn(COL.date, "font-medium")} onClick={onCellClick}>
                           {isCellEditing("shiftDate") ? (
-                            <input
+                            <DmyDateInput
                               autoFocus
-                              type="date"
-                              lang="en-GB"
                               value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
+                              onChange={setEditingValue}
                               onBlur={() => deactivateCell(entry.id, "shiftDate")}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
                               className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                              ariaLabel="Shift date"
                             />
                           ) : (
                             <span
@@ -2183,16 +2284,13 @@ export default function CapturePage() {
                                     {formatted}
                                   {calDiffers && (
                                     isCellEditing("date") ? (
-                                      <input
+                                      <DmyDateInput
                                         autoFocus
-                                        type="date"
-                                        lang="en-GB"
                                         value={editingValue}
-                                        onChange={(e) => setEditingValue(e.target.value)}
+                                        onChange={setEditingValue}
                                         onBlur={() => deactivateCell(entry.id, "date")}
-                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                                        onClick={(e) => e.stopPropagation()}
                                         className="ml-1 w-[118px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                                        ariaLabel="Calendar date"
                                       />
                                     ) : (
                                       <button
@@ -2266,16 +2364,13 @@ export default function CapturePage() {
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
                             {!showDateCol && entry.startTime && (
                               isCellEditing("date") ? (
-                                <input
+                                <DmyDateInput
                                   autoFocus
-                                  type="date"
-                                  lang="en-GB"
                                   value={editingValue}
-                                  onChange={(e) => setEditingValue(e.target.value)}
+                                  onChange={setEditingValue}
                                   onBlur={() => deactivateCell(entry.id, "date")}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                                  onClick={(e) => e.stopPropagation()}
                                   className="block w-[118px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-[10px] font-sans font-normal text-foreground outline-none focus:ring-1 focus:ring-primary"
+                                  ariaLabel="Calendar date"
                                 />
                               ) : (
                                 <button
@@ -2417,16 +2512,13 @@ export default function CapturePage() {
                           {/* Shift-date editor — only shown when the date column is hidden (date filter active) */}
                           {!showDateCol && (
                             isCellEditing("shiftDate") ? (
-                              <input
+                              <DmyDateInput
                                 autoFocus
-                                type="date"
-                                lang="en-GB"
                                 value={editingValue}
-                                onChange={(e) => setEditingValue(e.target.value)}
+                                onChange={setEditingValue}
                                 onBlur={() => deactivateCell(entry.id, "shiftDate")}
-                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
                                 className="w-28 bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
-                                onClick={(e) => e.stopPropagation()}
+                                ariaLabel="Shift date"
                               />
                             ) : (
                               <Button
@@ -2777,14 +2869,12 @@ export default function CapturePage() {
                 DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
               </label>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Input
+                <DmyDateInput
                   id="paste-shift-date"
-                  type="date"
-                  lang="en-GB"
                   value={pasteShiftDate}
-                  onChange={(e) => setPasteShiftDate(e.target.value)}
+                  onChange={(value) => setPasteShiftDate(normalizeDate(value) ?? value)}
                   className={cn("h-9 w-[170px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
-                  aria-label="DPR for Date"
+                  ariaLabel="DPR for Date"
                 />
                 <Button
                   type="button"
@@ -2812,14 +2902,12 @@ export default function CapturePage() {
                     Select the DPR date to load its rows into this review grid.
                   </p>
                 </div>
-                <Input
+                <DmyDateInput
                   id="copy-source-date"
-                  type="date"
-                  lang="en-GB"
                   value={copySourceDate}
-                  onChange={(e) => handleCopySourceDateChange(e.target.value)}
+                  onChange={handleCopySourceDateChange}
                   className="h-9 w-[170px] text-sm font-mono"
-                  aria-label="Copy activity reports from DPR date"
+                  ariaLabel="Copy activity reports from DPR date"
                 />
               </div>
             )}
