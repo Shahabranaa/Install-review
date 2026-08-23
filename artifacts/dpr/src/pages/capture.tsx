@@ -228,37 +228,30 @@ function validate48hTime(raw: string): string | null {
   return null;
 }
 
-type DateFormat = "mdy" | "dmy";
-
-function normalizeDate(raw: string, dateFormat: DateFormat = "dmy"): string | null {
+function normalizeDate(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  // Already YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parts = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!parts) return null;
 
-  // Helper: given two ambiguous parts, assign day/month based on chosen format
-  function assignDayMonth(a: string, b: string): { day: string; month: string } {
-    const [first, second] = dateFormat === "mdy"
-      ? [b, a]   // mdy: a=month, b=day  → day=b, month=a
-      : [a, b];  // dmy: a=day,   b=month → day=a, month=b
-    return { day: first.padStart(2, "0"), month: second.padStart(2, "0") };
+  const day = Number(parts[1]);
+  const month = Number(parts[2]);
+  const year = Number(parts[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return null;
   }
 
-  // Separator-agnostic match: D/M/Y or M/D/Y with / - or .
-  const parts = trimmed.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
-  if (parts) {
-    const { day, month } = assignDayMonth(parts[1], parts[2]);
-    const year = parts[3].length === 2 ? `20${parts[3]}` : parts[3];
-    const candidate = `${year}-${month}-${day}`;
-    // Validate: if the assembled date is invalid, return null rather than silently wrong
-    if (isNaN(new Date(candidate).getTime())) return null;
-    return candidate;
-  }
+  return `${parts[3]}-${parts[2]}-${parts[1]}`;
+}
 
-  // Generic fallback — only for unambiguous formats like "July 30 2026"
-  const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) return format(parsed, "yyyy-MM-dd");
-  return null; // unparseable — caller must handle
+function formatDateAsDmy(date: string): string {
+  const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : date;
 }
 
 type PendingRow = {
@@ -283,7 +276,6 @@ function parsePastedText(
   locations: DprLocation[],
   defaultActivityTypeId: number | null,
   defaultGroupId: number | null,
-  dateFormat: DateFormat = "dmy"
 ): PendingRow[] {
   // A line starts a new row only when it begins with a recognisable date.
   // Continuation lines (e.g. multi-line notes) are folded into the preceding
@@ -308,7 +300,7 @@ function parsePastedText(
     const fullNotes = [rawNotes.trim(), extra].filter(Boolean).join("\n");
     const team = findByName(teams, rawTeam);
     const location = findByNameFuzzy(locations, rawLocation);
-    const parsedDate = normalizeDate(rawDate, dateFormat);
+    const parsedDate = normalizeDate(rawDate);
     return {
       key: `${Date.now()}-${idx}`,
       date: parsedDate,
@@ -906,7 +898,6 @@ export default function CapturePage() {
   const [requiresLautecUncertainConfirmation, setRequiresLautecUncertainConfirmation] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
-  const [pasteDateFormat, setPasteDateFormat] = useState<DateFormat>("mdy");
   const [pendingRows, setPendingRows] = useState<PendingRow[] | null>(null);
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const [highlightEntryId, setHighlightEntryId] = useState<number | null>(null);
@@ -1398,7 +1389,7 @@ export default function CapturePage() {
   const handlePasteChange = (text: string) => {
     setPasteText(text);
     if (!text.trim()) { setPendingRows(null); return; }
-    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId, pasteDateFormat));
+    setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId));
   };
 
   const updatePendingRow = (key: string, patch: Partial<PendingRow>) =>
@@ -1407,24 +1398,26 @@ export default function CapturePage() {
   const removePendingRow = (key: string) =>
     setPendingRows((rows) => rows?.filter((r) => r.key !== key) ?? null);
 
-  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPasteDateFormat("mdy"); setPendingRows(null); };
-
-  const handleDateFormatChange = (fmt: DateFormat) => {
-    setPasteDateFormat(fmt);
-    if (pasteText.trim()) {
-      setPendingRows(parsePastedText(pasteText, teams, locations, defaultActivityTypeId, defaultGroupId, fmt));
-    }
-  };
+  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPendingRows(null); };
 
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
+    const normalizedShiftDate = pasteShiftDate.trim() ? normalizeDate(pasteShiftDate) : null;
+    if (pasteShiftDate.trim() && !normalizedShiftDate) {
+      toast({
+        title: "Please give a valid date.",
+        description: "Use DD/MM/YYYY format.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSavingBulk(true);
     const rowsToSave = pendingRows.filter((row): row is PendingRow & { date: string } => !!row.date);
     const skipped = pendingRows.length - rowsToSave.length;
     // Priority: explicit override → active sidebar date → each row's own calendar date.
     // Defaulting to activeDate means pasting while on the 27th filter auto-assigns
     // shiftDate=27th without needing to fill in the override every time.
-    const effectiveShiftDate = pasteShiftDate.trim() || activeDate || null;
+    const effectiveShiftDate = normalizedShiftDate || activeDate || null;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
         createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
@@ -1571,13 +1564,10 @@ export default function CapturePage() {
             // Format as tab-separated text matching the paste dialog's column order:
             // Date, Team, Start, End, Location, Notes
             const tsv = selectedRows
-              .map((r) => [r.date, r.team, r.start, r.end, r.location, r.notes].join("\t"))
+              .map((r) => [formatDateAsDmy(r.date), r.team, r.start, r.end, r.location, r.notes].join("\t"))
               .join("\n");
-            // Use DD/MM/YYYY format and parse immediately (avoids stale pasteDateFormat closure)
-            const fmt: DateFormat = "dmy";
             setPasteText(tsv);
-            setPasteDateFormat(fmt);
-            setPendingRows(parsePastedText(tsv, teams, locations, defaultActivityTypeId, defaultGroupId, fmt));
+            setPendingRows(parsePastedText(tsv, teams, locations, defaultActivityTypeId, defaultGroupId));
             setCaptureTab("timesheet");
             setPasteOpen(true);
           }}
@@ -2428,7 +2418,7 @@ export default function CapturePage() {
               ref={pasteTextareaRef}
               value={pasteText}
               onChange={(e) => handlePasteChange(e.target.value)}
-              placeholder={"2024-06-01\tTeam 1\t07:00\t15:30\tA01\tRoutine works"}
+              placeholder={"01/06/2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works"}
               className="min-h-[100px] font-mono text-xs shrink-0"
             />
 
@@ -2440,40 +2430,34 @@ export default function CapturePage() {
                   Set this if the pasted rows belong to a night shift that started on a different date (e.g. rows dated 28th that are part of the 27th shift).
                 </span>
               </div>
-              <Input
-                type="date"
-                lang="en-GB"
-                value={pasteShiftDate}
-                onChange={(e) => setPasteShiftDate(e.target.value)}
-                className="h-8 text-sm w-[150px] shrink-0"
-              />
+              <div className="flex w-[150px] shrink-0 flex-col gap-0.5">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={pasteShiftDate}
+                  onChange={(e) => setPasteShiftDate(e.target.value)}
+                  placeholder="DD/MM/YYYY"
+                  maxLength={10}
+                  className={cn(
+                    "h-8 text-sm font-mono",
+                    pasteShiftDate.trim() && !normalizeDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500",
+                  )}
+                />
+                {pasteShiftDate.trim() && !normalizeDate(pasteShiftDate) && (
+                  <span className="text-[10px] text-red-500">Please give a valid date.</span>
+                )}
+              </div>
             </div>
 
-            {/* Date format selector */}
+            {/* Required date format */}
             <div className="flex items-center gap-3 bg-muted/40 rounded-md px-3 py-2 shrink-0">
               <div className="flex flex-col gap-0.5 min-w-0">
                 <span className="text-xs font-medium">Date format</span>
                 <span className="text-[11px] text-muted-foreground">
-                  Choose how dates are ordered in your source sheet.
+                  Dates must use day/month/year.
                 </span>
               </div>
-              <div className="flex gap-1 shrink-0">
-                {(["mdy", "dmy"] as DateFormat[]).map((fmt) => (
-                  <button
-                    key={fmt}
-                    type="button"
-                    onClick={() => handleDateFormatChange(fmt)}
-                    className={cn(
-                      "px-3 py-1 rounded text-xs font-mono border transition-colors",
-                      pasteDateFormat === fmt
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-background text-muted-foreground border-border hover:border-primary/60"
-                    )}
-                  >
-                    {fmt === "mdy" ? "MM/DD/YYYY" : "DD/MM/YYYY"}
-                  </button>
-                ))}
-              </div>
+              <Badge variant="secondary" className="ml-auto shrink-0 font-mono">DD/MM/YYYY</Badge>
             </div>
 
             {pendingRows && pendingRows.length > 0 && (
@@ -2510,15 +2494,17 @@ export default function CapturePage() {
                           <TableCell className="pt-3">
                             <div className="flex flex-col gap-0.5">
                               <Input
-                                type="date"
-                                lang="en-GB"
-                                value={row.date ?? ""}
-                                onChange={(e) => updatePendingRow(row.key, { date: e.target.value || null, dateRaw: e.target.value })}
+                                type="text"
+                                inputMode="numeric"
+                                value={row.dateRaw}
+                                onChange={(e) => updatePendingRow(row.key, { date: normalizeDate(e.target.value), dateRaw: e.target.value })}
+                                placeholder="DD/MM/YYYY"
+                                maxLength={10}
                                 className={cn("h-8 text-sm", !row.date && row.dateRaw && "border-red-500 focus-visible:ring-red-500")}
                               />
                               {!row.date && row.dateRaw && (
                                 <span className="text-[10px] text-red-500 truncate" title={row.dateRaw}>
-                                  Can't parse: {row.dateRaw}
+                                  Please give a valid date.
                                 </span>
                               )}
                             </div>
@@ -2576,7 +2562,7 @@ export default function CapturePage() {
             {pendingRows && pendingRows.some((r) => r.dateRaw && !r.date) && (
               <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Some dates couldn't be parsed — fix them before saving (accepted: DD/MM/YYYY, DD.MM.YY, YYYY-MM-DD).
+                Please give a valid date in DD/MM/YYYY format.
               </div>
             )}
             {pendingRows && pendingRows.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) && (
@@ -2592,7 +2578,7 @@ export default function CapturePage() {
               <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || (pendingRows?.some((r) => r.dateRaw && !r.date) ?? false) || (pendingRows?.some((r) => r.locationRaw && !r.locationId) ?? false)} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeDate(pasteShiftDate)) || (pendingRows?.some((r) => r.dateRaw && !r.date) ?? false) || (pendingRows?.some((r) => r.locationRaw && !r.locationId) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>
