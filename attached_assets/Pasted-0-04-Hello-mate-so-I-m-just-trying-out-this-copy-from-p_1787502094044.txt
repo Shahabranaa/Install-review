@@ -1,0 +1,17 @@
+0:04 Hello mate, so I'm just trying out this copy from previous day thing. So it's obviously here. Copy from previous one, select the date and then it pulls it.
+0:20 But as you can see here, kind of like most of my screen space is taken up by all of this nonsense.
+0:26 And it's not really bringing anything to the party, really. It's like everything to be checked is down here. So really, and again, date format.
+0:36 I want to get rid of this because I just want one standard date format. So we shouldn't have To keep spelling it out to people.
+0:44 PF date, cover from that date. So do we need all this stuff? Is it copying from the previous date? Probably not.
+0:54 Is there a way of kind of, you know, when I, if I selected that and then it had the kind of like the drop-down of teams, so I could tick team one, team two, leave team three and four, and tick team five, and then it knows which teams to import from that date?
+1:10 Yeah, just thinking kind of because you know, at the minute all teams were copying, but then it could be that you've got people kind of just On weather, if you like, and you just copy in some of them, not all of them.
+1:24 Yeah, and then also there's teams, not in not in any kind of order. The dates are all the same, start time, end times, day, everything else is the same, but the teams aren't, but it's still not showing in the correct.
+1:36 You'd expect to see it sequentially if you like. So, yeah, we can do that as well. And then, I guess I can kind of add to the packs now.
+1:45 I'll leave it and see what happens. So, now we've got all those in, full day covered. Can we have like the Font, the same kind of size as the team ones, if you like.
+2:03 Everything just seems a bit bigger than it needs to be. It looks like it's kind of novelty sizes or something.
+2:09 I just need it. I just want to see it concise, do you know what I mean? I don't feel like I need to see all this kind of, yeah, it's kind of like, you know, and all this stuff kind of popping out.
+2:20 I just want to be able to edit it in situ, if you like. Add that, it kind of jumps around.
+2:27 It's just, it's ugly to me, mate, when it does that. I just need like it's just, it's chaos on a page.
+2:32 I just need it almost like a spreadsheet, so I would just click it, yeah, and then and then edit. It, if you like.
+2:58 Why is this jumping backwards and forwards? It's really annoying as well. See, this is quite glitchy. I just want to be able to click it once and it's done, but it looks like a it's just like.
+3:20 Moving backwards and forwards and clicked it so it shouldn't do what I mean, it's jumping around. Yeah, man. Okay, have a look at those bits here.

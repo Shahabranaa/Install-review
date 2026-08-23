@@ -1817,6 +1817,7 @@ export default function CapturePage() {
       && row.date !== normalizedPasteDprDate
       && row.date !== overnightPasteDate,
   ) ?? [];
+  const isCopiedActivityReview = copySourceStatus?.tone === "success" && Boolean(pendingRows?.length);
 
   // ── Shared table header ───────────────────────────────────────────────────
   const allSelected = filteredEntries.length > 0 && filteredEntries.every(e => selectedIds.has(e.id));
@@ -2855,15 +2856,23 @@ export default function CapturePage() {
       </Dialog>
 
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else openPasteDialog(); }}>
-        <DialogContent className="max-w-[95vw] w-full max-h-[90vh] flex flex-col">
+        <DialogContent className={cn(
+          "max-w-[95vw] w-full max-h-[90vh] flex flex-col",
+          isCopiedActivityReview && "max-w-[98vw] h-[94vh] max-h-[94vh]",
+        )}>
           <DialogHeader>
-            <DialogTitle>Paste rows from a spreadsheet</DialogTitle>
+            <DialogTitle>{isCopiedActivityReview ? "Review copied activity reports" : "Paste rows from a spreadsheet"}</DialogTitle>
             <DialogDescription>
-              Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX.
+              {isCopiedActivityReview
+                ? "Review and edit the copied activity reports before saving them to the selected DPR."
+                : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-auto flex flex-col gap-3 min-h-0">
+          <div className={cn(
+            "flex-1 flex flex-col gap-3 min-h-0",
+            isCopiedActivityReview ? "overflow-hidden" : "overflow-auto",
+          )}>
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-y border-border bg-muted/20 px-3 py-2">
               <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
                 DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
@@ -2927,24 +2936,31 @@ export default function CapturePage() {
               </div>
             )}
 
-            <Textarea
-              ref={pasteTextareaRef}
-              value={pasteText}
-              onChange={(e) => handlePasteChange(e.target.value)}
-              placeholder={"01-06-2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works\t8"}
-              className="min-h-[92px] font-mono text-xs shrink-0"
-            />
+            {!isCopiedActivityReview && (
+              <>
+                <Textarea
+                  ref={pasteTextareaRef}
+                  value={pasteText}
+                  onChange={(e) => handlePasteChange(e.target.value)}
+                  placeholder={"01-06-2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works\t8"}
+                  className="min-h-[92px] font-mono text-xs shrink-0"
+                />
 
-            {/* Compact spreadsheet controls */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-2 py-1.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Date format</span>
-                <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD-MM-YYYY</Badge>
-              </div>
-            </div>
+                {/* Compact spreadsheet controls */}
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-2 py-1.5">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Date format</span>
+                    <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD-MM-YYYY</Badge>
+                  </div>
+                </div>
+              </>
+            )}
 
             {pendingRows && pendingRows.length > 0 && (
-              <div className="flex-1 min-h-[180px] overflow-auto">
+              <div className={cn(
+                "flex-1 min-h-[180px] overflow-auto",
+                isCopiedActivityReview && "min-h-0",
+              )}>
                 <table className="w-full min-w-[980px] table-fixed border-collapse text-xs">
                   <colgroup>
                     <col className="w-[14%]" />
