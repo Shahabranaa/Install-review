@@ -1545,11 +1545,30 @@ export default function CapturePage() {
       setFailedCell({ entryId, field });
       return;
     }
+    if (field === "date" && value) {
+      const dprDate =
+        normalizeIsoDate(activeDate ?? "")
+        ?? normalizeIsoDate(entry.shiftDate ?? "")
+        ?? normalizeIsoDate(entry.date);
+      const overnightDate = dprDate ? addIsoDays(dprDate, 1) : null;
+      const editedDate = normalizeIsoDate(value);
+      if (!editedDate || !dprDate || (editedDate !== dprDate && editedDate !== overnightDate)) {
+        toast({
+          title: "Pasted date is outside the DPR window.",
+          description: dprDate
+            ? `Rows must be dated ${formatDateAsDmyHyphen(dprDate)} or ${formatDateAsDmyHyphen(overnightDate ?? "")}.`
+            : "Choose a valid DPR date before editing the calendar date.",
+          variant: "destructive",
+        });
+        setFailedCell({ entryId, field });
+        return;
+      }
+    }
     const patch: Partial<DprTimesheetEntry> = {};
     if (field === "startTime") patch.startTime = value || undefined;
     else if (field === "endTime") patch.endTime = value || undefined;
     else if (field === "notes") patch.notes = value || undefined;
-    else if (field === "date") patch.date = value || entry.date;
+    else if (field === "date") patch.date = normalizeIsoDate(value) ?? entry.date;
     else if (field === "shiftDate") patch.shiftDate = value || entry.date; // fall back to raw date if cleared
     else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
     else if (field === "pax") patch.pax = value.trim() ? normalizePax(value) : null;
