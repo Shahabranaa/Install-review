@@ -3,7 +3,6 @@ import {
   db,
   dprActivitiesTable,
   dprActivityGroupsTable,
-  dprActivityTypesTable,
   dprLocationsTable,
   dprTimesheetEntriesTable,
 } from "@workspace/db";
@@ -12,9 +11,35 @@ import { logger } from "./logger";
 import { createDateTabSyncQueue } from "./dpr-sheet-sync-queue.js";
 
 const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
-const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"];
+export const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment", "Team ID"];
 export function dprEffectiveDate(entry: { date: unknown; shiftDate?: unknown | null }): string {
   return String(entry.shiftDate ?? entry.date).substring(0, 10);
+}
+
+export function buildCaptureSheetRow(
+  entry: {
+    activityGroupId: number | null;
+    activityId: number | null;
+    startTime: string | null;
+    endTime: string | null;
+    notes: string | null;
+    teamId: number | null;
+  },
+  locationName: string | null | undefined,
+  activityGroupById: Map<number, string>,
+  activityById: Map<number, string>,
+): string[] {
+  return [
+    activityGroupById.get(entry.activityGroupId ?? -1) ?? "",
+    activityById.get(entry.activityId ?? -1)
+      ?? activityGroupById.get(entry.activityGroupId ?? -1)
+      ?? "",
+    locationName ?? "",
+    entry.startTime ?? "",
+    entry.endTime ?? "",
+    entry.notes ?? "",
+    String(entry.teamId ?? ""),
+  ];
 }
 
 /**
@@ -31,7 +56,7 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
       sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date}) = ${date}`,
     ),
   );
-  const [rows, activityTypes, activityGroups, activities] = await Promise.all([
+  const [rows, activityGroups, activities] = await Promise.all([
     db
       .select({
         entry: dprTimesheetEntriesTable,
@@ -45,12 +70,10 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
         dprTimesheetEntriesTable.startTime,
         dprTimesheetEntriesTable.id,
       ),
-    db.select().from(dprActivityTypesTable),
     db.select().from(dprActivityGroupsTable),
     db.select().from(dprActivitiesTable),
   ]);
 
-  const activityTypeById = new Map(activityTypes.map((item) => [item.id, item.name]));
   const activityGroupById = new Map(activityGroups.map((item) => [item.id, item.name]));
   const activityById = new Map(activities.map((item) => [item.id, item.name]));
   const valuesByDate = new Map(uniqueDates.map((date) => [date, [] as string[][]]));
@@ -59,16 +82,7 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
     const date = dprEffectiveDate(entry);
     const values = valuesByDate.get(date);
     if (!values) continue;
-    values.push([
-      activityTypeById.get(entry.activityTypeId ?? -1) ?? "",
-      activityById.get(entry.activityId ?? -1)
-        ?? activityGroupById.get(entry.activityGroupId ?? -1)
-        ?? "",
-      location?.name ?? "",
-      entry.startTime ?? "",
-      entry.endTime ?? "",
-      entry.notes ?? "",
-    ]);
+    values.push(buildCaptureSheetRow(entry, location?.name, activityGroupById, activityById));
   }
 
   const syncedRows = await replaceSheetRowsByTab(

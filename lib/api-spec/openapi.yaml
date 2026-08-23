@@ -1737,6 +1737,100 @@ paths:
         "404":
           description: Not found
 
+  /dpr/lautec-imports/preview:
+    post:
+      operationId: previewDprLautecImport
+      tags: [dpr]
+      summary: Validate and preview one DPR Capture tab for a Lautec import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LautecImportPreviewInput"
+      responses:
+        "200":
+          description: Validated source snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LautecImportPreview"
+        "403":
+          description: Admin access required
+        "422":
+          description: Capture tab validation failed
+
+  /dpr/lautec-imports:
+    get:
+      operationId: listDprLautecImports
+      tags: [dpr]
+      summary: List Lautec import attempts for one DPR date and team
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: teamId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Import attempts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LautecImportRun"
+    post:
+      operationId: startDprLautecImport
+      tags: [dpr]
+      summary: Start one validated manual Lautec browser import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LautecImportInput"
+      responses:
+        "202":
+          description: Import browser run started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LautecImportRun"
+        "409":
+          description: Duplicate source snapshot or run already in progress
+        "422":
+          description: Capture tab validation failed
+        "503":
+          description: Lautec browser configuration is unavailable
+
+  /dpr/lautec-imports/{runId}:
+    get:
+      operationId: getDprLautecImport
+      tags: [dpr]
+      summary: Get one Lautec import run and its terminal result
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Import run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LautecImportRun"
+        "404":
+          description: Import run not found
+
 components:
   schemas:
     HealthStatus:
@@ -2491,9 +2585,10 @@ components:
           type: string
         lastName:
           type: string
-        role:
-          type: string
-          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
         company:
           type: string
           nullable: true
@@ -2517,9 +2612,10 @@ components:
           type: string
         lastName:
           type: string
-        role:
-          type: string
-          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
         company:
           type: string
           nullable: true
@@ -2839,3 +2935,129 @@ components:
         - totalEntries
         - capturedCount
         - clarifiedCount
+
+    LautecImportRow:
+      type: object
+      properties:
+        activityGroup:
+          type: string
+        activity:
+          type: string
+        location:
+          type: string
+        start:
+          type: string
+        finish:
+          type: string
+        comment:
+          type: string
+      required: [activityGroup, activity, location, start, finish, comment]
+
+    LautecRejectedRow:
+      type: object
+      properties:
+        rowNumber:
+          type: integer
+        reason:
+          type: string
+      required: [rowNumber, reason]
+
+    LautecImportPreviewInput:
+      type: object
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        teamId:
+          type: integer
+      required: [date, teamId]
+
+    LautecImportInput:
+      type: object
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        teamId:
+          type: integer
+        snapshotHash:
+          type: string
+          minLength: 64
+          maxLength: 64
+        confirmResend:
+          type: boolean
+          default: false
+        confirmUncertain:
+          type: boolean
+          description: Confirms the operator checked Lautec after an earlier submission could not be verified.
+          default: false
+      required: [date, teamId, snapshotHash]
+
+    LautecImportPreview:
+      type: object
+      properties:
+        date:
+          type: string
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        snapshotHash:
+          type: string
+        rowCount:
+          type: integer
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/LautecImportRow"
+      required: [date, teamId, teamName, snapshotHash, rowCount, rows]
+
+    LautecImportRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+        teamId:
+          type: integer
+        snapshotHash:
+          type: string
+        status:
+          type: string
+          enum: [running, submitting, success, failed, uncertain, interrupted]
+        rowCount:
+          type: integer
+        rowsSubmitted:
+          type: integer
+        rejectedRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/LautecRejectedRow"
+        errorDetail:
+          type: ["string", "null"]
+        requestedResend:
+          type: boolean
+        confirmedUncertainRetry:
+          type: boolean
+        actorName:
+          type: string
+        startedAt:
+          type: string
+        finishedAt:
+          type: ["string", "null"]
+      required:
+        - id
+        - date
+        - teamId
+        - snapshotHash
+        - status
+        - rowCount
+        - rowsSubmitted
+        - rejectedRows
+        - errorDetail
+        - requestedResend
+        - confirmedUncertainRetry
+        - actorName
+        - startedAt
+        - finishedAt

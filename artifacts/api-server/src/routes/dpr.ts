@@ -22,6 +22,8 @@ import {
   dprCustomRolesTable,
   dprWhatsappImportsTable,
   dprTeamActivityPlansTable,
+  dprLautecImportRunsTable,
+  usersTable,
   appSettingsTable,
 } from "@workspace/db";
 import { appendSheetRowsToTab, fetchSheetRows, replaceSheetRowsByTab } from "../googleSheets.js";
@@ -109,9 +111,24 @@ import {
   DprShiftSessionResponse,
   SaveDprShiftAttendanceBody,
   GetDprShiftSessionQueryParams,
+  PreviewDprLautecImportBody,
+  PreviewDprLautecImportResponse,
+  ListDprLautecImportsQueryParams,
+  ListDprLautecImportsResponse,
+  StartDprLautecImportBody,
+  GetDprLautecImportParams,
+  GetDprLautecImportResponse,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 import { dprEffectiveDate, scheduleDprDateSheetSync, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
+import {
+  getLautecSourceSnapshot,
+  LautecSourceError,
+  requiresLautecResendConfirmation,
+  requiresLautecUncertainConfirmation,
+} from "../lib/dpr-lautec-source";
+import { getLautecBrowserConfig } from "../lib/lautec-browser-adapter";
+import { dispatchLautecImportRun, interruptStaleLautecImports } from "../lib/dpr-lautec-import-service";
 
 const router: IRouter = Router();
 
@@ -124,6 +141,58 @@ function actorFromReq(req: Request) {
     actorId: req.session?.userId ?? null,
     actorName: req.session?.displayName ?? req.session?.username ?? "Unknown",
   };
+}
+
+async function requireDprAdmin(req: Request, res: { status: (code: number) => { json: (body: unknown) => void } }): Promise<{ actorId: number; actorName: string } | null> {
+  const userId = req.session?.userId;
+  if (!userId || req.session?.sessionType === "worker") {
+    res.status(403).json({ error: "Admin access required" });
+    return null;
+  }
+  const [user] = await db.select({
+    id: usersTable.id,
+    username: usersTable.username,
+    displayName: usersTable.displayName,
+    accessLevel: usersTable.accessLevel,
+    active: usersTable.active,
+  }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user || !user.active || user.accessLevel !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return null;
+  }
+  return { actorId: user.id, actorName: user.displayName ?? user.username };
+}
+
+function lautecRunResponse(run: typeof dprLautecImportRunsTable.$inferSelect) {
+  return {
+    id: run.id,
+    date: run.date,
+    teamId: run.teamId,
+    snapshotHash: run.snapshotHash,
+    status: run.status,
+    rowCount: run.rowCount,
+    rowsSubmitted: run.rowsSubmitted,
+    rejectedRows: run.rejectedRows ?? [],
+    errorDetail: run.errorDetail,
+    requestedResend: run.requestedResend,
+    confirmedUncertainRetry: run.confirmedUncertainRetry,
+    actorName: run.actorName,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function sendLautecSourceError(error: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }): boolean {
+  if (error instanceof LautecSourceError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  const message = error instanceof Error ? error.message : "Unable to read the Capture tab.";
+  if (message.includes("GOOGLE_SERVICE_ACCOUNT_JSON")) {
+    res.status(503).json({ error: "Google Sheets service account is not configured." });
+    return true;
+  }
+  return false;
 }
 
 async function logAction(req: Request, opts: {
@@ -874,6 +943,200 @@ router.post("/dpr/timesheet-entries/lock", async (req, res): Promise<void> => {
 
   const withJoins = await Promise.all(updated.map(withRelations));
   res.json(LockDprTimesheetEntriesResponse.parse(serialize(withJoins)));
+});
+
+// ─── Lautec manual browser imports ───────────────────────────────────────────
+
+router.post("/dpr/lautec-imports/preview", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const parsed = PreviewDprLautecImportBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [team] = await db.select().from(dprTeamsTable).where(eq(dprTeamsTable.id, parsed.data.teamId));
+  if (!team) {
+    res.status(404).json({ error: "DPR team not found." });
+    return;
+  }
+
+  try {
+    const source = await getLautecSourceSnapshot(parsed.data.date, parsed.data.teamId);
+    res.json(PreviewDprLautecImportResponse.parse({
+      date: parsed.data.date,
+      teamId: team.id,
+      teamName: team.name,
+      snapshotHash: source.snapshotHash,
+      rowCount: source.rows.length,
+      rows: source.rows,
+    }));
+  } catch (error) {
+    if (sendLautecSourceError(error, res)) return;
+    throw error;
+  }
+});
+
+router.get("/dpr/lautec-imports", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const parsed = ListDprLautecImportsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db.select().from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, parsed.data.date),
+      eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+    ))
+    .orderBy(desc(dprLautecImportRunsTable.startedAt));
+  res.json(ListDprLautecImportsResponse.parse(rows.map(lautecRunResponse)));
+});
+
+router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
+  const actor = await requireDprAdmin(req, res);
+  if (!actor) return;
+  const parsed = StartDprLautecImportBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [team] = await db.select().from(dprTeamsTable).where(eq(dprTeamsTable.id, parsed.data.teamId));
+  if (!team) {
+    res.status(404).json({ error: "DPR team not found." });
+    return;
+  }
+
+  let source: Awaited<ReturnType<typeof getLautecSourceSnapshot>>;
+  try {
+    source = await getLautecSourceSnapshot(parsed.data.date, parsed.data.teamId);
+  } catch (error) {
+    if (sendLautecSourceError(error, res)) return;
+    throw error;
+  }
+  if (source.snapshotHash !== parsed.data.snapshotHash) {
+    res.status(409).json({
+      error: "The Capture tab changed after preview. Review the latest rows before sending.",
+      code: "snapshot_changed",
+    });
+    return;
+  }
+
+  try {
+    await getLautecBrowserConfig();
+  } catch (error) {
+    // The error names configuration only; helper intentionally never includes secret values.
+    res.status(503).json({ error: error instanceof Error ? error.message : "Lautec browser is not configured." });
+    return;
+  }
+
+  await interruptStaleLautecImports();
+
+  const [running] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, parsed.data.date),
+      eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+      inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+    ));
+  if (running) {
+    res.status(409).json({ error: "A Lautec import is already running for this date and team.", runId: running.id });
+    return;
+  }
+
+  const [uncertain] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, parsed.data.date),
+      eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+      eq(dprLautecImportRunsTable.status, "uncertain"),
+    ))
+    .orderBy(desc(dprLautecImportRunsTable.finishedAt));
+  if (requiresLautecUncertainConfirmation(Boolean(uncertain), parsed.data.confirmUncertain)) {
+    res.status(409).json({
+      error: "An earlier Lautec submission for this date and team may have created rows. Check Lautec before explicitly allowing a retry, even if the Capture tab changed.",
+      code: "uncertain_submission",
+      runId: uncertain.id,
+    });
+    return;
+  }
+
+  const [completed] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.snapshotHash, source.snapshotHash),
+      eq(dprLautecImportRunsTable.status, "success"),
+    ))
+    .orderBy(desc(dprLautecImportRunsTable.finishedAt));
+  if (requiresLautecResendConfirmation(Boolean(completed), parsed.data.confirmResend)) {
+    res.status(409).json({
+      error: "This exact Capture snapshot was already imported successfully. Explicitly confirm re-send to import it again.",
+      code: "duplicate_completed_snapshot",
+      runId: completed.id,
+    });
+    return;
+  }
+
+  let run: typeof dprLautecImportRunsTable.$inferSelect | undefined;
+  try {
+    [run] = await db.insert(dprLautecImportRunsTable).values({
+      date: parsed.data.date,
+      teamId: team.id,
+      snapshotHash: source.snapshotHash,
+      snapshotJson: source.rows,
+      status: "running",
+      rowCount: source.rows.length,
+      rowsSubmitted: 0,
+      rejectedRows: [],
+      requestedResend: Boolean(completed && parsed.data.confirmResend),
+      confirmedUncertainRetry: Boolean(uncertain && parsed.data.confirmUncertain),
+      ...actor,
+    }).returning();
+  } catch {
+    const [conflictingRun] = await db.select({ id: dprLautecImportRunsTable.id })
+      .from(dprLautecImportRunsTable)
+      .where(and(
+        eq(dprLautecImportRunsTable.date, parsed.data.date),
+        eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+        inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+      ));
+    if (conflictingRun) {
+      res.status(409).json({ error: "A Lautec import is already running for this date and team.", runId: conflictingRun.id });
+      return;
+    }
+    throw new Error("Unable to create the Lautec import ledger entry.");
+  }
+  if (!run) {
+    res.status(500).json({ error: "Unable to create the Lautec import ledger entry." });
+    return;
+  }
+
+  void logAction(req, {
+    action: "lautec_import_started",
+    page: "capture",
+    detail: `Started Lautec import #${run.id} for ${team.name} on ${run.date} (${run.rowCount} row(s)).`,
+    entryDate: run.date,
+    teamId: run.teamId,
+  });
+  dispatchLautecImportRun(run.id);
+  res.status(202).json(GetDprLautecImportResponse.parse(lautecRunResponse(run)));
+});
+
+router.get("/dpr/lautec-imports/:runId", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const params = GetDprLautecImportParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [run] = await db.select().from(dprLautecImportRunsTable)
+    .where(eq(dprLautecImportRunsTable.id, params.data.runId));
+  if (!run) {
+    res.status(404).json({ error: "Lautec import run not found." });
+    return;
+  }
+  res.json(GetDprLautecImportResponse.parse(lautecRunResponse(run)));
 });
 
 // ── Team date exceptions ──────────────────────────────────────────────────

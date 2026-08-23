@@ -45,7 +45,7 @@ interface TeamDateException { id: number; teamId: number; date: string; status: 
 
 interface DprWorker {
   id: number; firstName: string; lastName: string;
-  role: string | null; company: string | null; active: boolean; teamIds: number[];
+  roles: string[]; company: string | null; active: boolean; teamIds: number[];
 }
 
 interface RosterSlot {

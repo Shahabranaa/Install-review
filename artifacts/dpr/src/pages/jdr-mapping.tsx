@@ -49,7 +49,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Loader2, Plus, Pencil, Trash2, Search, X, Check, ChevronsUpDown,
-  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight, TableProperties,
+  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight, TableProperties, ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -154,6 +154,116 @@ function GoogleSheetSettingsPanel() {
   );
 }
 
+// ─── Lautec Browser Settings ─────────────────────────────────────────────────
+
+function LautecSettingsPanel() {
+  const { toast } = useToast();
+  const [loginUrl, setLoginUrl] = useState("https://dpr.lautec.com/");
+  const [loginSelectors, setLoginSelectors] = useState({
+    username: 'input[type="email"]',
+    continueSubmit: "button[type=submit]",
+    password: 'input[type="password"]',
+    loginSubmit: "button[type=submit]",
+    loginComplete: "",
+  });
+  const [status, setStatus] = useState<{ usernameConfigured: boolean; passwordConfigured: boolean; selectorsConfigured: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const { isLoading } = useQuery({
+    queryKey: ["/api/settings/lautec"],
+    queryFn: async () => {
+      const response = await fetch("/api/settings/lautec", { credentials: "include" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not load Lautec settings.");
+      setLoginUrl(data.loginUrl ?? "https://dpr.lautec.com/");
+      setLoginSelectors((current) => ({ ...current, ...(data.loginSelectors ?? {}) }));
+      setStatus(data);
+      return data;
+    },
+  });
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings/lautec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ loginUrl: loginUrl.trim(), loginSelectors }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save Lautec settings.");
+      toast({ title: "Saved", description: "Lautec browser login settings updated." });
+    } catch (error: any) {
+      toast({ title: "Save failed", description: error.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const configured = status?.usernameConfigured && status?.passwordConfigured && status?.selectorsConfigured;
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+          <h2 className="text-[13px] font-semibold">Lautec Import Login</h2>
+        </div>
+        <p className="text-[12px] text-muted-foreground">
+          Configure the visible Lautec pages used by the DPR import browser. Imports sign in with one dedicated server-side account.
+        </p>
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+          <div className={`rounded-md border px-3 py-2 text-[11px] ${configured ? "border-emerald-200 bg-emerald-500/10 text-emerald-800" : "border-amber-200 bg-amber-500/10 text-amber-800"}`}>
+            {configured ? "Lautec credentials and browser selectors are configured." : "Finish the server-side Lautec setup before sending an import."}
+          </div>
+          <form onSubmit={handleSave} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-[11px]">Login URL</Label>
+              <Input value={loginUrl} onChange={(event) => setLoginUrl(event.target.value)} type="url" placeholder="https://dpr.lautec.com/" className="font-mono text-[12px] h-8" />
+            </div>
+            <div className="rounded-md border border-border/70 bg-muted/20 p-3 space-y-3">
+              <div>
+                <p className="text-[11px] font-medium">Two-step login controls</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Matches Lautec’s email → Continue → password → Sign in flow.</p>
+              </div>
+              {[
+                ["username", "Email address field"],
+                ["continueSubmit", "Continue button"],
+                ["password", "Password field"],
+                ["loginSubmit", "Sign in button"],
+                ["loginComplete", "Post-login marker (optional)"],
+              ].map(([key, label]) => (
+                <div key={key} className="space-y-1">
+                  <Label className="text-[10px]">{label}</Label>
+                  <Input
+                    value={loginSelectors[key as keyof typeof loginSelectors]}
+                    onChange={(event) => setLoginSelectors((current) => ({ ...current, [key]: event.target.value }))}
+                    placeholder={key === "loginComplete" ? "A selector only visible after sign-in" : "CSS selector"}
+                    className="font-mono text-[11px] h-7"
+                  />
+                </div>
+              ))}
+            </div>
+            <Button type="submit" size="sm" disabled={saving || !loginUrl.trim()} className="h-7 text-[11px]">
+              {saving && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}Save Lautec settings
+            </Button>
+          </form>
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground space-y-1">
+            <p><strong className="text-foreground">Dedicated account:</strong> email {status?.usernameConfigured ? "configured" : "not configured"} · password {status?.passwordConfigured ? "configured" : "not configured"}.</p>
+            <p>For security, set the email as <strong>LAUTEC_USERNAME</strong> and the password as <strong>LAUTEC_PASSWORD</strong> in workspace secrets. They are never displayed here or saved to the DPR database.</p>
+            {!status?.selectorsConfigured && <p>Browser selectors still need to be configured by a technical administrator.</p>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function JdrMappingPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -172,7 +282,7 @@ export default function JdrMappingPage() {
 
   const isLoading = typesLoading || groupsLoading || activitiesLoading || jdrCodesLoading || locationsLoading;
 
-  const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities" | "sheets">("activities");
+  const [activeTab, setActiveTab] = useState<"teams" | "locations" | "roles" | "workers" | "activities" | "sheets" | "lautec">("activities");
   const [workerDialog, setWorkerDialog] = useState<{ editing: DprWorker | null } | null>(null);
   const [roleDialog, setRoleDialog] = useState<{ abbr: string; name: string; color: string; saving: boolean; error: string | null } | null>(null);
 
@@ -638,6 +748,7 @@ export default function JdrMappingPage() {
               { id: "workers",    label: "Workers",    icon: <Users className="w-3.5 h-3.5" />,   count: workers.filter((w) => w.active).length },
               { id: "activities", label: "Activities", icon: <Network className="w-3.5 h-3.5" />, count: jdrCodes.length },
               { id: "sheets",     label: "Sheets",     icon: <TableProperties className="w-3.5 h-3.5" />, count: null },
+              { id: "lautec",     label: "Lautec",     icon: <ShieldCheck className="w-3.5 h-3.5" />, count: null },
             ] as const).map((tab) => (
               <button
                 key={tab.id}
@@ -921,6 +1032,7 @@ export default function JdrMappingPage() {
 
               {/* ── Sheets ── */}
               {activeTab === "sheets" && <GoogleSheetSettingsPanel />}
+              {activeTab === "lautec" && <LautecSettingsPanel />}
 
             </div>
           ) : (

@@ -65,11 +65,16 @@ import type {
   ImageDetail,
   ImageRecord,
   IssueFlagRecord,
+  LautecImportInput,
+  LautecImportPreview,
+  LautecImportPreviewInput,
+  LautecImportRun,
   ListDecisionsParams,
   ListDocumentsParams,
   ListDprActivitiesParams,
   ListDprActivityGroupsParams,
   ListDprJdrCodesParams,
+  ListDprLautecImportsParams,
   ListDprTimesheetEntriesParams,
   ListImagesParams,
   ListIssuesParams,
@@ -6088,4 +6093,307 @@ export const useDeleteDprTimesheetEntry = <TError = ErrorType<void>,
       > => {
       return useMutation(getDeleteDprTimesheetEntryMutationOptions(options));
     }
+
+export const getPreviewDprLautecImportUrl = () => {
+
+
+
+
+  return `/api/dpr/lautec-imports/preview`
+}
+
+/**
+ * @summary Validate and preview one DPR Capture tab for a Lautec import
+ */
+export const previewDprLautecImport = async (lautecImportPreviewInput: LautecImportPreviewInput, options?: RequestInit): Promise<LautecImportPreview> => {
+
+  return customFetch<LautecImportPreview>(getPreviewDprLautecImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lautecImportPreviewInput,)
+  }
+);}
+
+
+
+
+export const getPreviewDprLautecImportMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewDprLautecImport>>, TError,{data: BodyType<LautecImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewDprLautecImport>>, TError,{data: BodyType<LautecImportPreviewInput>}, TContext> => {
+
+const mutationKey = ['previewDprLautecImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewDprLautecImport>>, {data: BodyType<LautecImportPreviewInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewDprLautecImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewDprLautecImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewDprLautecImport>>>
+    export type PreviewDprLautecImportMutationBody = BodyType<LautecImportPreviewInput>
+    export type PreviewDprLautecImportMutationError = ErrorType<void>
+
+    /**
+ * @summary Validate and preview one DPR Capture tab for a Lautec import
+ */
+export const usePreviewDprLautecImport = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewDprLautecImport>>, TError,{data: BodyType<LautecImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewDprLautecImport>>,
+        TError,
+        {data: BodyType<LautecImportPreviewInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewDprLautecImportMutationOptions(options));
+    }
+
+export const getListDprLautecImportsUrl = (params: ListDprLautecImportsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/lautec-imports?${stringifiedParams}` : `/api/dpr/lautec-imports`
+}
+
+/**
+ * @summary List Lautec import attempts for one DPR date and team
+ */
+export const listDprLautecImports = async (params: ListDprLautecImportsParams, options?: RequestInit): Promise<LautecImportRun[]> => {
+
+  return customFetch<LautecImportRun[]>(getListDprLautecImportsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDprLautecImportsQueryKey = (params?: ListDprLautecImportsParams,) => {
+    return [
+    `/api/dpr/lautec-imports`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDprLautecImportsQueryOptions = <TData = Awaited<ReturnType<typeof listDprLautecImports>>, TError = ErrorType<unknown>>(params: ListDprLautecImportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprLautecImports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDprLautecImportsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDprLautecImports>>> = ({ signal }) => listDprLautecImports(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDprLautecImports>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDprLautecImportsQueryResult = NonNullable<Awaited<ReturnType<typeof listDprLautecImports>>>
+export type ListDprLautecImportsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List Lautec import attempts for one DPR date and team
+ */
+
+export function useListDprLautecImports<TData = Awaited<ReturnType<typeof listDprLautecImports>>, TError = ErrorType<unknown>>(
+ params: ListDprLautecImportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDprLautecImports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDprLautecImportsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getStartDprLautecImportUrl = () => {
+
+
+
+
+  return `/api/dpr/lautec-imports`
+}
+
+/**
+ * @summary Start one validated manual Lautec browser import
+ */
+export const startDprLautecImport = async (lautecImportInput: LautecImportInput, options?: RequestInit): Promise<LautecImportRun> => {
+
+  return customFetch<LautecImportRun>(getStartDprLautecImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lautecImportInput,)
+  }
+);}
+
+
+
+
+export const getStartDprLautecImportMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDprLautecImport>>, TError,{data: BodyType<LautecImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startDprLautecImport>>, TError,{data: BodyType<LautecImportInput>}, TContext> => {
+
+const mutationKey = ['startDprLautecImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startDprLautecImport>>, {data: BodyType<LautecImportInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startDprLautecImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartDprLautecImportMutationResult = NonNullable<Awaited<ReturnType<typeof startDprLautecImport>>>
+    export type StartDprLautecImportMutationBody = BodyType<LautecImportInput>
+    export type StartDprLautecImportMutationError = ErrorType<void>
+
+    /**
+ * @summary Start one validated manual Lautec browser import
+ */
+export const useStartDprLautecImport = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDprLautecImport>>, TError,{data: BodyType<LautecImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startDprLautecImport>>,
+        TError,
+        {data: BodyType<LautecImportInput>},
+        TContext
+      > => {
+      return useMutation(getStartDprLautecImportMutationOptions(options));
+    }
+
+export const getGetDprLautecImportUrl = (runId: number,) => {
+
+
+
+
+  return `/api/dpr/lautec-imports/${runId}`
+}
+
+/**
+ * @summary Get one Lautec import run and its terminal result
+ */
+export const getDprLautecImport = async (runId: number, options?: RequestInit): Promise<LautecImportRun> => {
+
+  return customFetch<LautecImportRun>(getGetDprLautecImportUrl(runId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDprLautecImportQueryKey = (runId: number,) => {
+    return [
+    `/api/dpr/lautec-imports/${runId}`
+    ] as const;
+    }
+
+
+export const getGetDprLautecImportQueryOptions = <TData = Awaited<ReturnType<typeof getDprLautecImport>>, TError = ErrorType<void>>(runId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprLautecImport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDprLautecImportQueryKey(runId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDprLautecImport>>> = ({ signal }) => getDprLautecImport(runId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(runId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDprLautecImport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDprLautecImportQueryResult = NonNullable<Awaited<ReturnType<typeof getDprLautecImport>>>
+export type GetDprLautecImportQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one Lautec import run and its terminal result
+ */
+
+export function useGetDprLautecImport<TData = Awaited<ReturnType<typeof getDprLautecImport>>, TError = ErrorType<void>>(
+ runId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprLautecImport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDprLautecImportQueryOptions(runId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 

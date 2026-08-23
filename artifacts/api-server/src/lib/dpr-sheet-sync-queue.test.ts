@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { normalizeLautecSourceRows } from "./dpr-lautec-source.js";
+import { buildCaptureSheetRow, CAPTURE_SHEET_HEADERS } from "./dpr-sheet-sync.js";
 import { createDateTabSyncQueue } from "./dpr-sheet-sync-queue.js";
 
 test("a manual sync after an in-flight rebuild writes the newest date snapshot last", async () => {
@@ -58,4 +60,33 @@ test("a failed automatic sync retries its pending date", async () => {
   });
 
   assert.equal(attempts, 2);
+});
+
+test("Capture export sends the selected activity group to Lautec, not its broader type", () => {
+  const sheetRow = buildCaptureSheetRow(
+    {
+      activityGroupId: 22,
+      activityId: 38,
+      startTime: "08:00",
+      endTime: "16:00",
+      notes: "Corrected cable route",
+      teamId: 7,
+    },
+    "Platform A",
+    new Map([[22, "Re-Work"]]),
+    new Map([[38, "Cable repair"]]),
+  );
+
+  assert.equal(sheetRow[0], "Re-Work");
+  assert.deepEqual(
+    normalizeLautecSourceRows([CAPTURE_SHEET_HEADERS, sheetRow], 7),
+    [{
+      activityGroup: "Re-Work",
+      activity: "Cable repair",
+      location: "Platform A",
+      start: "08:00",
+      finish: "16:00",
+      comment: "Corrected cable route",
+    }],
+  );
 });

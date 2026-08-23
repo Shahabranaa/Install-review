@@ -840,7 +840,7 @@ export const GetDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -851,7 +851,7 @@ export const GetDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -881,7 +881,7 @@ export const CopyDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -892,7 +892,7 @@ export const CopyDprRosterResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -1013,7 +1013,7 @@ export const ListDprWorkersResponseItem = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -1027,7 +1027,7 @@ export const ListDprWorkersResponse = zod.array(ListDprWorkersResponseItem)
 export const CreateDprWorkerBody = zod.object({
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()).default([]),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish()
 })
 
@@ -1038,7 +1038,7 @@ export const CreateDprWorkerBody = zod.object({
 export const ImportDprWorkersBodyItem = zod.object({
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()).default([]),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish()
 })
 export const ImportDprWorkersBody = zod.array(ImportDprWorkersBodyItem)
@@ -1072,7 +1072,7 @@ export const SetDprWorkerTeamsResponse = zod.object({
   "id": zod.number(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "roles": zod.array(zod.string()),
+  "roles": zod.array(zod.string()).optional(),
   "company": zod.string().nullish(),
   "active": zod.boolean(),
   "teamIds": zod.array(zod.number())
@@ -1482,4 +1482,112 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
  */
 export const DeleteDprTimesheetEntryParams = zod.object({
   "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Validate and preview one DPR Capture tab for a Lautec import
+ */
+export const previewDprLautecImportBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const PreviewDprLautecImportBody = zod.object({
+  "date": zod.string().regex(previewDprLautecImportBodyDateRegExp),
+  "teamId": zod.number()
+})
+
+export const PreviewDprLautecImportResponse = zod.object({
+  "date": zod.string(),
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "snapshotHash": zod.string(),
+  "rowCount": zod.number(),
+  "rows": zod.array(zod.object({
+  "activityGroup": zod.string(),
+  "activity": zod.string(),
+  "location": zod.string(),
+  "start": zod.string(),
+  "finish": zod.string(),
+  "comment": zod.string()
+}))
+})
+
+
+/**
+ * @summary List Lautec import attempts for one DPR date and team
+ */
+export const listDprLautecImportsQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListDprLautecImportsQueryParams = zod.object({
+  "date": zod.coerce.string().regex(listDprLautecImportsQueryDateRegExp),
+  "teamId": zod.coerce.number()
+})
+
+export const ListDprLautecImportsResponseItem = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "teamId": zod.number(),
+  "snapshotHash": zod.string(),
+  "status": zod.enum(['running', 'submitting', 'success', 'failed', 'uncertain', 'interrupted']),
+  "rowCount": zod.number(),
+  "rowsSubmitted": zod.number(),
+  "rejectedRows": zod.array(zod.object({
+  "rowNumber": zod.number(),
+  "reason": zod.string()
+})),
+  "errorDetail": zod.string().nullable(),
+  "requestedResend": zod.boolean(),
+  "confirmedUncertainRetry": zod.boolean(),
+  "actorName": zod.string(),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
+})
+export const ListDprLautecImportsResponse = zod.array(ListDprLautecImportsResponseItem)
+
+
+/**
+ * @summary Start one validated manual Lautec browser import
+ */
+export const startDprLautecImportBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const startDprLautecImportBodySnapshotHashMin = 64;
+export const startDprLautecImportBodySnapshotHashMax = 64;
+
+export const startDprLautecImportBodyConfirmResendDefault = false;
+export const startDprLautecImportBodyConfirmUncertainDefault = false;
+
+export const StartDprLautecImportBody = zod.object({
+  "date": zod.string().regex(startDprLautecImportBodyDateRegExp),
+  "teamId": zod.number(),
+  "snapshotHash": zod.string().min(startDprLautecImportBodySnapshotHashMin).max(startDprLautecImportBodySnapshotHashMax),
+  "confirmResend": zod.boolean().default(startDprLautecImportBodyConfirmResendDefault),
+  "confirmUncertain": zod.boolean().default(startDprLautecImportBodyConfirmUncertainDefault).describe('Confirms the operator checked Lautec after an earlier submission could not be verified.')
+})
+
+
+/**
+ * @summary Get one Lautec import run and its terminal result
+ */
+export const GetDprLautecImportParams = zod.object({
+  "runId": zod.coerce.number()
+})
+
+export const GetDprLautecImportResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "teamId": zod.number(),
+  "snapshotHash": zod.string(),
+  "status": zod.enum(['running', 'submitting', 'success', 'failed', 'uncertain', 'interrupted']),
+  "rowCount": zod.number(),
+  "rowsSubmitted": zod.number(),
+  "rejectedRows": zod.array(zod.object({
+  "rowNumber": zod.number(),
+  "reason": zod.string()
+})),
+  "errorDetail": zod.string().nullable(),
+  "requestedResend": zod.boolean(),
+  "confirmedUncertainRetry": zod.boolean(),
+  "actorName": zod.string(),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
 })

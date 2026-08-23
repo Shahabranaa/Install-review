@@ -8,7 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:dpr-sheet-sync": "node --import tsx --test src/lib/dpr-sheet-sync-queue.test.ts src/googleSheets.test.ts",
+    "test:dpr-sheet-sync": "node --import tsx --test src/lib/dpr-sheet-sync-queue.test.ts src/googleSheets.test.ts src/lib/dpr-shift-attendance-schema.test.ts",
+    "test:lautec-import": "node --import tsx --test src/lib/dpr-lautec-source.test.ts src/lib/lautec-browser-adapter.test.ts",
     "seed:cvow": "npx tsx src/seed-cvow.ts"
   },
   "dependencies": {
@@ -17,9 +18,10 @@
     "@azure/ai-form-recognizer": "^5.1.0",
     "@replit/connectors-sdk": "^0.3.0",
     "@sendgrid/mail": "^8.1.6",
+    "@sparticuz/chromium": "^143.0.4",
     "@swc/helpers": "^0.5.21",
+    "@vercel/functions": "^3.9.3",
     "@workspace/api-zod": "workspace:*",
-    "zod": "catalog:",
     "@workspace/db": "workspace:*",
     "bcryptjs": "^3.0.3",
     "connect-pg-simple": "^10.0.0",
@@ -42,8 +44,10 @@
     "pg": "^8.20.0",
     "pino": "^9.14.0",
     "pino-http": "^10.5.0",
+    "puppeteer-core": "^24.43.1",
     "tesseract.js": "^7.0.0",
-    "unpdf": "^1.6.2"
+    "unpdf": "^1.6.2",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

@@ -374,7 +374,7 @@ export interface DprWorker {
   id: number;
   firstName: string;
   lastName: string;
-  roles: string[];
+  roles?: string[];
   company?: string | null;
   active: boolean;
   teamIds: number[];
@@ -414,7 +414,6 @@ export interface DprWorkerInput {
   lastName: string;
   roles?: string[];
   company?: string | null;
-  active?: boolean;
 }
 
 export interface DprWorkerTeamsBody {
@@ -642,6 +641,80 @@ export interface DprTimesheetSummary {
   clarifiedCount: number;
 }
 
+export interface LautecImportRow {
+  activityGroup: string;
+  activity: string;
+  location: string;
+  start: string;
+  finish: string;
+  comment: string;
+}
+
+export interface LautecRejectedRow {
+  rowNumber: number;
+  reason: string;
+}
+
+export interface LautecImportPreviewInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  teamId: number;
+}
+
+export interface LautecImportInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  teamId: number;
+  /**
+     * @minLength 64
+     * @maxLength 64
+     */
+  snapshotHash: string;
+  confirmResend?: boolean;
+  /** Confirms the operator checked Lautec after an earlier submission could not be verified. */
+  confirmUncertain?: boolean;
+}
+
+export interface LautecImportPreview {
+  date: string;
+  teamId: number;
+  teamName: string;
+  snapshotHash: string;
+  rowCount: number;
+  rows: LautecImportRow[];
+}
+
+export type LautecImportRunStatus = typeof LautecImportRunStatus[keyof typeof LautecImportRunStatus];
+
+
+export const LautecImportRunStatus = {
+  running: 'running',
+  submitting: 'submitting',
+  success: 'success',
+  failed: 'failed',
+  uncertain: 'uncertain',
+  interrupted: 'interrupted',
+} as const;
+
+export interface LautecImportRun {
+  id: number;
+  date: string;
+  teamId: number;
+  snapshotHash: string;
+  status: LautecImportRunStatus;
+  rowCount: number;
+  rowsSubmitted: number;
+  rejectedRows: LautecRejectedRow[];
+  /** @nullable */
+  errorDetail: string | null;
+  requestedResend: boolean;
+  confirmedUncertainRetry: boolean;
+  actorName: string;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
 export type ListSitesParams = {
 projectId?: number;
 };
@@ -721,4 +794,12 @@ export const ListDprTimesheetEntriesStage = {
   captured: 'captured',
   clarified: 'clarified',
 } as const;
+
+export type ListDprLautecImportsParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date: string;
+teamId: number;
+};
 

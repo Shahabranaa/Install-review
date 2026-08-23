@@ -101,6 +101,8 @@ async function buildAll() {
       "playwright",
       "puppeteer",
       "puppeteer-core",
+      "@sparticuz/chromium",
+      "@vercel/functions",
       "electron",
       "tesseract.js",
     ],

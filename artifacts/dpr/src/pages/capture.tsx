@@ -11,6 +11,10 @@ import {
   useListDprActivityGroups,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
+  usePreviewDprLautecImport,
+  useStartDprLautecImport,
+  useGetDprLautecImport,
+  LautecImportPreview,
   DprTimesheetEntry,
   DprTeam,
   DprLocation,
@@ -25,12 +29,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -49,6 +54,7 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 type BillingParty = "jdr" | "orsted" | null;
+type LautecProgressState = "complete" | "active" | "waiting" | "error";
 
 type RowDraft = {
   date: string;
@@ -616,6 +622,7 @@ function WhatsAppCapturePanel({
 export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
 
   // Load draft + captured entries (clarified are handled by the Clarify page)
   const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({});
@@ -890,6 +897,13 @@ export default function CapturePage() {
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
+  const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
+  const [lautecPreview, setLautecPreview] = useState<LautecImportPreview | null>(null);
+  const [lautecRunId, setLautecRunId] = useState<number | null>(null);
+  const [lautecError, setLautecError] = useState<string | null>(null);
+  const [confirmLautecResend, setConfirmLautecResend] = useState(false);
+  const [confirmLautecUncertain, setConfirmLautecUncertain] = useState(false);
+  const [requiresLautecUncertainConfirmation, setRequiresLautecUncertainConfirmation] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
   const [pasteDateFormat, setPasteDateFormat] = useState<DateFormat>("mdy");
@@ -901,6 +915,58 @@ export default function CapturePage() {
   // Date / team filter — sourced from shared sidebar context so the sidebar date
   // list and this page stay in sync.
   const { activeDate, setActiveDate, activeTeamId, setActiveTeamId } = useCaptureNav();
+  const previewLautecMutation = usePreviewDprLautecImport();
+  const startLautecMutation = useStartDprLautecImport();
+  const lautecRunQuery = useGetDprLautecImport(lautecRunId ?? 0, {
+    query: {
+      queryKey: ["dpr", "lautec-import-run", lautecRunId ?? 0],
+      enabled: lautecRunId !== null,
+      refetchInterval: lautecRunId !== null ? 2000 : false,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const activeTeamName = activeTeamId === null
+    ? null
+    : teams.find((team) => team.id === activeTeamId)?.name ?? `Team ${activeTeamId}`;
+  const lautecRunStatus = lautecRunQuery.data?.status;
+  const isLautecSyncing = startLautecMutation.isPending || lautecRunStatus === "running" || lautecRunStatus === "submitting";
+  const lautecProgress = useMemo(() => {
+    const sourceState: LautecProgressState =
+      lautecError && !lautecPreview ? "error" : previewLautecMutation.isPending ? "active" : lautecPreview ? "complete" : "waiting";
+    const browserState: LautecProgressState =
+      lautecRunStatus === "success" || lautecRunStatus === "submitting" ? "complete"
+        : lautecRunStatus === "running" || startLautecMutation.isPending ? "active"
+          : lautecRunStatus === "failed" || lautecRunStatus === "interrupted" || lautecRunStatus === "uncertain" ? "error" : "waiting";
+    const submitState: LautecProgressState =
+      lautecRunStatus === "success" ? "complete"
+        : lautecRunStatus === "submitting" ? "active"
+          : lautecRunStatus === "failed" || lautecRunStatus === "interrupted" || lautecRunStatus === "uncertain" ? "error" : "waiting";
+    const savedState: LautecProgressState =
+      lautecRunStatus === "success" ? "complete"
+        : lautecRunStatus === "failed" || lautecRunStatus === "interrupted" || lautecRunStatus === "uncertain" ? "error" : "waiting";
+    return [
+      {
+        label: "Check Capture rows",
+        detail: lautecPreview ? `${lautecPreview.rowCount} row${lautecPreview.rowCount === 1 ? "" : "s"} ready from the date tab` : "Read the selected date and team from Google Sheets",
+        state: sourceState,
+      },
+      {
+        label: "Fill and verify Lautec",
+        detail: "Open the visible Import Data form and check every value",
+        state: browserState,
+      },
+      {
+        label: "Submit to Lautec",
+        detail: "Send the verified grid with PAX left blank",
+        state: submitState,
+      },
+      {
+        label: "Confirm saved",
+        detail: "Wait for Lautec’s visible completion confirmation",
+        state: savedState,
+      },
+    ];
+  }, [lautecError, lautecPreview, lautecRunStatus, previewLautecMutation.isPending, startLautecMutation.isPending]);
 
   // Auto-select first visible team when teams load (date defaults to today via context)
   const defaultsApplied = useRef(false);
@@ -1153,6 +1219,80 @@ export default function CapturePage() {
     }
   };
 
+  const lautecErrorMessage = (error: unknown) => {
+    if (error && typeof error === "object") {
+      const apiError = error as { data?: { error?: string }; message?: string };
+      return apiError.data?.error ?? apiError.message ?? "The Lautec import could not be started.";
+    }
+    return "The Lautec import could not be started.";
+  };
+
+  const handlePreviewLautecImport = () => {
+    if (!activeDate || !activeTeamId) {
+      toast({ title: "Select one Capture date and team first", variant: "destructive" });
+      return;
+    }
+    setLautecDialogOpen(true);
+    setLautecPreview(null);
+    setLautecRunId(null);
+    setLautecError(null);
+    setConfirmLautecResend(false);
+    setConfirmLautecUncertain(false);
+    setRequiresLautecUncertainConfirmation(false);
+    previewLautecMutation.mutate(
+      { data: { date: activeDate, teamId: activeTeamId } },
+      {
+        onSuccess: (preview) => setLautecPreview(preview),
+        onError: (error) => setLautecError(lautecErrorMessage(error)),
+      },
+    );
+  };
+
+  const handleStartLautecImport = () => {
+    if (!lautecPreview) return;
+    setLautecError(null);
+    startLautecMutation.mutate(
+      {
+        data: {
+          date: lautecPreview.date,
+          teamId: lautecPreview.teamId,
+          snapshotHash: lautecPreview.snapshotHash,
+          confirmResend: confirmLautecResend,
+          confirmUncertain: confirmLautecUncertain,
+        },
+      },
+      {
+        onSuccess: (run) => {
+          setLautecRunId(run.id);
+          queryClient.invalidateQueries({ queryKey: ["/api/dpr/lautec-imports"] });
+        },
+        onError: (error) => {
+          const message = lautecErrorMessage(error);
+          setLautecError(message);
+          const apiError = error as { status?: number; data?: { code?: string } };
+          if (apiError.status === 409) {
+            if (apiError.data?.code === "uncertain_submission") {
+              setRequiresLautecUncertainConfirmation(true);
+            } else {
+              setConfirmLautecResend(true);
+            }
+          }
+        },
+      },
+    );
+  };
+
+  const closeLautecDialog = () => {
+    if (lautecRunQuery.data?.status === "running" || lautecRunQuery.data?.status === "submitting" || startLautecMutation.isPending) return;
+    setLautecDialogOpen(false);
+    setLautecPreview(null);
+    setLautecRunId(null);
+    setLautecError(null);
+    setConfirmLautecResend(false);
+    setConfirmLautecUncertain(false);
+    setRequiresLautecUncertainConfirmation(false);
+  };
+
   // ── Derived display flags ──
   const showDateCol = !activeDate;
   const showTeamCol = !activeTeamId;
@@ -1380,6 +1520,24 @@ export default function CapturePage() {
               {isSavingToGoogleSheet ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
               <span className="hidden xs:inline">Save to Sheet</span>
             </Button>
+            {isAdmin && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handlePreviewLautecImport}
+                disabled={!activeDate || !activeTeamId || previewLautecMutation.isPending}
+                title={!activeDate || !activeTeamId ? "Select one Capture date and one team first" : `Sync ${activeTeamName ?? "the selected team"} on ${activeDate} to Lautec`}
+                className="gap-1.5"
+              >
+                {previewLautecMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span className="hidden sm:inline">Sync to Lautec</span>
+                {activeDate && activeTeamName && (
+                  <span className="hidden 2xl:inline text-[11px] font-normal opacity-75">
+                    {activeTeamName} · {format(parseISO(activeDate), "dd MMM")}
+                  </span>
+                )}
+              </Button>
+            )}
           </div>
         )}
       </header>
@@ -2083,6 +2241,179 @@ export default function CapturePage() {
       </div>
 
       {/* ── Paste Rows dialog (unchanged behaviour) ── */}
+      <Dialog open={lautecDialogOpen} onOpenChange={(open) => { if (!open) closeLautecDialog(); else setLautecDialogOpen(true); }}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" />
+              Sync Capture to Lautec
+            </DialogTitle>
+            <DialogDescription>
+              This sends one selected date and team using Lautec’s visible Import Data form. PAX is intentionally left blank.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Syncing</p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  {activeTeamName ?? "Select a team"}{activeDate ? ` · ${format(parseISO(activeDate), "dd MMM yyyy")}` : ""}
+                </p>
+              </div>
+              {lautecPreview && (
+                <Badge variant="secondary">{lautecPreview.rowCount} row{lautecPreview.rowCount === 1 ? "" : "s"}</Badge>
+              )}
+              {isLautecSyncing && (
+                <span className="flex items-center gap-1.5 text-xs text-primary">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Updates automatically
+                </span>
+              )}
+            </div>
+            <ol className="mt-3 grid gap-2 sm:grid-cols-2">
+              {lautecProgress.map((step) => (
+                <li
+                  key={step.label}
+                  className={cn(
+                    "flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs",
+                    step.state === "complete" && "border-emerald-500/30 bg-emerald-500/5",
+                    step.state === "active" && "border-primary/40 bg-primary/5",
+                    step.state === "error" && "border-destructive/40 bg-destructive/5",
+                    step.state === "waiting" && "border-border bg-background/40 text-muted-foreground",
+                  )}
+                >
+                  {step.state === "complete" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    : step.state === "active" ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+                      : step.state === "error" ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                        : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />}
+                  <span>
+                    <span className="block font-medium text-foreground">{step.label}</span>
+                    <span className="block mt-0.5 text-muted-foreground">{step.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {previewLautecMutation.isPending && (
+            <div className="flex flex-1 min-h-[180px] items-center justify-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Reading and validating the Capture tab…
+            </div>
+          )}
+
+          {!previewLautecMutation.isPending && lautecError && !lautecPreview && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              {lautecError}
+            </div>
+          )}
+
+          {lautecPreview && !lautecRunId && (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <strong>{lautecPreview.rowCount} row{lautecPreview.rowCount === 1 ? "" : "s"}</strong>
+                {" "}will be sent to <strong>{lautecPreview.teamName}</strong> for <strong>{lautecPreview.date}</strong>.
+              </div>
+              {lautecError && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                  <p>{lautecError}</p>
+                  {requiresLautecUncertainConfirmation ? (
+                    <label className="mt-3 flex items-start gap-2 text-foreground">
+                      <Checkbox className="mt-0.5" checked={confirmLautecUncertain} onCheckedChange={(checked) => setConfirmLautecUncertain(checked === true)} />
+                      <span>I checked Lautec and understand this snapshot may already have been imported. I explicitly allow one retry.</span>
+                    </label>
+                  ) : (
+                    <label className="mt-3 flex items-center gap-2 text-foreground">
+                      <Checkbox checked={confirmLautecResend} onCheckedChange={(checked) => setConfirmLautecResend(checked === true)} />
+                      I understand this exact snapshot was already completed and want to re-send it.
+                    </label>
+                  )}
+                </div>
+              )}
+              <div className="min-h-0 overflow-auto rounded-md border">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-muted">
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Activity Group</TableHead>
+                      <TableHead>Activity</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>Finish</TableHead>
+                      <TableHead>Comment</TableHead>
+                      <TableHead>PAX</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lautecPreview.rows.map((row, index) => (
+                      <TableRow key={`${row.activityGroup}-${row.activity}-${index}`}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{row.activityGroup}</TableCell>
+                        <TableCell>{row.activity}</TableCell>
+                        <TableCell>{row.location}</TableCell>
+                        <TableCell className="font-mono">{row.start}</TableCell>
+                        <TableCell className="font-mono">{row.finish}</TableCell>
+                        <TableCell className="max-w-[260px] whitespace-pre-wrap">{row.comment || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">blank</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {lautecRunId !== null && (
+            <div className="flex min-h-[180px] flex-col justify-center gap-3">
+              {!lautecRunQuery.data || lautecRunQuery.data.status === "running" || lautecRunQuery.data.status === "submitting" ? (
+                <div className="flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 p-4 text-sm">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <div>
+                    <p className="font-medium">{lautecRunQuery.data?.status === "submitting" ? "Submitting and saving in Lautec" : "Preparing the Lautec import"}</p>
+                    <p className="text-muted-foreground">{lautecRunQuery.data?.status === "submitting" ? "The verified grid is being saved. Keep this window open while DPR waits for Lautec’s visible completion confirmation." : "DPR is signing in, opening the selected DPR, filling Import Data, and checking each visible value."}</p>
+                  </div>
+                </div>
+              ) : lautecRunQuery.data.status === "success" ? (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
+                  <p className="font-medium text-emerald-700 dark:text-emerald-300">Import completed successfully</p>
+                  <p className="mt-1 text-muted-foreground">{lautecRunQuery.data.rowsSubmitted} row{lautecRunQuery.data.rowsSubmitted === 1 ? "" : "s"} submitted to Lautec.</p>
+                </div>
+              ) : (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+                  <p className="font-medium text-destructive">
+                    {lautecRunQuery.data.status === "uncertain" ? "Import needs Lautec verification" : lautecRunQuery.data.status === "interrupted" ? "Import interrupted" : "Import did not complete"}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">{lautecRunQuery.data.errorDetail ?? "Check Lautec before retrying this snapshot."}</p>
+                  {lautecRunQuery.data.rejectedRows.length > 0 && (
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-destructive">
+                      {lautecRunQuery.data.rejectedRows.map((rejection) => (
+                        <li key={`${rejection.rowNumber}-${rejection.reason}`}>Row {rejection.rowNumber}: {rejection.reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {lautecRunQuery.error && (
+                <p className="text-sm text-destructive">{lautecErrorMessage(lautecRunQuery.error)}</p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeLautecDialog} disabled={lautecRunQuery.data?.status === "running" || lautecRunQuery.data?.status === "submitting" || startLautecMutation.isPending}>
+              Close
+            </Button>
+            {lautecPreview && lautecRunId === null && (
+              <Button onClick={handleStartLautecImport} disabled={startLautecMutation.isPending || (requiresLautecUncertainConfirmation && !confirmLautecUncertain) || (!requiresLautecUncertainConfirmation && lautecError !== null && !confirmLautecResend)} className="gap-2">
+                {startLautecMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {requiresLautecUncertainConfirmation ? "Confirm verified retry" : confirmLautecResend ? "Confirm re-send" : "Start Lautec import"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else setPasteOpen(true); }}>
         <DialogContent className="max-w-[95vw] w-full max-h-[90vh] flex flex-col">
           <DialogHeader>

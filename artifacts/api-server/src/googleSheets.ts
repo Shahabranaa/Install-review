@@ -41,6 +41,14 @@ async function getSheetWithTitle(sheetId: string, gid: string) {
   return { sheets, title: sheet.properties?.title ?? "Sheet1" };
 }
 
+export function sheetTabRange(title: string, columnCount: number): string {
+  if (!Number.isInteger(columnCount) || columnCount < 1 || columnCount > 26) {
+    throw new Error("Sheet column count must be between 1 and 26.");
+  }
+  const escapedTitle = title.replace(/'/g, "''");
+  return `'${escapedTitle}'!A:${String.fromCharCode(64 + columnCount)}`;
+}
+
 /**
  * Fetch all values from a sheet tab identified by numeric GID.
  * Returns rows as string arrays (including the header row as row[0]).
@@ -56,6 +64,28 @@ export async function fetchSheetRows(sheetId: string, gid: string): Promise<stri
 
   return (response.data.values ?? []).map((row) =>
     (row as (string | null | undefined)[]).map((cell) => (cell ?? "").trim())
+  );
+}
+
+/**
+ * Fetches all values from a tab by its visible title. This is intentionally
+ * separate from the GID helper because DPR Capture tabs are named by date.
+ */
+export async function fetchSheetRowsByTitle(sheetId: string, title: string, columnCount = 6): Promise<string[][]> {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets(properties(title))",
+  });
+  const exists = meta.data.sheets?.some((sheet) => sheet.properties?.title === title);
+  if (!exists) throw new Error(`Sheet tab "${title}" not found in spreadsheet ${sheetId}`);
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: sheetTabRange(title, columnCount),
+  });
+  return (response.data.values ?? []).map((row) =>
+    (row as (string | null | undefined)[]).map((cell) => String(cell ?? "").trim()),
   );
 }
 
