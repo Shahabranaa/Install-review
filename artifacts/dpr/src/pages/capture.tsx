@@ -253,6 +253,26 @@ function normalizeDate(raw: string): string | null {
   return `${parts[3]}-${parts[2]}-${parts[1]}`;
 }
 
+function normalizeIsoDate(raw: string): string | null {
+  const trimmed = raw.trim();
+  const parts = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return null;
+
+  const year = Number(parts[1]);
+  const month = Number(parts[2]);
+  const day = Number(parts[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return trimmed;
+}
+
 function formatDateAsDmy(date: string): string {
   const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : date;
@@ -1433,6 +1453,11 @@ export default function CapturePage() {
     setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId));
   };
 
+  const openPasteDialog = () => {
+    setPasteShiftDate(activeDate ?? "");
+    setPasteOpen(true);
+  };
+
   const updatePendingRow = (key: string, patch: Partial<PendingRow>) =>
     setPendingRows((rows) => rows?.map((r) => (r.key === key ? { ...r, ...patch } : r)) ?? null);
 
@@ -1443,11 +1468,11 @@ export default function CapturePage() {
 
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
-    const normalizedShiftDate = pasteShiftDate.trim() ? normalizeDate(pasteShiftDate) : null;
+    const normalizedShiftDate = pasteShiftDate.trim() ? normalizeIsoDate(pasteShiftDate) : null;
     if (pasteShiftDate.trim() && !normalizedShiftDate) {
       toast({
         title: "Please give a valid date.",
-        description: "Use DD/MM/YYYY format.",
+        description: "Use the date selector.",
         variant: "destructive",
       });
       return;
@@ -1537,7 +1562,7 @@ export default function CapturePage() {
               <CheckSquare className="w-4 h-4" />
               <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setPasteOpen(true)} className="gap-1.5">
+             <Button variant="outline" size="sm" onClick={openPasteDialog} className="gap-1.5">
               <ClipboardPaste className="w-4 h-4" />
               <span className="hidden xs:inline">Paste Rows</span>
             </Button>
@@ -1611,7 +1636,7 @@ export default function CapturePage() {
             setPasteText(tsv);
             setPendingRows(parsePastedText(tsv, teams, locations, defaultActivityTypeId, defaultGroupId));
             setCaptureTab("timesheet");
-            setPasteOpen(true);
+            openPasteDialog();
           }}
         />
       ) : (
@@ -2472,7 +2497,7 @@ export default function CapturePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else setPasteOpen(true); }}>
+      <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else openPasteDialog(); }}>
         <DialogContent className="max-w-[95vw] w-full max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Paste rows from a spreadsheet</DialogTitle>
@@ -2482,6 +2507,21 @@ export default function CapturePage() {
           </DialogHeader>
 
           <div className="flex-1 overflow-auto flex flex-col gap-3 min-h-0">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-y border-border bg-muted/20 px-3 py-2">
+              <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
+                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
+              </label>
+              <Input
+                id="paste-shift-date"
+                type="date"
+                lang="en-GB"
+                value={pasteShiftDate}
+                onChange={(e) => setPasteShiftDate(e.target.value)}
+                className={cn("h-9 w-[170px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
+                aria-label="DPR for Date"
+              />
+            </div>
+
             <Textarea
               ref={pasteTextareaRef}
               value={pasteText}
@@ -2495,27 +2535,6 @@ export default function CapturePage() {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Date format</span>
                 <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD/MM/YYYY</Badge>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <label htmlFor="paste-shift-date" className="text-xs text-muted-foreground">
-                  Shift date override
-                </label>
-                <Input
-                  id="paste-shift-date"
-                  type="text"
-                  inputMode="numeric"
-                  value={pasteShiftDate}
-                  onChange={(e) => setPasteShiftDate(e.target.value)}
-                  placeholder="DD/MM/YYYY"
-                  maxLength={10}
-                  className={cn(
-                    "h-7 w-[132px] rounded-sm text-xs font-mono",
-                    pasteShiftDate.trim() && !normalizeDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500",
-                  )}
-                />
-                {pasteShiftDate.trim() && !normalizeDate(pasteShiftDate) && (
-                  <span className="text-[10px] text-red-500">Please give a valid date.</span>
-                )}
               </div>
             </div>
 
@@ -2658,7 +2677,7 @@ export default function CapturePage() {
               <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeDate(pasteShiftDate)) || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeIsoDate(pasteShiftDate)) || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>
