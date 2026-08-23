@@ -261,6 +261,19 @@ function normalizePax(raw: string): number | null {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+function splitTrailingPax(notes: string): { notes: string; paxRaw: string } {
+  const trimmed = notes.trim();
+  const match = trimmed.match(/(?:^|\s)([+-]?(?:\d+(?:\.\d*)?|\.\d+))$/);
+  if (!match || match.index === undefined) {
+    return { notes: trimmed, paxRaw: "" };
+  }
+
+  return {
+    notes: trimmed.slice(0, match.index).trim(),
+    paxRaw: match[1],
+  };
+}
+
 const PASTE_GRID_CELL =
   "h-8 w-full min-w-0 border-0 bg-transparent px-2 py-0 text-center text-xs text-foreground outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary";
 
@@ -310,6 +323,8 @@ function parsePastedText(
     // Any continuation lines become extra lines appended to notes
     const extra = group.slice(1).map((l) => l.trim()).filter(Boolean).join("\n");
     const fullNotes = [rawNotes.trim(), extra].filter(Boolean).join("\n");
+    const inferred = cols.length === 6 ? splitTrailingPax(fullNotes) : { notes: fullNotes, paxRaw: "" };
+    const effectivePaxRaw = rawPax.trim() || inferred.paxRaw;
     const team = findByName(teams, rawTeam);
     const location = findByNameFuzzy(locations, rawLocation);
     const parsedDate = normalizeDate(rawDate);
@@ -323,9 +338,9 @@ function parsePastedText(
       endTime: normalizeTime(rawEnd),
       locationId: location?.id ?? null,
       locationRaw: rawLocation.trim(),
-      notes: fullNotes,
-      pax: normalizePax(rawPax),
-      paxRaw: rawPax.trim(),
+      notes: inferred.notes,
+      pax: normalizePax(effectivePaxRaw),
+      paxRaw: effectivePaxRaw,
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       billingParty: null,
@@ -2423,7 +2438,7 @@ export default function CapturePage() {
           <DialogHeader>
             <DialogTitle>Paste rows from a spreadsheet</DialogTitle>
             <DialogDescription>
-              Copy rows from your source sheet (Date, Team, Start, End, Location, Notes) and paste below.
+              Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX.
             </DialogDescription>
           </DialogHeader>
 
