@@ -699,12 +699,15 @@ router.get("/dpr/timesheet-entries", async (req, res): Promise<void> => {
     res.status(400).json({ error: queryParams.error.message });
     return;
   }
-  const { stage, teamId, dateFrom, dateTo } = queryParams.data;
+  const { stage, teamId, dateFrom, dateTo, dprDate } = queryParams.data;
   const conditions: SQL[] = [];
   if (stage) conditions.push(eq(dprTimesheetEntriesTable.stage, stage));
   if (teamId) conditions.push(eq(dprTimesheetEntriesTable.teamId, teamId));
   if (dateFrom) conditions.push(gte(dprTimesheetEntriesTable.date, dateFrom));
   if (dateTo) conditions.push(lte(dprTimesheetEntriesTable.date, dateTo));
+  if (dprDate) {
+    conditions.push(sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date}) = ${dprDate}`);
+  }
 
   const withJoins = await fetchEntriesWithJoins(conditions.length ? and(...conditions) : undefined);
   res.json(ListDprTimesheetEntriesResponse.parse(serialize(withJoins)));

@@ -1636,6 +1636,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: dprDate
+          in: query
+          description: Filter by the effective DPR date (shift date when set, otherwise calendar date)
+          schema:
+            type: string
       responses:
         "200":
           description: List of timesheet entries

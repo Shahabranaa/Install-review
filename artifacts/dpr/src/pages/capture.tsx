@@ -14,6 +14,7 @@ import {
   usePreviewDprLautecImport,
   useStartDprLautecImport,
   useGetDprLautecImport,
+  listDprTimesheetEntries,
   LautecImportPreview,
   DprTimesheetEntry,
   DprTeam,
@@ -28,8 +29,9 @@ import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -340,6 +342,11 @@ type PendingRow = {
   billingParty: BillingParty;
 };
 
+type PendingCopy = {
+  sourceDate: string;
+  rows: PendingRow[];
+};
+
 function parsePastedText(
   text: string,
   teams: DprTeam[],
@@ -389,6 +396,41 @@ function parsePastedText(
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       billingParty: null,
+    };
+  });
+}
+
+function copyEntriesToPendingRows(
+  entries: DprTimesheetEntry[],
+  sourceDprDate: string,
+  destinationDprDate: string,
+): PendingRow[] {
+  const sourceOvernightDate = addIsoDays(sourceDprDate, 1);
+  const destinationOvernightDate = addIsoDays(destinationDprDate, 1);
+
+  return entries.map((entry, index) => {
+    const sourceCalendarDate = entry.date.slice(0, 10);
+    const isOvernight = sourceCalendarDate === sourceOvernightDate;
+    const destinationCalendarDate = isOvernight && destinationOvernightDate
+      ? destinationOvernightDate
+      : destinationDprDate;
+
+    return {
+      key: `${Date.now()}-copy-${index}`,
+      date: destinationCalendarDate,
+      dateRaw: formatDateAsDmy(destinationCalendarDate),
+      teamId: entry.teamId ?? null,
+      teamRaw: entry.team?.name ?? "",
+      startTime: entry.startTime ?? "",
+      endTime: entry.endTime ?? "",
+      locationId: entry.locationId ?? null,
+      locationRaw: entry.location?.name ?? "",
+      notes: entry.notes ?? "",
+      pax: entry.pax ?? null,
+      paxRaw: entry.pax ? String(entry.pax) : "",
+      activityTypeId: entry.activityTypeId ?? null,
+      activityGroupId: entry.activityGroupId ?? null,
+      billingParty: entry.billingParty === "jdr" || entry.billingParty === "orsted" ? entry.billingParty : null,
     };
   });
 }
@@ -973,9 +1015,76 @@ export default function CapturePage() {
   const [pasteText, setPasteText] = useState("");
   const [pasteShiftDate, setPasteShiftDate] = useState<string>("");
   const [pendingRows, setPendingRows] = useState<PendingRow[] | null>(null);
+  const [copySourcePickerOpen, setCopySourcePickerOpen] = useState(false);
+  const [copySourceDate, setCopySourceDate] = useState("");
+  const [pendingCopy, setPendingCopy] = useState<PendingCopy | null>(null);
+  const [copySourceStatus, setCopySourceStatus] = useState<{
+    tone: "loading" | "success" | "warning" | "error";
+    message: string;
+  } | null>(null);
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const [highlightEntryId, setHighlightEntryId] = useState<number | null>(null);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const pendingRowsRef = useRef<PendingRow[] | null>(null);
+  const pasteShiftDateRef = useRef("");
+  const copySourceSelectionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    pendingRowsRef.current = pendingRows;
+  }, [pendingRows]);
+
+  useEffect(() => {
+    pasteShiftDateRef.current = pasteShiftDate;
+  }, [pasteShiftDate]);
+
+  const copyDprEntriesMutation = useMutation({
+    mutationFn: ({ sourceDate }: { sourceDate: string }) =>
+      listDprTimesheetEntries({ dprDate: sourceDate }),
+    onSuccess: (sourceEntries, { sourceDate }) => {
+      if (copySourceSelectionRef.current !== sourceDate) return;
+
+      const destinationDprDate = normalizeIsoDate(pasteShiftDateRef.current);
+      if (!destinationDprDate) {
+        setCopySourceStatus({
+          tone: "error",
+          message: "Choose a valid DPR for Date before copying activity reports.",
+        });
+        return;
+      }
+
+      const copiedRows = copyEntriesToPendingRows(sourceEntries, sourceDate, destinationDprDate);
+      if (copiedRows.length === 0) {
+        setCopySourceStatus({
+          tone: "warning",
+          message: `No activity reports were found for ${formatDateAsDmy(sourceDate)}.`,
+        });
+        return;
+      }
+
+      if (pendingRowsRef.current?.length) {
+        setPendingCopy({ sourceDate, rows: copiedRows });
+        setCopySourceStatus({
+          tone: "warning",
+          message: `${copiedRows.length} row${copiedRows.length === 1 ? "" : "s"} found. Choose whether to add or replace the current grid.`,
+        });
+        return;
+      }
+
+      setPasteText("");
+      setPendingRows(copiedRows);
+      setCopySourceStatus({
+        tone: "success",
+        message: `${copiedRows.length} activity report${copiedRows.length === 1 ? "" : "s"} copied from ${formatDateAsDmy(sourceDate)}. Review the rows before saving.`,
+      });
+    },
+    onError: (error, { sourceDate }) => {
+      if (copySourceSelectionRef.current !== sourceDate) return;
+      setCopySourceStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not load activity reports for that DPR date.",
+      });
+    },
+  });
 
   // Date / team filter — sourced from shared sidebar context so the sidebar date
   // list and this page stay in sync.
@@ -1476,6 +1585,11 @@ export default function CapturePage() {
 
   const openPasteDialog = () => {
     setPasteShiftDate(activeDate ?? "");
+    setCopySourcePickerOpen(false);
+    setCopySourceDate("");
+    setPendingCopy(null);
+    setCopySourceStatus(null);
+    copySourceSelectionRef.current = null;
     setPasteOpen(true);
   };
 
@@ -1485,7 +1599,55 @@ export default function CapturePage() {
   const removePendingRow = (key: string) =>
     setPendingRows((rows) => rows?.filter((r) => r.key !== key) ?? null);
 
-  const closePasteDialog = () => { setPasteOpen(false); setPasteText(""); setPasteShiftDate(""); setPendingRows(null); };
+  const applyPendingCopy = (action: "append" | "replace") => {
+    if (!pendingCopy) return;
+    const count = pendingCopy.rows.length;
+    setPasteText("");
+    setPendingRows((rows) => action === "append" && rows?.length ? [...rows, ...pendingCopy.rows] : pendingCopy.rows);
+    setPendingCopy(null);
+    setCopySourceStatus({
+      tone: "success",
+      message: action === "append"
+        ? `${count} activity report${count === 1 ? "" : "s"} added from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the combined grid before saving.`
+        : `${count} activity report${count === 1 ? "" : "s"} replaced the grid from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the rows before saving.`,
+    });
+  };
+
+  const handleCopySourceDateChange = (value: string) => {
+    setCopySourceDate(value);
+    copySourceSelectionRef.current = value || null;
+    setPendingCopy(null);
+    setCopySourceStatus(null);
+    if (!value) return;
+
+    const sourceDate = normalizeIsoDate(value);
+    const destinationDate = normalizeIsoDate(pasteShiftDate);
+    if (!sourceDate || !destinationDate) {
+      setCopySourceStatus({
+        tone: "error",
+        message: "Choose a valid DPR for Date before copying activity reports.",
+      });
+      return;
+    }
+
+    setCopySourceStatus({
+      tone: "loading",
+      message: `Loading activity reports from ${formatDateAsDmy(sourceDate)}…`,
+    });
+    copyDprEntriesMutation.mutate({ sourceDate });
+  };
+
+  const closePasteDialog = () => {
+    setPasteOpen(false);
+    setPasteText("");
+    setPasteShiftDate("");
+    setPendingRows(null);
+    setCopySourcePickerOpen(false);
+    setCopySourceDate("");
+    setPendingCopy(null);
+    setCopySourceStatus(null);
+    copySourceSelectionRef.current = null;
+  };
 
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
@@ -2553,16 +2715,68 @@ export default function CapturePage() {
               <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
                 DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD/MM/YYYY)</span>
               </label>
-              <Input
-                id="paste-shift-date"
-                type="date"
-                lang="en-GB"
-                value={pasteShiftDate}
-                onChange={(e) => setPasteShiftDate(e.target.value)}
-                className={cn("h-9 w-[170px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
-                aria-label="DPR for Date"
-              />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Input
+                  id="paste-shift-date"
+                  type="date"
+                  lang="en-GB"
+                  value={pasteShiftDate}
+                  onChange={(e) => setPasteShiftDate(e.target.value)}
+                  className={cn("h-9 w-[170px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
+                  aria-label="DPR for Date"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    setCopySourcePickerOpen((open) => !open);
+                    setCopySourceStatus(null);
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy from previous DPR
+                </Button>
+              </div>
             </div>
+
+            {copySourcePickerOpen && (
+              <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 rounded-md border border-primary/25 bg-primary/5 px-3 py-3">
+                <div>
+                  <label htmlFor="copy-source-date" className="block text-sm font-medium text-foreground">
+                    Copy activity reports from
+                  </label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Select the DPR date to load its rows into this review grid.
+                  </p>
+                </div>
+                <Input
+                  id="copy-source-date"
+                  type="date"
+                  lang="en-GB"
+                  value={copySourceDate}
+                  onChange={(e) => handleCopySourceDateChange(e.target.value)}
+                  className="h-9 w-[170px] text-sm font-mono"
+                  aria-label="Copy activity reports from DPR date"
+                />
+              </div>
+            )}
+
+            {copySourceStatus && (
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs",
+                  copySourceStatus.tone === "error" && "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300",
+                  copySourceStatus.tone === "warning" && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                  copySourceStatus.tone === "success" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+                  copySourceStatus.tone === "loading" && "bg-primary/5 text-primary",
+                )}
+              >
+                {copySourceStatus.tone === "loading" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Info className="h-4 w-4 shrink-0" />}
+                {copySourceStatus.message}
+              </div>
+            )}
 
             <Textarea
               ref={pasteTextareaRef}
@@ -2605,6 +2819,12 @@ export default function CapturePage() {
                     {pendingRows.map((row) => {
                       const teamUnmatched = Boolean(row.teamRaw && !row.teamId);
                       const locationUnmatched = Boolean(row.locationRaw && !row.locationId);
+                      // A copied report can belong to a valid team that is not in
+                      // today's roster filter. Keep that team selectable so the
+                      // copied row remains visible and reviewable before saving.
+                      const teamsForRow = row.teamId && !visibleTeams.some((team) => team.id === row.teamId)
+                        ? teams
+                        : visibleTeams;
                       const invalidDate = !row.date;
                       const hyphenDateFormat = usesHyphenDateFormat(row.dateRaw);
                       const invalidDprDate = Boolean(
@@ -2646,7 +2866,7 @@ export default function CapturePage() {
                               className={cn(PASTE_GRID_CELL, "appearance-none cursor-pointer", teamUnmatched && "text-amber-700 dark:text-amber-300")}
                             >
                               <option value="">{teamUnmatched ? row.teamRaw : "Select team"}</option>
-                              {visibleTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                              {teamsForRow.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                             </select>
                           </td>
                           <td className="border border-slate-400 p-0 dark:border-slate-600">
@@ -2759,6 +2979,36 @@ export default function CapturePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={pendingCopy !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingCopy(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Keep the rows already in the grid?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingCopy
+                ? `${pendingCopy.rows.length} activity report${pendingCopy.rows.length === 1 ? "" : "s"} from ${formatDateAsDmy(pendingCopy.sourceDate)} are ready to copy. You can add them to the current grid or replace the current rows.`
+                : "Choose how to apply the copied activity reports."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep current rows</AlertDialogCancel>
+            <AlertDialogAction onClick={() => applyPendingCopy("append")}>
+              Add copied rows
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => applyPendingCopy("replace")}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Replace current rows
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
       </>
       )}

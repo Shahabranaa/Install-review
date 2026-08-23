@@ -1312,7 +1312,8 @@ export const ListDprTimesheetEntriesQueryParams = zod.object({
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional(),
   "teamId": zod.coerce.number().optional(),
   "dateFrom": zod.coerce.string().optional(),
-  "dateTo": zod.coerce.string().optional()
+  "dateTo": zod.coerce.string().optional(),
+  "dprDate": zod.coerce.string().optional().describe('Filter by the effective DPR date (shift date when set, otherwise calendar date)')
 })
 
 

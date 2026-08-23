@@ -799,6 +799,10 @@ stage?: ListDprTimesheetEntriesStage;
 teamId?: number;
 dateFrom?: string;
 dateTo?: string;
+/**
+ * Filter by the effective DPR date (shift date when set, otherwise calendar date)
+ */
+dprDate?: string;
 };
 
 export type ListDprTimesheetEntriesStage = typeof ListDprTimesheetEntriesStage[keyof typeof ListDprTimesheetEntriesStage];
