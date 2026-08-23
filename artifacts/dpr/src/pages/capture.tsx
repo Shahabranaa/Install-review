@@ -15,6 +15,7 @@ import {
   useStartDprLautecImport,
   useGetDprLautecImport,
   listDprTimesheetEntries,
+  updateDprTimesheetEntry,
   LautecImportPreview,
   DprTimesheetEntry,
   DprTeam,
@@ -59,6 +60,16 @@ const GROUP_LABELS: Record<string, string> = {
 
 type BillingParty = "jdr" | "orsted" | null;
 type LautecProgressState = "complete" | "active" | "waiting" | "error";
+type ActivitySelection = {
+  activityTypeId: number | null;
+  activityGroupId: number | null;
+};
+type ActivityUpdateRequest = {
+  id: number;
+  data: Parameters<typeof updateDprTimesheetEntry>[1];
+  selection: ActivitySelection;
+  version: number;
+};
 
 type RowDraft = {
   date: string;
@@ -104,6 +115,7 @@ function ActivityGroupPicker({
   onTypeChange,
   onGroupChange,
   onError,
+  isSaving = false,
 }: {
   allowedTypes: { id: number; name: string }[];
   allowedGroups: { id: number; name: string }[];
@@ -113,6 +125,7 @@ function ActivityGroupPicker({
   onTypeChange: (id: number) => void;
   onGroupChange: (id: number) => void;
   onError?: (msg: string) => void;
+  isSaving?: boolean;
 }) {
   const isWorking = typeValue === workingTypeId;
   const activeType = allowedTypes.find((t) => t.id === typeValue);
@@ -153,13 +166,14 @@ function ActivityGroupPicker({
       <button
         type="button"
         onClick={handleTypeClick}
-        title={canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
+        disabled={isSaving}
+        title={isSaving ? "Saving activity group…" : canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
         className={cn(
           "flex items-center gap-1.5 px-2 py-1.5 transition-all duration-150 border-r",
           isWorking
             ? "bg-green-500/10 text-green-400 border-r-green-600/30"
             : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
-          canToggleType ? (isWorking ? "hover:bg-green-500/20" : "hover:bg-yellow-500/20") : "opacity-60 cursor-not-allowed"
+          isSaving ? "cursor-wait opacity-75" : canToggleType ? (isWorking ? "hover:bg-green-500/20" : "hover:bg-yellow-500/20") : "opacity-60 cursor-not-allowed"
         )}
       >
         <span className={cn(
@@ -167,7 +181,9 @@ function ActivityGroupPicker({
           isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
         )} />
         <span className="leading-none whitespace-nowrap">{kindLabel}</span>
-        {canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
+        {isSaving
+          ? <Loader2 className="w-3 h-3 animate-spin opacity-60 shrink-0 ml-0.5" />
+          : canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
       </button>
 
       {/* Right — sub-group cycler */}
@@ -175,14 +191,17 @@ function ActivityGroupPicker({
         <button
           type="button"
           onClick={handleGroupClick}
-          title={canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
+          disabled={isSaving}
+          title={isSaving ? "Saving activity group…" : canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
           className={cn(
             "flex items-center gap-1 px-2 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
-            canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
+            isSaving ? "cursor-wait opacity-75" : canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
           )}
         >
           <span className="leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
-          {canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
+          {isSaving
+            ? <Loader2 className="w-3 h-3 animate-spin opacity-60 shrink-0" />
+            : canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
         </button>
       ) : (
         <div className="flex items-center px-2 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
@@ -810,6 +829,8 @@ export default function CapturePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const activityRequestVersionRef = useRef(new Map<number, number>());
+  const [activityOverrides, setActivityOverrides] = useState<Record<number, ActivitySelection>>({});
 
   // Load draft + captured entries (clarified are handled by the Clarify page)
   const { data: entries = [], isLoading: loadingEntries } = useListDprTimesheetEntries({});
@@ -984,22 +1005,37 @@ export default function CapturePage() {
   const bulkDeleteMutation = useDeleteDprTimesheetEntry({ mutation: {} });
   const bulkUpdateMutation = useUpdateDprTimesheetEntry({ mutation: {} });
 
-  const quickTypeMutation = useUpdateDprTimesheetEntry({
-    mutation: {
-      onMutate: async ({ id, data }) => {
-        await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
-        const snapshot = snapshotEntries();
-        queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey() },
-          (old) => old?.map((e) => (e.id === id ? { ...e, ...data } : e))
-        );
-        return { snapshot };
-      },
-      onSuccess: (updated) => { patchEntry(updated); },
-      onError: (err, _, ctx) => {
-        if (ctx?.snapshot) restoreEntries(ctx.snapshot);
-        toast({ title: "Failed to set Activity Type", description: err.message, variant: "destructive" });
-      },
+  const quickTypeMutation = useMutation({
+    mutationFn: ({ id, data }: ActivityUpdateRequest) => updateDprTimesheetEntry(id, data),
+    onMutate: async ({ id, selection }) => {
+      await queryClient.cancelQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+      const snapshot = snapshotEntries();
+      queryClient.setQueriesData<DprTimesheetEntry[]>(
+        { queryKey: getListDprTimesheetEntriesQueryKey() },
+        (old) => old?.map((entry) => (
+          entry.id === id ? { ...entry, ...selection } : entry
+        ))
+      );
+      return { snapshot };
+    },
+    onSuccess: (updated, request) => {
+      if (activityRequestVersionRef.current.get(request.id) !== request.version) return;
+      patchEntry(updated);
+      setActivityOverrides((current) => {
+        if (!current[request.id]) return current;
+        const { [request.id]: _completed, ...remaining } = current;
+        return remaining;
+      });
+    },
+    onError: (err, request, context) => {
+      if (activityRequestVersionRef.current.get(request.id) !== request.version) return;
+      if (context?.snapshot) restoreEntries(context.snapshot);
+      setActivityOverrides((current) => {
+        if (!current[request.id]) return current;
+        const { [request.id]: _failed, ...remaining } = current;
+        return remaining;
+      });
+      toast({ title: "Failed to set Activity Type", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1596,14 +1632,31 @@ export default function CapturePage() {
     billingParty: draft.billingParty ?? null,
   });
 
+  const saveActivitySelection = (entry: DprTimesheetEntry, selection: ActivitySelection) => {
+    if (entry.id < 0 || activityOverrides[entry.id]) return;
+    const version = (activityRequestVersionRef.current.get(entry.id) ?? 0) + 1;
+    activityRequestVersionRef.current.set(entry.id, version);
+    setActivityOverrides((current) => ({ ...current, [entry.id]: selection }));
+    quickTypeMutation.mutate({
+      id: entry.id,
+      data: buildUpdatePayload({ ...entry, ...selection }),
+      selection,
+      version,
+    });
+  };
+
   const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) => {
-    if (entry.id < 0) return; // temp ID — row not yet persisted, skip
-    quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityTypeId }) });
+    saveActivitySelection(entry, {
+      activityTypeId,
+      activityGroupId: entry.activityGroupId ?? null,
+    });
   };
 
   const handleQuickSetGroup = (entry: DprTimesheetEntry, activityGroupId: number) => {
-    if (entry.id < 0) return; // temp ID — row not yet persisted, skip
-    quickTypeMutation.mutate({ id: entry.id, data: buildUpdatePayload({ ...entry, activityGroupId }) });
+    saveActivitySelection(entry, {
+      activityTypeId: entry.activityTypeId ?? null,
+      activityGroupId,
+    });
   };
 
   // ── Per-cell inline editing helpers ──────────────────────────────────────────
@@ -2477,16 +2530,22 @@ export default function CapturePage() {
                       </TableCell>
                       {/* Activity Group — instant toggle, no editing mode needed */}
                       <TableCell className={COL.group} onClick={onCellClick}>
+                        {(() => {
+                          const pendingSelection = activityOverrides[entry.id];
+                          return (
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
                           allowedGroups={allowedGroups}
                           workingTypeId={workingTypeId}
-                          typeValue={entry.activityTypeId ?? null}
-                          groupValue={entry.activityGroupId ?? null}
+                          typeValue={pendingSelection?.activityTypeId ?? entry.activityTypeId ?? null}
+                          groupValue={pendingSelection?.activityGroupId ?? entry.activityGroupId ?? null}
                           onTypeChange={(id) => handleQuickSetType(entry, id)}
                           onGroupChange={(id) => handleQuickSetGroup(entry, id)}
                           onError={(msg) => toast({ title: msg, variant: "destructive" })}
+                          isSaving={Boolean(pendingSelection)}
                         />
+                          );
+                        })()}
                       </TableCell>
                       {/* Actions */}
                       <TableCell className={cn(COL.actions, "text-right")} onClick={onCellClick}>

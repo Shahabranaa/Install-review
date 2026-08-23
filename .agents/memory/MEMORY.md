@@ -15,6 +15,7 @@
 - [DPR team setup is optional](dpr-optional-team-setup.md) — daily team selection narrows Capture when saved, but must never block Capture or Clarify.
 - [DPR Google Sheets exports](dpr-google-sheets-exports.md) — Capture uses the existing service-account Sheets API; do not introduce Replit’s connector.
 - [DPR date-tab sync serialization](dpr-date-tab-sync-serialization.md) — automatic and manual Sheet rebuilds share one queue so a stale write cannot win.
+- [DPR activity selection saves](dpr-activity-selection-saves.md) — activity toggles must hold their pending choice until confirmed, so delayed responses never flash an older label.
 - [DPR paste date window](dpr-paste-date-window.md) — a DPR date accepts only entries dated that day or the following overnight day.
 - [Date picker iframe restriction](date-picker-iframe-restriction.md) — native showPicker() throws in Replit’s cross-origin preview iframe; date fields need a safe typed-entry fallback.
 - [DPR flat spreadsheet layout](dpr-flat-spreadsheet-layout.md) — Capture and Clarify should remain uninterrupted sheet grids, not team/date summary-card lists.
