@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Unlock, Timer, Download,
+  Loader2, Users, CheckCircle2, Check, Lock, Unlock, Timer, Download,
 } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
@@ -32,7 +32,41 @@ import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/util
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
-const COL_COUNT = 10; // # Start End Duration Location Notes ActivityGroup GenericComment JDRCode Action
+const COL_COUNT = 13; // # Team Status Start Finish Duration Location Comment PAX ActivityGroup GenericComment JDRCode Action
+const SHEET_CELL = "border-r border-border/50 px-2 py-1 align-middle";
+const SHEET_HEAD = "h-8 border-r border-border/50 px-2 py-1 text-[11px] font-semibold text-muted-foreground whitespace-nowrap";
+
+function ClarifyStatus({ stage }: { stage: string }) {
+  const clarified = stage === "clarified";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center",
+        clarified ? "text-emerald-600 dark:text-emerald-400" : "text-amber-500",
+      )}
+      title={clarified ? "Clarified" : "Pending clarification"}
+      aria-label={clarified ? "Clarified" : "Pending clarification"}
+    >
+      <span className={cn("h-2.5 w-2.5 rounded-full border", clarified ? "border-emerald-500 bg-emerald-500/80" : "border-amber-500 bg-amber-400/20")} />
+    </span>
+  );
+}
+
+function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
+        muted
+          ? "border-border/60 bg-muted/30 text-muted-foreground"
+          : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", muted ? "bg-muted-foreground/40" : "bg-amber-500")} />
+      <span className="truncate">{name || "Not set"}</span>
+    </span>
+  );
+}
 
 // ─── Team pills (mirrors Capture's FilterPills) ───────────────────────────────
 function ClarifyPills({
@@ -369,20 +403,37 @@ export default function ClarifyPage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[1100px]">
-              <colgroup><col style={{ width: 36 }} /><col className="w-[6%]" /><col className="w-[6%]" /><col className="w-[5%]" /><col className="w-[9%]" /><col /><col style={{ width: 160 }} /><col style={{ width: 200 }} /><col style={{ width: 200 }} /><col style={{ width: 80 }} /></colgroup>
-              <TableHeader className="bg-muted/30 sticky top-0 z-10">
-                <TableRow>
-                  <TableHead className="w-[36px] text-center text-muted-foreground">#</TableHead>
-                  <TableHead>Start</TableHead>
-                  <TableHead>Finish</TableHead>
-                  <TableHead className="text-emerald-600">Duration</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Comment</TableHead>
-                  <TableHead className="pr-4">Activity Group</TableHead>
-                  <TableHead>Generic Comment</TableHead>
-                  <TableHead>JDR Code</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+            <Table className="table-fixed w-full min-w-[1480px] border border-border/70 text-xs">
+              <colgroup>
+                <col style={{ width: 36 }} />
+                <col style={{ width: 108 }} />
+                <col style={{ width: 64 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 170 }} />
+                <col style={{ width: 220 }} />
+                <col style={{ width: 70 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 220 }} />
+                <col style={{ width: 200 }} />
+                <col style={{ width: 78 }} />
+              </colgroup>
+              <TableHeader className="sticky top-0 z-10 bg-muted/30">
+                <TableRow className="h-8 hover:bg-transparent">
+                  <TableHead className={cn(SHEET_HEAD, "text-center")}>#</TableHead>
+                  <TableHead className={SHEET_HEAD}>Team</TableHead>
+                  <TableHead className={cn(SHEET_HEAD, "text-center")}>Status</TableHead>
+                  <TableHead className={SHEET_HEAD}>Start</TableHead>
+                  <TableHead className={SHEET_HEAD}>Finish</TableHead>
+                  <TableHead className={cn(SHEET_HEAD, "text-emerald-600")}>Duration</TableHead>
+                  <TableHead className={SHEET_HEAD}>Location</TableHead>
+                  <TableHead className={SHEET_HEAD}>Comment</TableHead>
+                  <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
+                  <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
+                  <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
+                  <TableHead className={SHEET_HEAD}>JDR Code</TableHead>
+                  <TableHead className={cn(SHEET_HEAD, "text-right")}>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -399,9 +450,9 @@ export default function ClarifyPage() {
                   return (
                     <Fragment key={`${group.teamId ?? "none"}__${group.date}`}>
                       {/* ── Group divider row ── */}
-                      <TableRow className="bg-amber-950/20">
-                        <TableCell colSpan={COL_COUNT} className="py-1.5 px-4">
-                          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      <TableRow className="bg-amber-500/5 hover:bg-amber-500/5">
+                        <TableCell colSpan={COL_COUNT} className="border-b border-amber-500/20 px-2 py-1">
+                          <div className="flex items-center gap-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                             <Users className="w-3 h-3" />
                             <span>{group.teamName}</span>
                             <span className="font-mono text-amber-500/70">
@@ -441,9 +492,9 @@ export default function ClarifyPage() {
                       {/* ── Clarified rows (greyed, below pending) ── */}
                       {clarified.length > 0 && (
                         <>
-                          <TableRow className="bg-muted/10">
-                            <TableCell colSpan={COL_COUNT} className="py-1 px-4">
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-medium">
+                          <TableRow className="bg-muted/10 hover:bg-muted/10">
+                            <TableCell colSpan={COL_COUNT} className="border-b border-border/50 px-2 py-1">
+                              <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/60">
                                 <Lock className="w-3 h-3" />
                                 Clarified — {clarified.length} row{clarified.length !== 1 ? "s" : ""}
                               </div>
@@ -503,68 +554,47 @@ function ClarifiedRow({
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
 
   return (
-    <TableRow className="opacity-40 bg-muted/5">
-      {/* # */}
-      <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground/40">{rowIndex ?? ""}</TableCell>
-      {/* Start */}
-      <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
-        {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
+    <TableRow className="h-10 bg-muted/5 opacity-50 hover:bg-muted/10">
+      <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground/50")}>{rowIndex ?? ""}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs font-medium text-muted-foreground")}>{entry.team?.name || "Unassigned"}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
+        {entry.startTime || <span className="text-muted-foreground/40">—</span>}
         {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
-          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+          <div className="text-[10px] leading-tight text-muted-foreground">
             {(() => { try { return format(parseISO(entry.date as string), "d MMM"); } catch { return ""; } })()}
           </div>
         )}
       </TableCell>
-      {/* End */}
-      <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
-        {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
+      <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
+        {entry.endTime || <span className="text-muted-foreground/40">—</span>}
         {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
-          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+          <div className="text-[10px] leading-tight text-muted-foreground">
             {(() => { try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "d MMM"); } catch { return ""; } })()}
           </div>
         )}
       </TableCell>
-      {/* Duration */}
-      <TableCell className="text-sm font-semibold tabular-nums text-emerald-600/50 dark:text-emerald-400/50">
-        {formatDuration(entry.startTime, entry.endTime)}
-      </TableCell>
-      {/* Location */}
-      <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.location?.name || <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Notes */}
-      <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Activity Group */}
-      <TableCell className="text-sm text-muted-foreground pr-4">
-        {group?.name || <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Generic Comment */}
-      <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.genericComment
-          ? <span className="line-clamp-2">{entry.genericComment}</span>
-          : <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* JDR Code */}
-      <TableCell className="text-sm text-muted-foreground">
-        {code ? <span className="font-mono text-xs">{code.contractualCode}</span> : <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Unlock */}
-      <TableCell className="text-right pr-2">
+      <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600/60 dark:text-emerald-400/60")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={group?.name} muted /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "font-mono text-[11px] text-muted-foreground")}>{code?.contractualCode || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-right")}>
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8 opacity-100"
+          className="h-7 w-7 opacity-100"
           onClick={() => onUnlock(entry)}
           disabled={isUnlocking}
           title="Unlock and return to Capture"
           aria-label="Unlock and return to Capture"
         >
           {isUnlocking
-            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            : <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />}
         </Button>
       </TableCell>
     </TableRow>
@@ -689,50 +719,35 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
 
   const canSave = !!jdrCodeId;
 
+  const group = activityGroups.find(g => g.id === entry.activityGroupId);
+
   return (
-    <TableRow className="align-top">
-      {/* # */}
-      <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground pt-3">{rowIndex ?? ""}</TableCell>
-      {/* Start */}
-      <TableCell className="text-sm font-mono tabular-nums">
-        {entry.startTime
-          ? <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-muted-foreground" />{formatTimeDisplay(entry.startTime)}</span>
-          : <span className="text-muted-foreground/40">—</span>}
+    <TableRow className="h-10 hover:bg-muted/20">
+      <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs font-medium")}>{entry.team?.name || "Unassigned"}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
+        {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
         {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
-          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+          <div className="text-[10px] leading-tight text-muted-foreground">
             {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
           </div>
         )}
       </TableCell>
-      {/* End */}
-      <TableCell className="text-sm font-mono tabular-nums">
+      <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
+        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
+          <div className="text-[10px] leading-tight text-muted-foreground">
+            {(() => { try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "d MMM"); } catch { return ""; } })()}
+          </div>
+        )}
       </TableCell>
-      {/* Duration */}
-      <TableCell>
-        <span className={cn("text-sm font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
-          {formatDuration(entry.startTime, entry.endTime)}
-        </span>
-      </TableCell>
-      {/* Location */}
-      <TableCell className="text-sm text-muted-foreground truncate">
-        {entry.location
-          ? <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{entry.location.name}</span>
-          : <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Notes — read-only */}
-      <TableCell className="text-sm text-muted-foreground">
-        {entry.combinedComment || entry.notes
-          ? <span className="line-clamp-3 break-words">{entry.combinedComment || entry.notes}</span>
-          : <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Activity Group — read-only */}
-      <TableCell className="text-sm text-muted-foreground pr-4">
-        {activityGroups.find(g => g.id === entry.activityGroupId)?.name
-          ?? <span className="text-muted-foreground/40">—</span>}
-      </TableCell>
-      {/* Generic Comment — searchable combobox */}
-      <TableCell>
+      <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600 dark:text-emerald-400")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={group?.name} /></TableCell>
+      <TableCell className={SHEET_CELL}>
         <Combobox
           options={commentOptions}
           value={jdrCodeId?.toString() || ""}
@@ -747,17 +762,16 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
           placeholder="Select comment…"
           searchPlaceholder="Search comments…"
           emptyText="No matching comment."
-          className="w-[280px]"
-          triggerClassName="text-xs"
+          className="w-full min-w-0"
+          triggerClassName="h-7 min-w-0 px-2 text-[11px]"
         />
       </TableCell>
-      {/* JDR Code — plain Select */}
-      <TableCell>
+      <TableCell className={SHEET_CELL}>
         <Select
           value={jdrCodeId?.toString() || ""}
           onValueChange={v => setJdrCodeId(parseInt(v))}
         >
-          <SelectTrigger className="h-8 text-xs bg-background">
+          <SelectTrigger className="h-7 min-w-0 bg-background px-2 text-[11px]">
             <SelectValue placeholder="Select code…" />
           </SelectTrigger>
           <SelectContent>
@@ -769,32 +783,31 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
           </SelectContent>
         </Select>
       </TableCell>
-      {/* Actions */}
-      <TableCell className="text-right pr-2">
+      <TableCell className={cn(SHEET_CELL, "text-right")}>
         <div className="flex justify-end gap-1">
           <Button
             size="icon"
-            className="h-8 w-8"
+            className="h-7 w-7"
             onClick={handleSave}
             disabled={!canSave || updateMutation.isPending || isUnlocking}
             title={canSave ? "Mark as Clarified" : "Select a JDR code first"}
             aria-label="Mark as Clarified"
           >
-            {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
           </Button>
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-8 w-8"
+            className="h-7 w-7"
             onClick={() => onUnlock(entry)}
             disabled={updateMutation.isPending || isUnlocking}
             title="Unlock and return to Capture"
             aria-label="Unlock and return to Capture"
           >
             {isUnlocking
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />}
           </Button>
         </div>
       </TableCell>
