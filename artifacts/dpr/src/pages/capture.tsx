@@ -2551,7 +2551,7 @@ export default function CapturePage() {
           <div className="flex-1 overflow-auto flex flex-col gap-3 min-h-0">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-y border-border bg-muted/20 px-3 py-2">
               <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
-                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
+                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD/MM/YYYY)</span>
               </label>
               <Input
                 id="paste-shift-date"
