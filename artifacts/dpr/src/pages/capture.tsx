@@ -34,7 +34,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DateCalendar } from "@/components/ui/calendar";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy, ListFilter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -466,6 +466,12 @@ type PendingCopy = {
   sourceDate: string;
   rows: PendingRow[];
 };
+
+function pendingRowTeamKey(row: PendingRow): string {
+  if (row.teamId !== null) return `id:${row.teamId}`;
+  const teamName = row.teamRaw.trim().toLowerCase();
+  return teamName ? `name:${teamName}` : "unassigned";
+}
 
 function parsePastedText(
   text: string,
@@ -1138,6 +1144,9 @@ export default function CapturePage() {
   const [copySourcePickerOpen, setCopySourcePickerOpen] = useState(false);
   const [copySourceDate, setCopySourceDate] = useState("");
   const [pendingCopy, setPendingCopy] = useState<PendingCopy | null>(null);
+  // Team keys hidden from the copied-review grid. An empty list means all
+  // teams are selected, which keeps every copied activity visible by default.
+  const [copyExcludedTeamKeys, setCopyExcludedTeamKeys] = useState<string[]>([]);
   const [copySourceStatus, setCopySourceStatus] = useState<{
     tone: "loading" | "success" | "warning" | "error";
     message: string;
@@ -1744,6 +1753,7 @@ export default function CapturePage() {
     setCopySourcePickerOpen(false);
     setCopySourceDate("");
     setPendingCopy(null);
+    setCopyExcludedTeamKeys([]);
     setCopySourceStatus(null);
     copySourceSelectionRef.current = null;
     setPasteOpen(true);
@@ -1760,6 +1770,7 @@ export default function CapturePage() {
     const count = pendingCopy.rows.length;
     setPasteText("");
     setPendingRows((rows) => action === "append" && rows?.length ? [...rows, ...pendingCopy.rows] : pendingCopy.rows);
+    setCopyExcludedTeamKeys([]);
     setPendingCopy(null);
     setCopySourceStatus({
       tone: "success",
@@ -1774,6 +1785,7 @@ export default function CapturePage() {
     setCopySourceDate(normalizedValue);
     copySourceSelectionRef.current = normalizeIsoDate(normalizedValue) ? normalizedValue : null;
     setPendingCopy(null);
+    setCopyExcludedTeamKeys([]);
     setCopySourceStatus(null);
     if (!normalizedValue) return;
 
@@ -1802,6 +1814,7 @@ export default function CapturePage() {
     setCopySourcePickerOpen(false);
     setCopySourceDate("");
     setPendingCopy(null);
+    setCopyExcludedTeamKeys([]);
     setCopySourceStatus(null);
     copySourceSelectionRef.current = null;
   };
@@ -1858,6 +1871,32 @@ export default function CapturePage() {
       && row.date !== overnightPasteDate,
   ) ?? [];
   const isCopiedActivityReview = copySourceStatus?.tone === "success" && Boolean(pendingRows?.length);
+  const copyTeamOptions = useMemo(() => {
+    if (!isCopiedActivityReview || !pendingRows) return [];
+
+    const options = new Map<string, { key: string; label: string; count: number }>();
+    for (const row of pendingRows) {
+      const key = pendingRowTeamKey(row);
+      const label = row.teamRaw.trim() || "Unassigned";
+      const existing = options.get(key);
+      if (existing) existing.count += 1;
+      else options.set(key, { key, label, count: 1 });
+    }
+    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [isCopiedActivityReview, pendingRows]);
+
+  useEffect(() => {
+    const availableKeys = new Set(copyTeamOptions.map((option) => option.key));
+    setCopyExcludedTeamKeys((keys) => keys.filter((key) => availableKeys.has(key)));
+  }, [copyTeamOptions]);
+
+  const visiblePendingRows = useMemo(() => {
+    if (!pendingRows || !isCopiedActivityReview || copyExcludedTeamKeys.length === 0) {
+      return pendingRows ?? [];
+    }
+    const excluded = new Set(copyExcludedTeamKeys);
+    return pendingRows.filter((row) => !excluded.has(pendingRowTeamKey(row)));
+  }, [pendingRows, isCopiedActivityReview, copyExcludedTeamKeys]);
 
   // ── Shared table header ───────────────────────────────────────────────────
   const allSelected = filteredEntries.length > 0 && filteredEntries.every(e => selectedIds.has(e.id));
@@ -2960,6 +2999,71 @@ export default function CapturePage() {
               </div>
             )}
 
+            {isCopiedActivityReview && copyTeamOptions.length > 0 && (
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ListFilter className="h-3.5 w-3.5" />
+                  <span>
+                    Showing {visiblePendingRows.length} of {pendingRows?.length ?? 0} copied activit{(pendingRows?.length ?? 0) === 1 ? "y" : "ies"}
+                  </span>
+                  <span className="text-muted-foreground/60">Filter only changes the review view.</span>
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-8 gap-2 text-xs">
+                      <Users className="h-3.5 w-3.5" />
+                      Teams
+                      {copyExcludedTeamKeys.length > 0 && (
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                          {copyTeamOptions.length - copyExcludedTeamKeys.length}/{copyTeamOptions.length}
+                        </Badge>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-2">
+                    <div className="flex items-center justify-between border-b border-border px-2 pb-2">
+                      <div>
+                        <p className="text-sm font-medium">Filter teams</p>
+                        <p className="text-[11px] text-muted-foreground">Only teams with copied activity are listed.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setCopyExcludedTeamKeys([])}
+                      >
+                        All teams
+                      </Button>
+                    </div>
+                    <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+                      {copyTeamOptions.map((option) => {
+                        const selected = !copyExcludedTeamKeys.includes(option.key);
+                        return (
+                          <label
+                            key={option.key}
+                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+                          >
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={(checked) => {
+                                setCopyExcludedTeamKeys((keys) => {
+                                  if (checked) return keys.filter((key) => key !== option.key);
+                                  return keys.includes(option.key) ? keys : [...keys, option.key];
+                                });
+                              }}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                            <span className="text-[10px] text-muted-foreground">{option.count}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+
             {!isCopiedActivityReview && (
               <>
                 <Textarea
@@ -3005,7 +3109,7 @@ export default function CapturePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRows.map((row) => {
+                    {visiblePendingRows.map((row) => {
                       const teamUnmatched = Boolean(row.teamRaw && !row.teamId);
                       const locationUnmatched = Boolean(row.locationRaw && !row.locationId);
                       // A copied report can belong to a valid team that is not in
@@ -3113,6 +3217,13 @@ export default function CapturePage() {
                         </tr>
                       );
                     })}
+                    {visiblePendingRows.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="border border-slate-400 px-3 py-8 text-center text-xs text-muted-foreground dark:border-slate-600">
+                          No copied activities match the selected teams. Use the Teams filter to select at least one team.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -3158,7 +3269,11 @@ export default function CapturePage() {
 
           <DialogFooter className="shrink-0">
             {pendingRows && pendingRows.length > 0 && (
-              <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
+              <Badge variant="secondary" className="mr-auto">
+                {isCopiedActivityReview && visiblePendingRows.length !== pendingRows.length
+                  ? `${visiblePendingRows.length} of ${pendingRows.length} rows shown`
+                  : `${pendingRows.length} row${pendingRows.length === 1 ? "" : "s"} parsed`}
+              </Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
             <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || !normalizedPasteDprDate || invalidPasteDateRows.length > 0 || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
