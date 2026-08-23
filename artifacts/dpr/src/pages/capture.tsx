@@ -63,6 +63,8 @@ type RowDraft = {
   endTime: string;
   locationId: number | null;
   notes: string;
+  pax: number | null;
+  paxRaw: string;
   activityTypeId: number | null;
   activityGroupId: number | null;
   billingParty: BillingParty;
@@ -76,6 +78,8 @@ function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number
     endTime: "00:00",
     locationId: null,
     notes: "",
+    pax: null,
+    paxRaw: "",
     activityTypeId: defaultActivityTypeId,
     activityGroupId: defaultGroupId,
     billingParty: null,
@@ -908,7 +912,7 @@ export default function CapturePage() {
 
   // ── UI state ──
   const [newRow, setNewRow] = useState<RowDraft | null>(null);
-  const [newRowErrors, setNewRowErrors] = useState<Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>>>({});
+  const [newRowErrors, setNewRowErrors] = useState<Partial<Record<"teamId" | "startTime" | "endTime" | "locationId" | "pax", string>>>({});
   // Per-cell inline editing — tracks which cell is active and its current typed value
   const [editingCell, setEditingCell] = useState<{ entryId: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
@@ -1333,17 +1337,18 @@ export default function CapturePage() {
 
   const handleCreate = () => {
     if (!newRow) return;
-    const errors: Partial<Record<"teamId" | "startTime" | "endTime" | "locationId", string>> = {};
+    const errors: Partial<Record<"teamId" | "startTime" | "endTime" | "locationId" | "pax", string>> = {};
     if (!newRow.teamId) errors.teamId = "Team is required";
     if (!newRow.startTime) errors.startTime = "Start time is required";
     else { const e = validate48hTime(newRow.startTime); if (e) errors.startTime = e; }
     if (!newRow.endTime) errors.endTime = "End time is required";
     else { const e = validate48hTime(newRow.endTime); if (e) errors.endTime = e; }
     if (!newRow.locationId) errors.locationId = "Location is required";
+    if (newRow.paxRaw.trim() && newRow.pax === null) errors.pax = "PAX must be a positive whole number";
     if (Object.keys(errors).length) { setNewRowErrors(errors); return; }
     setNewRowErrors({});
     createMutation.mutate(
-      { data: { date: newRow.date, shiftDate: activeDate ?? newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
+      { data: { date: newRow.date, shiftDate: activeDate ?? newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, pax: newRow.pax ?? undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
       { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); setNewRowErrors({}); } }
     );
   };
@@ -1356,6 +1361,7 @@ export default function CapturePage() {
     endTime: draft.endTime || null,
     locationId: draft.locationId || null,
     notes: draft.notes || null,
+    pax: draft.pax ?? null,
     activityTypeId: draft.activityTypeId || null,
     activityGroupId: draft.activityGroupId ?? null,
     billingParty: draft.billingParty ?? null,
@@ -1384,6 +1390,11 @@ export default function CapturePage() {
         return;
       }
     }
+    if (field === "pax" && value.trim() && normalizePax(value) === null) {
+      toast({ title: "Invalid PAX", description: "Enter a positive whole number or leave it blank.", variant: "destructive" });
+      setFailedCell({ entryId, field });
+      return;
+    }
     const patch: Partial<DprTimesheetEntry> = {};
     if (field === "startTime") patch.startTime = value || undefined;
     else if (field === "endTime") patch.endTime = value || undefined;
@@ -1391,6 +1402,7 @@ export default function CapturePage() {
     else if (field === "date") patch.date = value || entry.date;
     else if (field === "shiftDate") patch.shiftDate = value || entry.date; // fall back to raw date if cleared
     else if (field === "teamId") patch.teamId = value ? parseInt(value) : null;
+    else if (field === "pax") patch.pax = value.trim() ? normalizePax(value) : null;
     lastSavedCellRef.current = { entryId, field };
     autosaveMutation.mutate({ id: entryId, data: buildUpdatePayload({ ...entry, ...patch }) });
   };
@@ -1498,6 +1510,7 @@ export default function CapturePage() {
       <TableHead className="whitespace-nowrap text-emerald-600">Duration</TableHead>
       <TableHead className={COL.location}>Location</TableHead>
       <TableHead className={COL.notes}>Comment</TableHead>
+      <TableHead className="whitespace-nowrap text-center">PAX working on task</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
       <TableHead className={cn(COL.actions, "text-right")}>Actions</TableHead>
     </TableRow>
@@ -1740,7 +1753,7 @@ export default function CapturePage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[1160px]">
+             <Table className="table-fixed w-full min-w-[1280px]">
               {/* Column widths — group/actions are fixed px so the pill never overlaps */}
               <colgroup>
                 {selectMode && <col style={{ width: 36 }} />}
@@ -1753,6 +1766,7 @@ export default function CapturePage() {
                 <col style={{ width: 80 }} />{/* Duration */}
                 <col style={{ width: 130 }} />{/* Location */}
                 <col />{/* Comment — flexible */}
+                <col style={{ width: 140 }} />{/* PAX working on task */}
                 <col style={{ width: 270 }} />{/* Activity Group */}
                 <col style={{ width: 84 }} />{/* Actions */}
               </colgroup>
@@ -1833,6 +1847,21 @@ export default function CapturePage() {
                         onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                       />
                     </TableCell>
+                     <TableCell className="text-center">
+                       <Input
+                         type="text"
+                         inputMode="numeric"
+                         placeholder="—"
+                         value={newRow.paxRaw}
+                         onChange={(e) => {
+                           const paxRaw = e.target.value;
+                           setNewRow({ ...newRow, paxRaw, pax: normalizePax(paxRaw) });
+                           setNewRowErrors((errors) => ({ ...errors, pax: undefined }));
+                         }}
+                         className={cn("h-8 min-w-[100px] text-sm text-center tabular-nums", newRowErrors.pax && "border-destructive focus-visible:ring-destructive")}
+                       />
+                       {newRowErrors.pax && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.pax}</p>}
+                     </TableCell>
                     <TableCell className={COL.group}>
                       <ActivityGroupPicker
                         allowedTypes={allowedTypes}
@@ -2072,6 +2101,29 @@ export default function CapturePage() {
                           </span>
                         )}
                       </TableCell>
+                      {/* PAX working on task — inline editable */}
+                      <TableCell className="text-center" onClick={onCellClick}>
+                        {isCellEditing("pax") ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            inputMode="numeric"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onBlur={() => deactivateCell(entry.id, "pax")}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                            className={cn("w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm tabular-nums text-center text-foreground outline-none focus:ring-1 focus:ring-primary", isCellFailed("pax") && "border-destructive")}
+                          />
+                        ) : (
+                          <span
+                            onClick={() => activateCell(entry.id, "pax", entry.pax?.toString() || "")}
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm tabular-nums", isCellFailed("pax") && "text-destructive")}
+                            title="Click to edit PAX working on task"
+                          >
+                            {entry.pax ?? <span className="text-muted-foreground/50">—</span>}
+                          </span>
+                        )}
+                      </TableCell>
                       {/* Activity Group — instant toggle, no editing mode needed */}
                       <TableCell className={COL.group} onClick={onCellClick}>
                         <ActivityGroupPicker
@@ -2152,7 +2204,7 @@ export default function CapturePage() {
                           : "—"}
                       </span>
                     </TableCell>
-                    <TableCell colSpan={4} className="py-1.5 text-xs text-muted-foreground">
+                    <TableCell colSpan={5} className="py-1.5 text-xs text-muted-foreground">
                       {filteredTotalHours > 0 && filteredTotalHours < 12 && (
                         <span>{(12 - filteredTotalHours).toFixed(2)}h remaining of 12h expected</span>
                       )}
@@ -2168,7 +2220,7 @@ export default function CapturePage() {
                   <>
                     <TableRow className="bg-emerald-950/20">
                       <TableCell
-                        colSpan={9 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
+                        colSpan={10 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
                         className="py-1.5 px-4"
                       >
                         <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -2220,6 +2272,9 @@ export default function CapturePage() {
                         <TableCell className="text-sm text-muted-foreground truncate">
                           {entry.notes || "—"}
                         </TableCell>
+                        <TableCell className="text-sm text-muted-foreground text-center tabular-nums">
+                          {entry.pax ?? "—"}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {(() => {
                             const grp = activityGroups.find((g) => g.id === entry.activityGroupId);
@@ -2237,7 +2292,7 @@ export default function CapturePage() {
                 {/* Empty state */}
                 {!loadingEntries && filteredEntries.length === 0 && filteredLockedEntries.length === 0 && !newRow && (
                   <TableRow>
-                    <TableCell colSpan={9 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
+                    <TableCell colSpan={10 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
                       {draftEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}
