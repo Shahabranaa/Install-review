@@ -147,7 +147,7 @@ function ActivityGroupPicker({
   };
 
   return (
-    <div className="inline-flex items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold min-w-[190px]"
+    <div className="inline-flex w-fit items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold whitespace-nowrap"
          style={{ borderColor: isWorking ? "rgb(22 163 74 / 0.4)" : "rgb(234 179 8 / 0.4)" }}>
       {/* Left — type toggle */}
       <button
@@ -155,7 +155,7 @@ function ActivityGroupPicker({
         onClick={handleTypeClick}
         title={canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
         className={cn(
-          "flex items-center gap-1.5 px-2.5 py-1.5 transition-all duration-150 border-r",
+          "flex items-center gap-1.5 px-2 py-1.5 transition-all duration-150 border-r",
           isWorking
             ? "bg-green-500/10 text-green-400 border-r-green-600/30"
             : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
@@ -177,7 +177,7 @@ function ActivityGroupPicker({
           onClick={handleGroupClick}
           title={canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
           className={cn(
-            "flex items-center gap-1 px-2.5 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
+            "flex items-center gap-1 px-2 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
             canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
           )}
         >
@@ -185,7 +185,7 @@ function ActivityGroupPicker({
           {canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
         </button>
       ) : (
-        <div className="flex items-center px-2.5 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
+        <div className="flex items-center px-2 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
           <span className="leading-none">—</span>
         </div>
       )}
@@ -2082,22 +2082,7 @@ export default function CapturePage() {
           </div>
         ) : (
            <div className="rounded-none border-0">
-             <Table className="table-fixed w-full min-w-[1120px] border-collapse text-xs [&_th]:h-8 [&_th]:border-r [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:border-r [&_td]:border-border/40 [&_td]:px-2 [&_td]:py-1">
-              <colgroup>
-                {selectMode && <col style={{ width: 36 }} />}
-                <col style={{ width: 36 }} />
-                {showDateCol && <col style={{ width: 94 }} />}
-                {showTeamCol && <col style={{ width: 104 }} />}
-                <col style={{ width: 48 }} />
-                <col style={{ width: 78 }} />
-                <col style={{ width: 78 }} />
-                <col style={{ width: 82 }} />
-                <col style={{ width: 160 }} />
-                <col style={{ width: 220 }} />
-                <col style={{ width: 72 }} />
-                <col style={{ width: 186 }} />
-                <col style={{ width: 78 }} />
-              </colgroup>
+             <Table className="table-auto w-full min-w-max border-collapse text-xs [&_th]:h-8 [&_th]:border-r [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:border-r [&_td]:border-border/40 [&_td]:px-2 [&_td]:py-1">
               <TableHeader className="sticky top-0 z-10 bg-muted/30">
                 <TableCols />
               </TableHeader>

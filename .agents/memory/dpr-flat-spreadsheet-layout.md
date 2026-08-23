@@ -7,4 +7,4 @@ Keep Capture and Clarify as flat, uninterrupted spreadsheet tables. Do not add g
 
 **Why:** The user explicitly prefers an Excel-like continuous grid over grouped summary cards, which interrupt scanning and make the two workflow stages feel inconsistent.
 
-**How to apply:** Preserve useful filters and row actions, but put team, date, status, overnight context, and lock/clarify state inside each row or table column. Show totals in compact controls outside the row grid when needed.
+**How to apply:** Preserve useful filters and row actions, but put team, date, status, overnight context, and lock/clarify state inside each row or table column. Use content-driven table sizing rather than fixed column widths so multi-part controls never overlap adjacent cells. Show totals in compact controls outside the row grid when needed.
