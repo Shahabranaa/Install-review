@@ -67,15 +67,26 @@ function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boo
   );
 }
 
-function EntryTeamCell({ entry, muted = false }: { entry: DprTimesheetEntry; muted?: boolean }) {
-  const entryDate = entry.shiftDate ?? entry.date;
+function formatDateIfDifferent(raw: string | null | undefined, currentDate: string | null): string | null {
+  if (!raw || raw === currentDate) return null;
+  try { return format(parseISO(raw), "dd MMM yyyy"); } catch { return raw; }
+}
+
+function EntryTeamCell({ entry, currentDate, muted = false }: {
+  entry: DprTimesheetEntry;
+  currentDate: string | null;
+  muted?: boolean;
+}) {
+  const dateLabel = formatDateIfDifferent(entry.date, currentDate);
   return (
     <div className={cn("min-w-0", muted && "text-muted-foreground")}>
       <div className="truncate text-xs font-medium">{entry.team?.name || "Unassigned"}</div>
-      <div className="truncate text-[10px] leading-tight text-muted-foreground">
-        {(() => { try { return format(parseISO(entryDate), "dd MMM yyyy"); } catch { return entryDate; } })()}
-        {entry.shiftDate && entry.shiftDate !== entry.date && <span className="ml-1 text-indigo-500">overnight</span>}
-      </div>
+      {dateLabel && (
+        <div className="truncate text-[10px] leading-tight text-muted-foreground">
+          {dateLabel}
+          {entry.shiftDate && entry.shiftDate !== entry.date && <span className="ml-1 text-indigo-500">overnight</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -462,6 +473,7 @@ export default function ClarifyPage() {
                     <ClarifyRow
                       key={entry.id}
                       entry={entry}
+                      currentDate={activeDate}
                       activityGroups={activityGroups}
                       allActivities={allActivities}
                       allJdrCodes={allJdrCodes}
@@ -473,6 +485,7 @@ export default function ClarifyPage() {
                     <ClarifiedRow
                       key={entry.id}
                       entry={entry}
+                      currentDate={activeDate}
                       activityGroups={activityGroups}
                       rowIndex={idx + 1}
                       onUnlock={handleUnlock}
@@ -500,12 +513,14 @@ export default function ClarifyPage() {
 // ─── ClarifiedRow ─────────────────────────────────────────────────────────────
 function ClarifiedRow({
   entry,
+  currentDate,
   activityGroups,
   rowIndex,
   onUnlock,
   isUnlocking,
 }: {
   entry: DprTimesheetEntry;
+  currentDate: string | null;
   activityGroups: DprActivityGroup[];
   rowIndex?: number;
   onUnlock: (entry: DprTimesheetEntry) => void;
@@ -521,23 +536,28 @@ function ClarifiedRow({
   return (
     <TableRow className="h-10 bg-muted/5 opacity-50 hover:bg-muted/10">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground/50")}>{rowIndex ?? ""}</TableCell>
-      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} muted /></TableCell>
+      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} muted /></TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
         {entry.startTime || <span className="text-muted-foreground/40">—</span>}
-        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, currentDate) && (
           <div className="text-[10px] leading-tight text-muted-foreground">
-            {(() => { try { return format(parseISO(entry.date as string), "d MMM"); } catch { return ""; } })()}
+            {formatDateIfDifferent(entry.date, currentDate)}
           </div>
         )}
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
         {entry.endTime || <span className="text-muted-foreground/40">—</span>}
-        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
-          <div className="text-[10px] leading-tight text-muted-foreground">
-            {(() => { try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "d MMM"); } catch { return ""; } })()}
-          </div>
-        )}
+        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
+          const finishDate = (() => {
+            try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "yyyy-MM-dd"); }
+            catch { return null; }
+          })();
+          const finishDateLabel = formatDateIfDifferent(finishDate, currentDate);
+          return finishDateLabel ? (
+            <div className="text-[10px] leading-tight text-muted-foreground">{finishDateLabel}</div>
+          ) : null;
+        })()}
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600/60 dark:text-emerald-400/60")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
@@ -567,8 +587,9 @@ function ClarifiedRow({
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
+function ClarifyRow({ entry, currentDate, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
   entry: DprTimesheetEntry;
+  currentDate: string | null;
   activityGroups: DprActivityGroup[];
   allActivities: DprActivity[];
   allJdrCodes: DprJdrCode[];
@@ -689,23 +710,28 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
   return (
     <TableRow className="h-10 hover:bg-muted/20">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
-      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} /></TableCell>
+      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
         {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
-        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+        {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, currentDate) && (
           <div className="text-[10px] leading-tight text-muted-foreground">
-            {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
+            {formatDateIfDifferent(entry.date, currentDate)}
           </div>
         )}
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
         {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/40">—</span>}
-        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
-          <div className="text-[10px] leading-tight text-muted-foreground">
-            {(() => { try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "d MMM"); } catch { return ""; } })()}
-          </div>
-        )}
+        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
+          const finishDate = (() => {
+            try { return format(addDays(parseISO((entry.shiftDate ?? entry.date) as string), 1), "yyyy-MM-dd"); }
+            catch { return null; }
+          })();
+          const finishDateLabel = formatDateIfDifferent(finishDate, currentDate);
+          return finishDateLabel ? (
+            <div className="text-[10px] leading-tight text-muted-foreground">{finishDateLabel}</div>
+          ) : null;
+        })()}
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600 dark:text-emerald-400")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
