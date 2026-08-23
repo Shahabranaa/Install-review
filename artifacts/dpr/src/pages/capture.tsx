@@ -253,6 +253,10 @@ function normalizeDate(raw: string): string | null {
   return `${parts[3]}-${parts[2]}-${parts[1]}`;
 }
 
+function usesHyphenDateFormat(raw: string): boolean {
+  return /^\d{2}-\d{2}-\d{4}$/.test(raw.trim());
+}
+
 function normalizeIsoDate(raw: string): string | null {
   const trimmed = raw.trim();
   const parts = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2602,6 +2606,7 @@ export default function CapturePage() {
                       const teamUnmatched = Boolean(row.teamRaw && !row.teamId);
                       const locationUnmatched = Boolean(row.locationRaw && !row.locationId);
                       const invalidDate = !row.date;
+                      const hyphenDateFormat = usesHyphenDateFormat(row.dateRaw);
                       const invalidDprDate = Boolean(
                         row.date
                         && normalizedPasteDprDate
@@ -2617,7 +2622,9 @@ export default function CapturePage() {
                               aria-invalid={invalidDate || invalidDprDate}
                               title={
                                 invalidDate
-                                  ? "Please give a valid date."
+                                  ? hyphenDateFormat
+                                  ? "Use DD/MM/YYYY with / separators, for example 23/08/2026. Hyphens are not accepted."
+                                  : "Please give a valid date."
                                   : invalidDprDate
                                   ? `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} or ${formatDateAsDmyHyphen(overnightPasteDate ?? "")}.`
                                   : undefined
@@ -2702,7 +2709,13 @@ export default function CapturePage() {
               </div>
             )}
 
-            {pendingRows && pendingRows.some((r) => !r.date) && (
+            {pendingRows && pendingRows.some((r) => !r.date && usesHyphenDateFormat(r.dateRaw)) && (
+              <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                The pasted date uses “-” separators. Enter dates as DD/MM/YYYY using “/”, for example 23/08/2026.
+              </div>
+            )}
+            {pendingRows && pendingRows.some((r) => !r.date && !usesHyphenDateFormat(r.dateRaw)) && (
               <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 Please give a valid date in DD/MM/YYYY format.
