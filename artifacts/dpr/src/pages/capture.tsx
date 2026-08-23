@@ -31,6 +31,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DateCalendar } from "@/components/ui/calendar";
 import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
@@ -327,34 +329,18 @@ function DmyDateInput({
   ariaLabel?: string;
   autoFocus?: boolean;
 }) {
-  const textInputRef = useRef<HTMLInputElement>(null);
-  const pickerRef = useRef<HTMLInputElement>(null);
   const isFocusedRef = useRef(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [displayValue, setDisplayValue] = useState(() => formatDateForSelector(value));
 
   useEffect(() => {
     if (!isFocusedRef.current) setDisplayValue(formatDateForSelector(value));
   }, [value]);
-
-  const openPicker = () => {
-    const picker = pickerRef.current;
-    if (!picker) return;
-    try {
-      if (typeof picker.showPicker === "function") {
-        picker.showPicker();
-        return;
-      }
-    } catch {
-      // showPicker is blocked when the Replit preview is embedded in a
-      // cross-origin iframe. Keep the custom date field usable in that case.
-    }
-    textInputRef.current?.focus();
-  };
+  const selectedDate = normalizeDmyOrIsoDate(value);
 
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
       <Input
-        ref={textInputRef}
         id={id}
         autoFocus={autoFocus}
         type="text"
@@ -379,31 +365,34 @@ function DmyDateInput({
         }}
         className={cn("pr-8", className)}
       />
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label={`Choose ${ariaLabel ?? "date"}`}
-        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={openPicker}
-      >
-        <Calendar className="h-3.5 w-3.5" />
-      </button>
-      <input
-        ref={pickerRef}
-        type="date"
-        tabIndex={-1}
-        aria-hidden="true"
-        value={normalizeDmyOrIsoDate(value) ?? ""}
-        onChange={(e) => {
-          const normalized = normalizeIsoDate(e.target.value);
-          if (!normalized) return;
-          const formatted = formatDateAsDmy(normalized);
-          setDisplayValue(formatted);
-          onChange(formatted);
-        }}
-        className="pointer-events-none absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0"
-      />
+      <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={`Choose ${ariaLabel ?? "date"}`}
+            className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <Calendar className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="end">
+          <DateCalendar
+            mode="single"
+            selected={selectedDate ? parseISO(selectedDate) : undefined}
+            defaultMonth={selectedDate ? parseISO(selectedDate) : undefined}
+            onSelect={(date) => {
+              if (!date) return;
+              const formatted = format(date, "dd-MM-yyyy");
+              setDisplayValue(formatted);
+              onChange(formatted);
+              setCalendarOpen(false);
+            }}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
