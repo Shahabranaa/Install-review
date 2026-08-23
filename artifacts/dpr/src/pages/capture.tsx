@@ -1752,24 +1752,8 @@ export default function CapturePage() {
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="rounded-none border-0">
-             <Table className="table-fixed w-full min-w-[1280px]">
-              {/* Column widths — group/actions are fixed px so the pill never overlaps */}
-              <colgroup>
-                {selectMode && <col style={{ width: 36 }} />}
-                <col style={{ width: 40 }} />{/* # */}
-                {showDateCol && <col style={{ width: 104 }} />}{/* Date */}
-                {showTeamCol && <col style={{ width: 92 }} />}{/* Team */}
-                <col style={{ width: 60 }} />{/* Status */}
-                <col style={{ width: 72 }} />{/* Start */}
-                <col style={{ width: 72 }} />{/* Finish */}
-                <col style={{ width: 80 }} />{/* Duration */}
-                <col style={{ width: 130 }} />{/* Location */}
-                <col />{/* Comment — flexible */}
-                <col style={{ width: 140 }} />{/* PAX working on task */}
-                <col style={{ width: 270 }} />{/* Activity Group */}
-                <col style={{ width: 84 }} />{/* Actions */}
-              </colgroup>
+           <div className="rounded-none border-0">
+             <Table className="table-auto w-full min-w-max whitespace-nowrap">
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableCols />
               </TableHeader>
