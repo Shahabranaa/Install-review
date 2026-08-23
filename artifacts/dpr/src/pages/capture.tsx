@@ -584,11 +584,11 @@ function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMa
         data-testid={`team-pill-${team.id}`}
         onClick={() => onTeamClick(team.id)}
         className={cn(
-          "shrink-0 rounded-full px-3 py-0.5 text-xs font-medium transition-colors",
+          "shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors",
           isActive
-            ? "border-2 border-primary bg-primary text-primary-foreground"
+            ? "border-primary bg-primary text-primary-foreground"
             : hasStatus
-              ? cn("border-2 bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
+              ? cn("bg-transparent hover:bg-muted/40", STATUS_BORDER[status], "text-muted-foreground hover:text-foreground")
               : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
         )}
       >
@@ -597,33 +597,16 @@ function FilterPills({ teams, activeDate, activeTeamId, onTeamClick, teamHoursMa
     );
   };
 
-  if (activeDm !== null) {
-    // "Done" = team has at least one locked (captured/clarified) entry; "To Do" = not yet locked
-    const todoTeams = teams.filter((t) => !teamLockedSet.has(t.id));
-    const doneTeams = teams.filter((t) => teamLockedSet.has(t.id));
-    return (
-      <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-        <div className="flex items-center flex-wrap gap-1.5">
-          <span className="text-xs text-muted-foreground shrink-0 w-8">To do</span>
-          {todoTeams.length > 0
-            ? todoTeams.map(renderPill)
-            : <span className="text-xs text-muted-foreground italic">none</span>}
-        </div>
-        {doneTeams.length > 0 && (
-          <div className="flex items-center flex-wrap gap-1.5">
-            <span className="text-xs text-muted-foreground shrink-0 w-8">Done</span>
-            {doneTeams.map(renderPill)}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-      <div className="flex items-center flex-wrap gap-1.5">
-        <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
-        {teams.map(renderPill)}
+    <div className="overflow-x-auto border-b border-border bg-muted/10 px-3 py-1 shrink-0">
+      <div className="flex min-w-max items-center gap-1.5">
+        <span className="mr-1 shrink-0 text-[11px] font-medium text-muted-foreground">Team filter</span>
+        {teams.length > 0
+          ? teams.map(renderPill)
+          : <span className="text-[11px] text-muted-foreground italic">No teams available</span>}
+        {activeDm !== null && teamLockedSet.size > 0 && (
+          <span className="ml-1 text-[10px] text-muted-foreground/60">locked teams use green status borders</span>
+        )}
       </div>
     </div>
   );
@@ -1835,9 +1818,9 @@ export default function CapturePage() {
   };
 
   const TableCols = () => (
-    <TableRow>
+    <TableRow className="h-8 hover:bg-transparent">
       {selectMode && (
-        <TableHead className="w-[36px]">
+        <TableHead className="w-[36px] text-center">
           <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
             {allSelected
               ? <CheckCheck className="w-4 h-4 text-primary" />
@@ -1847,16 +1830,16 @@ export default function CapturePage() {
           </button>
         </TableHead>
       )}
-      <TableHead className="text-center text-muted-foreground">#</TableHead>
+      <TableHead className="text-center">#</TableHead>
       {showDateCol && <TableHead className={COL.date}>Date</TableHead>}
       {showTeamCol && <TableHead className={COL.team}>Team</TableHead>}
-      <TableHead className="text-center whitespace-nowrap">Status</TableHead>
-      <TableHead className={cn(COL.start, "whitespace-nowrap")}>Start</TableHead>
-      <TableHead className={cn(COL.end, "whitespace-nowrap")}>Finish</TableHead>
-      <TableHead className="whitespace-nowrap text-emerald-600">Duration</TableHead>
+      <TableHead className="text-center">Status</TableHead>
+      <TableHead className={COL.start}>Start</TableHead>
+      <TableHead className={COL.end}>Finish</TableHead>
+      <TableHead className="text-emerald-600">Duration</TableHead>
       <TableHead className={COL.location}>Location</TableHead>
       <TableHead className={COL.notes}>Comment</TableHead>
-      <TableHead className="whitespace-nowrap text-center">PAX working on task</TableHead>
+      <TableHead className="text-center">PAX</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
       <TableHead className={cn(COL.actions, "text-right")}>Actions</TableHead>
     </TableRow>
@@ -1975,7 +1958,7 @@ export default function CapturePage() {
 
       {/* Context bar — bulk action bar when selectMode, normal context bar otherwise */}
       {selectMode ? (
-        <div className="px-4 sm:px-6 py-2 border-b border-primary/30 bg-primary/5 flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
+        <div className="px-3 sm:px-4 py-1 border-b border-primary/30 bg-primary/5 flex flex-wrap items-center gap-x-3 gap-y-1 shrink-0">
           <span className="text-xs font-semibold text-primary shrink-0">
             {selectedIds.size === 0
               ? "Select rows below"
@@ -2018,7 +2001,7 @@ export default function CapturePage() {
           </div>
         </div>
       ) : (
-        <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
+        <div className="px-3 sm:px-4 py-1 border-b border-border bg-muted/10 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
           <div className="flex items-center gap-3">
             {activeDate || activeTeamId ? (
               <>
@@ -2099,15 +2082,30 @@ export default function CapturePage() {
           </div>
         ) : (
            <div className="rounded-none border-0">
-             <Table className="table-auto w-full min-w-max whitespace-nowrap">
-              <TableHeader className="bg-muted/30 sticky top-0 z-10">
+             <Table className="table-fixed w-full min-w-[1120px] border-collapse text-xs [&_th]:h-8 [&_th]:border-r [&_th]:border-border/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:border-r [&_td]:border-border/40 [&_td]:px-2 [&_td]:py-1">
+              <colgroup>
+                {selectMode && <col style={{ width: 36 }} />}
+                <col style={{ width: 36 }} />
+                {showDateCol && <col style={{ width: 94 }} />}
+                {showTeamCol && <col style={{ width: 104 }} />}
+                <col style={{ width: 48 }} />
+                <col style={{ width: 78 }} />
+                <col style={{ width: 78 }} />
+                <col style={{ width: 82 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 220 }} />
+                <col style={{ width: 72 }} />
+                <col style={{ width: 186 }} />
+                <col style={{ width: 78 }} />
+              </colgroup>
+              <TableHeader className="sticky top-0 z-10 bg-muted/30">
                 <TableCols />
               </TableHeader>
               <TableBody>
 
                 {/* ── New row form ── */}
                 {newRow && (
-                  <TableRow className="bg-primary/5 align-top">
+                  <TableRow className="bg-primary/5 align-middle">
                     {selectMode && <TableCell className="w-[36px]" />}
                     <TableCell className="w-[36px]" />
                     {showDateCol && (
@@ -2244,7 +2242,6 @@ export default function CapturePage() {
                         highlightEntryId === entry.id ? "ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : ""
                       )}
                       onClick={selectMode ? () => toggleSelectRow(entry.id) : undefined}
-                      style={{ minHeight: 52 }}
                     >
                       {/* Checkbox — select mode only */}
                       {selectMode && (
