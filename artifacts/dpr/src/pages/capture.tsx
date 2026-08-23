@@ -273,6 +273,23 @@ function normalizeIsoDate(raw: string): string | null {
   return trimmed;
 }
 
+function addIsoDays(raw: string, days: number): string | null {
+  const normalized = normalizeIsoDate(raw);
+  if (!normalized) return null;
+  const [year, month, day] = normalized.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return [
+    date.getUTCFullYear().toString().padStart(4, "0"),
+    (date.getUTCMonth() + 1).toString().padStart(2, "0"),
+    date.getUTCDate().toString().padStart(2, "0"),
+  ].join("-");
+}
+
+function formatDateAsDmyHyphen(date: string): string {
+  const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? `${iso[3]}-${iso[2]}-${iso[1]}` : date;
+}
+
 function formatDateAsDmy(date: string): string {
   const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : date;
@@ -1469,10 +1486,22 @@ export default function CapturePage() {
   const handleSaveBulk = async () => {
     if (!pendingRows || pendingRows.length === 0) return;
     const normalizedShiftDate = pasteShiftDate.trim() ? normalizeIsoDate(pasteShiftDate) : null;
-    if (pasteShiftDate.trim() && !normalizedShiftDate) {
+    if (!normalizedShiftDate) {
       toast({
-        title: "Please give a valid date.",
-        description: "Use the date selector.",
+        title: "Select a DPR date.",
+        description: "Choose the DPR for Date before saving pasted rows.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const overnightDate = addIsoDays(normalizedShiftDate, 1);
+    const invalidDateRows = pendingRows.filter(
+      (row) => !!row.date && row.date !== normalizedShiftDate && row.date !== overnightDate,
+    );
+    if (invalidDateRows.length > 0) {
+      toast({
+        title: "Pasted date is outside the DPR window.",
+        description: `Rows must be dated ${formatDateAsDmyHyphen(normalizedShiftDate)} or ${formatDateAsDmyHyphen(overnightDate ?? "")}.`,
         variant: "destructive",
       });
       return;
@@ -1480,10 +1509,9 @@ export default function CapturePage() {
     setIsSavingBulk(true);
     const rowsToSave = pendingRows.filter((row): row is PendingRow & { date: string } => !!row.date);
     const skipped = pendingRows.length - rowsToSave.length;
-    // Priority: explicit override → active sidebar date → each row's own calendar date.
-    // Defaulting to activeDate means pasting while on the 27th filter auto-assigns
-    // shiftDate=27th without needing to fill in the override every time.
-    const effectiveShiftDate = normalizedShiftDate || activeDate || null;
+    // Both the selected DPR date and the following date are displayed under
+    // the selected DPR date; the following date represents an overnight shift.
+    const effectiveShiftDate = normalizedShiftDate;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
         createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, pax: row.pax ?? undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
@@ -1496,6 +1524,16 @@ export default function CapturePage() {
     else toast({ title: "No rows saved", variant: "destructive" });
     if (failed === 0) closePasteDialog();
   };
+
+  const normalizedPasteDprDate = normalizeIsoDate(pasteShiftDate);
+  const overnightPasteDate = normalizedPasteDprDate ? addIsoDays(normalizedPasteDprDate, 1) : null;
+  const invalidPasteDateRows = pendingRows?.filter(
+    (row) =>
+      !!row.date
+      && !!normalizedPasteDprDate
+      && row.date !== normalizedPasteDprDate
+      && row.date !== overnightPasteDate,
+  ) ?? [];
 
   // ── Shared table header ───────────────────────────────────────────────────
   const allSelected = filteredEntries.length > 0 && filteredEntries.every(e => selectedIds.has(e.id));
@@ -2564,21 +2602,33 @@ export default function CapturePage() {
                       const teamUnmatched = Boolean(row.teamRaw && !row.teamId);
                       const locationUnmatched = Boolean(row.locationRaw && !row.locationId);
                       const invalidDate = !row.date;
+                      const invalidDprDate = Boolean(
+                        row.date
+                        && normalizedPasteDprDate
+                        && row.date !== normalizedPasteDprDate
+                        && row.date !== overnightPasteDate,
+                      );
                       const invalidPax = Boolean(row.paxRaw.trim() && row.pax === null);
                       return (
                         <tr key={row.key} className="bg-background">
-                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", invalidDate && "bg-red-50 dark:bg-red-950/30")}>
+                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", (invalidDate || invalidDprDate) && "bg-red-50 dark:bg-red-950/30")}>
                             <input
                               aria-label="Date"
-                              aria-invalid={invalidDate}
-                              title={invalidDate ? "Please give a valid date." : undefined}
+                              aria-invalid={invalidDate || invalidDprDate}
+                              title={
+                                invalidDate
+                                  ? "Please give a valid date."
+                                  : invalidDprDate
+                                  ? `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} or ${formatDateAsDmyHyphen(overnightPasteDate ?? "")}.`
+                                  : undefined
+                              }
                               type="text"
                               inputMode="numeric"
                               value={row.dateRaw}
                               onChange={(e) => updatePendingRow(row.key, { date: normalizeDate(e.target.value), dateRaw: e.target.value })}
                               placeholder="DD/MM/YYYY"
                               maxLength={10}
-                              className={cn(PASTE_GRID_CELL, invalidDate && "text-red-700 focus:ring-red-500 dark:text-red-300")}
+                              className={cn(PASTE_GRID_CELL, (invalidDate || invalidDprDate) && "text-red-700 focus:ring-red-500 dark:text-red-300")}
                             />
                           </td>
                           <td className={cn("border border-slate-400 p-0 dark:border-slate-600", teamUnmatched && "bg-amber-50 dark:bg-amber-950/30")}>
@@ -2658,6 +2708,18 @@ export default function CapturePage() {
                 Please give a valid date in DD/MM/YYYY format.
               </div>
             )}
+            {pendingRows && pendingRows.length > 0 && !normalizedPasteDprDate && (
+              <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Select a DPR for Date before saving.
+              </div>
+            )}
+            {invalidPasteDateRows.length > 0 && normalizedPasteDprDate && (
+              <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Pasted dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)} or {formatDateAsDmyHyphen(overnightPasteDate ?? "")}. Highlighted dates must be corrected before saving.
+              </div>
+            )}
             {pendingRows && pendingRows.some((r) => r.paxRaw.trim() && r.pax === null) && (
               <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -2677,7 +2739,7 @@ export default function CapturePage() {
               <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeIsoDate(pasteShiftDate)) || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || !normalizedPasteDprDate || invalidPasteDateRows.length > 0 || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>
