@@ -327,6 +327,7 @@ function DmyDateInput({
   ariaLabel?: string;
   autoFocus?: boolean;
 }) {
+  const textInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
   const isFocusedRef = useRef(false);
   const [displayValue, setDisplayValue] = useState(() => formatDateForSelector(value));
@@ -338,13 +339,22 @@ function DmyDateInput({
   const openPicker = () => {
     const picker = pickerRef.current;
     if (!picker) return;
-    if (typeof picker.showPicker === "function") picker.showPicker();
-    else picker.focus();
+    try {
+      if (typeof picker.showPicker === "function") {
+        picker.showPicker();
+        return;
+      }
+    } catch {
+      // showPicker is blocked when the Replit preview is embedded in a
+      // cross-origin iframe. Keep the custom date field usable in that case.
+    }
+    textInputRef.current?.focus();
   };
 
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
       <Input
+        ref={textInputRef}
         id={id}
         autoFocus={autoFocus}
         type="text"
