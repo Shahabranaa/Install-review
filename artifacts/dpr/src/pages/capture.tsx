@@ -331,6 +331,11 @@ function formatDateForSelector(raw: string): string {
   return normalized ? formatDateAsDmy(normalized) : raw;
 }
 
+function formatDateIfDifferent(raw: string | null | undefined, currentDate: string | null): string | null {
+  if (!raw || raw === currentDate) return null;
+  try { return format(parseISO(raw), "d MMM"); } catch { return raw; }
+}
+
 function DmyDateInput({
   value,
   onChange,
@@ -2397,7 +2402,7 @@ export default function CapturePage() {
                             className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
                           >
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
-                            {!showDateCol && entry.startTime && (
+                            {!showDateCol && entry.startTime && formatDateIfDifferent(entry.date, activeDate) && (
                               isCellEditing("date") ? (
                                 <DmyDateInput
                                   autoFocus
@@ -2411,10 +2416,10 @@ export default function CapturePage() {
                                 <button
                                   type="button"
                                   className="block cursor-text border-0 bg-transparent p-0 text-[10px] font-sans font-normal text-muted-foreground leading-tight hover:text-primary"
-                                  title={`Click to change calendar date (currently ${(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return entry.date; } })()})`}
+                                  title={`Click to change calendar date (currently ${formatDateIfDifferent(entry.date, activeDate)})`}
                                   onClick={(e) => { e.stopPropagation(); activateCell(entry.id, "date", entry.date); }}
                                 >
-                                  {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return entry.date; } })()}
+                                  {formatDateIfDifferent(entry.date, activeDate)}
                                 </button>
                               )
                             )}
@@ -2440,11 +2445,18 @@ export default function CapturePage() {
                             className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("endTime") && "text-destructive")}
                           >
                             {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">—</span>}
-                       {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
-                         <span className="block text-[10px] font-sans font-normal text-muted-foreground leading-tight">
-                           {(() => { try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "d MMM"); } catch { return ""; } })()}
-                         </span>
-                       )}
+                        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
+                          const finishDate = (() => {
+                            try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "yyyy-MM-dd"); }
+                            catch { return null; }
+                          })();
+                          const finishDateLabel = formatDateIfDifferent(finishDate, activeDate);
+                          return finishDateLabel ? (
+                            <span className="block text-[10px] font-sans font-normal text-muted-foreground leading-tight">
+                              {finishDateLabel}
+                            </span>
+                          ) : null;
+                        })()}
                           </span>
                         )}
                       </TableCell>
@@ -2621,19 +2633,26 @@ export default function CapturePage() {
                         <TableCell className="w-[44px] text-center"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline-block" /></TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
-                          {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
+                          {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, activeDate) && (
                             <span className="block text-[10px] font-sans font-normal leading-tight">
-                              {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
+                              {formatDateIfDifferent(entry.date, activeDate)}
                             </span>
                           )}
                         </TableCell>
                         <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
                           {entry.endTime ? formatTimeDisplay(entry.endTime) : "—"}
-                          {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (
+                        {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
+                          const finishDate = (() => {
+                            try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "yyyy-MM-dd"); }
+                            catch { return null; }
+                          })();
+                          const finishDateLabel = formatDateIfDifferent(finishDate, activeDate);
+                          return finishDateLabel ? (
                             <span className="block text-[10px] font-sans font-normal leading-tight">
-                              {(() => { try { return format(addDays(parseISO(entry.shiftDate ?? entry.date), 1), "d MMM"); } catch { return ""; } })()}
+                              {finishDateLabel}
                             </span>
-                          )}
+                          ) : null;
+                        })()}
                         </TableCell>
                         <TableCell className="text-sm tabular-nums text-muted-foreground">
                           {formatDuration(entry.startTime, entry.endTime)}
