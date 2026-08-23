@@ -2157,12 +2157,35 @@ export default function CapturePage() {
                               {(() => {
                                 const display = entry.shiftDate ?? entry.date;
                                 const formatted = (() => { try { return format(parseISO(display), "dd/MM/yyyy"); } catch { return display; } })();
-                                const calDiffers = entry.shiftDate && entry.shiftDate !== entry.date;
-                                const calFormatted = calDiffers ? (() => { try { return format(parseISO(entry.date), "dd/MM"); } catch { return entry.date; } })() : null;
+                              const calDiffers = entry.shiftDate && entry.shiftDate !== entry.date;
+                              const calFormatted = calDiffers ? (() => { try { return format(parseISO(entry.date), "dd/MM"); } catch { return entry.date; } })() : null;
                                 return (
                                   <>
                                     {formatted}
-                                    {calDiffers && <span className="ml-1 text-[10px] text-muted-foreground/50 font-normal" title={`Calendar date: ${calFormatted}`}>(cal {calFormatted})</span>}
+                                  {calDiffers && (
+                                    isCellEditing("date") ? (
+                                      <input
+                                        autoFocus
+                                        type="date"
+                                        lang="en-GB"
+                                        value={editingValue}
+                                        onChange={(e) => setEditingValue(e.target.value)}
+                                        onBlur={() => deactivateCell(entry.id, "date")}
+                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="ml-1 w-[118px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="ml-1 cursor-text border-0 bg-transparent p-0 text-[10px] text-muted-foreground/50 font-normal hover:text-primary"
+                                        title={`Click to change calendar date (currently ${calFormatted})`}
+                                        onClick={(e) => { e.stopPropagation(); activateCell(entry.id, "date", entry.date); }}
+                                      >
+                                        (cal {calFormatted})
+                                      </button>
+                                    )
+                                  )}
                                   </>
                                 );
                               })()}
@@ -2222,10 +2245,29 @@ export default function CapturePage() {
                             className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
                           >
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
-                            {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && (
-                              <span className="block text-[10px] font-sans font-normal text-muted-foreground leading-tight">
-                                {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return ""; } })()}
-                              </span>
+                            {!showDateCol && entry.startTime && (
+                              isCellEditing("date") ? (
+                                <input
+                                  autoFocus
+                                  type="date"
+                                  lang="en-GB"
+                                  value={editingValue}
+                                  onChange={(e) => setEditingValue(e.target.value)}
+                                  onBlur={() => deactivateCell(entry.id, "date")}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="block w-[118px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-[10px] font-sans font-normal text-foreground outline-none focus:ring-1 focus:ring-primary"
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="block cursor-text border-0 bg-transparent p-0 text-[10px] font-sans font-normal text-muted-foreground leading-tight hover:text-primary"
+                                  title={`Click to change calendar date (currently ${(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return entry.date; } })()})`}
+                                  onClick={(e) => { e.stopPropagation(); activateCell(entry.id, "date", entry.date); }}
+                                >
+                                  {(() => { try { return format(parseISO(entry.date), "d MMM"); } catch { return entry.date; } })()}
+                                </button>
+                              )
                             )}
                           </span>
                         )}
