@@ -8,7 +8,7 @@ The bot reads your DPR header and automatically extracts:
 Team Name — identifies which team the report belongs to.
 Starting Location — applies it to all activities until a new location appears.
 Shift Start & End Time — sets the shift window and validates all activities fall within it.
-Shift Date — locks the date for the entire report. Supports DD/MM/YYYY, DD-MM-YYYY, and DD.MM.YYYY.
+Shift Date — locks the date for the entire report. Use DD-MM-YYYY.
 More Features
  Location Cascading
 You only need to provide the location once in the header. The bot automatically carries it forward to every activity — no need to repeat it on every line. When an activity says Transfer to BLP55, the bot picks up BLP55 as the new location and cascades it to the next activities.

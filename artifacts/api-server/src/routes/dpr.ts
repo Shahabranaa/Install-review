@@ -1872,9 +1872,9 @@ router.delete("/dpr/custom-roles/:abbr", async (req, res): Promise<void> => {
 
 // ── WhatsApp Bot Import ───────────────────────────────────────────────────────
 
-/** Normalise DD/MM/YYYY (or DD-MM-YYYY / DD.MM.YYYY) → YYYY-MM-DD. */
+/** Normalise DD-MM-YYYY → YYYY-MM-DD. */
 function normaliseSheetDate(raw: string): string {
-  const m = raw.trim().match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  const m = raw.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
   if (m) {
     const day   = m[1].padStart(2, "0");
     const month = m[2].padStart(2, "0");

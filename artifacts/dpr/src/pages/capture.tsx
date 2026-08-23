@@ -237,7 +237,7 @@ function validate48hTime(raw: string): string | null {
 function normalizeDate(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const parts = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const parts = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
   if (!parts) return null;
 
   const day = Number(parts[1]);
@@ -298,7 +298,7 @@ function formatDateAsDmyHyphen(date: string): string {
 
 function formatDateAsDmy(date: string): string {
   const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : date;
+  return iso ? `${iso[3]}-${iso[2]}-${iso[1]}` : date;
 }
 
 function normalizePax(raw: string): number | null {
@@ -1928,7 +1928,7 @@ export default function CapturePage() {
                   <span>Showing:</span>
                   {activeDate && (
                     <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                      {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
+                      {(() => { try { return format(parseISO(activeDate), "dd-MM"); } catch { return activeDate; } })()}
                     </span>
                   )}
                   {activeDate && activeTeamId && <span className="text-muted-foreground/50">·</span>}
@@ -1984,7 +1984,7 @@ export default function CapturePage() {
               Add Row
               {(activeDate || activeTeamId) && (
                 <span className="opacity-60 font-normal">
-                  ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })() : "all dates"}
+                  ↳ {activeDate ? (() => { try { return format(parseISO(activeDate), "dd-MM"); } catch { return activeDate; } })() : "all dates"}
                   {activeTeamId ? ` · ${teams.find((t) => t.id === activeTeamId)?.name ?? ""}` : ""}
                 </span>
               )}
@@ -2175,9 +2175,9 @@ export default function CapturePage() {
                             >
                               {(() => {
                                 const display = entry.shiftDate ?? entry.date;
-                                const formatted = (() => { try { return format(parseISO(display), "dd/MM/yyyy"); } catch { return display; } })();
+                                const formatted = (() => { try { return format(parseISO(display), "dd-MM-yyyy"); } catch { return display; } })();
                               const calDiffers = entry.shiftDate && entry.shiftDate !== entry.date;
-                              const calFormatted = calDiffers ? (() => { try { return format(parseISO(entry.date), "dd/MM"); } catch { return entry.date; } })() : null;
+                              const calFormatted = calDiffers ? (() => { try { return format(parseISO(entry.date), "dd-MM"); } catch { return entry.date; } })() : null;
                                 return (
                                   <>
                                     {formatted}
@@ -2511,7 +2511,7 @@ export default function CapturePage() {
                           <TableCell className={cn(COL.date, "text-sm text-muted-foreground")}>
                             {(() => {
                               const display = entry.shiftDate ?? entry.date;
-                              return (() => { try { return format(parseISO(display), "dd/MM/yyyy"); } catch { return display; } })();
+                              return (() => { try { return format(parseISO(display), "dd-MM-yyyy"); } catch { return display; } })();
                             })()}
                           </TableCell>
                         )}
@@ -2774,7 +2774,7 @@ export default function CapturePage() {
           <div className="flex-1 overflow-auto flex flex-col gap-3 min-h-0">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-y border-border bg-muted/20 px-3 py-2">
               <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
-                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD/MM/YYYY)</span>
+                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
               </label>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Input
@@ -2843,7 +2843,7 @@ export default function CapturePage() {
               ref={pasteTextareaRef}
               value={pasteText}
               onChange={(e) => handlePasteChange(e.target.value)}
-              placeholder={"01/06/2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works\t8"}
+              placeholder={"01-06-2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works\t8"}
               className="min-h-[92px] font-mono text-xs shrink-0"
             />
 
@@ -2851,7 +2851,7 @@ export default function CapturePage() {
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-2 py-1.5">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Date format</span>
-                <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD/MM/YYYY</Badge>
+                <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD-MM-YYYY</Badge>
               </div>
             </div>
 
@@ -2903,8 +2903,8 @@ export default function CapturePage() {
                               aria-invalid={invalidDate || invalidDprDate}
                               title={
                                 invalidDate
-                                  ? hyphenDateFormat
-                                  ? "Use DD/MM/YYYY with / separators, for example 23/08/2026. Hyphens are not accepted."
+                                   ? !hyphenDateFormat
+                                   ? "Use DD-MM-YYYY with - separators, for example 23-08-2026. Slashes are not accepted."
                                   : "Please give a valid date."
                                   : invalidDprDate
                                   ? `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} or ${formatDateAsDmyHyphen(overnightPasteDate ?? "")}.`
@@ -2914,7 +2914,7 @@ export default function CapturePage() {
                               inputMode="numeric"
                               value={row.dateRaw}
                               onChange={(e) => updatePendingRow(row.key, { date: normalizeDate(e.target.value), dateRaw: e.target.value })}
-                              placeholder="DD/MM/YYYY"
+                              placeholder="DD-MM-YYYY"
                               maxLength={10}
                               className={cn(PASTE_GRID_CELL, (invalidDate || invalidDprDate) && "text-red-700 focus:ring-red-500 dark:text-red-300")}
                             />
@@ -2990,16 +2990,16 @@ export default function CapturePage() {
               </div>
             )}
 
-            {pendingRows && pendingRows.some((r) => !r.date && usesHyphenDateFormat(r.dateRaw)) && (
+            {pendingRows && pendingRows.some((r) => !r.date && !usesHyphenDateFormat(r.dateRaw)) && (
               <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                The pasted date uses “-” separators. Enter dates as DD/MM/YYYY using “/”, for example 23/08/2026.
+                The pasted date must use “-” separators. Enter dates as DD-MM-YYYY, for example 23-08-2026.
               </div>
             )}
-            {pendingRows && pendingRows.some((r) => !r.date && !usesHyphenDateFormat(r.dateRaw)) && (
+            {pendingRows && pendingRows.some((r) => !r.date && usesHyphenDateFormat(r.dateRaw)) && (
               <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Please give a valid date in DD/MM/YYYY format.
+                Please give a valid date in DD-MM-YYYY format.
               </div>
             )}
             {pendingRows && pendingRows.length > 0 && !normalizedPasteDprDate && (

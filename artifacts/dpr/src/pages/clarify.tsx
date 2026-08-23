@@ -322,7 +322,7 @@ export default function ClarifyPage() {
                 <span>Showing:</span>
                 {activeDate && (
                   <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                    {(() => { try { return format(parseISO(activeDate), "dd/MM"); } catch { return activeDate; } })()}
+                    {(() => { try { return format(parseISO(activeDate), "dd-MM"); } catch { return activeDate; } })()}
                   </span>
                 )}
                 {activeDate && activeTeamId !== null && <span className="text-muted-foreground/50">·</span>}

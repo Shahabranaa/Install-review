@@ -7,4 +7,8 @@ Pasted rows for a selected DPR date may use only that calendar date or the immed
 
 **Why:** A date from an unrelated day can otherwise be pasted into the wrong DPR, making the Capture display and downstream reporting misleading.
 
-**How to apply:** Keep this validation and the shift-date assignment together in every DPR paste or bulk-import path. Highlight invalid rows and prevent saving until their date is corrected.
+All user-facing and user-entered DPR dates use `DD-MM-YYYY`; API/database dates remain `YYYY-MM-DD`.
+
+**Why:** The DPR team explicitly standardized on hyphen-separated dates to avoid ambiguity in pasted reports and date displays.
+
+**How to apply:** Keep the two-day DPR validation and shift-date assignment together in every DPR paste or bulk-import path. Parse and show `DD-MM-YYYY` in Capture, Clarify, and bot-import guidance; highlight invalid rows and prevent saving until corrected.

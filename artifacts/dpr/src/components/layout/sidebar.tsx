@@ -167,7 +167,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               const stats = dateStatsMap.get(d) ?? { noTime: totalTeams, partial: 0, complete: 0, captured: 0 };
               const capturedOnDate = stats.captured ?? 0;
               const isActive = activeDate === d;
-              const label = format(parseISO(d), "EEE dd/MM");
+              const label = format(parseISO(d), "EEE dd-MM");
               return (
                 <button
                   key={d}
