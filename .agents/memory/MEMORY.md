@@ -17,5 +17,6 @@
 - [DPR date-tab sync serialization](dpr-date-tab-sync-serialization.md) — automatic and manual Sheet rebuilds share one queue so a stale write cannot win.
 - [DPR paste date window](dpr-paste-date-window.md) — a DPR date accepts only entries dated that day or the following overnight day.
 - [Date picker iframe restriction](date-picker-iframe-restriction.md) — native showPicker() throws in Replit’s cross-origin preview iframe; date fields need a safe typed-entry fallback.
+- [DPR flat spreadsheet layout](dpr-flat-spreadsheet-layout.md) — Capture and Clarify should remain uninterrupted sheet grids, not team/date summary-card lists.
 - [Lautec configuration security boundary](lautec-configuration-security.md) — admins may edit safe browser URLs; the dedicated account remains workspace secrets only.
 - [Lautec visible import grid quirks](lautec-import-grid-quirks.md) — wait for the login redirect chain; validate dropdown choices and explicitly commit pasted locations.

@@ -2557,44 +2557,9 @@ export default function CapturePage() {
                   );
                 })}
 
-                {/* ── Duration footer — only when draft entries are visible ── */}
-                {filteredEntries.length > 0 && (
-                  <TableRow className="bg-muted/10 border-t-2 border-border">
-                    <TableCell colSpan={4 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-right text-xs text-muted-foreground pr-2 py-1.5">
-                      Total
-                    </TableCell>
-                    <TableCell className="py-1.5">
-                      <span className={cn("text-sm font-bold tabular-nums", filteredTotalHours > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
-                        {filteredTotalHours > 0
-                          ? `${Math.floor(filteredTotalHours)}h ${Math.round((filteredTotalHours % 1) * 60)}m`
-                          : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell colSpan={5} className="py-1.5 text-xs text-muted-foreground">
-                      {filteredTotalHours > 0 && filteredTotalHours < 12 && (
-                        <span>{(12 - filteredTotalHours).toFixed(2)}h remaining of 12h expected</span>
-                      )}
-                      {filteredTotalHours >= 12 && (
-                        <span className="text-emerald-600 dark:text-emerald-400">✓ Full day covered</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )}
-
                 {/* ── Locked (captured) rows — read-only, shown below draft entries ── */}
                 {filteredLockedEntries.length > 0 && (
                   <>
-                    <TableRow className="bg-emerald-950/20">
-                      <TableCell
-                        colSpan={10 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)}
-                        className="py-1.5 px-4"
-                      >
-                        <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                          <Lock className="w-3 h-3" />
-                          Locked — {filteredLockedEntries.length} row{filteredLockedEntries.length !== 1 ? "s" : ""} sent to Clarify queue
-                        </div>
-                      </TableCell>
-                    </TableRow>
                     {filteredLockedEntries.map((entry, idx) => (
                       <TableRow key={`locked-${entry.id}`} id={`entry-${entry.id}`} className={cn("opacity-50 bg-muted/5", highlightEntryId === entry.id ? "!opacity-100 ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : "")}>
                         {selectMode && <TableCell className="w-[36px]" />}

@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { format, parseISO, subDays, addDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, Users, CheckCircle2, Check, Lock, Unlock, Timer, Download,
+  Loader2, CheckCircle2, Check, Unlock, Download,
 } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
@@ -32,7 +32,6 @@ import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/util
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
-const COL_COUNT = 13; // # Team Status Start Finish Duration Location Comment PAX ActivityGroup GenericComment JDRCode Action
 const SHEET_CELL = "border-r border-border/50 px-2 py-1 align-middle";
 const SHEET_HEAD = "h-8 border-r border-border/50 px-2 py-1 text-[11px] font-semibold text-muted-foreground whitespace-nowrap";
 
@@ -65,6 +64,19 @@ function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boo
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", muted ? "bg-muted-foreground/40" : "bg-amber-500")} />
       <span className="truncate">{name || "Not set"}</span>
     </span>
+  );
+}
+
+function EntryTeamCell({ entry, muted = false }: { entry: DprTimesheetEntry; muted?: boolean }) {
+  const entryDate = entry.shiftDate ?? entry.date;
+  return (
+    <div className={cn("min-w-0", muted && "text-muted-foreground")}>
+      <div className="truncate text-xs font-medium">{entry.team?.name || "Unassigned"}</div>
+      <div className="truncate text-[10px] leading-tight text-muted-foreground">
+        {(() => { try { return format(parseISO(entryDate), "dd MMM yyyy"); } catch { return entryDate; } })()}
+        {entry.shiftDate && entry.shiftDate !== entry.date && <span className="ml-1 text-indigo-500">overnight</span>}
+      </div>
+    </div>
   );
 }
 
@@ -238,6 +250,14 @@ export default function ClarifyPage() {
       return false;
     });
   }, [groups, activeDate, activeTeamId]);
+
+  const flattenedEntries = useMemo(
+    () => filteredGroups.flatMap(group => [
+      ...group.entries.filter(entry => entry.stage === "captured"),
+      ...group.entries.filter(entry => entry.stage === "clarified"),
+    ]),
+    [filteredGroups],
+  );
 
   const totalPending = useMemo(
     () => allEntries.filter(e => e.stage === "captured").length,
@@ -437,84 +457,29 @@ export default function ClarifyPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredGroups.map(group => {
-                  const pending = group.entries.filter(e => e.stage === "captured");
-                  const clarified = group.entries.filter(e => e.stage === "clarified");
-                  const totalHours = group.entries.reduce((acc, e) => acc + hoursForEntry(e.startTime, e.endTime), 0);
-                  const h = Math.floor(totalHours);
-                  const m = Math.round((totalHours - h) * 60);
-                  const totalLabel = totalHours > 0 ? (m === 0 ? `${h}h total` : `${h}h ${m}m total`) : null;
-
-                  const isOvernightGroup = activeDate && group.date !== activeDate;
-
-                  return (
-                    <Fragment key={`${group.teamId ?? "none"}__${group.date}`}>
-                      {/* ── Group divider row ── */}
-                      <TableRow className="bg-amber-500/5 hover:bg-amber-500/5">
-                        <TableCell colSpan={COL_COUNT} className="border-b border-amber-500/20 px-2 py-1">
-                          <div className="flex items-center gap-2 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                            <Users className="w-3 h-3" />
-                            <span>{group.teamName}</span>
-                            <span className="font-mono text-amber-500/70">
-                              {(() => { try { return format(parseISO(group.date), "d MMM yyyy"); } catch { return group.date; } })()}
-                            </span>
-                            {isOvernightGroup && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
-                                overnight
-                              </span>
-                            )}
-                            {totalLabel && (
-                              <span className="inline-flex items-center gap-1">
-                                <Timer className="w-3 h-3" />{totalLabel}
-                              </span>
-                            )}
-                            <span className="ml-auto text-muted-foreground font-normal">
-                              {pending.length} of {group.entries.length} remaining
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-
-                      {/* ── Pending rows ── */}
-                      {pending.map((entry, idx) => (
-                        <ClarifyRow
-                          key={entry.id}
-                          entry={entry}
-                          activityGroups={activityGroups}
-                          allActivities={allActivities}
-                          allJdrCodes={allJdrCodes}
-                          rowIndex={idx + 1}
-                          onUnlock={handleUnlock}
-                          isUnlocking={unlockingEntryId === entry.id}
-                        />
-                      ))}
-
-                      {/* ── Clarified rows (greyed, below pending) ── */}
-                      {clarified.length > 0 && (
-                        <>
-                          <TableRow className="bg-muted/10 hover:bg-muted/10">
-                            <TableCell colSpan={COL_COUNT} className="border-b border-border/50 px-2 py-1">
-                              <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/60">
-                                <Lock className="w-3 h-3" />
-                                Clarified — {clarified.length} row{clarified.length !== 1 ? "s" : ""}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                          {clarified.map((entry, idx) => (
-                            <ClarifiedRow
-                              key={entry.id}
-                              entry={entry}
-                              activityGroups={activityGroups}
-                              rowIndex={pending.length + idx + 1}
-                              onUnlock={handleUnlock}
-                              isUnlocking={unlockingEntryId === entry.id}
-                            />
-                          ))}
-                        </>
-                      )}
-                    </Fragment>
-                  );
-                })}
+                {flattenedEntries.map((entry, idx) =>
+                  entry.stage === "captured" ? (
+                    <ClarifyRow
+                      key={entry.id}
+                      entry={entry}
+                      activityGroups={activityGroups}
+                      allActivities={allActivities}
+                      allJdrCodes={allJdrCodes}
+                      rowIndex={idx + 1}
+                      onUnlock={handleUnlock}
+                      isUnlocking={unlockingEntryId === entry.id}
+                    />
+                  ) : (
+                    <ClarifiedRow
+                      key={entry.id}
+                      entry={entry}
+                      activityGroups={activityGroups}
+                      rowIndex={idx + 1}
+                      onUnlock={handleUnlock}
+                      isUnlocking={unlockingEntryId === entry.id}
+                    />
+                  ),
+                )}
               </TableBody>
             </Table>
           </div>
@@ -556,7 +521,7 @@ function ClarifiedRow({
   return (
     <TableRow className="h-10 bg-muted/5 opacity-50 hover:bg-muted/10">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground/50")}>{rowIndex ?? ""}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs font-medium text-muted-foreground")}>{entry.team?.name || "Unassigned"}</TableCell>
+      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} muted /></TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
         {entry.startTime || <span className="text-muted-foreground/40">—</span>}
@@ -724,7 +689,7 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
   return (
     <TableRow className="h-10 hover:bg-muted/20">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs font-medium")}>{entry.team?.name || "Unassigned"}</TableCell>
+      <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
         {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
