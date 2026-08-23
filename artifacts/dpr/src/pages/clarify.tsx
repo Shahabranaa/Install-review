@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Timer, Download,
+  Loader2, Clock, MapPin, Users, CheckCircle2, Check, Lock, Unlock, Timer, Download,
 } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
@@ -105,6 +105,8 @@ function ClarifyPills({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClarifyPage() {
   const { activeDate, activeTeamId, setActiveTeamId } = useCaptureNav();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: allEntries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
   const { data: teams = [] } = useListDprTeams();
@@ -237,6 +239,42 @@ export default function ClarifyPage() {
 
   const handleTeamClick = (id: number | null) => setActiveTeamId(activeTeamId === id ? null : id);
 
+  const [unlockingEntryId, setUnlockingEntryId] = useState<number | null>(null);
+  const unlockMutation = useUpdateDprTimesheetEntry({
+    mutation: {
+      onSuccess: (updated) => {
+        queryClient.setQueriesData<DprTimesheetEntry[]>(
+          { queryKey: getListDprTimesheetEntriesQueryKey() },
+          (old) => old?.map((entry) => entry.id === updated.id ? updated : entry)
+        );
+        queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
+        toast({
+          title: "Entry unlocked",
+          description: "Returned to Capture for editing.",
+        });
+      },
+      onError: (error) => {
+        toast({
+          title: "Unlock failed",
+          description: error instanceof Error ? error.message : "Unable to return this entry to Capture.",
+          variant: "destructive",
+        });
+      },
+      onSettled: () => setUnlockingEntryId(null),
+    },
+  });
+
+  const handleUnlock = (entry: DprTimesheetEntry) => {
+    if (unlockMutation.isPending) return;
+    setUnlockingEntryId(entry.id);
+    unlockMutation.mutate({
+      id: entry.id,
+      data: { stage: "draft" },
+    });
+  };
+
   // ── CSV export ──
   const handleExportCsv = () => {
     const entries = filteredGroups.flatMap(g => g.entries);
@@ -332,18 +370,7 @@ export default function ClarifyPage() {
         ) : (
           <div className="rounded-none border-0">
             <Table className="table-fixed w-full min-w-[1100px]">
-              <colgroup>
-                <col style={{ width: 36 }} />  {/* # */}
-                <col className="w-[6%]" />   {/* Start */}
-                <col className="w-[6%]" />   {/* End */}
-                <col className="w-[5%]" />   {/* Duration */}
-                <col className="w-[9%]" />   {/* Location */}
-                <col />                       {/* Notes — flex */}
-                <col style={{ width: 160 }} /> {/* Activity Group */}
-                <col style={{ width: 200 }} /> {/* Generic Comment */}
-                <col style={{ width: 200 }} /> {/* JDR Code */}
-                <col style={{ width: 44 }} />  {/* Action */}
-              </colgroup>
+              <colgroup><col style={{ width: 36 }} /><col className="w-[6%]" /><col className="w-[6%]" /><col className="w-[5%]" /><col className="w-[9%]" /><col /><col style={{ width: 160 }} /><col style={{ width: 200 }} /><col style={{ width: 200 }} /><col style={{ width: 80 }} /></colgroup>
               <TableHeader className="bg-muted/30 sticky top-0 z-10">
                 <TableRow>
                   <TableHead className="w-[36px] text-center text-muted-foreground">#</TableHead>
@@ -399,7 +426,16 @@ export default function ClarifyPage() {
 
                       {/* ── Pending rows ── */}
                       {pending.map((entry, idx) => (
-                        <ClarifyRow key={entry.id} entry={entry} activityGroups={activityGroups} allActivities={allActivities} allJdrCodes={allJdrCodes} rowIndex={idx + 1} />
+                        <ClarifyRow
+                          key={entry.id}
+                          entry={entry}
+                          activityGroups={activityGroups}
+                          allActivities={allActivities}
+                          allJdrCodes={allJdrCodes}
+                          rowIndex={idx + 1}
+                          onUnlock={handleUnlock}
+                          isUnlocking={unlockingEntryId === entry.id}
+                        />
                       ))}
 
                       {/* ── Clarified rows (greyed, below pending) ── */}
@@ -414,7 +450,14 @@ export default function ClarifyPage() {
                             </TableCell>
                           </TableRow>
                           {clarified.map((entry, idx) => (
-                            <ClarifiedRow key={entry.id} entry={entry} activityGroups={activityGroups} rowIndex={pending.length + idx + 1} />
+                            <ClarifiedRow
+                              key={entry.id}
+                              entry={entry}
+                              activityGroups={activityGroups}
+                              rowIndex={pending.length + idx + 1}
+                              onUnlock={handleUnlock}
+                              isUnlocking={unlockingEntryId === entry.id}
+                            />
                           ))}
                         </>
                       )}
@@ -439,7 +482,19 @@ export default function ClarifyPage() {
 }
 
 // ─── ClarifiedRow ─────────────────────────────────────────────────────────────
-function ClarifiedRow({ entry, activityGroups, rowIndex }: { entry: DprTimesheetEntry; activityGroups: DprActivityGroup[]; rowIndex?: number }) {
+function ClarifiedRow({
+  entry,
+  activityGroups,
+  rowIndex,
+  onUnlock,
+  isUnlocking,
+}: {
+  entry: DprTimesheetEntry;
+  activityGroups: DprActivityGroup[];
+  rowIndex?: number;
+  onUnlock: (entry: DprTimesheetEntry) => void;
+  isUnlocking: boolean;
+}) {
   const { data: jdrCodes = [] } = useListDprJdrCodes(
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
@@ -495,21 +550,36 @@ function ClarifiedRow({ entry, activityGroups, rowIndex }: { entry: DprTimesheet
       <TableCell className="text-sm text-muted-foreground">
         {code ? <span className="font-mono text-xs">{code.contractualCode}</span> : <span className="text-muted-foreground/40">—</span>}
       </TableCell>
-      {/* Lock */}
-      <TableCell className="text-right pr-3">
-        <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
+      {/* Unlock */}
+      <TableCell className="text-right pr-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 opacity-100"
+          onClick={() => onUnlock(entry)}
+          disabled={isUnlocking}
+          title="Unlock and return to Capture"
+          aria-label="Unlock and return to Capture"
+        >
+          {isUnlocking
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+        </Button>
       </TableCell>
     </TableRow>
   );
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowIndex }: {
+function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
   entry: DprTimesheetEntry;
   activityGroups: DprActivityGroup[];
   allActivities: DprActivity[];
   allJdrCodes: DprJdrCode[];
   rowIndex?: number;
+  onUnlock: (entry: DprTimesheetEntry) => void;
+  isUnlocking: boolean;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -699,17 +769,34 @@ function ClarifyRow({ entry, activityGroups, allActivities, allJdrCodes, rowInde
           </SelectContent>
         </Select>
       </TableCell>
-      {/* Save */}
+      {/* Actions */}
       <TableCell className="text-right pr-2">
-        <Button
-          size="icon"
-          className="h-8 w-8"
-          onClick={handleSave}
-          disabled={!canSave || updateMutation.isPending}
-          title={canSave ? "Mark as Clarified" : "Select a JDR code first"}
-        >
-          {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleSave}
+            disabled={!canSave || updateMutation.isPending || isUnlocking}
+            title={canSave ? "Mark as Clarified" : "Select a JDR code first"}
+            aria-label="Mark as Clarified"
+          >
+            {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => onUnlock(entry)}
+            disabled={updateMutation.isPending || isUnlocking}
+            title="Unlock and return to Capture"
+            aria-label="Unlock and return to Capture"
+          >
+            {isUnlocking
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   );
