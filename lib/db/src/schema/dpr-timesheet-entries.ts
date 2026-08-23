@@ -16,6 +16,7 @@ export const dprTimesheetEntriesTable = pgTable("dpr_timesheet_entries", {
   endTime: text("end_time"),
   locationId: integer("location_id").references(() => dprLocationsTable.id, { onDelete: "set null" }),
   notes: text("notes"),
+  pax: integer("pax"),
   activityTypeId: integer("activity_type_id").references(() => dprActivityTypesTable.id, { onDelete: "set null" }),
   activityGroupId: integer("activity_group_id").references(() => dprActivityGroupsTable.id, { onDelete: "set null" }),
   activityId: integer("activity_id").references(() => dprActivitiesTable.id, { onDelete: "set null" }),

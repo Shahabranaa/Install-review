@@ -223,6 +223,10 @@ function parseId(raw: unknown): number | null {
   return isNaN(n) || n <= 0 ? null : n;
 }
 
+function hasInvalidPax(pax: number | null | undefined): boolean {
+  return pax !== undefined && pax !== null && (!Number.isInteger(pax) || pax <= 0);
+}
+
 // Sorts names naturally so numeric suffixes order correctly
 // (e.g. "Team 2" before "Team 10" instead of alphabetical "Team 10" before "Team 2").
 function naturalSort<T extends { name: string }>(rows: T[]): T[] {
@@ -710,6 +714,10 @@ router.post("/dpr/timesheet-entries", async (req, res): Promise<void> => {
   const parsed = CreateDprTimesheetEntryBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (hasInvalidPax(parsed.data.pax)) {
+    res.status(400).json({ error: "PAX must be a positive whole number." });
     return;
   }
   const [entry] = await db
@@ -1216,6 +1224,10 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
   const parsed = UpdateDprTimesheetEntryBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (hasInvalidPax(parsed.data.pax)) {
+    res.status(400).json({ error: "PAX must be a positive whole number." });
     return;
   }
   if (Object.keys(parsed.data).length === 0) {

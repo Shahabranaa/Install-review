@@ -1315,6 +1315,9 @@ export const ListDprTimesheetEntriesQueryParams = zod.object({
   "dateTo": zod.coerce.string().optional()
 })
 
+
+
+
 export const ListDprTimesheetEntriesResponseItem = zod.object({
   "id": zod.number(),
   "date": zod.string(),
@@ -1336,6 +1339,7 @@ export const ListDprTimesheetEntriesResponseItem = zod.object({
   "name": zod.string()
 }),zod.null()]).optional(),
   "notes": zod.string().nullish(),
+  "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
@@ -1353,6 +1357,9 @@ export const ListDprTimesheetEntriesResponse = zod.array(ListDprTimesheetEntries
 /**
  * @summary Capture a new raw timesheet entry
  */
+
+
+
 export const CreateDprTimesheetEntryBody = zod.object({
   "date": zod.string(),
   "shiftDate": zod.string().nullish(),
@@ -1361,6 +1368,7 @@ export const CreateDprTimesheetEntryBody = zod.object({
   "endTime": zod.string().nullish(),
   "locationId": zod.number().nullish(),
   "notes": zod.string().nullish(),
+  "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish()
@@ -1384,6 +1392,9 @@ export const GetDprTimesheetEntryParams = zod.object({
   "id": zod.coerce.number()
 })
 
+
+
+
 export const GetDprTimesheetEntryResponse = zod.object({
   "id": zod.number(),
   "date": zod.string(),
@@ -1405,6 +1416,7 @@ export const GetDprTimesheetEntryResponse = zod.object({
   "name": zod.string()
 }),zod.null()]).optional(),
   "notes": zod.string().nullish(),
+  "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
@@ -1425,6 +1437,9 @@ export const UpdateDprTimesheetEntryParams = zod.object({
   "id": zod.coerce.number()
 })
 
+
+
+
 export const UpdateDprTimesheetEntryBody = zod.object({
   "date": zod.string().optional(),
   "shiftDate": zod.string().nullish(),
@@ -1433,6 +1448,7 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "endTime": zod.string().nullish(),
   "locationId": zod.number().nullish(),
   "notes": zod.string().nullish(),
+  "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),
@@ -1442,6 +1458,9 @@ export const UpdateDprTimesheetEntryBody = zod.object({
   "combinedComment": zod.string().nullish(),
   "stage": zod.enum(['draft', 'captured', 'clarified']).optional()
 })
+
+
+
 
 export const UpdateDprTimesheetEntryResponse = zod.object({
   "id": zod.number(),
@@ -1464,6 +1483,7 @@ export const UpdateDprTimesheetEntryResponse = zod.object({
   "name": zod.string()
 }),zod.null()]).optional(),
   "notes": zod.string().nullish(),
+  "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
   "activityId": zod.number().nullish(),

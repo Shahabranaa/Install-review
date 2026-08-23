@@ -2825,6 +2825,9 @@ components:
             - type: "null"
         notes:
           type: ["string", "null"]
+        pax:
+          type: ["integer", "null"]
+          minimum: 1
         activityTypeId:
           type: ["integer", "null"]
         activityGroupId:
@@ -2874,6 +2877,9 @@ components:
           type: ["integer", "null"]
         notes:
           type: ["string", "null"]
+        pax:
+          type: ["integer", "null"]
+          minimum: 1
         activityTypeId:
           type: ["integer", "null"]
         activityGroupId:
@@ -2901,6 +2907,9 @@ components:
           type: ["integer", "null"]
         notes:
           type: ["string", "null"]
+        pax:
+          type: ["integer", "null"]
+          minimum: 1
         activityTypeId:
           type: ["integer", "null"]
         activityGroupId:

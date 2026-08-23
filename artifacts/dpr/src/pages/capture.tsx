@@ -254,6 +254,16 @@ function formatDateAsDmy(date: string): string {
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : date;
 }
 
+function normalizePax(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+const PASTE_GRID_CELL =
+  "h-8 w-full min-w-0 border-0 bg-transparent px-2 py-0 text-center text-xs text-foreground outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary";
+
 type PendingRow = {
   key: string;
   date: string | null;
@@ -265,6 +275,8 @@ type PendingRow = {
   locationId: number | null;
   locationRaw: string;
   notes: string;
+  pax: number | null;
+  paxRaw: string;
   activityTypeId: number | null;
   activityGroupId: number | null;
   billingParty: BillingParty;
@@ -293,7 +305,7 @@ function parsePastedText(
 
   return groups.map((group, idx) => {
     const cols = group[0].split("\t");
-    const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = ""] = cols;
+    const [rawDate = "", rawTeam = "", rawStart = "", rawEnd = "", rawLocation = "", rawNotes = "", rawPax = ""] = cols;
 
     // Any continuation lines become extra lines appended to notes
     const extra = group.slice(1).map((l) => l.trim()).filter(Boolean).join("\n");
@@ -312,6 +324,8 @@ function parsePastedText(
       locationId: location?.id ?? null,
       locationRaw: rawLocation.trim(),
       notes: fullNotes,
+      pax: normalizePax(rawPax),
+      paxRaw: rawPax.trim(),
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       billingParty: null,
@@ -1420,7 +1434,7 @@ export default function CapturePage() {
     const effectiveShiftDate = normalizedShiftDate || activeDate || null;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
-        createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
+        createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, pax: row.pax ?? undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
       )
     );
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
@@ -2418,20 +2432,22 @@ export default function CapturePage() {
               ref={pasteTextareaRef}
               value={pasteText}
               onChange={(e) => handlePasteChange(e.target.value)}
-              placeholder={"01/06/2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works"}
-              className="min-h-[100px] font-mono text-xs shrink-0"
+              placeholder={"01/06/2024\tTeam 1\t07:00\t15:30\tA01\tRoutine works\t8"}
+              className="min-h-[92px] font-mono text-xs shrink-0"
             />
 
-            {/* Shift date override — groups all pasted rows under one shift date */}
-            <div className="flex items-center gap-3 bg-muted/40 rounded-md px-3 py-2 shrink-0">
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-xs font-medium">Shift date override</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Set this if the pasted rows belong to a night shift that started on a different date (e.g. rows dated 28th that are part of the 27th shift).
-                </span>
+            {/* Compact spreadsheet controls */}
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-2 py-1.5">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Date format</span>
+                <Badge variant="secondary" className="h-6 rounded-sm font-mono">DD/MM/YYYY</Badge>
               </div>
-              <div className="flex w-[150px] shrink-0 flex-col gap-0.5">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <label htmlFor="paste-shift-date" className="text-xs text-muted-foreground">
+                  Shift date override
+                </label>
                 <Input
+                  id="paste-shift-date"
                   type="text"
                   inputMode="numeric"
                   value={pasteShiftDate}
@@ -2439,7 +2455,7 @@ export default function CapturePage() {
                   placeholder="DD/MM/YYYY"
                   maxLength={10}
                   className={cn(
-                    "h-8 text-sm font-mono",
+                    "h-7 w-[132px] rounded-sm text-xs font-mono",
                     pasteShiftDate.trim() && !normalizeDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500",
                   )}
                 />
@@ -2449,126 +2465,136 @@ export default function CapturePage() {
               </div>
             </div>
 
-            {/* Required date format */}
-            <div className="flex items-center gap-3 bg-muted/40 rounded-md px-3 py-2 shrink-0">
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-xs font-medium">Date format</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Dates must use day/month/year.
-                </span>
-              </div>
-              <Badge variant="secondary" className="ml-auto shrink-0 font-mono">DD/MM/YYYY</Badge>
-            </div>
-
             {pendingRows && pendingRows.length > 0 && (
-              <div className="rounded-md border border-border overflow-auto flex-1 min-h-0">
-                <Table className="table-fixed w-full min-w-[1100px]">
+              <div className="flex-1 min-h-[180px] overflow-auto">
+                <table className="w-full min-w-[980px] table-fixed border-collapse text-xs">
                   <colgroup>
-                    <col className="w-[130px]" />
-                    <col className="w-[140px]" />
-                    <col className="w-[100px]" />
-                    <col className="w-[100px]" />
-                    <col className="w-[180px]" />
-                    <col className="w-[220px]" />
-                    <col />
-                    <col className="w-[44px]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[21%]" />
+                    <col className="w-[14%]" />
                   </colgroup>
-                  <TableHeader className="bg-muted/50 sticky top-0 z-10">
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Start</TableHead>
-                      <TableHead>End</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Activity Type</TableHead>
-                      <TableHead>Notes</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                  <thead className="sticky top-0 z-10 bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <tr>
+                      {["Date", "Team", "Start", "End", "Location", "Notes", "PAX working on task"].map((heading) => (
+                        <th key={heading} scope="col" className="h-7 border border-slate-400 px-2 text-center text-xs font-medium dark:border-slate-600">
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
                     {pendingRows.map((row) => {
-                      const teamUnmatched = row.teamRaw && !row.teamId;
-                      const locationUnmatched = row.locationRaw && !row.locationId;
+                      const teamUnmatched = Boolean(row.teamRaw && !row.teamId);
+                      const locationUnmatched = Boolean(row.locationRaw && !row.locationId);
+                      const invalidDate = !row.date;
+                      const invalidPax = Boolean(row.paxRaw.trim() && row.pax === null);
                       return (
-                        <TableRow key={row.key} className="align-top">
-                          <TableCell className="pt-3">
-                            <div className="flex flex-col gap-0.5">
-                              <Input
-                                type="text"
-                                inputMode="numeric"
-                                value={row.dateRaw}
-                                onChange={(e) => updatePendingRow(row.key, { date: normalizeDate(e.target.value), dateRaw: e.target.value })}
-                                placeholder="DD/MM/YYYY"
-                                maxLength={10}
-                                className={cn("h-8 text-sm", !row.date && row.dateRaw && "border-red-500 focus-visible:ring-red-500")}
-                              />
-                              {!row.date && row.dateRaw && (
-                                <span className="text-[10px] text-red-500 truncate" title={row.dateRaw}>
-                                  Please give a valid date.
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <Select value={row.teamId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { teamId: parseInt(v) })}>
-                              <SelectTrigger className={`h-8 text-sm ${teamUnmatched ? "border-amber-500" : ""}`}>
-                                <SelectValue placeholder={teamUnmatched ? row.teamRaw : "Select Team"} />
-                              </SelectTrigger>
-                              <SelectContent>{visibleTeams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <Input type="time" lang="en-GB" value={row.startTime} onChange={(e) => updatePendingRow(row.key, { startTime: e.target.value })} className="h-8 text-sm" />
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <Input type="time" lang="en-GB" value={row.endTime} onChange={(e) => updatePendingRow(row.key, { endTime: e.target.value })} className="h-8 text-sm" />
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <Combobox options={locationOptions} value={row.locationId?.toString() || ""} onValueChange={(v) => updatePendingRow(row.key, { locationId: parseInt(v) })} placeholder={locationUnmatched ? row.locationRaw : "Select Location"} searchPlaceholder="Search locations..." triggerClassName={locationUnmatched ? "border-amber-500" : undefined} />
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <ActivityGroupPicker
-                              allowedTypes={allowedTypes}
-                              allowedGroups={allowedGroups}
-                              workingTypeId={workingTypeId}
-                              typeValue={row.activityTypeId}
-                              groupValue={row.activityGroupId}
-                              onTypeChange={(id) => updatePendingRow(row.key, { activityTypeId: id })}
-                              onGroupChange={(id) => updatePendingRow(row.key, { activityGroupId: id })}
-                              onError={(msg) => toast({ title: msg, variant: "destructive" })}
+                        <tr key={row.key} className="bg-background">
+                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", invalidDate && "bg-red-50 dark:bg-red-950/30")}>
+                            <input
+                              aria-label="Date"
+                              aria-invalid={invalidDate}
+                              title={invalidDate ? "Please give a valid date." : undefined}
+                              type="text"
+                              inputMode="numeric"
+                              value={row.dateRaw}
+                              onChange={(e) => updatePendingRow(row.key, { date: normalizeDate(e.target.value), dateRaw: e.target.value })}
+                              placeholder="DD/MM/YYYY"
+                              maxLength={10}
+                              className={cn(PASTE_GRID_CELL, invalidDate && "text-red-700 focus:ring-red-500 dark:text-red-300")}
                             />
-                          </TableCell>
-                          <TableCell className="pt-2">
-                            <Textarea
+                          </td>
+                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", teamUnmatched && "bg-amber-50 dark:bg-amber-950/30")}>
+                            <select
+                              aria-label="Team"
+                              value={row.teamId?.toString() ?? ""}
+                              onChange={(e) => updatePendingRow(row.key, { teamId: e.target.value ? Number(e.target.value) : null })}
+                              className={cn(PASTE_GRID_CELL, "appearance-none cursor-pointer", teamUnmatched && "text-amber-700 dark:text-amber-300")}
+                            >
+                              <option value="">{teamUnmatched ? row.teamRaw : "Select team"}</option>
+                              {visibleTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                            </select>
+                          </td>
+                          <td className="border border-slate-400 p-0 dark:border-slate-600">
+                            <input
+                              aria-label="Start"
+                              type="text"
+                              inputMode="numeric"
+                              value={row.startTime}
+                              onChange={(e) => updatePendingRow(row.key, { startTime: e.target.value })}
+                              className={cn(PASTE_GRID_CELL, "font-mono")}
+                            />
+                          </td>
+                          <td className="border border-slate-400 p-0 dark:border-slate-600">
+                            <input
+                              aria-label="End"
+                              type="text"
+                              inputMode="numeric"
+                              value={row.endTime}
+                              onChange={(e) => updatePendingRow(row.key, { endTime: e.target.value })}
+                              className={cn(PASTE_GRID_CELL, "font-mono")}
+                            />
+                          </td>
+                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", locationUnmatched && "bg-amber-50 dark:bg-amber-950/30")}>
+                            <select
+                              aria-label="Location"
+                              value={row.locationId?.toString() ?? ""}
+                              onChange={(e) => updatePendingRow(row.key, { locationId: e.target.value ? Number(e.target.value) : null })}
+                              className={cn(PASTE_GRID_CELL, "appearance-none cursor-pointer", locationUnmatched && "text-amber-700 dark:text-amber-300")}
+                            >
+                              <option value="">{locationUnmatched ? row.locationRaw : "Select location"}</option>
+                              {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                            </select>
+                          </td>
+                          <td className="border border-slate-400 p-0 dark:border-slate-600">
+                            <input
+                              aria-label="Notes"
+                              type="text"
                               value={row.notes}
                               onChange={(e) => updatePendingRow(row.key, { notes: e.target.value })}
-                              className="text-sm min-h-[56px] resize-none leading-snug"
-                              rows={2}
+                              className={PASTE_GRID_CELL}
                             />
-                          </TableCell>
-                          <TableCell className="pt-3">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removePendingRow(row.key)}>
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                          <td className={cn("border border-slate-400 p-0 dark:border-slate-600", invalidPax && "bg-red-50 dark:bg-red-950/30")}>
+                            <input
+                              aria-label="PAX working on task"
+                              aria-invalid={invalidPax}
+                              title={invalidPax ? "Enter a positive whole number." : undefined}
+                              type="text"
+                              inputMode="numeric"
+                              value={row.paxRaw}
+                              onChange={(e) => updatePendingRow(row.key, { pax: normalizePax(e.target.value), paxRaw: e.target.value })}
+                              className={cn(PASTE_GRID_CELL, invalidPax && "text-red-700 focus:ring-red-500 dark:text-red-300")}
+                            />
+                          </td>
+                        </tr>
                       );
                     })}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
             )}
 
-            {pendingRows && pendingRows.some((r) => r.dateRaw && !r.date) && (
+            {pendingRows && pendingRows.some((r) => !r.date) && (
               <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 Please give a valid date in DD/MM/YYYY format.
               </div>
             )}
+            {pendingRows && pendingRows.some((r) => r.paxRaw.trim() && r.pax === null) && (
+              <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                PAX must be a positive whole number.
+              </div>
+            )}
             {pendingRows && pendingRows.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) && (
               <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-md px-3 py-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Some locations didn't match — select a valid location for every highlighted row before saving.
+                Some teams or locations didn't match — select a valid value for every highlighted cell before saving.
               </div>
             )}
           </div>
@@ -2578,7 +2604,7 @@ export default function CapturePage() {
               <Badge variant="secondary" className="mr-auto">{pendingRows.length} row{pendingRows.length === 1 ? "" : "s"} parsed</Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeDate(pasteShiftDate)) || (pendingRows?.some((r) => r.dateRaw && !r.date) ?? false) || (pendingRows?.some((r) => r.locationRaw && !r.locationId) ?? false)} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || Boolean(pasteShiftDate.trim() && !normalizeDate(pasteShiftDate)) || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>

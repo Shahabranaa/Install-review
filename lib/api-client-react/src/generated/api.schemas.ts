@@ -534,6 +534,11 @@ export interface DprTimesheetEntry {
   location?: DprLocation | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  pax?: number | null;
   /** @nullable */
   activityTypeId?: number | null;
   /** @nullable */
@@ -577,6 +582,11 @@ export interface DprTimesheetEntryInput {
   locationId?: number | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  pax?: number | null;
   /** @nullable */
   activityTypeId?: number | null;
   /** @nullable */
@@ -619,6 +629,11 @@ export interface DprTimesheetEntryUpdate {
   locationId?: number | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  pax?: number | null;
   /** @nullable */
   activityTypeId?: number | null;
   /** @nullable */
