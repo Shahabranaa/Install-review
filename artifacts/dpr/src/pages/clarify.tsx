@@ -35,7 +35,7 @@ import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { compareDprRows } from "@/lib/sorting";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
-const SHEET_CELL = "border-r border-border/50 px-2 py-1 align-middle";
+const SHEET_CELL = "border-r border-border/40 px-2 py-1 align-middle";
 const SHEET_HEAD = "h-8 border-r border-border/50 px-2 py-1 text-[11px] font-semibold text-muted-foreground whitespace-nowrap";
 
 function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boolean }) {
@@ -441,20 +441,20 @@ export default function ClarifyPage() {
           </div>
         ) : (
           <div className="rounded-none border-0">
-            <Table className="table-fixed w-full min-w-[1480px] border border-border/70 text-xs">
+            <Table className="table-auto w-full min-w-max border-collapse border border-border/70 text-xs">
               <colgroup>
-                <col style={{ width: 36 }} />
-                <col style={{ width: 108 }} />
-                <col style={{ width: 82 }} />
-                <col style={{ width: 82 }} />
-                <col style={{ width: 82 }} />
-                <col style={{ width: 170 }} />
-                <col style={{ width: 220 }} />
+                <col style={{ width: 32 }} />
+                <col style={{ width: 88 }} />
+                <col style={{ width: 66 }} />
+                <col style={{ width: 66 }} />
                 <col style={{ width: 70 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 176 }} />
+                <col style={{ width: 52 }} />
+                <col style={{ width: 122 }} />
                 <col style={{ width: 160 }} />
-                <col style={{ width: 220 }} />
-                <col style={{ width: 200 }} />
-                <col style={{ width: 78 }} />
+                <col style={{ width: 170 }} />
+                <col style={{ width: 66 }} />
               </colgroup>
               <TableHeader className="sticky top-0 z-10 bg-muted/30">
                 <TableRow className="h-8 hover:bg-transparent">

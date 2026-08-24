@@ -2464,7 +2464,7 @@ export default function CapturePage() {
 
                 {/* ── New row form ── */}
                 {newRow && (
-                  <TableRow className="bg-primary/5 align-middle">
+                  <TableRow className="h-10 bg-primary/5 align-middle">
                     {selectMode && <TableCell className="w-[36px]" />}
                     <TableCell className="w-[36px]" />
                     {showDateCol && (
@@ -2472,7 +2472,7 @@ export default function CapturePage() {
                         <DmyDateInput
                           value={newRow.date}
                           onChange={(value) => setNewRow({ ...newRow, date: normalizeDate(value) ?? "" })}
-                          className="h-8 text-sm"
+                           className="h-8 text-xs"
                           ariaLabel="Date"
                         />
                       </TableCell>
@@ -2483,7 +2483,7 @@ export default function CapturePage() {
                           value={newRow.teamId?.toString() || ""}
                           onValueChange={(v) => { setNewRow({ ...newRow, teamId: parseInt(v) }); setNewRowErrors((e) => ({ ...e, teamId: undefined })); }}
                         >
-                          <SelectTrigger className={cn("h-8 text-sm", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
+                           <SelectTrigger className={cn("h-8 text-xs", newRowErrors.teamId && "border-destructive focus:ring-destructive")}>
                             <SelectValue placeholder="Select Team" />
                           </SelectTrigger>
                           <SelectContent>{visibleTeams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}</SelectContent>
@@ -2499,7 +2499,7 @@ export default function CapturePage() {
                         value={newRow.startTime}
                         onChange={(e) => { setNewRow({ ...newRow, startTime: e.target.value }); setNewRowErrors((e) => ({ ...e, startTime: undefined })); }}
                         onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, startTime: n } : r); }}
-                        className={cn("h-8 min-w-[72px] text-sm font-mono tabular-nums", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
+                        className={cn("h-8 min-w-[72px] text-xs font-mono tabular-nums", newRowErrors.startTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.startTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.startTime}</p>}
                     </TableCell>
@@ -2510,12 +2510,12 @@ export default function CapturePage() {
                         value={newRow.endTime}
                         onChange={(e) => { setNewRow({ ...newRow, endTime: e.target.value }); setNewRowErrors((e) => ({ ...e, endTime: undefined })); }}
                         onBlur={(e) => { const n = normalizeTime(e.target.value); if (n !== e.target.value) setNewRow((r) => r ? { ...r, endTime: n } : r); }}
-                        className={cn("h-8 min-w-[72px] text-sm font-mono tabular-nums", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
+                        className={cn("h-8 min-w-[72px] text-xs font-mono tabular-nums", newRowErrors.endTime && "border-destructive focus-visible:ring-destructive")}
                       />
                       {newRowErrors.endTime && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.endTime}</p>}
                     </TableCell>
                     <TableCell>
-                      <span className={cn("whitespace-nowrap text-sm font-medium tabular-nums", formatDuration(newRow.startTime, newRow.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
+                      <span className={cn("whitespace-nowrap text-xs font-medium tabular-nums", formatDuration(newRow.startTime, newRow.endTime) !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40")}>
                         {formatDuration(newRow.startTime, newRow.endTime)}
                       </span>
                     </TableCell>
@@ -2535,7 +2535,7 @@ export default function CapturePage() {
                         value={newRow.notes}
                         onChange={(e) => setNewRow({ ...newRow, notes: e.target.value })}
                         placeholder="Notes..."
-                        className="h-8 min-w-0 text-sm"
+                         className="h-8 min-w-0 text-xs"
                         onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                       />
                     </TableCell>
@@ -2550,7 +2550,7 @@ export default function CapturePage() {
                            setNewRow({ ...newRow, paxRaw, pax: normalizePax(paxRaw) });
                            setNewRowErrors((errors) => ({ ...errors, pax: undefined }));
                          }}
-                         className={cn("h-8 min-w-[100px] text-sm text-center tabular-nums", newRowErrors.pax && "border-destructive focus-visible:ring-destructive")}
+                         className={cn("h-8 min-w-[100px] text-xs text-center tabular-nums", newRowErrors.pax && "border-destructive focus-visible:ring-destructive")}
                        />
                        {newRowErrors.pax && <p className="text-destructive text-[10px] mt-0.5 leading-tight">{newRowErrors.pax}</p>}
                      </TableCell>
@@ -2622,11 +2622,11 @@ export default function CapturePage() {
                   const onCellClick = (e: React.MouseEvent) => { if (!selectMode) e.stopPropagation(); };
 
                   return (
-                    <TableRow
+                      <TableRow
                       key={entry.id}
                       id={`entry-${entry.id}`}
                       className={cn(
-                        "transition-colors",
+                         "h-10 transition-colors",
                         isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/20",
                         selectMode ? "cursor-pointer" : "",
                         highlightEntryId === entry.id ? "ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : ""
@@ -2652,13 +2652,13 @@ export default function CapturePage() {
                               value={editingValue}
                               onChange={setEditingValue}
                               onBlur={() => deactivateCell(entry.id, "shiftDate")}
-                              className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                               className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
                               ariaLabel="Shift date"
                             />
                           ) : (
                             <span
                               onClick={() => activateCell(entry.id, "shiftDate", entry.shiftDate ?? entry.date)}
-                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-medium"
+                               className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs font-medium"
                               title="Click to change shift date"
                             >
                               {(() => {
@@ -2711,7 +2711,7 @@ export default function CapturePage() {
                               onOpenChange={(open) => { if (!open) { setEditingCell(null); setEditingValue(""); } }}
                               defaultOpen
                             >
-                              <SelectTrigger className="h-8 text-sm">
+                              <SelectTrigger className="h-8 text-xs">
                                 <SelectValue placeholder="Select Team" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2721,7 +2721,7 @@ export default function CapturePage() {
                           ) : (
                             <span
                               onClick={() => activateCell(entry.id, "teamId", entry.teamId?.toString() || "")}
-                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
+                              className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs truncate block"
                             >
                               {entry.team?.name || <span className="text-muted-foreground/50">—</span>}
                             </span>
@@ -2741,12 +2741,12 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "startTime")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "startTime", entry.startTime || "")}
-                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs font-mono tabular-nums", isCellFailed("startTime") && "text-destructive")}
                           >
                             {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/50">—</span>}
                             {!showDateCol && entry.startTime && formatDateIfDifferent(entry.date, activeDate) && (
@@ -2784,12 +2784,12 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "endTime")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[72px] bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs font-mono tabular-nums text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "endTime", entry.endTime || "")}
-                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm font-mono tabular-nums", isCellFailed("endTime") && "text-destructive")}
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs font-mono tabular-nums", isCellFailed("endTime") && "text-destructive")}
                           >
                             {entry.endTime ? formatTimeDisplay(entry.endTime) : <span className="text-muted-foreground/50">—</span>}
                         {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
@@ -2809,7 +2809,7 @@ export default function CapturePage() {
                       </TableCell>
                       {/* Duration */}
                       <TableCell className="tabular-nums">
-                        <span className={cn("text-sm font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
+                        <span className={cn("text-xs font-semibold tabular-nums", formatDuration(entry.startTime, entry.endTime) !== "—" ? "text-emerald-500" : "text-muted-foreground/30")}>
                           {formatDuration(entry.startTime, entry.endTime)}
                         </span>
                       </TableCell>
@@ -2830,12 +2830,12 @@ export default function CapturePage() {
                               setEditingValue("");
                             }}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "locationId", entry.location?.name || "")}
-                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs truncate block"
                           >
                             {entry.location?.name || <span className="text-muted-foreground/50">—</span>}
                           </span>
@@ -2853,12 +2853,12 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "notes")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
                           />
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "notes", entry.notes || "")}
-                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm truncate block"
+                            className="cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs truncate block"
                           >
                             {entry.notes || <span className="text-muted-foreground/50">—</span>}
                           </span>
@@ -2875,12 +2875,12 @@ export default function CapturePage() {
                             onChange={(e) => setEditingValue(e.target.value)}
                             onBlur={() => deactivateCell(entry.id, "pax")}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
-                            className={cn("w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-sm tabular-nums text-center text-foreground outline-none focus:ring-1 focus:ring-primary", isCellFailed("pax") && "border-destructive")}
+                            className={cn("w-full bg-primary/10 border border-primary rounded px-1.5 py-0.5 text-xs tabular-nums text-center text-foreground outline-none focus:ring-1 focus:ring-primary", isCellFailed("pax") && "border-destructive")}
                           />
                         ) : (
                           <span
                             onClick={() => activateCell(entry.id, "pax", entry.pax?.toString() || "")}
-                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-sm tabular-nums", isCellFailed("pax") && "text-destructive")}
+                            className={cn("cursor-text select-none hover:bg-muted/40 rounded px-1 -mx-1 transition-colors text-xs tabular-nums", isCellFailed("pax") && "text-destructive")}
                             title="Click to edit PAX working on task"
                           >
                             {entry.pax ?? <span className="text-muted-foreground/50">—</span>}
@@ -2968,11 +2968,11 @@ export default function CapturePage() {
                 {filteredLockedEntries.length > 0 && (
                   <>
                     {filteredLockedEntries.map((entry, idx) => (
-                      <TableRow key={`locked-${entry.id}`} id={`entry-${entry.id}`} className={cn("opacity-50 bg-muted/5", highlightEntryId === entry.id ? "!opacity-100 ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : "")}>
+                      <TableRow key={`locked-${entry.id}`} id={`entry-${entry.id}`} className={cn("h-10 opacity-50 bg-muted/5", highlightEntryId === entry.id ? "!opacity-100 ring-2 ring-inset ring-amber-400 bg-amber-50/60 dark:bg-amber-900/20" : "")}>
                         {selectMode && <TableCell className="w-[36px]" />}
                         <TableCell className="w-[36px] text-center text-xs tabular-nums text-muted-foreground">{filteredEntries.length + idx + 1}</TableCell>
                         {showDateCol && (
-                          <TableCell className={cn(COL.date, "text-sm text-muted-foreground")}>
+                          <TableCell className={cn(COL.date, "text-xs text-muted-foreground")}>
                             {(() => {
                               const display = entry.shiftDate ?? entry.date;
                               return (() => { try { return format(parseISO(display), "dd-MM-yyyy"); } catch { return display; } })();
@@ -2980,12 +2980,12 @@ export default function CapturePage() {
                           </TableCell>
                         )}
                         {showTeamCol && (
-                          <TableCell className={cn(COL.team, "text-sm text-muted-foreground truncate")}>
+                          <TableCell className={cn(COL.team, "text-xs text-muted-foreground truncate")}>
                             {entry.team?.name || "—"}
                           </TableCell>
                         )}
                         <TableCell className="w-[44px] text-center"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline-block" /></TableCell>
-                        <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+                        <TableCell className="text-xs font-mono tabular-nums text-muted-foreground">
                           {entry.startTime ? formatTimeDisplay(entry.startTime) : "—"}
                           {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, activeDate) && (
                             <span className="block text-[10px] font-sans font-normal leading-tight">
@@ -2993,7 +2993,7 @@ export default function CapturePage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm font-mono tabular-nums text-muted-foreground">
+                        <TableCell className="text-xs font-mono tabular-nums text-muted-foreground">
                           {entry.endTime ? formatTimeDisplay(entry.endTime) : "—"}
                         {entry.startTime && entry.endTime && entry.endTime < entry.startTime && (() => {
                           const finishDate = (() => {
@@ -3008,19 +3008,19 @@ export default function CapturePage() {
                           ) : null;
                         })()}
                         </TableCell>
-                        <TableCell className="text-sm tabular-nums text-muted-foreground">
+                        <TableCell className="text-xs tabular-nums text-muted-foreground">
                           {formatDuration(entry.startTime, entry.endTime)}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground truncate">
+                        <TableCell className="text-xs text-muted-foreground truncate">
                           {entry.location?.name || "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground truncate">
+                        <TableCell className="text-xs text-muted-foreground truncate">
                           {entry.notes || "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground text-center tabular-nums">
+                        <TableCell className="text-xs text-muted-foreground text-center tabular-nums">
                           {entry.pax ?? "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-xs text-muted-foreground">
                           {(() => {
                             const grp = activityGroups.find((g) => g.id === entry.activityGroupId);
                             const type = activityTypes.find((t) => t.id === entry.activityTypeId);
@@ -3031,7 +3031,7 @@ export default function CapturePage() {
                                 : "—";
                           })()}
                         </TableCell>
-                        <TableCell className="min-w-[220px] text-sm text-muted-foreground truncate">
+                        <TableCell className="min-w-[220px] text-xs text-muted-foreground truncate">
                           {activities.find((activity) => activity.id === entry.activityId)?.name || "—"}
                         </TableCell>
                         <TableCell className="text-right">
