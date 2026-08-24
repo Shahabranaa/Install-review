@@ -535,8 +535,8 @@ export default function ClarifyPage() {
                 <col style={{ width: 130 }} />
                 <col style={{ width: 52 }} />
                 <col style={{ width: 122 }} />
-                <col style={{ width: 160 }} />
                 <col style={{ width: 170 }} />
+                <col style={{ width: 160 }} />
                 <col style={{ width: 176 }} />
                 <col style={{ width: 66 }} />
               </colgroup>
@@ -566,8 +566,8 @@ export default function ClarifyPage() {
                    <TableHead className={SHEET_HEAD}>Location</TableHead>
                    <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
-                  <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
                   <TableHead className={SHEET_HEAD}>JDR Code</TableHead>
+                  <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
                    <TableHead className={SHEET_HEAD}>Comment</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-right")}>Actions</TableHead>
                 </TableRow>
@@ -694,8 +694,8 @@ function ClarifiedRow({
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-[11px] text-muted-foreground")}>{code?.contractualCode || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
         <Button
@@ -882,6 +882,23 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
+        <Select
+          value={jdrCodeId?.toString() || ""}
+          onValueChange={v => setJdrCodeId(parseInt(v))}
+        >
+          <SelectTrigger className="h-7 min-w-0 bg-background px-2 text-[11px]">
+            <SelectValue placeholder="Select code…" />
+          </SelectTrigger>
+          <SelectContent>
+            {filteredCodes.map(c => (
+              <SelectItem key={c.id} value={c.id.toString()}>
+                {c.contractualCode} — {c.jdrWorkActivity}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell className={SHEET_CELL}>
         <Combobox
           options={commentOptions}
           value={jdrCodeId?.toString() || ""}
@@ -899,23 +916,6 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           className="w-full min-w-0"
           triggerClassName="h-7 min-w-0 px-2 text-[11px]"
         />
-      </TableCell>
-      <TableCell className={SHEET_CELL}>
-        <Select
-          value={jdrCodeId?.toString() || ""}
-          onValueChange={v => setJdrCodeId(parseInt(v))}
-        >
-          <SelectTrigger className="h-7 min-w-0 bg-background px-2 text-[11px]">
-            <SelectValue placeholder="Select code…" />
-          </SelectTrigger>
-          <SelectContent>
-            {filteredCodes.map(c => (
-              <SelectItem key={c.id} value={c.id.toString()}>
-                {c.contractualCode} — {c.jdrWorkActivity}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
