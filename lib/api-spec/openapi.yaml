@@ -2889,6 +2889,8 @@ components:
           type: ["integer", "null"]
         activityGroupId:
           type: ["integer", "null"]
+        activityId:
+          type: ["integer", "null"]
         billingParty:
           type: ["string", "null"]
           enum: [jdr, orsted, null]

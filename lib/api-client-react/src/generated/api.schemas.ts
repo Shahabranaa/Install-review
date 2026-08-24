@@ -592,6 +592,8 @@ export interface DprTimesheetEntryInput {
   /** @nullable */
   activityGroupId?: number | null;
   /** @nullable */
+  activityId?: number | null;
+  /** @nullable */
   billingParty?: DprTimesheetEntryInputBillingParty;
 }
 

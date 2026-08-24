@@ -1,0 +1,64 @@
+Activity	Activity Group
+Mobilisation	Effective Working Time
+Pre-Termination Testing	Effective Working Time
+Pre-Works Set up / Asset protection	Effective Working Time
+Mechanical - Cable stripping	Effective Working Time
+Mechanical - Hang-off	Effective Working Time
+Electrical - Cable routing	Effective Working Time
+Electrical - Termination	Effective Working Time
+Fibre Optic	Effective Working Time
+General husbandry	Effective Working Time
+Post-Termination Testing	Effective Working Time
+Resonance Testing	Effective Working Time
+Demobilisation	Effective Working Time
+TBT / POWRA	Effective Working Time
+Welfare break on location	Effective Working Time
+QC Walkdown / As-left	Effective Working Time
+Transit to/from field	Non-Working Time
+HSE - Toolbox Talk on SOV	Non-Working Time
+HSE - Other (PPE check, time out for safety, etc.)	Non-Working Time
+Standby (LT) - Transfer to / from Location	Non-Working Time
+Standby (EDT) - Waiting on Transfer / No Work Location Available	Non-Working Time
+Standby (EDT) - Waiting on Transfer / Transfer of other Scopes	Non-Working Time
+Standby (EDT) - Other	Non-Working Time
+Standby (EDT) - Waiting on Transfer	Non-Working Time
+Standby (WDT) - Weather downtime	Non-Working Time
+Waiting on material, equipment or documentation (CDT)	Non-Working Time
+Other (CDT)	Non-Working Time
+Standby (EDT) - Waiting on SAP	Non-Working Time
+Standby (EDT) - Waiting on Scaffolding	Non-Working Time
+Standby (EDT) - Rest time requirement between shifts	Non-Working Time
+Standby (CDT) - Rest time requirement between shifts	Non-Working Time
+Standby (EDT) - CTV / SOV Technical breakdown	Non-Working Time
+Mobilisation	Re-work
+Pre-Termination Testing	Re-work
+Pre-Works Set up / Asset protection	Re-work
+Mechanical - Cable stripping	Re-work
+Mechanical - Hang-off	Re-work
+Electrical - Cable routing	Re-work
+Electrical - Termination	Re-work
+Fibre Optic	Re-work
+General husbandry	Re-work
+Post-Termination Testing	Re-work
+Resonance Testing	Re-work
+Variation	Re-work
+Demobilisation	Re-work
+QC Walkdown / As-left	Re-work
+Pre-Termination Testing	Extra Work
+Pre-Works Set up / Asset protection	Extra Work
+Mechanical - Hang-off	Extra Work
+Mechanical - Cable stripping	Extra Work
+Electrical - Cable routing	Extra Work
+Electrical - Termination	Extra Work
+Fibre Optic	Extra Work
+General husbandry	Extra Work
+Hang-off Repair	Extra Work
+Variation	Extra Work
+QC Walkdown / As-left	Extra Work
+Demobilisation	Extra Work
+Break	Effective Working Time
+HSE - Toolbox Talk	Effective Working Time
+TBT / POWRA	Re-work
+Welfare break on location	Re-work
+TBT / POWRA	Extra Work
+Welfare break on location	Extra Work

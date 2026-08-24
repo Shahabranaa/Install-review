@@ -9,6 +9,7 @@ import {
   useListDprLocations,
   useListDprActivityTypes,
   useListDprActivityGroups,
+  useListDprActivities,
   getListDprTimesheetEntriesQueryKey,
   getGetDprTimesheetSummaryQueryKey,
   usePreviewDprLautecImport,
@@ -64,6 +65,7 @@ type LautecProgressState = "complete" | "active" | "waiting" | "error";
 type ActivitySelection = {
   activityTypeId: number | null;
   activityGroupId: number | null;
+  activityId: number | null;
 };
 type ActivityUpdateRequest = {
   id: number;
@@ -83,6 +85,7 @@ type RowDraft = {
   paxRaw: string;
   activityTypeId: number | null;
   activityGroupId: number | null;
+  activityId: number | null;
   billingParty: BillingParty;
 };
 
@@ -98,6 +101,7 @@ function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number
     paxRaw: "",
     activityTypeId: defaultActivityTypeId,
     activityGroupId: defaultGroupId,
+    activityId: null,
     billingParty: null,
   };
 }
@@ -460,6 +464,7 @@ type PendingRow = {
   paxRaw: string;
   activityTypeId: number | null;
   activityGroupId: number | null;
+  activityId: number | null;
   billingParty: BillingParty;
 };
 
@@ -529,6 +534,7 @@ function parsePastedText(
       paxRaw: effectivePaxRaw,
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
+      activityId: null,
       billingParty: null,
     };
   });
@@ -564,6 +570,7 @@ function copyEntriesToPendingRows(
       paxRaw: entry.pax ? String(entry.pax) : "",
       activityTypeId: entry.activityTypeId ?? null,
       activityGroupId: entry.activityGroupId ?? null,
+      activityId: entry.activityId ?? null,
       billingParty: entry.billingParty === "jdr" || entry.billingParty === "orsted" ? entry.billingParty : null,
     };
   });
@@ -876,6 +883,7 @@ export default function CapturePage() {
 
   const { data: activityTypes = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups({});
+  const { data: activities = [] } = useListDprActivities({});
 
   const allowedTypes = useMemo(
     () => activityTypes.filter((t) => ALLOWED_TYPE_NAMES.includes(t.name)),
@@ -898,6 +906,18 @@ export default function CapturePage() {
     [allowedGroups]
   );
   const defaultGroupId = defaultGroup?.id ?? null;
+
+  const activityOptionsFor = (activityTypeId: number | null, activityGroupId: number | null): ComboboxOption[] => {
+    const applicableGroupIds = activityGroupId !== null
+      ? [activityGroupId]
+      : activityGroups
+          .filter((group) => group.activityTypeId === activityTypeId)
+          .map((group) => group.id);
+
+    return activities
+      .filter((activity) => applicableGroupIds.includes(activity.activityGroupId))
+      .map((activity) => ({ value: String(activity.id), label: activity.name }));
+  };
 
   const locationOptions: ComboboxOption[] = useMemo(
     () => locations.map((l) => ({ value: l.id.toString(), label: l.name })),
@@ -1487,7 +1507,7 @@ export default function CapturePage() {
   // ── CSV export ──
   const handleExportCsv = () => {
     const entries = [...filteredEntries, ...filteredLockedEntries];
-    const csv = buildLautecCsv(entries, { teams, activityGroups, activities: [] });
+    const csv = buildLautecCsv(entries, { teams, activityGroups, activities });
     const datePart = activeDate ?? "all";
     downloadCsv(`DPR_Capture_${datePart}.csv`, csv);
   };
@@ -1645,6 +1665,7 @@ export default function CapturePage() {
           activityGroupId: newRow.activityTypeId === workingTypeId
             ? newRow.activityGroupId || undefined
             : undefined,
+          activityId: newRow.activityId || undefined,
           billingParty: newRow.billingParty || undefined,
         },
       },
@@ -1663,6 +1684,7 @@ export default function CapturePage() {
     pax: draft.pax ?? null,
     activityTypeId: draft.activityTypeId || null,
     activityGroupId: draft.activityGroupId ?? null,
+    activityId: draft.activityId ?? null,
     billingParty: draft.billingParty ?? null,
   });
 
@@ -1687,6 +1709,7 @@ export default function CapturePage() {
       activityGroupId: activityTypeId === workingTypeId
         ? entry.activityGroupId ?? null
         : null,
+      activityId: null,
     });
   };
 
@@ -1694,6 +1717,21 @@ export default function CapturePage() {
     saveActivitySelection(entry, {
       activityTypeId: entry.activityTypeId ?? null,
       activityGroupId,
+      activityId: null,
+    });
+  };
+
+  const handleQuickSetActivity = (entry: DprTimesheetEntry, activityId: number) => {
+    const activity = activities.find((item) => item.id === activityId);
+    const group = activityGroups.find((item) => item.id === activity?.activityGroupId);
+    if (!activity || !group) return;
+
+    saveActivitySelection(entry, {
+      activityTypeId: group.activityTypeId ?? entry.activityTypeId ?? null,
+      // The activity group is intentionally blank for Non-Working Time rows;
+      // the activity itself still retains the specific task that was selected.
+      activityGroupId: group.activityTypeId === workingTypeId ? group.id : null,
+      activityId: activity.id,
     });
   };
 
@@ -1915,6 +1953,7 @@ export default function CapturePage() {
             activityGroupId: row.activityTypeId === workingTypeId
               ? row.activityGroupId || undefined
               : undefined,
+            activityId: row.activityId || undefined,
             billingParty: row.billingParty || undefined,
           },
         })
@@ -2028,6 +2067,7 @@ export default function CapturePage() {
       <TableHead className={COL.notes}>Comment</TableHead>
       <TableHead className="text-center">PAX</TableHead>
       <TableHead className={COL.group}>Activity Group</TableHead>
+      <TableHead className="min-w-[220px]">Activity</TableHead>
       <TableHead className={cn(COL.actions, "text-right")}>Actions</TableHead>
     </TableRow>
   );
@@ -2378,9 +2418,32 @@ export default function CapturePage() {
                           ...newRow,
                           activityTypeId: id,
                           activityGroupId: id === workingTypeId ? newRow.activityGroupId : null,
+                          activityId: null,
                         })}
-                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
+                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id, activityId: null })}
                         onError={(msg) => toast({ title: msg, variant: "destructive" })}
+                      />
+                    </TableCell>
+                    <TableCell className="min-w-[220px]">
+                      <Combobox
+                        options={activityOptionsFor(newRow.activityTypeId, newRow.activityGroupId)}
+                        value={newRow.activityId?.toString() || ""}
+                        onValueChange={(value) => {
+                          const activity = activities.find((item) => item.id === parseInt(value));
+                          const group = activityGroups.find((item) => item.id === activity?.activityGroupId);
+                          if (!activity || !group) return;
+                          setNewRow({
+                            ...newRow,
+                            activityTypeId: group.activityTypeId ?? newRow.activityTypeId,
+                            activityGroupId: group.activityTypeId === workingTypeId ? group.id : null,
+                            activityId: activity.id,
+                          });
+                        }}
+                        placeholder="Select Activity"
+                        searchPlaceholder="Search activities..."
+                        emptyText="No activities for this group."
+                        className="w-[320px]"
+                        triggerClassName="h-8 min-w-[220px] text-xs"
                       />
                     </TableCell>
                     <TableCell className={cn(COL.actions, "text-right")}>
@@ -2403,6 +2466,10 @@ export default function CapturePage() {
                     editingCell?.entryId === entry.id && editingCell?.field === field;
                   const isCellFailed = (field: string) =>
                     failedCell?.entryId === entry.id && failedCell?.field === field;
+                  const pendingSelection = activityOverrides[entry.id];
+                  const selectedActivityTypeId = pendingSelection?.activityTypeId ?? entry.activityTypeId ?? null;
+                  const selectedActivityGroupId = pendingSelection?.activityGroupId ?? entry.activityGroupId ?? null;
+                  const selectedActivityId = pendingSelection?.activityId ?? entry.activityId ?? null;
                   // In select mode let the click bubble to the TableRow's onClick (which toggles selection).
                   // In edit mode stop propagation so cell interactions don't accidentally trigger row handlers.
                   const onCellClick = (e: React.MouseEvent) => { if (!selectMode) e.stopPropagation(); };
@@ -2675,22 +2742,29 @@ export default function CapturePage() {
                       </TableCell>
                       {/* Activity Group — instant toggle, no editing mode needed */}
                       <TableCell className={COL.group} onClick={onCellClick}>
-                        {(() => {
-                          const pendingSelection = activityOverrides[entry.id];
-                          return (
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
                           allowedGroups={allowedGroups}
                           workingTypeId={workingTypeId}
-                          typeValue={pendingSelection?.activityTypeId ?? entry.activityTypeId ?? null}
-                          groupValue={pendingSelection?.activityGroupId ?? entry.activityGroupId ?? null}
+                          typeValue={selectedActivityTypeId}
+                          groupValue={selectedActivityGroupId}
                           onTypeChange={(id) => handleQuickSetType(entry, id)}
                           onGroupChange={(id) => handleQuickSetGroup(entry, id)}
                           onError={(msg) => toast({ title: msg, variant: "destructive" })}
                           isSaving={Boolean(pendingSelection)}
                         />
-                          );
-                        })()}
+                      </TableCell>
+                      <TableCell className="min-w-[220px]" onClick={onCellClick}>
+                        <Combobox
+                          options={activityOptionsFor(selectedActivityTypeId, selectedActivityGroupId)}
+                          value={selectedActivityId?.toString() || ""}
+                          onValueChange={(value) => handleQuickSetActivity(entry, parseInt(value))}
+                          placeholder="Select Activity"
+                          searchPlaceholder="Search activities..."
+                          emptyText="No activities for this group."
+                          className="w-[320px]"
+                          triggerClassName="h-7 min-w-[220px] px-2 text-[11px]"
+                        />
                       </TableCell>
                       {/* Actions */}
                       <TableCell className={cn(COL.actions, "text-right")} onClick={onCellClick}>
@@ -2810,6 +2884,9 @@ export default function CapturePage() {
                                 : "—";
                           })()}
                         </TableCell>
+                        <TableCell className="min-w-[220px] text-sm text-muted-foreground truncate">
+                          {activities.find((activity) => activity.id === entry.activityId)?.name || "—"}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 inline-block" />
                         </TableCell>
@@ -2821,7 +2898,7 @@ export default function CapturePage() {
                 {/* Empty state */}
                 {!loadingEntries && filteredEntries.length === 0 && filteredLockedEntries.length === 0 && !newRow && (
                   <TableRow>
-                    <TableCell colSpan={10 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
+                    <TableCell colSpan={11 + (showDateCol ? 1 : 0) + (showTeamCol ? 1 : 0) + (selectMode ? 1 : 0)} className="text-center py-16 text-muted-foreground">
                       {draftEntries.length === 0
                         ? <span>No entries yet. Click <strong>Add Row</strong> or <strong>Paste Rows</strong> to start.</span>
                         : <span>No entries match the selected filters.</span>}
@@ -2839,7 +2916,7 @@ export default function CapturePage() {
         <p className="text-xs text-muted-foreground">
           {selectMode
             ? "Click rows to select them, then use Delete or Approve above. Click Cancel Select to return to editing."
-            : <>Click any cell in <strong className="text-foreground">Start</strong>, <strong className="text-foreground">End</strong>, <strong className="text-foreground">Location</strong> or <strong className="text-foreground">Notes</strong> to edit inline. Activity Group pills toggle instantly — no dropdowns.</>}
+            : <>Click any cell in <strong className="text-foreground">Start</strong>, <strong className="text-foreground">End</strong>, <strong className="text-foreground">Location</strong> or <strong className="text-foreground">Notes</strong> to edit inline. Set the specific task in the new <strong className="text-foreground">Activity</strong> dropdown.</>}
         </p>
       </div>
 

@@ -1372,6 +1372,7 @@ export const CreateDprTimesheetEntryBody = zod.object({
   "pax": zod.number().min(1).nullish(),
   "activityTypeId": zod.number().nullish(),
   "activityGroupId": zod.number().nullish(),
+  "activityId": zod.number().nullish(),
   "billingParty": zod.union([zod.literal('jdr'),zod.literal('orsted'),zod.literal(null)]).nullish()
 })
 
