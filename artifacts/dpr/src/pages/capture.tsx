@@ -2921,7 +2921,7 @@ export default function CapturePage() {
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else openPasteDialog(); }}>
         <DialogContent className={cn(
           "max-w-[95vw] w-full max-h-[90vh] flex flex-col",
-          isCopiedActivityReview && "max-w-[98vw] h-[94vh] max-h-[94vh]",
+          isCopiedActivityReview && "max-w-[98vw] max-h-[94vh]",
         )}>
           <DialogHeader>
             <DialogTitle>{isCopiedActivityReview ? "Review copied activity reports" : "Paste rows from a spreadsheet"}</DialogTitle>
