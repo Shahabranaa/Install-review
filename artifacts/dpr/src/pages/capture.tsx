@@ -1875,20 +1875,35 @@ export default function CapturePage() {
   const copyTeamOptions = useMemo(() => {
     if (!isCopiedActivityReview || !pendingRows) return [];
 
-    const options = new Map<string, { key: string; label: string; count: number }>();
+    const teamOrder = new Map(teams.map((team, index) => [team.id, index]));
+    const teamNameOrder = new Map(teams.map((team, index) => [team.name.trim().toLowerCase(), index]));
+    const options = new Map<string, { key: string; label: string; count: number; order: number }>();
     for (const row of pendingRows) {
       const key = pendingRowTeamKey(row);
       const label = row.teamRaw.trim() || "Unassigned";
+      const configuredOrder = row.teamId !== null
+        ? teamOrder.get(row.teamId)
+        : teamNameOrder.get(row.teamRaw.trim().toLowerCase());
       const existing = options.get(key);
       if (existing) existing.count += 1;
-      else options.set(key, { key, label, count: 1 });
+      else options.set(key, {
+        key,
+        label,
+        count: 1,
+        order: configuredOrder ?? Number.MAX_SAFE_INTEGER,
+      });
     }
-    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [isCopiedActivityReview, pendingRows]);
+    return Array.from(options.values()).sort((a, b) =>
+      a.order - b.order || a.label.localeCompare(b.label)
+    );
+  }, [isCopiedActivityReview, pendingRows, teams]);
 
   useEffect(() => {
     const availableKeys = new Set(copyTeamOptions.map((option) => option.key));
-    setCopyExcludedTeamKeys((keys) => keys.filter((key) => availableKeys.has(key)));
+    setCopyExcludedTeamKeys((keys) => {
+      const nextKeys = keys.filter((key) => availableKeys.has(key));
+      return nextKeys.length === keys.length ? keys : nextKeys;
+    });
   }, [copyTeamOptions]);
 
   const visiblePendingRows = useMemo(() => {
