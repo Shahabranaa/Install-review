@@ -567,7 +567,7 @@ export default function ClarifyPage() {
                    <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
                   <TableHead className={SHEET_HEAD}>Code</TableHead>
-                  <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
+                  <TableHead className={SHEET_HEAD}>Notes</TableHead>
                    <TableHead className={SHEET_HEAD}>Comment</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-right")}>Actions</TableHead>
                 </TableRow>
