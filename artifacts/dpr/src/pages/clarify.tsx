@@ -566,7 +566,7 @@ export default function ClarifyPage() {
                    <TableHead className={SHEET_HEAD}>Location</TableHead>
                    <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
-                  <TableHead className={SHEET_HEAD}>JDR Code</TableHead>
+                  <TableHead className={SHEET_HEAD}>Code</TableHead>
                   <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
                    <TableHead className={SHEET_HEAD}>Comment</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-right")}>Actions</TableHead>
@@ -615,7 +615,7 @@ export default function ClarifyPage() {
       {/* ── Hint bar — matches Capture exactly ── */}
       <div className="px-6 py-2 border-t border-border bg-card/50 shrink-0">
         <p className="text-xs text-muted-foreground">
-          Select a <strong className="text-foreground">JDR Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
+          Select a <strong className="text-foreground">Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
         </p>
       </div>
       </div>
@@ -925,7 +925,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
             className="h-7 w-7"
             onClick={handleSave}
             disabled={!canSave || updateMutation.isPending || isUnlocking}
-            title={canSave ? "Mark as Clarified" : "Select a JDR code first"}
+            title={canSave ? "Mark as Clarified" : "Select a code first"}
             aria-label="Mark as Clarified"
           >
             {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
