@@ -38,22 +38,6 @@ import { compareDprRows } from "@/lib/sorting";
 const SHEET_CELL = "border-r border-border/50 px-2 py-1 align-middle";
 const SHEET_HEAD = "h-8 border-r border-border/50 px-2 py-1 text-[11px] font-semibold text-muted-foreground whitespace-nowrap";
 
-function ClarifyStatus({ stage }: { stage: string }) {
-  const clarified = stage === "clarified";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center",
-        clarified ? "text-emerald-600 dark:text-emerald-400" : "text-amber-500",
-      )}
-      title={clarified ? "Clarified" : "Pending clarification"}
-      aria-label={clarified ? "Clarified" : "Pending clarification"}
-    >
-      <span className={cn("h-2.5 w-2.5 rounded-full border", clarified ? "border-emerald-500 bg-emerald-500/80" : "border-amber-500 bg-amber-400/20")} />
-    </span>
-  );
-}
-
 function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boolean }) {
   return (
     <span
@@ -461,7 +445,6 @@ export default function ClarifyPage() {
               <colgroup>
                 <col style={{ width: 36 }} />
                 <col style={{ width: 108 }} />
-                <col style={{ width: 64 }} />
                 <col style={{ width: 82 }} />
                 <col style={{ width: 82 }} />
                 <col style={{ width: 82 }} />
@@ -477,7 +460,6 @@ export default function ClarifyPage() {
                 <TableRow className="h-8 hover:bg-transparent">
                   <TableHead className={cn(SHEET_HEAD, "text-center")}>#</TableHead>
                   <TableHead className={SHEET_HEAD}>Team</TableHead>
-                  <TableHead className={cn(SHEET_HEAD, "text-center")}>Status</TableHead>
                   <TableHead className={SHEET_HEAD}>Start</TableHead>
                   <TableHead className={SHEET_HEAD}>Finish</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-emerald-600")}>Duration</TableHead>
@@ -563,7 +545,6 @@ function ClarifiedRow({
     <TableRow className="h-10 bg-muted/5 opacity-50 hover:bg-muted/10">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground/50")}>{rowIndex ?? ""}</TableCell>
       <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} muted /></TableCell>
-      <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
         {entry.startTime || <span className="text-muted-foreground/40">—</span>}
         {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, currentDate) && (
@@ -736,7 +717,6 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
     <TableRow className="h-10 hover:bg-muted/20">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
       <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} /></TableCell>
-      <TableCell className={cn(SHEET_CELL, "text-center")}><ClarifyStatus stage={entry.stage} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
         {entry.startTime ? formatTimeDisplay(entry.startTime) : <span className="text-muted-foreground/40">—</span>}
         {entry.shiftDate && entry.shiftDate !== entry.date && entry.startTime && formatDateIfDifferent(entry.date, currentDate) && (
