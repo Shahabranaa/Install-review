@@ -11,4 +11,4 @@ All user-facing and user-entered DPR dates use `DD-MM-YYYY`; API/database dates 
 
 **Why:** The DPR team explicitly standardized on hyphen-separated dates to avoid ambiguity in pasted reports and date displays.
 
-**How to apply:** Keep the two-day DPR validation and shift-date assignment together in every DPR paste or bulk-import path. Parse and show `DD-MM-YYYY` in Capture, Clarify, and bot-import guidance; highlight invalid rows and prevent saving until corrected.
+**How to apply:** Keep the two-day DPR validation and shift-date assignment together in normal pasted-row and bot-import paths. The DPR Excel upload is an exception: it imports only rows dated exactly on the selected DPR date. Parse and show `DD-MM-YYYY` in Capture, Clarify, and bot-import guidance; highlight invalid rows and prevent saving until corrected.

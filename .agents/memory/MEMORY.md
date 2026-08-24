@@ -21,4 +21,4 @@
 - [DPR flat spreadsheet layout](dpr-flat-spreadsheet-layout.md) — Capture and Clarify should remain uninterrupted sheet grids, not team/date summary-card lists.
 - [Lautec configuration security boundary](lautec-configuration-security.md) — admins may edit safe browser URLs; the dedicated account remains workspace secrets only.
 - [Lautec visible import grid quirks](lautec-import-grid-quirks.md) — wait for the login redirect chain; validate dropdown choices and explicitly commit pasted locations.
-- [DPR Excel revision policy](dpr-excel-revision-policy.md) — Excel imports admit only rows marked current and reject unexpected revision markers.
+- [DPR Excel import policy](dpr-excel-revision-policy.md) — import only current rows from the selected DPR date; reject unexpected revision markers.

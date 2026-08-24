@@ -1208,6 +1208,7 @@ export default function CapturePage() {
   const [isExcelReview, setIsExcelReview] = useState(false);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [excelSkippedNonCurrentRows, setExcelSkippedNonCurrentRows] = useState(0);
+  const [excelSkippedOtherDateRows, setExcelSkippedOtherDateRows] = useState(0);
   const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
   const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
   const [lautecPreview, setLautecPreview] = useState<LautecImportPreview | null>(null);
@@ -1886,8 +1887,17 @@ export default function CapturePage() {
         workingTypeId,
       );
       const firstDate = rows.find((row) => row.date)?.date ?? "";
+      const selectedDprDate = normalizeDmyOrIsoDate(activeDate ?? firstDate);
+      const rowsForSelectedDate = selectedDprDate
+        ? rows.filter((row) => row.date === selectedDprDate)
+        : rows;
+      if (rowsForSelectedDate.length === 0) {
+        throw new Error(
+          `The workbook has no current revision rows for ${formatDateAsDmy(selectedDprDate ?? firstDate)}.`,
+        );
+      }
       setPasteText("");
-      setPasteShiftDate(activeDate ?? firstDate);
+      setPasteShiftDate(selectedDprDate ?? firstDate);
       setCopySourcePickerOpen(false);
       setCopySourceDate("");
       setPendingCopy(null);
@@ -1895,8 +1905,9 @@ export default function CapturePage() {
       setCopySourceStatus(null);
       copySourceSelectionRef.current = null;
       setExcelSkippedNonCurrentRows(excelImport.skippedNonCurrentRows);
+      setExcelSkippedOtherDateRows(rows.length - rowsForSelectedDate.length);
       setIsExcelReview(true);
-      setPendingRows(rows);
+      setPendingRows(rowsForSelectedDate);
       setPasteOpen(true);
     } catch (error) {
       toast({
@@ -1912,6 +1923,7 @@ export default function CapturePage() {
   const openPasteDialog = () => {
     setIsExcelReview(false);
     setExcelSkippedNonCurrentRows(0);
+    setExcelSkippedOtherDateRows(0);
     setPasteShiftDate(activeDate ?? "");
     setCopySourcePickerOpen(false);
     setCopySourceDate("");
@@ -2000,6 +2012,7 @@ export default function CapturePage() {
     setPasteOpen(false);
     setIsExcelReview(false);
     setExcelSkippedNonCurrentRows(0);
+    setExcelSkippedOtherDateRows(0);
     setPasteText("");
     setPasteShiftDate("");
     setPendingRows(null);
@@ -2024,12 +2037,18 @@ export default function CapturePage() {
     }
     const overnightDate = addIsoDays(normalizedShiftDate, 1);
     const invalidDateRows = pendingRows.filter(
-      (row) => !!row.date && row.date !== normalizedShiftDate && row.date !== overnightDate,
+      (row) => !!row.date && (
+        isExcelReview
+          ? row.date !== normalizedShiftDate
+          : row.date !== normalizedShiftDate && row.date !== overnightDate
+      ),
     );
     if (invalidDateRows.length > 0) {
       toast({
-        title: "Pasted date is outside the DPR window.",
-        description: `Rows must be dated ${formatDateAsDmyHyphen(normalizedShiftDate)} or ${formatDateAsDmyHyphen(overnightDate ?? "")}.`,
+        title: isExcelReview ? "Imported date does not match the selected DPR." : "Pasted date is outside the DPR window.",
+        description: isExcelReview
+          ? `Imported rows must be dated ${formatDateAsDmyHyphen(normalizedShiftDate)}.`
+          : `Rows must be dated ${formatDateAsDmyHyphen(normalizedShiftDate)} or ${formatDateAsDmyHyphen(overnightDate ?? "")}.`,
         variant: "destructive",
       });
       return;
@@ -2076,8 +2095,11 @@ export default function CapturePage() {
     (row) =>
       !!row.date
       && !!normalizedPasteDprDate
-      && row.date !== normalizedPasteDprDate
-      && row.date !== overnightPasteDate,
+      && (
+        isExcelReview
+          ? row.date !== normalizedPasteDprDate
+          : row.date !== normalizedPasteDprDate && row.date !== overnightPasteDate
+      ),
   ) ?? [];
   const hasUnresolvedExcelActivities = isExcelReview && (pendingRows?.some((row) => (
     Boolean(row.importedActivityGroupRaw && !findByNameFuzzy(activityGroups, row.importedActivityGroupRaw))
@@ -3305,9 +3327,15 @@ export default function CapturePage() {
             {isExcelReview && (
               <div className="flex shrink-0 items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200">
                 <Info className="h-4 w-4 shrink-0" />
-                {excelSkippedNonCurrentRows > 0
-                  ? `${excelSkippedNonCurrentRows} superseded revision${excelSkippedNonCurrentRows === 1 ? "" : "s"} excluded. Only rows marked Is Current Revision = Y are shown.`
-                  : "Only rows marked Is Current Revision = Y are shown."}
+                {excelSkippedNonCurrentRows > 0 || excelSkippedOtherDateRows > 0 ? (
+                  <>
+                    {excelSkippedNonCurrentRows > 0 && `${excelSkippedNonCurrentRows} superseded revision${excelSkippedNonCurrentRows === 1 ? "" : "s"} excluded. `}
+                    {excelSkippedOtherDateRows > 0 && `${excelSkippedOtherDateRows} row${excelSkippedOtherDateRows === 1 ? "" : "s"} from other dates excluded. `}
+                    Only current-revision rows dated {formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} are shown.
+                  </>
+                ) : (
+                  <>Only current-revision rows dated {formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} are shown.</>
+                )}
               </div>
             )}
 
@@ -3449,8 +3477,11 @@ export default function CapturePage() {
                       const invalidDprDate = Boolean(
                         row.date
                         && normalizedPasteDprDate
-                        && row.date !== normalizedPasteDprDate
-                        && row.date !== overnightPasteDate,
+                        && (
+                          isExcelReview
+                            ? row.date !== normalizedPasteDprDate
+                            : row.date !== normalizedPasteDprDate && row.date !== overnightPasteDate
+                        ),
                       );
                       const invalidPax = Boolean(row.paxRaw.trim() && row.pax === null);
                       const activityGroupUnmatched = isExcelReview
@@ -3469,7 +3500,9 @@ export default function CapturePage() {
                                    ? "Use DD-MM-YYYY with - separators, for example 23-08-2026. Slashes are not accepted."
                                   : "Please give a valid date."
                                   : invalidDprDate
-                                  ? `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} or ${formatDateAsDmyHyphen(overnightPasteDate ?? "")}.`
+                                   ? isExcelReview
+                                     ? `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")}.`
+                                     : `Date must be ${formatDateAsDmyHyphen(normalizedPasteDprDate ?? "")} or ${formatDateAsDmyHyphen(overnightPasteDate ?? "")}.`
                                   : undefined
                               }
                               type="text"
@@ -3645,7 +3678,10 @@ export default function CapturePage() {
             {invalidPasteDateRows.length > 0 && normalizedPasteDprDate && (
               <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                {isExcelReview ? "Imported" : "Pasted"} dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)} or {formatDateAsDmyHyphen(overnightPasteDate ?? "")}. Highlighted dates must be corrected before saving.
+                {isExcelReview
+                  ? <>Imported dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)}.</>
+                  : <>Pasted dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)} or {formatDateAsDmyHyphen(overnightPasteDate ?? "")}.</>}
+                {" "}Highlighted dates must be corrected before saving.
               </div>
             )}
             {pendingRows && pendingRows.some((r) => r.paxRaw.trim() && r.pax === null) && (
