@@ -1176,7 +1176,7 @@ export default function CapturePage() {
       if (!destinationDprDate) {
         setCopySourceStatus({
           tone: "error",
-          message: "Choose a valid DPR for Date before copying activity reports.",
+          message: "Choose a valid destination DPR date.",
         });
         return;
       }
@@ -1185,7 +1185,7 @@ export default function CapturePage() {
       if (copiedRows.length === 0) {
         setCopySourceStatus({
           tone: "warning",
-          message: `No activity reports were found for ${formatDateAsDmy(sourceDate)}.`,
+          message: `No reports found · ${formatDateAsDmy(sourceDate)}`,
         });
         return;
       }
@@ -1194,7 +1194,7 @@ export default function CapturePage() {
         setPendingCopy({ sourceDate, rows: copiedRows });
         setCopySourceStatus({
           tone: "warning",
-          message: `${copiedRows.length} row${copiedRows.length === 1 ? "" : "s"} found. Choose whether to add or replace the current grid.`,
+          message: `${copiedRows.length} found · choose Add or Replace`,
         });
         return;
       }
@@ -1203,14 +1203,14 @@ export default function CapturePage() {
       setPendingRows(copiedRows);
       setCopySourceStatus({
         tone: "success",
-        message: `${copiedRows.length} activity report${copiedRows.length === 1 ? "" : "s"} copied from ${formatDateAsDmy(sourceDate)}. Review the rows before saving.`,
+        message: `${copiedRows.length} copied · ${formatDateAsDmy(sourceDate)}`,
       });
     },
     onError: (error, { sourceDate }) => {
       if (copySourceSelectionRef.current !== sourceDate) return;
       setCopySourceStatus({
         tone: "error",
-        message: error instanceof Error ? error.message : "Could not load activity reports for that DPR date.",
+        message: error instanceof Error ? error.message : "Could not load reports for that date.",
       });
     },
   });
@@ -1775,8 +1775,8 @@ export default function CapturePage() {
     setCopySourceStatus({
       tone: "success",
       message: action === "append"
-        ? `${count} activity report${count === 1 ? "" : "s"} added from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the combined grid before saving.`
-        : `${count} activity report${count === 1 ? "" : "s"} replaced the grid from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the rows before saving.`,
+        ? `${count} added · ${formatDateAsDmy(pendingCopy.sourceDate)}`
+        : `${count} replaced · ${formatDateAsDmy(pendingCopy.sourceDate)}`,
     });
   };
 
@@ -1801,7 +1801,7 @@ export default function CapturePage() {
 
     setCopySourceStatus({
       tone: "loading",
-      message: `Loading activity reports from ${formatDateAsDmy(sourceDate)}…`,
+      message: `Loading ${formatDateAsDmy(sourceDate)}…`,
     });
     copyDprEntriesMutation.mutate({ sourceDate });
   };
@@ -2927,18 +2927,18 @@ export default function CapturePage() {
             <DialogTitle>{isCopiedActivityReview ? "Review copied activity reports" : "Paste rows from a spreadsheet"}</DialogTitle>
             <DialogDescription>
               {isCopiedActivityReview
-                ? "Review and edit the copied activity reports before saving them to the selected DPR."
+                ? "Review copied rows before saving."
                 : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
             </DialogDescription>
           </DialogHeader>
 
           <div className={cn(
-            "flex-1 flex flex-col gap-3 min-h-0",
+            "flex-1 flex flex-col gap-2 min-h-0",
             isCopiedActivityReview ? "overflow-hidden" : "overflow-auto",
           )}>
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-y border-border bg-muted/20 px-3 py-2">
-              <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground">
-                DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-3 py-1.5">
+              <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground" title="Destination DPR date (DD-MM-YYYY)">
+                DPR date
               </label>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <DmyDateInput
@@ -2965,15 +2965,10 @@ export default function CapturePage() {
             </div>
 
             {copySourcePickerOpen && (
-              <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 rounded-md border border-primary/25 bg-primary/5 px-3 py-3">
-                <div>
-                  <label htmlFor="copy-source-date" className="block text-sm font-medium text-foreground">
-                    Copy activity reports from
-                  </label>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Select the DPR date to load its rows into this review grid.
-                  </p>
-                </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-1.5">
+                <label htmlFor="copy-source-date" className="block text-sm font-medium text-foreground" title="Source DPR date">
+                  Source DPR
+                </label>
                 <DmyDateInput
                   id="copy-source-date"
                   value={copySourceDate}
@@ -2987,7 +2982,7 @@ export default function CapturePage() {
             {copySourceStatus && (
               <div
                 className={cn(
-                  "flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs",
+                  "flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-xs",
                   copySourceStatus.tone === "error" && "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300",
                   copySourceStatus.tone === "warning" && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
                   copySourceStatus.tone === "success" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
@@ -3000,12 +2995,11 @@ export default function CapturePage() {
             )}
 
             {isCopiedActivityReview && copyTeamOptions.length > 0 && (
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-1.5">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>
-                    Showing {visiblePendingRows.length} of {pendingRows?.length ?? 0} copied activit{(pendingRows?.length ?? 0) === 1 ? "y" : "ies"}
+                    {visiblePendingRows.length} of {pendingRows?.length ?? 0} copied
                   </span>
-                  <span className="text-muted-foreground/60">Filter only changes the review view.</span>
                 </div>
                 <Popover>
                   <PopoverTrigger asChild>
