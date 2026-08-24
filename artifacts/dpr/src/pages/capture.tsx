@@ -473,6 +473,29 @@ function pendingRowTeamKey(row: PendingRow): string {
   return teamName ? `name:${teamName}` : "unassigned";
 }
 
+const copiedTeamNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareCopiedRows(a: PendingRow, b: PendingRow): number {
+  const dateOrder = (a.date ?? "").localeCompare(b.date ?? "");
+  if (dateOrder !== 0) return dateOrder;
+
+  const aStart = a.startTime.trim();
+  const bStart = b.startTime.trim();
+  if (!aStart && bStart) return 1;
+  if (aStart && !bStart) return -1;
+  const startOrder = aStart.localeCompare(bStart);
+  if (startOrder !== 0) return startOrder;
+
+  const aTeam = a.teamRaw.trim();
+  const bTeam = b.teamRaw.trim();
+  if (!aTeam && bTeam) return 1;
+  if (aTeam && !bTeam) return -1;
+  return copiedTeamNameCollator.compare(aTeam, bTeam);
+}
+
 function parsePastedText(
   text: string,
   teams: DprTeam[],
@@ -1908,10 +1931,14 @@ export default function CapturePage() {
 
   const visiblePendingRows = useMemo(() => {
     if (!pendingRows || !isCopiedActivityReview || copyExcludedTeamKeys.length === 0) {
-      return pendingRows ?? [];
+      return isCopiedActivityReview
+        ? [...(pendingRows ?? [])].sort(compareCopiedRows)
+        : (pendingRows ?? []);
     }
     const excluded = new Set(copyExcludedTeamKeys);
-    return pendingRows.filter((row) => !excluded.has(pendingRowTeamKey(row)));
+    return pendingRows
+      .filter((row) => !excluded.has(pendingRowTeamKey(row)))
+      .sort(compareCopiedRows);
   }, [pendingRows, isCopiedActivityReview, copyExcludedTeamKeys]);
 
   // ── Shared table header ───────────────────────────────────────────────────
