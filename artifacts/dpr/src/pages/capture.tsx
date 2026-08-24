@@ -1810,6 +1810,33 @@ export default function CapturePage() {
     copyDprEntriesMutation.mutate({ sourceDate });
   };
 
+  const toggleCopySourcePicker = () => {
+    const nextOpen = !copySourcePickerOpen;
+    setCopySourcePickerOpen(nextOpen);
+
+    if (!nextOpen) {
+      setCopySourceDate("");
+      setCopySourceStatus(null);
+      copySourceSelectionRef.current = null;
+      return;
+    }
+
+    const destinationDate =
+      normalizeDmyOrIsoDate(pasteShiftDate)
+      ?? normalizeDmyOrIsoDate(activeDate ?? "");
+    const previousDate = destinationDate ? addIsoDays(destinationDate, -1) : null;
+    if (!previousDate) {
+      setCopySourceDate("");
+      setCopySourceStatus({
+        tone: "error",
+        message: "Choose a valid DPR for Date before copying activity reports.",
+      });
+      return;
+    }
+
+    handleCopySourceDateChange(previousDate);
+  };
+
   const closePasteDialog = () => {
     setPasteOpen(false);
     setPasteText("");
@@ -2996,10 +3023,7 @@ export default function CapturePage() {
                 variant="outline"
                 size="sm"
                 className="ml-auto h-8 gap-2"
-                onClick={() => {
-                  setCopySourcePickerOpen((open) => !open);
-                  setCopySourceStatus(null);
-                }}
+                 onClick={toggleCopySourcePicker}
               >
                 <Copy className="h-4 w-4" />
                 Copy from previous DPR
