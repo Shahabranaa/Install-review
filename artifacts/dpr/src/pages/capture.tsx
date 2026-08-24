@@ -1176,7 +1176,7 @@ export default function CapturePage() {
       if (!destinationDprDate) {
         setCopySourceStatus({
           tone: "error",
-          message: "Choose a valid destination DPR date.",
+          message: "Choose a valid DPR for Date before copying activity reports.",
         });
         return;
       }
@@ -1185,7 +1185,7 @@ export default function CapturePage() {
       if (copiedRows.length === 0) {
         setCopySourceStatus({
           tone: "warning",
-          message: `No reports found · ${formatDateAsDmy(sourceDate)}`,
+          message: `No activity reports were found for ${formatDateAsDmy(sourceDate)}.`,
         });
         return;
       }
@@ -1194,7 +1194,7 @@ export default function CapturePage() {
         setPendingCopy({ sourceDate, rows: copiedRows });
         setCopySourceStatus({
           tone: "warning",
-          message: `${copiedRows.length} found · choose Add or Replace`,
+          message: `${copiedRows.length} row${copiedRows.length === 1 ? "" : "s"} found. Choose whether to add or replace the current grid.`,
         });
         return;
       }
@@ -1203,14 +1203,14 @@ export default function CapturePage() {
       setPendingRows(copiedRows);
       setCopySourceStatus({
         tone: "success",
-        message: `${copiedRows.length} copied · ${formatDateAsDmy(sourceDate)}`,
+        message: `${copiedRows.length} activity report${copiedRows.length === 1 ? "" : "s"} copied from ${formatDateAsDmy(sourceDate)}. Review the rows before saving.`,
       });
     },
     onError: (error, { sourceDate }) => {
       if (copySourceSelectionRef.current !== sourceDate) return;
       setCopySourceStatus({
         tone: "error",
-        message: error instanceof Error ? error.message : "Could not load reports for that date.",
+        message: error instanceof Error ? error.message : "Could not load activity reports for that DPR date.",
       });
     },
   });
@@ -1775,8 +1775,8 @@ export default function CapturePage() {
     setCopySourceStatus({
       tone: "success",
       message: action === "append"
-        ? `${count} added · ${formatDateAsDmy(pendingCopy.sourceDate)}`
-        : `${count} replaced · ${formatDateAsDmy(pendingCopy.sourceDate)}`,
+        ? `${count} activity report${count === 1 ? "" : "s"} added from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the combined grid before saving.`
+        : `${count} activity report${count === 1 ? "" : "s"} replaced the grid from ${formatDateAsDmy(pendingCopy.sourceDate)}. Review the rows before saving.`,
     });
   };
 
@@ -1801,7 +1801,7 @@ export default function CapturePage() {
 
     setCopySourceStatus({
       tone: "loading",
-      message: `Loading ${formatDateAsDmy(sourceDate)}…`,
+      message: `Loading activity reports from ${formatDateAsDmy(sourceDate)}…`,
     });
     copyDprEntriesMutation.mutate({ sourceDate });
   };
@@ -1871,6 +1871,7 @@ export default function CapturePage() {
       && row.date !== overnightPasteDate,
   ) ?? [];
   const isCopiedActivityReview = copySourceStatus?.tone === "success" && Boolean(pendingRows?.length);
+  const isCopyFlow = isCopiedActivityReview || copySourcePickerOpen;
   const copyTeamOptions = useMemo(() => {
     if (!isCopiedActivityReview || !pendingRows) return [];
 
@@ -2927,7 +2928,7 @@ export default function CapturePage() {
             <DialogTitle>{isCopiedActivityReview ? "Review copied activity reports" : "Paste rows from a spreadsheet"}</DialogTitle>
             <DialogDescription>
               {isCopiedActivityReview
-                ? "Review copied rows before saving."
+                ? "Review and edit the copied activity reports before saving them to the selected DPR."
                 : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
             </DialogDescription>
           </DialogHeader>
@@ -2936,63 +2937,63 @@ export default function CapturePage() {
             "flex-1 flex flex-col gap-2 min-h-0",
             isCopiedActivityReview ? "overflow-hidden" : "overflow-auto",
           )}>
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-y border-border bg-muted/20 px-3 py-1.5">
-              <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground" title="Destination DPR date (DD-MM-YYYY)">
-                DPR date
-              </label>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-y border-border bg-muted/20 px-3 py-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="paste-shift-date" className="text-sm font-medium text-foreground" title="Destination DPR date (DD-MM-YYYY)">
+                  {isCopyFlow ? "DPR date" : <>DPR for Date <span className="font-mono text-xs font-normal text-muted-foreground">(DD-MM-YYYY)</span></>}
+                </label>
                 <DmyDateInput
                   id="paste-shift-date"
                   value={pasteShiftDate}
                   onChange={(value) => setPasteShiftDate(normalizeDate(value) ?? value)}
-                  className={cn("h-9 w-[170px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
+                  className={cn("h-8 w-[155px] text-sm font-mono", pasteShiftDate && !normalizeIsoDate(pasteShiftDate) && "border-red-500 focus-visible:ring-red-500")}
                   ariaLabel="DPR for Date"
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    setCopySourcePickerOpen((open) => !open);
-                    setCopySourceStatus(null);
-                  }}
-                >
-                  <Copy className="h-4 w-4" />
-                  Copy from previous DPR
-                </Button>
-              </div>
-            </div>
-
-            {copySourcePickerOpen && (
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-1.5">
-                <label htmlFor="copy-source-date" className="block text-sm font-medium text-foreground" title="Source DPR date">
-                  Source DPR
-                </label>
-                <DmyDateInput
-                  id="copy-source-date"
-                  value={copySourceDate}
-                  onChange={handleCopySourceDateChange}
-                  className="h-9 w-[170px] text-sm font-mono"
-                  ariaLabel="Copy activity reports from DPR date"
-                />
-              </div>
-            )}
-
-            {copySourceStatus && (
-              <div
-                className={cn(
-                  "flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-xs",
-                  copySourceStatus.tone === "error" && "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300",
-                  copySourceStatus.tone === "warning" && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
-                  copySourceStatus.tone === "success" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-                  copySourceStatus.tone === "loading" && "bg-primary/5 text-primary",
+                {copySourcePickerOpen && (
+                  <>
+                    <span className="text-muted-foreground/50" aria-hidden="true">·</span>
+                    <label htmlFor="copy-source-date" className="text-sm font-medium text-foreground" title="Source DPR date">
+                      Source DPR
+                    </label>
+                    <DmyDateInput
+                      id="copy-source-date"
+                      value={copySourceDate}
+                      onChange={handleCopySourceDateChange}
+                      className="h-8 w-[155px] text-sm font-mono"
+                      ariaLabel="Copy activity reports from DPR date"
+                    />
+                  </>
                 )}
-              >
-                {copySourceStatus.tone === "loading" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Info className="h-4 w-4 shrink-0" />}
-                {copySourceStatus.message}
               </div>
-            )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-auto h-8 gap-2"
+                onClick={() => {
+                  setCopySourcePickerOpen((open) => !open);
+                  setCopySourceStatus(null);
+                }}
+              >
+                <Copy className="h-4 w-4" />
+                Copy from previous DPR
+              </Button>
+              {copySourceStatus && (
+                <div
+                  title={copySourceStatus.message}
+                  className={cn(
+                    "flex min-w-[180px] flex-1 items-center gap-2 truncate rounded-md px-2 py-1 text-xs",
+                    copySourceStatus.tone === "error" && "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300",
+                    copySourceStatus.tone === "warning" && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                    copySourceStatus.tone === "success" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+                    copySourceStatus.tone === "loading" && "bg-primary/5 text-primary",
+                  )}
+                >
+                  {copySourceStatus.tone === "loading" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Info className="h-4 w-4 shrink-0" />}
+                  <span className="truncate">{copySourceStatus.message}</span>
+                </div>
+              )}
+            </div>
 
             {isCopiedActivityReview && copyTeamOptions.length > 0 && (
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-1.5">
