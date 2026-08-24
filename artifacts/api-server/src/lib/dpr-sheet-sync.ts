@@ -3,6 +3,7 @@ import {
   db,
   dprActivitiesTable,
   dprActivityGroupsTable,
+  dprActivityTypesTable,
   dprLocationsTable,
   dprTimesheetEntriesTable,
 } from "@workspace/db";
@@ -18,6 +19,7 @@ export function dprEffectiveDate(entry: { date: unknown; shiftDate?: unknown | n
 
 export function buildCaptureSheetRow(
   entry: {
+    activityTypeId?: number | null;
     activityGroupId: number | null;
     activityId: number | null;
     startTime: string | null;
@@ -28,11 +30,14 @@ export function buildCaptureSheetRow(
   locationName: string | null | undefined,
   activityGroupById: Map<number, string>,
   activityById: Map<number, string>,
+  activityTypeById = new Map<number, string>(),
 ): string[] {
+  const activityType = activityTypeById.get(entry.activityTypeId ?? -1);
+  const activityGroup = activityGroupById.get(entry.activityGroupId ?? -1) ?? activityType ?? "";
   return [
-    activityGroupById.get(entry.activityGroupId ?? -1) ?? "",
+    activityGroup,
     activityById.get(entry.activityId ?? -1)
-      ?? activityGroupById.get(entry.activityGroupId ?? -1)
+      ?? activityGroup
       ?? "",
     locationName ?? "",
     entry.startTime ?? "",
@@ -56,7 +61,7 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
       sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date}) = ${date}`,
     ),
   );
-  const [rows, activityGroups, activities] = await Promise.all([
+  const [rows, activityTypes, activityGroups, activities] = await Promise.all([
     db
       .select({
         entry: dprTimesheetEntriesTable,
@@ -70,10 +75,12 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
         dprTimesheetEntriesTable.startTime,
         dprTimesheetEntriesTable.id,
       ),
+    db.select().from(dprActivityTypesTable),
     db.select().from(dprActivityGroupsTable),
     db.select().from(dprActivitiesTable),
   ]);
 
+  const activityTypeById = new Map(activityTypes.map((item) => [item.id, item.name]));
   const activityGroupById = new Map(activityGroups.map((item) => [item.id, item.name]));
   const activityById = new Map(activities.map((item) => [item.id, item.name]));
   const valuesByDate = new Map(uniqueDates.map((date) => [date, [] as string[][]]));
@@ -82,7 +89,13 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
     const date = dprEffectiveDate(entry);
     const values = valuesByDate.get(date);
     if (!values) continue;
-    values.push(buildCaptureSheetRow(entry, location?.name, activityGroupById, activityById));
+    values.push(buildCaptureSheetRow(
+      entry,
+      location?.name,
+      activityGroupById,
+      activityById,
+      activityTypeById,
+    ));
   }
 
   const syncedRows = await replaceSheetRowsByTab(

@@ -4,6 +4,7 @@ import {
   useListDprTimesheetEntries,
   useListDprTeams,
   useUpdateDprTimesheetEntry,
+  useListDprActivityTypes,
   useListDprActivityGroups,
   useListDprActivities,
   useListDprJdrCodes,
@@ -14,6 +15,7 @@ import {
   getListDprJdrCodesQueryKey,
   DprTimesheetEntry,
   DprActivity,
+  DprActivityType,
   DprActivityGroup,
   DprJdrCode,
   DprTeam,
@@ -66,6 +68,20 @@ function ActivityGroupPill({ name, muted = false }: { name?: string; muted?: boo
       <span className="truncate">{name || "Not set"}</span>
     </span>
   );
+}
+
+function activityLabel(
+  entry: DprTimesheetEntry,
+  activityGroups: DprActivityGroup[],
+  activityTypes: DprActivityType[],
+): string | undefined {
+  const type = activityTypes.find((item) => item.id === entry.activityTypeId);
+  // A non-working entry deliberately has no sub-group. Prefer its selected
+  // type over any stale group that may have been saved by older versions.
+  if (type?.name === "Non-Working Time") return type.name;
+
+  return activityGroups.find((item) => item.id === entry.activityGroupId)?.name
+    ?? type?.name;
 }
 
 function formatDateIfDifferent(raw: string | null | undefined, currentDate: string | null): string | null {
@@ -168,6 +184,7 @@ export default function ClarifyPage() {
 
   const { data: allEntries = [], isLoading: loadingEntries } = useListDprTimesheetEntries();
   const { data: teams = [] } = useListDprTeams();
+  const { data: activityTypes = [] } = useListDprActivityTypes();
   const { data: activityGroups = [] } = useListDprActivityGroups(
     {},
     { query: { queryKey: getListDprActivityGroupsQueryKey({}) } }
@@ -480,6 +497,7 @@ export default function ClarifyPage() {
                       key={entry.id}
                       entry={entry}
                       currentDate={activeDate}
+                      activityTypes={activityTypes}
                       activityGroups={activityGroups}
                       allActivities={allActivities}
                       allJdrCodes={allJdrCodes}
@@ -492,6 +510,7 @@ export default function ClarifyPage() {
                       key={entry.id}
                       entry={entry}
                       currentDate={activeDate}
+                      activityTypes={activityTypes}
                       activityGroups={activityGroups}
                       rowIndex={idx + 1}
                       onUnlock={handleUnlock}
@@ -520,6 +539,7 @@ export default function ClarifyPage() {
 function ClarifiedRow({
   entry,
   currentDate,
+  activityTypes,
   activityGroups,
   rowIndex,
   onUnlock,
@@ -527,6 +547,7 @@ function ClarifiedRow({
 }: {
   entry: DprTimesheetEntry;
   currentDate: string | null;
+  activityTypes: DprActivityType[];
   activityGroups: DprActivityGroup[];
   rowIndex?: number;
   onUnlock: (entry: DprTimesheetEntry) => void;
@@ -536,7 +557,6 @@ function ClarifiedRow({
     { activityId: entry.activityId || undefined },
     { query: { queryKey: getListDprJdrCodesQueryKey({ activityId: entry.activityId || undefined }), enabled: !!entry.activityId } }
   );
-  const group = activityGroups.find(g => g.id === entry.activityGroupId);
   const code = jdrCodes.find(c => entry.jdrCodeIds?.includes(c.id));
 
   return (
@@ -569,7 +589,7 @@ function ClarifiedRow({
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={group?.name} muted /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-[11px] text-muted-foreground")}>{code?.contractualCode || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
@@ -593,9 +613,10 @@ function ClarifiedRow({
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, currentDate, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
+function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
   entry: DprTimesheetEntry;
   currentDate: string | null;
+  activityTypes: DprActivityType[];
   activityGroups: DprActivityGroup[];
   allActivities: DprActivity[];
   allJdrCodes: DprJdrCode[];
@@ -711,8 +732,6 @@ function ClarifyRow({ entry, currentDate, activityGroups, allActivities, allJdrC
 
   const canSave = !!jdrCodeId;
 
-  const group = activityGroups.find(g => g.id === entry.activityGroupId);
-
   return (
     <TableRow className="h-10 hover:bg-muted/20">
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
@@ -743,7 +762,7 @@ function ClarifyRow({ entry, currentDate, activityGroups, allActivities, allJdrC
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={group?.name} /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
         <Combobox
           options={commentOptions}

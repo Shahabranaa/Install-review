@@ -1631,7 +1631,23 @@ export default function CapturePage() {
     if (Object.keys(errors).length) { setNewRowErrors(errors); return; }
     setNewRowErrors({});
     createMutation.mutate(
-      { data: { date: newRow.date, shiftDate: activeDate ?? newRow.date, teamId: newRow.teamId || undefined, startTime: newRow.startTime || undefined, endTime: newRow.endTime || undefined, locationId: newRow.locationId || undefined, notes: newRow.notes || undefined, pax: newRow.pax ?? undefined, activityTypeId: newRow.activityTypeId || undefined, activityGroupId: newRow.activityGroupId || undefined, billingParty: newRow.billingParty || undefined } },
+      {
+        data: {
+          date: newRow.date,
+          shiftDate: activeDate ?? newRow.date,
+          teamId: newRow.teamId || undefined,
+          startTime: newRow.startTime || undefined,
+          endTime: newRow.endTime || undefined,
+          locationId: newRow.locationId || undefined,
+          notes: newRow.notes || undefined,
+          pax: newRow.pax ?? undefined,
+          activityTypeId: newRow.activityTypeId || undefined,
+          activityGroupId: newRow.activityTypeId === workingTypeId
+            ? newRow.activityGroupId || undefined
+            : undefined,
+          billingParty: newRow.billingParty || undefined,
+        },
+      },
       { onSuccess: () => { toast({ title: "Entry created" }); setNewRow(null); setNewRowErrors({}); } }
     );
   };
@@ -1666,7 +1682,11 @@ export default function CapturePage() {
   const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) => {
     saveActivitySelection(entry, {
       activityTypeId,
-      activityGroupId: entry.activityGroupId ?? null,
+      // Sub-groups only apply to Working Time. Keeping the old "Effective"
+      // group here made a Non-Working entry appear as Effective in Clarify.
+      activityGroupId: activityTypeId === workingTypeId
+        ? entry.activityGroupId ?? null
+        : null,
     });
   };
 
@@ -1881,7 +1901,23 @@ export default function CapturePage() {
     const effectiveShiftDate = normalizedShiftDate;
     const results = await Promise.allSettled(
       rowsToSave.map((row) =>
-        createMutation.mutateAsync({ data: { date: row.date, shiftDate: effectiveShiftDate ?? row.date, teamId: row.teamId || undefined, startTime: row.startTime || undefined, endTime: row.endTime || undefined, locationId: row.locationId || undefined, notes: row.notes || undefined, pax: row.pax ?? undefined, activityTypeId: row.activityTypeId || undefined, activityGroupId: row.activityGroupId || undefined, billingParty: row.billingParty || undefined } })
+        createMutation.mutateAsync({
+          data: {
+            date: row.date,
+            shiftDate: effectiveShiftDate ?? row.date,
+            teamId: row.teamId || undefined,
+            startTime: row.startTime || undefined,
+            endTime: row.endTime || undefined,
+            locationId: row.locationId || undefined,
+            notes: row.notes || undefined,
+            pax: row.pax ?? undefined,
+            activityTypeId: row.activityTypeId || undefined,
+            activityGroupId: row.activityTypeId === workingTypeId
+              ? row.activityGroupId || undefined
+              : undefined,
+            billingParty: row.billingParty || undefined,
+          },
+        })
       )
     );
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
@@ -2338,7 +2374,11 @@ export default function CapturePage() {
                         workingTypeId={workingTypeId}
                         typeValue={newRow.activityTypeId}
                         groupValue={newRow.activityGroupId}
-                        onTypeChange={(id) => setNewRow({ ...newRow, activityTypeId: id })}
+                        onTypeChange={(id) => setNewRow({
+                          ...newRow,
+                          activityTypeId: id,
+                          activityGroupId: id === workingTypeId ? newRow.activityGroupId : null,
+                        })}
                         onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id })}
                         onError={(msg) => toast({ title: msg, variant: "destructive" })}
                       />
@@ -2762,7 +2802,12 @@ export default function CapturePage() {
                         <TableCell className="text-sm text-muted-foreground">
                           {(() => {
                             const grp = activityGroups.find((g) => g.id === entry.activityGroupId);
-                            return grp ? (GROUP_LABELS[grp.name] ?? grp.name) : "—";
+                            const type = activityTypes.find((t) => t.id === entry.activityTypeId);
+                            return entry.activityTypeId !== workingTypeId && type
+                              ? (TYPE_LABELS[type.name] ?? type.name)
+                              : grp
+                                ? (GROUP_LABELS[grp.name] ?? grp.name)
+                                : "—";
                           })()}
                         </TableCell>
                         <TableCell className="text-right">

@@ -90,3 +90,24 @@ test("Capture export sends the selected activity group to Lautec, not its broade
     }],
   );
 });
+
+test("Capture export uses the activity type when a non-working row has no sub-group", () => {
+  const sheetRow = buildCaptureSheetRow(
+    {
+      activityTypeId: 9,
+      activityGroupId: null,
+      activityId: null,
+      startTime: "08:00",
+      endTime: "16:00",
+      notes: "Weather delay",
+      teamId: 7,
+    },
+    "Platform A",
+    new Map(),
+    new Map(),
+    new Map([[9, "Non-Working Time"]]),
+  );
+
+  assert.equal(sheetRow[0], "Non-Working Time");
+  assert.equal(sheetRow[1], "Non-Working Time");
+});
