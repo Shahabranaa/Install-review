@@ -13,6 +13,11 @@ export type DprExcelRow = {
   paxRaw: string;
 };
 
+export type DprExcelImport = {
+  rows: DprExcelRow[];
+  skippedNonCurrentRows: number;
+};
+
 const REQUIRED_HEADERS: ReadonlyArray<{ key: string; label: string; aliases: readonly string[] }> = [
   { key: "team", label: "Activity Stream", aliases: ["activity stream"] },
   { key: "activityGroup", label: "Activity Group", aliases: ["activity group"] },
@@ -22,6 +27,7 @@ const REQUIRED_HEADERS: ReadonlyArray<{ key: string; label: string; aliases: rea
   { key: "start", label: "Start", aliases: ["start"] },
   { key: "finish", label: "Finish", aliases: ["finish", "end"] },
   { key: "remarks", label: "Remarks", aliases: ["remarks", "notes"] },
+  { key: "currentRevision", label: "Is Current Revision", aliases: ["is current revision"] },
   {
     key: "pax",
     label: "[CD] PAX working on task",
@@ -90,7 +96,7 @@ function rowHasData(row: CellValue[], indexes: Record<string, number>): boolean 
     .some((key) => cellText(row[indexes[key]]).length > 0);
 }
 
-export async function parseDprExportWorkbook(buffer: ArrayBuffer): Promise<DprExcelRow[]> {
+export async function parseDprExportWorkbook(buffer: ArrayBuffer): Promise<DprExcelImport> {
   const XLSX = await import("xlsx");
   let workbook: WorkBook;
   try {
@@ -123,13 +129,27 @@ export async function parseDprExportWorkbook(buffer: ArrayBuffer): Promise<DprEx
     throw new Error(`DPRExport is missing required columns: ${missing.join(", ")}.`);
   }
 
-  return matrix.slice(1)
+  const dataRows = matrix.slice(1)
     .map((row, index) => ({
       row,
       rowNumber: index + 2,
     }))
-    .filter(({ row }) => rowHasData(row, indexes))
-    .map(({ row, rowNumber }) => ({
+    .filter(({ row }) => rowHasData(row, indexes));
+
+  let skippedNonCurrentRows = 0;
+  const currentRows = dataRows.filter(({ row, rowNumber }) => {
+    const currentRevision = cellText(row[indexes.currentRevision]).toUpperCase();
+    if (currentRevision === "Y") return true;
+    if (currentRevision === "N") {
+      skippedNonCurrentRows += 1;
+      return false;
+    }
+    throw new Error(`DPRExport row ${rowNumber} has an invalid Is Current Revision value. Use Y or N.`);
+  });
+
+  return {
+    skippedNonCurrentRows,
+    rows: currentRows.map(({ row, rowNumber }) => ({
       rowNumber,
       teamRaw: cellText(row[indexes.team]),
       activityGroupRaw: cellText(row[indexes.activityGroup]),
@@ -140,5 +160,6 @@ export async function parseDprExportWorkbook(buffer: ArrayBuffer): Promise<DprEx
       endTime: formatExcelTime(row[indexes.finish]),
       notes: cellText(row[indexes.remarks]),
       paxRaw: cellText(row[indexes.pax]),
-    }));
+    })),
+  };
 }

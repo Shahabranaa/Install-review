@@ -1207,6 +1207,7 @@ export default function CapturePage() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [isExcelReview, setIsExcelReview] = useState(false);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const [excelSkippedNonCurrentRows, setExcelSkippedNonCurrentRows] = useState(0);
   const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
   const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
   const [lautecPreview, setLautecPreview] = useState<LautecImportPreview | null>(null);
@@ -1871,11 +1872,11 @@ export default function CapturePage() {
 
     setIsImportingExcel(true);
     try {
-      const excelRows = await parseDprExportWorkbook(await file.arrayBuffer());
-      if (excelRows.length === 0) throw new Error("The DPRExport sheet does not contain any data rows.");
+      const excelImport = await parseDprExportWorkbook(await file.arrayBuffer());
+      if (excelImport.rows.length === 0) throw new Error("The DPRExport sheet does not contain any current revision rows.");
 
       const rows = parseExcelRowsToPendingRows(
-        excelRows,
+        excelImport.rows,
         teams,
         locations,
         activityGroups,
@@ -1893,6 +1894,7 @@ export default function CapturePage() {
       setCopyExcludedTeamKeys([]);
       setCopySourceStatus(null);
       copySourceSelectionRef.current = null;
+      setExcelSkippedNonCurrentRows(excelImport.skippedNonCurrentRows);
       setIsExcelReview(true);
       setPendingRows(rows);
       setPasteOpen(true);
@@ -1909,6 +1911,7 @@ export default function CapturePage() {
 
   const openPasteDialog = () => {
     setIsExcelReview(false);
+    setExcelSkippedNonCurrentRows(0);
     setPasteShiftDate(activeDate ?? "");
     setCopySourcePickerOpen(false);
     setCopySourceDate("");
@@ -1996,6 +1999,7 @@ export default function CapturePage() {
   const closePasteDialog = () => {
     setPasteOpen(false);
     setIsExcelReview(false);
+    setExcelSkippedNonCurrentRows(0);
     setPasteText("");
     setPasteShiftDate("");
     setPendingRows(null);
@@ -3232,7 +3236,7 @@ export default function CapturePage() {
               {isCopiedActivityReview
                 ? "Review and edit the copied activity reports before saving them to the selected DPR."
                 : isExcelReview
-                  ? "Review the rows read from the DPRExport sheet. Activity Stream, Activity Group, Activity, Location, DPR Date, Start, Finish, Remarks, and PAX have been mapped below."
+                  ? "Review the current-revision rows read from the DPRExport sheet. Activity Stream, Activity Group, Activity, Location, DPR Date, Start, Finish, Remarks, and PAX have been mapped below."
                   : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
             </DialogDescription>
           </DialogHeader>
@@ -3297,6 +3301,15 @@ export default function CapturePage() {
                 </div>
               )}
             </div>
+
+            {isExcelReview && (
+              <div className="flex shrink-0 items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200">
+                <Info className="h-4 w-4 shrink-0" />
+                {excelSkippedNonCurrentRows > 0
+                  ? `${excelSkippedNonCurrentRows} superseded revision${excelSkippedNonCurrentRows === 1 ? "" : "s"} excluded. Only rows marked Is Current Revision = Y are shown.`
+                  : "Only rows marked Is Current Revision = Y are shown."}
+              </div>
+            )}
 
             {isCopiedActivityReview && copyTeamOptions.length > 0 && (
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-1.5">
