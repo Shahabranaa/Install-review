@@ -502,7 +502,7 @@ export default function SignOnPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Stats bar */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/20 flex-wrap">
         <StatChip label="On Shift" count={byStatus.on_shift.length + byStatus.signing_on.length} />
@@ -510,7 +510,7 @@ export default function SignOnPage() {
         <span className="mx-1 text-border">|</span>
         <StatChip label="Total on site" count={totalOnSite} highlight />
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {confirmReset ? (
             <div className="flex items-center gap-1">
               <span className="text-xs text-destructive font-medium">Move all to Off Shift?</span>
@@ -558,7 +558,7 @@ export default function SignOnPage() {
       </div>
 
       {/* 2-panel board: On Shift | Off Shift */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <ShiftPanel
           panel="on_shift"
           transitioning={byStatus.signing_on}

@@ -699,10 +699,10 @@ export default function JdrMappingPage() {
   const visibleLocations = showAllLocations ? locations : locations.slice(0, LOCATION_PAGE);
 
   return (
-    <div className="flex flex-col h-full bg-muted/20">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
 
       {/* ── Page header ─────────────────────────────────────────────── */}
-      <header className="px-5 py-3.5 border-b border-border/70 shrink-0 bg-card flex items-center gap-4">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/70 bg-card px-4 py-3.5 sm:px-5">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
             <Network className="w-3.5 h-3.5 text-primary" />
@@ -713,10 +713,10 @@ export default function JdrMappingPage() {
           </div>
         </div>
 
-        <div className="flex-1" />
+        <div className="hidden flex-1 sm:block" />
 
         {/* Search */}
-        <div className="relative w-56">
+        <div className="relative w-full sm:w-56">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
           <Input
             value={search}
@@ -740,7 +740,8 @@ export default function JdrMappingPage() {
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
           {/* ══ Tab bar ══ */}
-          <div className="flex items-center gap-0 px-4 border-b border-border/50 bg-background shrink-0">
+          <div className="shrink-0 overflow-x-auto border-b border-border/50 bg-background px-4">
+            <div className="flex min-w-max items-center gap-0">
             {([ 
               { id: "teams",      label: "Teams",      icon: <Users className="w-3.5 h-3.5" />,   count: teams.length },
               { id: "locations",  label: "Locations",  icon: <MapPin className="w-3.5 h-3.5" />,  count: locations.length },
@@ -765,11 +766,12 @@ export default function JdrMappingPage() {
                 {tab.count !== null && <span className="text-[10px] text-muted-foreground/50 font-mono ml-0.5">({tab.count})</span>}
               </button>
             ))}
+            </div>
           </div>
 
           {/* ══ Tab content ══ */}
           {activeTab !== "activities" ? (
-            <div className="flex-1 min-h-0 overflow-y-auto p-6">
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-4 sm:p-6">
 
               {/* ── Teams ── */}
               {activeTab === "teams" && (

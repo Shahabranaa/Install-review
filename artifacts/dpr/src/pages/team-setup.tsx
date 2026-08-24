@@ -1019,9 +1019,9 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="px-4 py-2 border-b border-border flex items-center gap-3 flex-none bg-background">
+      <div className="flex flex-none flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="text-xs text-muted-foreground">
@@ -1031,7 +1031,7 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
           {roster && <RosterStats roster={roster} />}
         </div>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button
             variant="ghost" size="sm"
             className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
@@ -1080,7 +1080,7 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
           signOnSaved={signOnSaved}
         />
       ) : (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <AvailablePanel
             workers={roster?.unassigned ?? []}
             selectedId={selectedWorkerId}
@@ -1088,7 +1088,7 @@ function RosterBoard({ date, signOnSaved }: { date: string; signOnSaved: boolean
           />
 
           {/* Paired columns */}
-          <div className="flex flex-1 overflow-x-auto overflow-y-hidden bg-background">
+          <div className="flex min-h-0 flex-1 overflow-auto overscroll-contain bg-background">
             {groups.map(([teamA, teamB, teamC], i) => (
               <TeamGroupColumn
                 key={i}
@@ -1663,11 +1663,11 @@ export default function TeamSetupPage() {
   const signOnSaved = session?.saved ?? false;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <Tabs defaultValue="sign-on" className="flex flex-col flex-1 min-h-0">
-        <div className="border-b border-border px-6 pt-4 flex-none">
+        <div className="flex-none overflow-x-auto border-b border-border px-4 pt-4 sm:px-6">
           <h1 className="text-xl font-bold mb-3">Team Setup</h1>
-          <TabsList className="h-8">
+          <TabsList className="h-8 w-max">
             <TabsTrigger value="sign-on" className="text-xs px-4">Sign On</TabsTrigger>
             <TabsTrigger value="roster" className="text-xs px-4">Workers</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs px-4">Schedule</TabsTrigger>
@@ -1684,11 +1684,11 @@ export default function TeamSetupPage() {
           <RosterBoard date={date} signOnSaved={signOnSaved} />
         </TabsContent>
 
-        <TabsContent value="schedule" className="flex-1 flex flex-col min-h-0 overflow-auto m-0 data-[state=inactive]:hidden">
+        <TabsContent value="schedule" className="flex-1 flex flex-col min-h-0 overflow-auto overscroll-contain m-0 data-[state=inactive]:hidden">
           <ScheduleTab date={date} teams={teams} />
         </TabsContent>
 
-        <TabsContent value="teams" className="flex-1 flex flex-col min-h-0 overflow-auto m-0 data-[state=inactive]:hidden">
+        <TabsContent value="teams" className="flex-1 flex flex-col min-h-0 overflow-auto overscroll-contain m-0 data-[state=inactive]:hidden">
           <TeamsSetupTab teams={teams} isLoading={teamsLoading} />
         </TabsContent>
 

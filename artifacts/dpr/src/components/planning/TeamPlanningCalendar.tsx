@@ -376,9 +376,9 @@ export function TeamPlanningCalendar() {
   const isLoading = teamsLoading || plansLoading;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Week navigation */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-border flex-none">
+      <div className="flex flex-none flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
         <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setWeekStart(d => addDays(d, -7))}>
           <ChevronLeft className="w-4 h-4" />
         </Button>
@@ -400,7 +400,7 @@ export function TeamPlanningCalendar() {
       </div>
 
       {/* Calendar grid */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
         <div className="min-w-max">
           {/* Header row */}
           <div className="flex sticky top-0 z-10 border-b border-border bg-background">

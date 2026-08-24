@@ -128,7 +128,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <div
       className={cn(
-        "border-r border-border bg-sidebar flex flex-col h-[100dvh] flex-shrink-0 transition-[width] duration-200 ease-in-out overflow-hidden",
+        "border-r border-border bg-sidebar flex flex-col h-[100dvh] min-h-0 flex-shrink-0 transition-[width] duration-200 ease-in-out overflow-hidden",
         collapsed ? "w-12" : "w-64"
       )}
     >
@@ -157,9 +157,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
-      {/* ── Recent dates (expanded only) ── */}
-      {!collapsed && (
-        <div className="px-3 pt-2.5 pb-2 border-b border-border shrink-0">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* ── Recent dates (expanded only) ── */}
+        {!collapsed && (
+          <div className="px-3 pt-2.5 pb-2 border-b border-border">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/35 mb-1 px-0.5">Recent</p>
           <div className="space-y-0.5">
             {Array.from({ length: 7 }, (_, i) => {
@@ -204,12 +205,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               );
             })}
           </div>
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* ── Calendar (expanded only) ── */}
-      {!collapsed && (
-        <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
+        {/* ── Calendar (expanded only) ── */}
+        {!collapsed && (
+          <div className="px-3 pt-3 pb-2 border-b border-border">
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-2 px-0.5">
             <button
@@ -326,11 +327,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* spacer pushes footer to bottom */}
-      <div className="flex-1" />
+          </div>
+        )}
+      </div>
 
       {/* ── Footer ── */}
       <div className={cn("border-t border-border shrink-0", collapsed ? "p-2 flex flex-col items-center gap-2" : "p-4")}>

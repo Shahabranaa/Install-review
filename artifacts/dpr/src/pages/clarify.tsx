@@ -129,8 +129,8 @@ function ClarifyPills({
 
   if (!activeDate) {
     return (
-      <div className="px-6 py-2 border-b border-border bg-background shrink-0">
-        <div className="flex items-center flex-wrap gap-1.5">
+      <div className="shrink-0 overflow-x-auto overscroll-contain border-b border-border bg-background px-4 sm:px-6 py-2">
+        <div className="flex min-w-max items-center gap-1.5">
           <span className="text-xs text-muted-foreground shrink-0 w-8">Team</span>
           {teams.map(t => renderPill(t))}
         </div>
@@ -142,15 +142,15 @@ function ClarifyPills({
   const doneTeams = teams.filter(t => (pendingByTeam.get(t.id) ?? 0) === 0);
 
   return (
-    <div className="px-6 py-2 border-b border-border bg-background shrink-0 flex flex-col gap-1.5">
-      <div className="flex items-center flex-wrap gap-1.5">
+    <div className="shrink-0 overflow-x-auto overscroll-contain border-b border-border bg-background px-4 sm:px-6 py-2">
+      <div className="flex min-w-max items-center gap-1.5">
         <span className="text-xs text-muted-foreground shrink-0 w-8">To do</span>
         {todoTeams.length > 0
           ? todoTeams.map(t => renderPill(t))
           : <span className="text-xs text-muted-foreground italic">none</span>}
       </div>
       {doneTeams.length > 0 && (
-        <div className="flex items-center flex-wrap gap-1.5">
+        <div className="mt-1.5 flex min-w-max items-center gap-1.5">
           <span className="text-xs text-muted-foreground shrink-0 w-8">Done</span>
           {doneTeams.map(t => renderPill(t))}
         </div>
@@ -349,7 +349,7 @@ export default function ClarifyPage() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* ── Header — matches Capture exactly ── */}
       <header className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex flex-wrap items-center justify-between gap-y-2 gap-x-3 shrink-0">
         <div>
@@ -358,7 +358,7 @@ export default function ClarifyPage() {
             Categorize raw timesheet entries against JDR codes.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="w-2 h-2 rounded-full bg-primary" />
           <span className="text-sm font-medium">{totalPending} Pending</span>
           <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5 ml-2">
@@ -368,7 +368,7 @@ export default function ClarifyPage() {
         </div>
       </header>
 
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* ── Team pills — mirrors Capture's FilterPills ── */}
       <ClarifyPills
         teams={lockedTeams}
@@ -380,7 +380,7 @@ export default function ClarifyPage() {
 
       {/* ── Filter / context bar ── */}
       <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           {activeDate || activeTeamId !== null ? (
             <>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -415,7 +415,7 @@ export default function ClarifyPage() {
       </div>
 
       {/* ── Main content — flat table ── */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
         {loadingEntries && filteredGroups.length === 0 ? (
           <div className="flex justify-center p-12">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />

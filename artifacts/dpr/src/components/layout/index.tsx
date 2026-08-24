@@ -51,7 +51,7 @@ function DprHeader() {
   const capturedCount = dateStats?.captured ?? 0;
 
   return (
-    <div className="border-b border-border bg-background shrink-0 flex items-center gap-2.5 px-3 py-2">
+    <div className="border-b border-border bg-background shrink-0 flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
       <button
         onClick={() => navigate(-1)}
         className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -59,7 +59,7 @@ function DprHeader() {
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
-      <span className="font-semibold text-sm text-foreground">{dateLabel}</span>
+      <span className="min-w-0 truncate font-semibold text-sm text-foreground">{dateLabel}</span>
       {isComplete && (
         <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 text-xs font-medium">
           <CheckCircle2 className="w-3 h-3" />
@@ -130,8 +130,8 @@ function TopNav() {
 
 
   return (
-    <nav className="border-b border-border bg-background shrink-0 px-2">
-      <div className="flex items-stretch">
+    <nav className="shrink-0 overflow-x-auto border-b border-border bg-background px-2">
+      <div className="flex min-w-max items-stretch">
         {tabs
           .filter((t) => t.show)
           .map((tab) => (
@@ -139,7 +139,7 @@ function TopNav() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+                "flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
                 tab.active
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
@@ -178,9 +178,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <CaptureNavProvider>
-      <div className="flex min-h-[100dvh] w-full bg-background overflow-hidden text-foreground">
+      <div className="flex h-[100dvh] min-h-0 w-full max-w-full overflow-hidden bg-background text-foreground">
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden min-w-0">
+        <main className="flex h-[100dvh] min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <DprHeader />
           <TopNav />
           {children}

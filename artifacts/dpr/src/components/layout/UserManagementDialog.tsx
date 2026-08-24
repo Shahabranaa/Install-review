@@ -377,7 +377,7 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
   return (
     <>
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-        <SheetContent side="left" className="w-[400px] sm:max-w-[400px] flex flex-col p-0">
+        <SheetContent side="left" className="flex h-[100dvh] w-[min(400px,100vw)] min-h-0 flex-col p-0 sm:max-w-[400px]">
           <SheetHeader className="px-5 pt-5 pb-4 border-b border-border/50">
             <div className="flex items-center justify-between">
               <SheetTitle className="text-base">User Management</SheetTitle>
@@ -390,7 +390,7 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
             </p>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {isLoading ? (
               <div className="flex items-center justify-center h-24 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin" />

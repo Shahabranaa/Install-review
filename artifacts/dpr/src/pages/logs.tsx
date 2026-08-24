@@ -121,11 +121,11 @@ export default function LogsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* ── Toolbar ── */}
-      <div className="shrink-0 border-b border-border px-6 py-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div>
+      <div className="flex shrink-0 flex-col gap-3 border-b border-border px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-lg font-semibold">Activity Log</h1>
             <p className="text-sm text-muted-foreground">All changes made on Capture and Clarify</p>
           </div>
@@ -173,7 +173,7 @@ export default function LogsPage() {
       </div>
 
       {/* ── Log list ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {isLoading ? (
           <div className="flex items-center justify-center h-40 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -195,7 +195,7 @@ export default function LogsPage() {
               {items.map((log) => (
                 <div
                   key={log.id}
-                  className="flex gap-4 px-6 py-3.5 border-b border-border/30 hover:bg-muted/20 transition-colors"
+                  className="flex flex-col gap-2 border-b border-border/30 px-4 py-3.5 transition-colors hover:bg-muted/20 sm:flex-row sm:gap-4 sm:px-6"
                 >
                   {/* Actor avatar */}
                   <div className="w-8 h-8 rounded-full bg-sidebar-accent border border-border flex items-center justify-center text-xs font-bold uppercase shrink-0 mt-0.5">
@@ -214,7 +214,7 @@ export default function LogsPage() {
                   </div>
 
                   {/* Timestamp */}
-                  <div className="shrink-0 text-right">
+                  <div className="self-end text-right sm:self-auto">
                     <p className="text-xs text-muted-foreground">{format(new Date(log.createdAt), "HH:mm")}</p>
                     <p className="text-[10px] text-muted-foreground/50">
                       {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
@@ -229,7 +229,7 @@ export default function LogsPage() {
 
       {/* ── Footer count ── */}
       {filtered.length > 0 && (
-        <div className="shrink-0 px-6 py-2 border-t border-border/40 text-xs text-muted-foreground">
+        <div className="shrink-0 border-t border-border/40 px-4 py-2 text-xs text-muted-foreground sm:px-6">
           {filtered.length} entr{filtered.length === 1 ? "y" : "ies"}
           {logs.length > filtered.length ? ` of ${logs.length}` : ""}
         </div>

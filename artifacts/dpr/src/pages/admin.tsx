@@ -31,8 +31,8 @@ export default function AdminPage() {
   const [userManagementOpen, setUserManagementOpen] = useState(false);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-muted/10">
-      <div className="max-w-5xl mx-auto px-5 sm:px-8 py-8 sm:py-12">
+    <div className="min-h-0 flex-1 overflow-auto overscroll-contain bg-muted/10">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-12">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between mb-8">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-primary mb-3">
@@ -73,11 +73,11 @@ export default function AdminPage() {
 
         <section className="mt-8 rounded-xl border border-border bg-background p-5 sm:p-6 shadow-sm" aria-labelledby="user-management-heading">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3">
+            <div className="flex min-w-0 gap-3">
               <div className="w-10 h-10 shrink-0 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
                 <UsersRound className="w-5 h-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 id="user-management-heading" className="font-semibold">User Management</h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   Invite reviewers, update user details, reset passwords, and manage access.
@@ -91,7 +91,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <div className="mt-8 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-8 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <ClipboardList className="w-3.5 h-3.5" />
           Capture, Clarify, and Lautec CSV exports remain available in the main DPR workspace.
         </div>
