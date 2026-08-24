@@ -21,6 +21,7 @@ import {
   DprTimesheetEntry,
   DprTeam,
   DprLocation,
+  DprActivity,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DateCalendar } from "@/components/ui/calendar";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy, FileSpreadsheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,7 @@ import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { compareDprRows } from "@/lib/sorting";
+import { DprExcelRow, parseDprExportWorkbook } from "@/lib/dpr-excel";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -465,6 +467,8 @@ type PendingRow = {
   activityTypeId: number | null;
   activityGroupId: number | null;
   activityId: number | null;
+  importedActivityGroupRaw?: string;
+  importedActivityRaw?: string;
   billingParty: BillingParty;
 };
 
@@ -535,6 +539,53 @@ function parsePastedText(
       activityTypeId: defaultActivityTypeId,
       activityGroupId: defaultGroupId,
       activityId: null,
+      billingParty: null,
+    };
+  });
+}
+
+function parseExcelRowsToPendingRows(
+  rows: DprExcelRow[],
+  teams: DprTeam[],
+  locations: DprLocation[],
+  activityGroups: { id: number; name: string; activityTypeId?: number | null }[],
+  activities: DprActivity[],
+  defaultActivityTypeId: number | null,
+  defaultGroupId: number | null,
+  workingTypeId: number | null,
+): PendingRow[] {
+  return rows.map((row, index) => {
+    const team = findByNameFuzzy(teams, row.teamRaw);
+    const location = findByNameFuzzy(locations, row.locationRaw);
+    const activityGroup = findByNameFuzzy(activityGroups, row.activityGroupRaw);
+    const activitiesInGroup = activityGroup
+      ? activities.filter((activity) => activity.activityGroupId === activityGroup.id)
+      : activities;
+    const activity = findByNameFuzzy(activitiesInGroup, row.activityRaw);
+    const resolvedGroup = activityGroup
+      ?? activityGroups.find((group) => group.id === activity?.activityGroupId);
+    const activityTypeId = resolvedGroup?.activityTypeId ?? defaultActivityTypeId;
+
+    return {
+      key: `excel-${Date.now()}-${row.rowNumber}-${index}`,
+      date: normalizeDate(row.dateRaw),
+      dateRaw: row.dateRaw,
+      teamId: team?.id ?? null,
+      teamRaw: row.teamRaw,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      locationId: location?.id ?? null,
+      locationRaw: row.locationRaw,
+      notes: row.notes,
+      pax: normalizePax(row.paxRaw),
+      paxRaw: row.paxRaw,
+      activityTypeId,
+      activityGroupId: activityTypeId === workingTypeId
+        ? resolvedGroup?.id ?? defaultGroupId
+        : null,
+      activityId: activity?.id ?? null,
+      importedActivityGroupRaw: row.activityGroupRaw,
+      importedActivityRaw: row.activityRaw,
       billingParty: null,
     };
   });
@@ -1154,6 +1205,8 @@ export default function CapturePage() {
   const lastSavedCellRef = useRef<{ entryId: number; field: string } | null>(null);
 
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [isExcelReview, setIsExcelReview] = useState(false);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
   const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
   const [lautecPreview, setLautecPreview] = useState<LautecImportPreview | null>(null);
@@ -1178,6 +1231,7 @@ export default function CapturePage() {
   const [isSavingBulk, setIsSavingBulk] = useState(false);
   const [highlightEntryId, setHighlightEntryId] = useState<number | null>(null);
   const pasteTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
   const pendingRowsRef = useRef<PendingRow[] | null>(null);
   const pasteShiftDateRef = useRef("");
   const copySourceSelectionRef = useRef<string | null>(null);
@@ -1810,7 +1864,51 @@ export default function CapturePage() {
     setPendingRows(parsePastedText(text, teams, locations, defaultActivityTypeId, defaultGroupId));
   };
 
+  const handleExcelFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsImportingExcel(true);
+    try {
+      const excelRows = await parseDprExportWorkbook(await file.arrayBuffer());
+      if (excelRows.length === 0) throw new Error("The DPRExport sheet does not contain any data rows.");
+
+      const rows = parseExcelRowsToPendingRows(
+        excelRows,
+        teams,
+        locations,
+        activityGroups,
+        activities,
+        defaultActivityTypeId,
+        defaultGroupId,
+        workingTypeId,
+      );
+      const firstDate = rows.find((row) => row.date)?.date ?? "";
+      setPasteText("");
+      setPasteShiftDate(activeDate ?? firstDate);
+      setCopySourcePickerOpen(false);
+      setCopySourceDate("");
+      setPendingCopy(null);
+      setCopyExcludedTeamKeys([]);
+      setCopySourceStatus(null);
+      copySourceSelectionRef.current = null;
+      setIsExcelReview(true);
+      setPendingRows(rows);
+      setPasteOpen(true);
+    } catch (error) {
+      toast({
+        title: "Excel upload failed",
+        description: error instanceof Error ? error.message : "The workbook could not be imported.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImportingExcel(false);
+    }
+  };
+
   const openPasteDialog = () => {
+    setIsExcelReview(false);
     setPasteShiftDate(activeDate ?? "");
     setCopySourcePickerOpen(false);
     setCopySourceDate("");
@@ -1897,6 +1995,7 @@ export default function CapturePage() {
 
   const closePasteDialog = () => {
     setPasteOpen(false);
+    setIsExcelReview(false);
     setPasteText("");
     setPasteShiftDate("");
     setPendingRows(null);
@@ -1976,6 +2075,10 @@ export default function CapturePage() {
       && row.date !== normalizedPasteDprDate
       && row.date !== overnightPasteDate,
   ) ?? [];
+  const hasUnresolvedExcelActivities = isExcelReview && (pendingRows?.some((row) => (
+    Boolean(row.importedActivityGroupRaw && !findByNameFuzzy(activityGroups, row.importedActivityGroupRaw))
+    || Boolean(row.importedActivityRaw && !row.activityId)
+  )) ?? false);
   // Keep the copied-review layout active after the user excludes every row.
   // `pendingRows` remains an empty array in that state so the dialog can show
   // the empty review state instead of switching back to the paste flow.
@@ -2084,6 +2187,13 @@ export default function CapturePage() {
         </div>
         {captureTab === "timesheet" && (
           <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={handleExcelFileChange}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -2092,6 +2202,17 @@ export default function CapturePage() {
             >
               <CheckSquare className="w-4 h-4" />
               <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => excelInputRef.current?.click()}
+              disabled={isImportingExcel}
+              className="gap-1.5"
+              title="Upload an Excel DPRExport workbook"
+            >
+              {isImportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+              <span className="hidden xs:inline">Upload Excel</span>
             </Button>
              <Button variant="outline" size="sm" onClick={openPasteDialog} className="gap-1.5">
               <ClipboardPaste className="w-4 h-4" />
@@ -3100,11 +3221,19 @@ export default function CapturePage() {
           isCopiedActivityReview && "max-w-[98vw] max-h-[94vh]",
         )}>
           <DialogHeader>
-            <DialogTitle>{isCopiedActivityReview ? "Review copied activity reports" : "Paste rows from a spreadsheet"}</DialogTitle>
+            <DialogTitle>
+              {isCopiedActivityReview
+                ? "Review copied activity reports"
+                : isExcelReview
+                  ? "Review Excel rows"
+                  : "Paste rows from a spreadsheet"}
+            </DialogTitle>
             <DialogDescription>
               {isCopiedActivityReview
                 ? "Review and edit the copied activity reports before saving them to the selected DPR."
-                : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
+                : isExcelReview
+                  ? "Review the rows read from the DPRExport sheet. Activity Stream, Activity Group, Activity, Location, DPR Date, Start, Finish, Remarks, and PAX have been mapped below."
+                  : "Copy rows from your source sheet (Date, Team, Start, End, Location, Notes, PAX). For six-column rows, a number at the end of Notes is treated as PAX."}
             </DialogDescription>
           </DialogHeader>
 
@@ -3140,16 +3269,18 @@ export default function CapturePage() {
                   </>
                 )}
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="ml-auto h-8 gap-2"
-                 onClick={toggleCopySourcePicker}
-              >
-                <Copy className="h-4 w-4" />
-                Copy from previous DPR
-              </Button>
+              {!isExcelReview && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-8 gap-2"
+                  onClick={toggleCopySourcePicker}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy from previous DPR
+                </Button>
+              )}
               {copySourceStatus && (
                 <div
                   title={copySourceStatus.message}
@@ -3230,7 +3361,7 @@ export default function CapturePage() {
               </div>
             )}
 
-            {!isCopiedActivityReview && (
+            {!isCopiedActivityReview && !isExcelReview && (
               <>
                 <Textarea
                   ref={pasteTextareaRef}
@@ -3257,16 +3388,18 @@ export default function CapturePage() {
               )}>
                 <table className={cn(
                   "w-full table-fixed border-collapse text-xs",
-                  isCopiedActivityReview ? "min-w-[1040px]" : "min-w-[980px]",
+                  isExcelReview ? "min-w-[1380px]" : isCopiedActivityReview ? "min-w-[1040px]" : "min-w-[980px]",
                 )}>
                   <colgroup>
-                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
-                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
-                    <col className={isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
-                    <col className={isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
-                    <col className={isCopiedActivityReview ? "w-[16%]" : "w-[17%]"} />
-                    <col className={isCopiedActivityReview ? "w-[20%]" : "w-[21%]"} />
-                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    <col className={isExcelReview ? "w-[10%]" : isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    <col className={isExcelReview ? "w-[11%]" : isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    <col className={isExcelReview ? "w-[7%]" : isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
+                    <col className={isExcelReview ? "w-[7%]" : isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
+                    <col className={isExcelReview ? "w-[12%]" : isCopiedActivityReview ? "w-[16%]" : "w-[17%]"} />
+                    {isExcelReview && <col className="w-[15%]" />}
+                    {isExcelReview && <col className="w-[18%]" />}
+                    <col className={isExcelReview ? "w-[14%]" : isCopiedActivityReview ? "w-[20%]" : "w-[21%]"} />
+                    <col className={isExcelReview ? "w-[6%]" : isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
                     {isCopiedActivityReview && <col className="w-[7%]" />}
                   </colgroup>
                   <thead className="sticky top-0 z-10 bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -3277,6 +3410,7 @@ export default function CapturePage() {
                         "Start",
                         "End",
                         "Location",
+                        ...(isExcelReview ? ["Activity Group", "Activity"] : []),
                         "Notes",
                         "PAX working on task",
                         ...(isCopiedActivityReview ? ["Action"] : []),
@@ -3306,6 +3440,10 @@ export default function CapturePage() {
                         && row.date !== overnightPasteDate,
                       );
                       const invalidPax = Boolean(row.paxRaw.trim() && row.pax === null);
+                      const activityGroupUnmatched = isExcelReview
+                        && Boolean(row.importedActivityGroupRaw && !findByNameFuzzy(activityGroups, row.importedActivityGroupRaw));
+                      const activityUnmatched = isExcelReview
+                        && Boolean(row.importedActivityRaw && !row.activityId);
                       return (
                         <tr key={row.key} className="bg-background">
                           <td className={cn("border border-slate-400 p-0 dark:border-slate-600", (invalidDate || invalidDprDate) && "bg-red-50 dark:bg-red-950/30")}>
@@ -3372,6 +3510,56 @@ export default function CapturePage() {
                               {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
                             </select>
                           </td>
+                          {isExcelReview && (
+                            <td className={cn("border border-slate-400 p-1 dark:border-slate-600", activityGroupUnmatched && "bg-amber-50 dark:bg-amber-950/30")}>
+                              <ActivityGroupPicker
+                                allowedTypes={allowedTypes}
+                                allowedGroups={allowedGroups}
+                                workingTypeId={workingTypeId}
+                                typeValue={row.activityTypeId}
+                                groupValue={row.activityGroupId}
+                                onTypeChange={(activityTypeId) => updatePendingRow(row.key, {
+                                  activityTypeId,
+                                  activityGroupId: activityTypeId === workingTypeId ? row.activityGroupId : null,
+                                  activityId: null,
+                                  importedActivityGroupRaw: undefined,
+                                  importedActivityRaw: undefined,
+                                })}
+                                onGroupChange={(activityGroupId) => updatePendingRow(row.key, {
+                                  activityGroupId,
+                                  activityId: null,
+                                  importedActivityGroupRaw: undefined,
+                                  importedActivityRaw: undefined,
+                                })}
+                                onError={(message) => toast({ title: message, variant: "destructive" })}
+                              />
+                            </td>
+                          )}
+                          {isExcelReview && (
+                            <td className={cn("border border-slate-400 p-1 dark:border-slate-600", activityUnmatched && "bg-amber-50 dark:bg-amber-950/30")}>
+                              <Combobox
+                                options={activityOptionsFor(row.activityTypeId, row.activityGroupId)}
+                                value={row.activityId?.toString() || ""}
+                                onValueChange={(value) => {
+                                  const activity = activities.find((item) => item.id === parseInt(value));
+                                  const group = activityGroups.find((item) => item.id === activity?.activityGroupId);
+                                  if (!activity || !group) return;
+                                  updatePendingRow(row.key, {
+                                    activityTypeId: group.activityTypeId ?? row.activityTypeId,
+                                    activityGroupId: group.activityTypeId === workingTypeId ? group.id : null,
+                                    activityId: activity.id,
+                                    importedActivityGroupRaw: undefined,
+                                    importedActivityRaw: undefined,
+                                  });
+                                }}
+                                placeholder={activityUnmatched ? row.importedActivityRaw : "Select activity"}
+                                searchPlaceholder="Search activities..."
+                                emptyText="No activities for this group."
+                                className="w-full"
+                                triggerClassName={cn("h-7 w-full px-2 text-[11px]", activityUnmatched && "text-amber-700 dark:text-amber-300")}
+                              />
+                            </td>
+                          )}
                           <td className="border border-slate-400 p-0 dark:border-slate-600">
                             <input
                               aria-label="Notes"
@@ -3411,7 +3599,7 @@ export default function CapturePage() {
                     })}
                     {visiblePendingRows.length === 0 && (
                       <tr>
-                        <td colSpan={isCopiedActivityReview ? 8 : 7} className="border border-slate-400 px-3 py-8 text-center text-xs text-muted-foreground dark:border-slate-600">
+                        <td colSpan={isExcelReview ? 9 : isCopiedActivityReview ? 8 : 7} className="border border-slate-400 px-3 py-8 text-center text-xs text-muted-foreground dark:border-slate-600">
                           {isCopiedActivityReview && pendingRows?.length === 0
                             ? "All copied activities have been excluded from this entry."
                             : "No copied activities match the selected teams. Use the Teams filter to select at least one team."}
@@ -3444,7 +3632,7 @@ export default function CapturePage() {
             {invalidPasteDateRows.length > 0 && normalizedPasteDprDate && (
               <div className="flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                Pasted dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)} or {formatDateAsDmyHyphen(overnightPasteDate ?? "")}. Highlighted dates must be corrected before saving.
+                {isExcelReview ? "Imported" : "Pasted"} dates must be {formatDateAsDmyHyphen(normalizedPasteDprDate)} or {formatDateAsDmyHyphen(overnightPasteDate ?? "")}. Highlighted dates must be corrected before saving.
               </div>
             )}
             {pendingRows && pendingRows.some((r) => r.paxRaw.trim() && r.pax === null) && (
@@ -3459,6 +3647,12 @@ export default function CapturePage() {
                 Some teams or locations didn't match — select a valid value for every highlighted cell before saving.
               </div>
             )}
+            {hasUnresolvedExcelActivities && (
+              <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-md px-3 py-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Some Activity Groups or Activities didn't match — select a valid value for every highlighted cell before saving.
+              </div>
+            )}
           </div>
 
           <DialogFooter className="shrink-0">
@@ -3470,7 +3664,7 @@ export default function CapturePage() {
               </Badge>
             )}
             <Button variant="outline" onClick={closePasteDialog}>Cancel</Button>
-            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || !normalizedPasteDprDate || invalidPasteDateRows.length > 0 || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
+            <Button onClick={handleSaveBulk} disabled={!pendingRows || pendingRows.length === 0 || isSavingBulk || !normalizedPasteDprDate || invalidPasteDateRows.length > 0 || hasUnresolvedExcelActivities || (pendingRows?.some((r) => !r.date) ?? false) || (pendingRows?.some((r) => r.paxRaw.trim() && r.pax === null) ?? false) || (pendingRows?.some((r) => (r.teamRaw && !r.teamId) || (r.locationRaw && !r.locationId)) ?? false)} className="gap-2">
               {isSavingBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save {pendingRows?.length ?? 0} Row{pendingRows?.length === 1 ? "" : "s"}
             </Button>
