@@ -1874,7 +1874,10 @@ export default function CapturePage() {
       && row.date !== normalizedPasteDprDate
       && row.date !== overnightPasteDate,
   ) ?? [];
-  const isCopiedActivityReview = copySourceStatus?.tone === "success" && Boolean(pendingRows?.length);
+  // Keep the copied-review layout active after the user excludes every row.
+  // `pendingRows` remains an empty array in that state so the dialog can show
+  // the empty review state instead of switching back to the paste flow.
+  const isCopiedActivityReview = copySourceStatus?.tone === "success" && pendingRows !== null;
   const isCopyFlow = isCopiedActivityReview || copySourcePickerOpen;
   const copyTeamOptions = useMemo(() => {
     if (!isCopiedActivityReview || !pendingRows) return [];
@@ -3101,24 +3104,37 @@ export default function CapturePage() {
               </>
             )}
 
-            {pendingRows && pendingRows.length > 0 && (
+            {pendingRows && (pendingRows.length > 0 || isCopiedActivityReview) && (
               <div className={cn(
                 "flex-1 min-h-[180px] overflow-auto",
                 isCopiedActivityReview && "min-h-0",
               )}>
-                <table className="w-full min-w-[980px] table-fixed border-collapse text-xs">
+                <table className={cn(
+                  "w-full table-fixed border-collapse text-xs",
+                  isCopiedActivityReview ? "min-w-[1040px]" : "min-w-[980px]",
+                )}>
                   <colgroup>
-                    <col className="w-[14%]" />
-                    <col className="w-[14%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[17%]" />
-                    <col className="w-[21%]" />
-                    <col className="w-[14%]" />
+                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    <col className={isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
+                    <col className={isCopiedActivityReview ? "w-[9%]" : "w-[10%]"} />
+                    <col className={isCopiedActivityReview ? "w-[16%]" : "w-[17%]"} />
+                    <col className={isCopiedActivityReview ? "w-[20%]" : "w-[21%]"} />
+                    <col className={isCopiedActivityReview ? "w-[13%]" : "w-[14%]"} />
+                    {isCopiedActivityReview && <col className="w-[7%]" />}
                   </colgroup>
                   <thead className="sticky top-0 z-10 bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                     <tr>
-                      {["Date", "Team", "Start", "End", "Location", "Notes", "PAX working on task"].map((heading) => (
+                      {[
+                        "Date",
+                        "Team",
+                        "Start",
+                        "End",
+                        "Location",
+                        "Notes",
+                        "PAX working on task",
+                        ...(isCopiedActivityReview ? ["Action"] : []),
+                      ].map((heading) => (
                         <th key={heading} scope="col" className="h-7 border border-slate-400 px-2 text-center text-xs font-medium dark:border-slate-600">
                           {heading}
                         </th>
@@ -3231,13 +3247,28 @@ export default function CapturePage() {
                               className={cn(PASTE_GRID_CELL, invalidPax && "text-red-700 focus:ring-red-500 dark:text-red-300")}
                             />
                           </td>
+                          {isCopiedActivityReview && (
+                            <td className="border border-slate-400 p-0 text-center dark:border-slate-600">
+                              <button
+                                type="button"
+                                onClick={() => removePendingRow(row.key)}
+                                aria-label={`Exclude activity for ${row.teamRaw.trim() || "unassigned"}${row.startTime ? ` at ${row.startTime}` : ""}`}
+                                title="Exclude this activity from the entry"
+                                className="mx-auto flex h-8 w-8 items-center justify-center rounded text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                     {visiblePendingRows.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="border border-slate-400 px-3 py-8 text-center text-xs text-muted-foreground dark:border-slate-600">
-                          No copied activities match the selected teams. Use the Teams filter to select at least one team.
+                        <td colSpan={isCopiedActivityReview ? 8 : 7} className="border border-slate-400 px-3 py-8 text-center text-xs text-muted-foreground dark:border-slate-600">
+                          {isCopiedActivityReview && pendingRows?.length === 0
+                            ? "All copied activities have been excluded from this entry."
+                            : "No copied activities match the selected teams. Use the Teams filter to select at least one team."}
                         </td>
                       </tr>
                     )}
