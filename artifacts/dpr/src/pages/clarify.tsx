@@ -533,11 +533,11 @@ export default function ClarifyPage() {
                 <col style={{ width: 66 }} />
                 <col style={{ width: 70 }} />
                 <col style={{ width: 130 }} />
-                <col style={{ width: 176 }} />
                 <col style={{ width: 52 }} />
                 <col style={{ width: 122 }} />
                 <col style={{ width: 160 }} />
                 <col style={{ width: 170 }} />
+                <col style={{ width: 176 }} />
                 <col style={{ width: 66 }} />
               </colgroup>
               <TableHeader className="sticky top-0 z-10 bg-muted/30">
@@ -563,12 +563,12 @@ export default function ClarifyPage() {
                   <TableHead className={SHEET_HEAD}>Start</TableHead>
                   <TableHead className={SHEET_HEAD}>Finish</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-emerald-600")}>Duration</TableHead>
-                  <TableHead className={SHEET_HEAD}>Location</TableHead>
-                  <TableHead className={SHEET_HEAD}>Comment</TableHead>
-                  <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
+                   <TableHead className={SHEET_HEAD}>Location</TableHead>
+                   <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
                   <TableHead className={SHEET_HEAD}>Generic Comment</TableHead>
                   <TableHead className={SHEET_HEAD}>JDR Code</TableHead>
+                   <TableHead className={SHEET_HEAD}>Comment</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "text-right")}>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -692,11 +692,11 @@ function ClarifiedRow({
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600/60 dark:text-emerald-400/60")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-[11px] text-muted-foreground")}>{code?.contractualCode || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
         <Button
           type="button"
@@ -879,7 +879,6 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "font-semibold tabular-nums text-emerald-600 dark:text-emerald-400")}>{formatDuration(entry.startTime, entry.endTime)}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
@@ -918,6 +917,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           </SelectContent>
         </Select>
       </TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
         <div className="flex justify-end gap-1">
           <Button
