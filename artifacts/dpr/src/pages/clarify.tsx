@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Loader2, CheckCircle2, Check, Unlock, Download,
+  Loader2, CheckCircle2, Check, Unlock, Download, CheckSquare, Square, Minus, CheckCheck,
 } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
@@ -277,6 +277,48 @@ export default function ClarifyPage() {
     [filteredGroups],
   );
 
+  // ── Bulk selection ──
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const visibleSelectedCount = flattenedEntries.filter((entry) => selectedIds.has(entry.id)).length;
+  const allSelected = flattenedEntries.length > 0 && visibleSelectedCount === flattenedEntries.length;
+  const someSelected = visibleSelectedCount > 0;
+
+  const enterSelectMode = () => {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        flattenedEntries.forEach((entry) => next.delete(entry.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        flattenedEntries.forEach((entry) => next.add(entry.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelectRow = (id: number) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const totalPending = useMemo(
     () => allEntries.filter(e => e.stage === "captured").length,
     [allEntries]
@@ -368,7 +410,16 @@ export default function ClarifyPage() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="w-2 h-2 rounded-full bg-primary" />
           <span className="text-sm font-medium">{totalPending} Pending</span>
-          <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5 ml-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
+              className={cn("gap-1.5 ml-2", selectMode && "border-primary bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary")}
+            >
+              <CheckSquare className="w-4 h-4" />
+              <span className="hidden xs:inline">{selectMode ? "Cancel Select" : "Select"}</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCsv} className="gap-1.5">
             <Download className="w-4 h-4" />
             <span className="hidden xs:inline">Export CSV</span>
           </Button>
@@ -385,41 +436,73 @@ export default function ClarifyPage() {
         pendingByTeam={pendingByTeam}
       />
 
-      {/* ── Filter / context bar ── */}
-      <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {activeDate || activeTeamId !== null ? (
-            <>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Showing:</span>
-                {activeDate && (
-                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                    {(() => { try { return format(parseISO(activeDate), "dd-MM"); } catch { return activeDate; } })()}
-                  </span>
-                )}
-                {activeDate && activeTeamId !== null && <span className="text-muted-foreground/50">·</span>}
-                {activeTeamId !== null && (
-                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
-                    {teams.find(t => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
-                  </span>
-                )}
-              </div>
-              {filteredGroups.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span className="font-semibold text-emerald-500 tabular-nums">
-                    {Math.floor(filteredHours)}h {Math.round((filteredHours % 1) * 60)}m
-                  </span>
-                  <span>·</span>
-                  <span className="font-semibold text-foreground tabular-nums">{filteredPending}</span>
-                  <span>rows pending</span>
-                </div>
-              )}
-            </>
-          ) : (
-            <span className="text-xs text-muted-foreground/60 italic">Select a date and team above to filter</span>
+      {/* ── Filter / selection context bar ── */}
+      {selectMode ? (
+        <div className="px-3 sm:px-4 py-1 border-b border-primary/30 bg-primary/5 flex flex-wrap items-center gap-x-3 gap-y-1 shrink-0">
+          <span className="text-xs font-semibold text-primary shrink-0">
+            {visibleSelectedCount === 0
+              ? "Select rows below"
+              : `${visibleSelectedCount} row${visibleSelectedCount !== 1 ? "s" : ""} selected`}
+          </span>
+          <span className="text-border text-muted-foreground/40 hidden sm:inline">·</span>
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          >
+            {allSelected
+              ? <CheckCheck className="w-3.5 h-3.5 text-primary" />
+              : someSelected
+              ? <Minus className="w-3.5 h-3.5 text-primary" />
+              : <Square className="w-3.5 h-3.5" />}
+            {allSelected ? "Deselect all" : "Select all"}
+          </button>
+          {someSelected && (
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="px-4 sm:px-6 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center justify-between gap-y-1 gap-x-2 shrink-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            {activeDate || activeTeamId !== null ? (
+              <>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>Showing:</span>
+                  {activeDate && (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                      {(() => { try { return format(parseISO(activeDate), "dd-MM"); } catch { return activeDate; } })()}
+                    </span>
+                  )}
+                  {activeDate && activeTeamId !== null && <span className="text-muted-foreground/50">·</span>}
+                  {activeTeamId !== null && (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-medium">
+                      {teams.find(t => t.id === activeTeamId)?.name ?? `Team ${activeTeamId}`}
+                    </span>
+                  )}
+                </div>
+                {filteredGroups.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-semibold text-emerald-500 tabular-nums">
+                      {Math.floor(filteredHours)}h {Math.round((filteredHours % 1) * 60)}m
+                    </span>
+                    <span>·</span>
+                    <span className="font-semibold text-foreground tabular-nums">{filteredPending}</span>
+                    <span>rows pending</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground/60 italic">Select a date and team above to filter</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Main content — flat table ── */}
       <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
@@ -443,6 +526,7 @@ export default function ClarifyPage() {
           <div className="rounded-none border-0">
             <Table className="table-auto w-full min-w-max border-collapse border border-border/70 text-xs">
               <colgroup>
+                {selectMode && <col style={{ width: 32 }} />}
                 <col style={{ width: 32 }} />
                 <col style={{ width: 88 }} />
                 <col style={{ width: 66 }} />
@@ -458,6 +542,22 @@ export default function ClarifyPage() {
               </colgroup>
               <TableHeader className="sticky top-0 z-10 bg-muted/30">
                 <TableRow className="h-8 hover:bg-transparent">
+                   {selectMode && (
+                     <TableHead className={cn(SHEET_HEAD, "w-[32px] text-center")}>
+                       <button
+                         type="button"
+                         onClick={toggleSelectAll}
+                         className="flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+                         aria-label={allSelected ? "Deselect all rows" : "Select all rows"}
+                       >
+                         {allSelected
+                           ? <CheckCheck className="w-4 h-4 text-primary" />
+                           : someSelected
+                           ? <Minus className="w-4 h-4 text-primary" />
+                           : <Square className="w-4 h-4" />}
+                       </button>
+                     </TableHead>
+                   )}
                   <TableHead className={cn(SHEET_HEAD, "text-center")}>#</TableHead>
                   <TableHead className={SHEET_HEAD}>Team</TableHead>
                   <TableHead className={SHEET_HEAD}>Start</TableHead>
@@ -484,6 +584,9 @@ export default function ClarifyPage() {
                       allActivities={allActivities}
                       allJdrCodes={allJdrCodes}
                       rowIndex={idx + 1}
+                      selectMode={selectMode}
+                      isSelected={selectedIds.has(entry.id)}
+                      onToggleSelect={() => toggleSelectRow(entry.id)}
                       onUnlock={handleUnlock}
                       isUnlocking={unlockingEntryId === entry.id}
                     />
@@ -495,6 +598,9 @@ export default function ClarifyPage() {
                       activityTypes={activityTypes}
                       activityGroups={activityGroups}
                       rowIndex={idx + 1}
+                      selectMode={selectMode}
+                      isSelected={selectedIds.has(entry.id)}
+                      onToggleSelect={() => toggleSelectRow(entry.id)}
                       onUnlock={handleUnlock}
                       isUnlocking={unlockingEntryId === entry.id}
                     />
@@ -524,6 +630,9 @@ function ClarifiedRow({
   activityTypes,
   activityGroups,
   rowIndex,
+  selectMode,
+  isSelected,
+  onToggleSelect,
   onUnlock,
   isUnlocking,
 }: {
@@ -532,6 +641,9 @@ function ClarifiedRow({
   activityTypes: DprActivityType[];
   activityGroups: DprActivityGroup[];
   rowIndex?: number;
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onUnlock: (entry: DprTimesheetEntry) => void;
   isUnlocking: boolean;
 }) {
@@ -543,6 +655,18 @@ function ClarifiedRow({
 
   return (
     <TableRow className="h-10 bg-muted/5 opacity-50 hover:bg-muted/10">
+      {selectMode && (
+        <TableCell className={cn(SHEET_CELL, "w-[32px] text-center")} onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            onClick={onToggleSelect}
+            className="inline-flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+            aria-label={isSelected ? "Deselect row" : "Select row"}
+          >
+            {isSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
+          </button>
+        </TableCell>
+      )}
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground/50")}>{rowIndex ?? ""}</TableCell>
       <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} muted /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums text-muted-foreground")}>
@@ -594,7 +718,7 @@ function ClarifiedRow({
 }
 
 // ─── ClarifyRow ───────────────────────────────────────────────────────────────
-function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActivities, allJdrCodes, rowIndex, onUnlock, isUnlocking }: {
+function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActivities, allJdrCodes, rowIndex, selectMode, isSelected, onToggleSelect, onUnlock, isUnlocking }: {
   entry: DprTimesheetEntry;
   currentDate: string | null;
   activityTypes: DprActivityType[];
@@ -602,6 +726,9 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
   allActivities: DprActivity[];
   allJdrCodes: DprJdrCode[];
   rowIndex?: number;
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onUnlock: (entry: DprTimesheetEntry) => void;
   isUnlocking: boolean;
 }) {
@@ -715,6 +842,18 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
 
   return (
     <TableRow className="h-10 hover:bg-muted/20">
+      {selectMode && (
+        <TableCell className={cn(SHEET_CELL, "w-[32px] text-center")} onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            onClick={onToggleSelect}
+            className="inline-flex items-center justify-center text-muted-foreground hover:text-primary transition-colors"
+            aria-label={isSelected ? "Deselect row" : "Select row"}
+          >
+            {isSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
+          </button>
+        </TableCell>
+      )}
       <TableCell className={cn(SHEET_CELL, "text-center text-[11px] tabular-nums text-muted-foreground")}>{rowIndex ?? ""}</TableCell>
       <TableCell className={SHEET_CELL}><EntryTeamCell entry={entry} currentDate={currentDate} /></TableCell>
       <TableCell className={cn(SHEET_CELL, "font-mono text-xs tabular-nums")}>
