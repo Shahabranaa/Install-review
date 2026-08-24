@@ -34,7 +34,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DateCalendar } from "@/components/ui/calendar";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -3000,45 +3000,67 @@ export default function CapturePage() {
             )}
 
             {isCopiedActivityReview && copyTeamOptions.length > 0 && (
-              <>
-                <div className="shrink-0 overflow-x-auto border-b border-border bg-muted/10 px-3 py-1">
-                  <div className="flex min-w-max items-center gap-1.5">
-                    <span className="mr-1 shrink-0 text-[11px] font-medium text-muted-foreground">Team filter</span>
-                    {copyTeamOptions.map((option) => {
-                      const isSelected = !copyExcludedTeamKeys.includes(option.key);
-                      return (
-                        <button
-                          key={option.key}
-                          type="button"
-                          data-testid={`copy-team-pill-${option.key}`}
-                          aria-pressed={isSelected}
-                          onClick={() => {
-                            setCopyExcludedTeamKeys((keys) =>
-                              isSelected
-                                ? [...keys, option.key]
-                                : keys.filter((key) => key !== option.key),
-                            );
-                          }}
-                          className={cn(
-                            "shrink-0 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors",
-                            isSelected
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border bg-transparent text-muted-foreground border-border hover:border-primary/60 hover:text-foreground",
-                          )}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border bg-background px-3 py-1 text-[11px] text-muted-foreground">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>
                     Showing {visiblePendingRows.length} of {pendingRows?.length ?? 0} copied activit{(pendingRows?.length ?? 0) === 1 ? "y" : "ies"}
                   </span>
-                  <span className="text-muted-foreground/60">Click a team pill to filter the review view.</span>
+                  <span className="text-muted-foreground/60">Filter only changes the review view.</span>
                 </div>
-              </>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-8 gap-2 text-xs">
+                      <Users className="h-3.5 w-3.5" />
+                      Teams
+                      {copyExcludedTeamKeys.length > 0 && (
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                          {copyTeamOptions.length - copyExcludedTeamKeys.length}/{copyTeamOptions.length}
+                        </Badge>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-2">
+                    <div className="flex items-center justify-between border-b border-border px-2 pb-2">
+                      <div>
+                        <p className="text-sm font-medium">Filter teams</p>
+                        <p className="text-[11px] text-muted-foreground">Only teams with copied activity are listed.</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setCopyExcludedTeamKeys([])}
+                      >
+                        All teams
+                      </Button>
+                    </div>
+                    <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+                      {copyTeamOptions.map((option) => {
+                        const selected = !copyExcludedTeamKeys.includes(option.key);
+                        return (
+                          <label
+                            key={option.key}
+                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+                          >
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={(checked) => {
+                                setCopyExcludedTeamKeys((keys) => {
+                                  if (checked) return keys.filter((key) => key !== option.key);
+                                  return keys.includes(option.key) ? keys : [...keys, option.key];
+                                });
+                              }}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                            <span className="text-[10px] text-muted-foreground">{option.count}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
             )}
 
             {!isCopiedActivityReview && (
