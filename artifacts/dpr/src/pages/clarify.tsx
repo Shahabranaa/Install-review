@@ -30,6 +30,7 @@ import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
+import { compareDprRows } from "@/lib/sorting";
 
 // ─── Column widths ─────────────────────────────────────────────────────────────
 const SHEET_CELL = "border-r border-border/50 px-2 py-1 align-middle";
@@ -200,18 +201,18 @@ export default function ClarifyPage() {
     // then by start time within the same date.
     for (const g of byKey.values()) {
       g.entries.sort((a, b) => {
-        const dateA = (a.date as string) ?? "";
-        const dateB = (b.date as string) ?? "";
-        if (dateA !== dateB) return dateA < dateB ? -1 : 1;
-        const tA = (a.startTime as string | null) ?? "";
-        const tB = (b.startTime as string | null) ?? "";
-        return tA < tB ? -1 : tA > tB ? 1 : 0;
+        return compareDprRows(
+          { date: a.date, startTime: a.startTime, teamName: a.team?.name },
+          { date: b.date, startTime: b.startTime, teamName: b.team?.name },
+        );
       });
     }
     return Array.from(byKey.values())
       .sort((a, b) => {
-        const d = new Date(a.date).getTime() - new Date(b.date).getTime();
-        return d !== 0 ? d : a.teamName.localeCompare(b.teamName);
+        return compareDprRows(
+          { date: a.date, startTime: a.entries[0]?.startTime, teamName: a.teamName },
+          { date: b.date, startTime: b.entries[0]?.startTime, teamName: b.teamName },
+        );
       });
   }, [allEntries]);
 
@@ -263,10 +264,15 @@ export default function ClarifyPage() {
   }, [groups, activeDate, activeTeamId]);
 
   const flattenedEntries = useMemo(
-    () => filteredGroups.flatMap(group => [
-      ...group.entries.filter(entry => entry.stage === "captured"),
-      ...group.entries.filter(entry => entry.stage === "clarified"),
-    ]),
+    () => filteredGroups
+      .flatMap(group => [
+        ...group.entries.filter(entry => entry.stage === "captured"),
+        ...group.entries.filter(entry => entry.stage === "clarified"),
+      ])
+      .sort((a, b) => compareDprRows(
+        { date: a.date, startTime: a.startTime, teamName: a.team?.name },
+        { date: b.date, startTime: b.startTime, teamName: b.team?.name },
+      )),
     [filteredGroups],
   );
 

@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { compareDprRows } from "@/lib/sorting";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -473,27 +474,11 @@ function pendingRowTeamKey(row: PendingRow): string {
   return teamName ? `name:${teamName}` : "unassigned";
 }
 
-const copiedTeamNameCollator = new Intl.Collator(undefined, {
-  numeric: true,
-  sensitivity: "base",
-});
-
 function compareCopiedRows(a: PendingRow, b: PendingRow): number {
-  const dateOrder = (a.date ?? "").localeCompare(b.date ?? "");
-  if (dateOrder !== 0) return dateOrder;
-
-  const aStart = a.startTime.trim();
-  const bStart = b.startTime.trim();
-  if (!aStart && bStart) return 1;
-  if (aStart && !bStart) return -1;
-  const startOrder = aStart.localeCompare(bStart);
-  if (startOrder !== 0) return startOrder;
-
-  const aTeam = a.teamRaw.trim();
-  const bTeam = b.teamRaw.trim();
-  if (!aTeam && bTeam) return 1;
-  if (aTeam && !bTeam) return -1;
-  return copiedTeamNameCollator.compare(aTeam, bTeam);
+  return compareDprRows(
+    { date: a.date, startTime: a.startTime, teamName: a.teamRaw },
+    { date: b.date, startTime: b.startTime, teamName: b.teamRaw },
+  );
 }
 
 function parsePastedText(
@@ -922,16 +907,12 @@ export default function CapturePage() {
   // All active entries (draft + captured) sorted; clarified are handled by the Clarify page
   const sortedEntries = useMemo(
     () =>
-      [...entries.filter((e) => e.stage !== "clarified")].sort((a, b) => {
-        // Sort chronologically within a shift: earliest calendar date first,
-        // then by start time — so overnight entries (next calendar day) follow
-        // same-day entries in the correct sequence.
-        const d = new Date(a.date).getTime() - new Date(b.date).getTime();
-        if (d !== 0) return d;
-        const t = (a.team?.name ?? "").localeCompare(b.team?.name ?? "");
-        if (t !== 0) return t;
-        return (a.startTime ?? "").localeCompare(b.startTime ?? "");
-      }),
+      [...entries.filter((e) => e.stage !== "clarified")].sort((a, b) =>
+        compareDprRows(
+          { date: a.date, startTime: a.startTime, teamName: a.team?.name },
+          { date: b.date, startTime: b.startTime, teamName: b.team?.name },
+        )
+      ),
     [entries]
   );
 
