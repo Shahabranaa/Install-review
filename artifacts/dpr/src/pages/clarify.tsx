@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { format, parseISO, subDays, addDays } from "date-fns";
 import {
   useListDprTimesheetEntries,
@@ -858,6 +858,14 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   const [genericComment, setGenericComment] = useState<string>(entry.genericComment ?? "");
   const [comment, setComment] = useState<string>(entry.combinedComment ?? entry.notes ?? "");
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = commentRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [comment]);
 
   const eligibleCodes = useMemo(
     () => filterJdrCodesForEntry(entry, allJdrCodes, allActivities, activityGroups),
@@ -1100,14 +1108,15 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "align-top")}>
         <Textarea
+          ref={commentRef}
           value={comment}
           onChange={(event) => setComment(event.target.value)}
           onBlur={autoSaveComment}
           placeholder="Add comment…"
           aria-label="Comment"
-          rows={2}
+          rows={1}
           wrap="soft"
-          className="min-h-[3.5rem] min-w-[150px] resize-none whitespace-pre-wrap break-words border-transparent bg-transparent px-2 py-1 text-xs leading-5 shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1"
+          className="h-auto min-h-7 min-w-[150px] resize-none overflow-hidden whitespace-pre-wrap break-words border-transparent bg-transparent px-2 py-1 text-xs leading-5 shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1"
         />
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
