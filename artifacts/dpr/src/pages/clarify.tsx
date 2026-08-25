@@ -25,6 +25,16 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2, CheckCircle2, Check, Unlock, Download, CheckSquare, Square, Minus, CheckCheck,
 } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
@@ -354,13 +364,19 @@ export default function ClarifyPage() {
   const handleTeamClick = (id: number | null) => setActiveTeamId(activeTeamId === id ? null : id);
 
   const [unlockingEntryId, setUnlockingEntryId] = useState<number | null>(null);
+  const [bulkUnlockOpen, setBulkUnlockOpen] = useState(false);
+  const [bulkUnlocking, setBulkUnlocking] = useState(false);
+
+  const updateEntryInCache = (updated: DprTimesheetEntry) => {
+    queryClient.setQueriesData<DprTimesheetEntry[] | undefined>(
+      { queryKey: getListDprTimesheetEntriesQueryKey() },
+      (old) => old?.map((entry) => entry.id === updated.id ? updated : entry),
+    );
+  };
   const unlockMutation = useUpdateDprTimesheetEntry({
     mutation: {
       onSuccess: (updated) => {
-        queryClient.setQueriesData<DprTimesheetEntry[]>(
-          { queryKey: getListDprTimesheetEntriesQueryKey() },
-          (old) => old?.map((entry) => entry.id === updated.id ? updated : entry)
-        );
+        updateEntryInCache(updated);
         queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
@@ -379,14 +395,75 @@ export default function ClarifyPage() {
       onSettled: () => setUnlockingEntryId(null),
     },
   });
+  // Keep bulk processing separate from the single-row mutation so one toast
+  // and one loading state represent the whole operation, not every row.
+  const bulkUnlockMutation = useUpdateDprTimesheetEntry();
 
   const handleUnlock = (entry: DprTimesheetEntry) => {
-    if (unlockMutation.isPending) return;
+    if (unlockMutation.isPending || bulkUnlocking) return;
     setUnlockingEntryId(entry.id);
     unlockMutation.mutate({
       id: entry.id,
       data: { stage: "draft" },
     });
+  };
+
+  const handleBulkUnlock = async () => {
+    const selectedEntries = flattenedEntries.filter((entry) => selectedIds.has(entry.id));
+    if (selectedEntries.length === 0 || bulkUnlocking) return;
+
+    setBulkUnlocking(true);
+    const results = await Promise.allSettled(
+      selectedEntries.map((entry) =>
+        bulkUnlockMutation.mutateAsync({
+          id: entry.id,
+          data: { stage: "draft" },
+        }),
+      ),
+    );
+
+    const successfulIds = new Set<number>();
+    const failedEntries: { entry: DprTimesheetEntry; reason: string }[] = [];
+
+    results.forEach((result, index) => {
+      const entry = selectedEntries[index];
+      if (result.status === "fulfilled") {
+        updateEntryInCache(result.value);
+        successfulIds.add(entry.id);
+      } else {
+        failedEntries.push({
+          entry,
+          reason: result.reason instanceof Error ? result.reason.message : "Unable to update this entry.",
+        });
+      }
+    });
+
+    queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["/api/dpr/timesheet-entries/date-summary"] });
+
+    setSelectedIds(new Set(failedEntries.map(({ entry }) => entry.id)));
+    if (failedEntries.length === 0) {
+      setBulkUnlockOpen(false);
+      setSelectMode(false);
+      toast({
+        title: `${successfulIds.size} entr${successfulIds.size === 1 ? "y" : "ies"} moved to Capture`,
+        description: "The selected rows are ready to edit again.",
+      });
+    } else if (successfulIds.size > 0) {
+      toast({
+        title: `${successfulIds.size} moved to Capture`,
+        description: `${failedEntries.length} row${failedEntries.length === 1 ? "" : "s"} could not be unlocked. They remain selected so you can retry.`,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Bulk unlock failed",
+        description: failedEntries[0]?.reason ?? "Unable to return the selected rows to Capture.",
+        variant: "destructive",
+      });
+    }
+    setBulkUnlocking(false);
   };
 
   // ── CSV export ──
@@ -458,13 +535,28 @@ export default function ClarifyPage() {
             {allSelected ? "Deselect all" : "Select all"}
           </button>
           {someSelected && (
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Clear
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                disabled={bulkUnlocking}
+              >
+                Clear
+              </button>
+              <Button
+                type="button"
+                size="sm"
+                className="ml-auto h-7 gap-1.5 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
+                onClick={() => setBulkUnlockOpen(true)}
+                disabled={bulkUnlocking}
+              >
+                {bulkUnlocking
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Unlock className="h-3.5 w-3.5" />}
+                {bulkUnlocking ? "Moving…" : "Move to Capture"}
+              </Button>
+            </>
           )}
         </div>
       ) : (
@@ -615,9 +707,34 @@ export default function ClarifyPage() {
       {/* ── Hint bar — matches Capture exactly ── */}
       <div className="px-6 py-2 border-t border-border bg-card/50 shrink-0">
         <p className="text-xs text-muted-foreground">
-          Select a <strong className="text-foreground">Code</strong> from the dropdown — codes are pre-filtered to the entry's activity group. Hit <strong className="text-foreground">✓</strong> to mark as clarified.
+          Select rows to move them back to <strong className="text-foreground">Capture</strong>, or choose a <strong className="text-foreground">Code</strong> and hit <strong className="text-foreground">✓</strong> to mark a row as clarified.
         </p>
       </div>
+
+      <AlertDialog open={bulkUnlockOpen} onOpenChange={(open) => !bulkUnlocking && setBulkUnlockOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move selected rows to Capture?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will unlock {visibleSelectedCount} selected row{visibleSelectedCount === 1 ? "" : "s"} and return them to Capture for editing. Their existing times, activity details, codes, and comments will be kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkUnlocking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleBulkUnlock();
+              }}
+              disabled={bulkUnlocking}
+              className="bg-amber-600 text-white hover:bg-amber-700"
+            >
+              {bulkUnlocking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {bulkUnlocking ? "Moving…" : "Move to Capture"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </div>
   );
