@@ -1086,7 +1086,10 @@ export default function JdrMappingPage() {
               </div>
 
               {/* 5 columns */}
-              <div className="flex-1 min-h-0 grid grid-cols-5 divide-x divide-border/60">
+              <div
+                className="flex-1 min-h-0 grid divide-x divide-border/60 overflow-hidden"
+                style={{ gridTemplateColumns: "minmax(0, .8fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.2fr) minmax(0, 1.2fr)" }}
+              >
 
                 {/* Col 1 — Category */}
                 <DrillColumn
@@ -1433,23 +1436,23 @@ function DrillColumn({ step, icon, label, count, onAdd, children }: {
 }) {
   return (
     <div className="flex min-w-0 flex-col min-h-0 bg-card">
-      <div className="flex min-w-0 items-center justify-between px-3 py-2 border-b border-border/50 bg-muted/20 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-1.5 px-3 py-2 border-b border-border/50 bg-muted/20 shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-[10px] font-bold text-muted-foreground/40 tracking-widest font-mono leading-none">{step}</span>
           <div className="w-px h-3 bg-border/60" />
-          <div className="flex items-center gap-1.5 text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
             {icon}
             <span className="truncate text-[11px] font-semibold uppercase tracking-widest">{label}</span>
           </div>
-          <span className="text-[11px] text-muted-foreground/40 font-mono">({count})</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground/40 font-mono">({count})</span>
         </div>
         <Button size="sm" variant="ghost"
-          className="h-5 px-2 gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          className="h-5 shrink-0 px-1.5 gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60"
           onClick={onAdd}>
           <Plus className="w-3 h-3" />Add
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto">{children}</div>
+      <div className="flex-1 overflow-y-auto bg-muted/10">{children}</div>
     </div>
   );
 }
@@ -1474,22 +1477,24 @@ function DrillCard({ title, meta, secondary, badge, selected, onClick, onEdit, o
     <div
       onClick={onClick}
       className={cn(
-        "group relative flex flex-col gap-0.5 px-3 py-2 cursor-pointer border-b border-border/30 transition-all select-none min-h-[52px]",
+        "group relative flex flex-col gap-0.5 bg-card px-3 py-2 cursor-pointer border-b border-border/30 transition-all select-none min-h-[52px]",
         selected
           ? "bg-primary/8 border-l-2 border-l-primary pl-3"
           : "hover:bg-muted/30 border-l-2 border-l-transparent"
       )}
     >
-      {badge && (
-        <span className={cn(
-          "absolute top-2.5 right-7 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
-          isOrsted ? "bg-amber-500/15 text-amber-500" : "bg-primary/15 text-primary"
-        )}>
-          {badge}
-        </span>
-      )}
-      <div className={cn("text-[13px] font-medium leading-snug text-foreground/90", badge ? "pr-12" : "pr-6")}>
-        {title}
+      <div className="flex min-w-0 items-start gap-1.5 pr-8">
+        <div className="min-w-0 flex-1 break-words text-[13px] font-medium leading-snug text-foreground/90">
+          {title}
+        </div>
+        {badge && (
+          <span className={cn(
+            "mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider leading-none",
+            isOrsted ? "bg-amber-500/15 text-amber-500" : "bg-primary/15 text-primary"
+          )}>
+            {badge}
+          </span>
+        )}
       </div>
       {(meta || secondary) && (
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
@@ -1541,19 +1546,21 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, onEdit, onDelete, delete
   const isWdt = code === "WDT";
 
   return (
-    <div className="group relative flex min-h-[52px] flex-col gap-0.5 px-3 py-2 border-b border-border/30 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
-      {contractualCode && (
-        <span className={cn(
-          "absolute top-2.5 right-7 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
-          isWdt ? "bg-orange-500/15 text-orange-500" :
-          isOrsted ? "bg-amber-500/15 text-amber-500" :
-          "bg-primary/15 text-primary"
-        )}>
-          {contractualCode}
-        </span>
-      )}
-      <div className={cn("text-[13px] font-medium leading-snug text-foreground/90", contractualCode ? "pr-12" : "pr-6")}>
-        {jdrWorkActivity}
+    <div className="group relative flex min-h-[52px] flex-col gap-0.5 bg-card px-3 py-2 border-b border-border/30 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
+      <div className="flex min-w-0 items-start gap-1.5 pr-8">
+        <div className="min-w-0 flex-1 break-words text-[13px] font-medium leading-snug text-foreground/90">
+          {jdrWorkActivity}
+        </div>
+        {contractualCode && (
+          <span className={cn(
+            "mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider leading-none",
+            isWdt ? "bg-orange-500/15 text-orange-500" :
+            isOrsted ? "bg-amber-500/15 text-amber-500" :
+            "bg-primary/15 text-primary"
+          )}>
+            {contractualCode}
+          </span>
+        )}
       </div>
       <div className="absolute top-2 right-1 hidden group-hover:flex items-center" onClick={(e) => e.stopPropagation()}>
         <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onEdit}>
@@ -1585,7 +1592,7 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, onEdit, onDelete, delete
 
 function JdrGenericCommentRow({ comment, onEdit }: { comment: string; onEdit: () => void }) {
   return (
-    <div className="group relative flex min-h-[52px] items-start border-b border-border/30 px-3 py-2 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
+    <div className="group relative flex min-h-[52px] items-start bg-card border-b border-border/30 px-3 py-2 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
       <div className={cn(
         "line-clamp-2 pr-6 text-[11px] leading-snug",
         comment ? "text-muted-foreground/80 italic" : "text-muted-foreground/35"
