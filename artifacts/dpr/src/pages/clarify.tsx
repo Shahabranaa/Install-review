@@ -41,6 +41,7 @@ import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
+import { filterJdrCodesForEntry } from "@/lib/jdr-code-filter";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { compareDprRows } from "@/lib/sorting";
 
@@ -855,16 +856,26 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   const [genericComment, setGenericComment] = useState<string>(entry.genericComment ?? "");
 
-  // Filter codes to this entry's activity group (via activities relationship)
-  const filteredCodes = useMemo(() => {
-    if (!entry.activityGroupId) return allJdrCodes;
-    const activityIdsInGroup = new Set(
-      allActivities.filter(a => a.activityGroupId === entry.activityGroupId).map(a => a.id)
-    );
-    return allJdrCodes.filter(c => c.activityId != null && activityIdsInGroup.has(c.activityId));
-  }, [allJdrCodes, allActivities, entry.activityGroupId]);
+  const eligibleCodes = useMemo(
+    () => filterJdrCodesForEntry(entry, allJdrCodes, allActivities, activityGroups),
+    [
+      entry.activityId,
+      entry.activityGroupId,
+      entry.activityTypeId,
+      allJdrCodes,
+      allActivities,
+      activityGroups,
+    ],
+  );
 
-  // Generic Comment options — scoped to filteredCodes so the auto-linked code
+  const selectedCodeObj = useMemo(
+    () => allJdrCodes.find(c => c.id === jdrCodeId) || null,
+    [allJdrCodes, jdrCodeId],
+  );
+  const savedCodeOutsideContext = selectedCodeObj != null
+    && !eligibleCodes.some((code) => code.id === selectedCodeObj.id);
+
+  // Generic Comment options — scoped to eligibleCodes so the auto-linked code
   // always appears in the adjacent JDR selector.  The combobox value is the JDR
   // code ID (string) so the match is unambiguous.  When the same comment text
   // belongs to more than one eligible code (e.g. "Earthing" appears in both HV
@@ -874,7 +885,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
   const commentOptions = useMemo((): ComboboxOption[] => {
     // Group codes by comment text to detect duplicates
     const byComment = new Map<string, DprJdrCode[]>();
-    for (const code of filteredCodes) {
+    for (const code of eligibleCodes) {
       const gc = code.genericComment;
       if (!gc || !gc.trim()) continue;
       if (!byComment.has(gc)) byComment.set(gc, []);
@@ -894,13 +905,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
     }
 
     return opts.sort((a, b) => a.label.localeCompare(b.label));
-  }, [filteredCodes]);
-
-  // Resolve the selected code's activityId for saving
-  const selectedCodeObj = useMemo(
-    () => allJdrCodes.find(c => c.id === jdrCodeId) || null,
-    [allJdrCodes, jdrCodeId]
-  );
+  }, [eligibleCodes]);
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
@@ -932,6 +937,8 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
   });
 
   const handleSave = () => {
+    if (!jdrCodeId || savedCodeOutsideContext) return;
+
     // Derive activity group from the selected code → activity → group chain.
     // Entries often arrive from Capture with activityGroupId=null, so we must
     // write the correct group based on the chosen JDR code, not just echo back
@@ -955,7 +962,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
     });
   };
 
-  const canSave = !!jdrCodeId;
+  const canSave = !!jdrCodeId && !savedCodeOutsideContext;
 
   return (
     <TableRow className="h-10 hover:bg-muted/20">
@@ -999,29 +1006,48 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
+        {savedCodeOutsideContext && (
+          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={`${selectedCodeObj.contractualCode} — ${selectedCodeObj.jdrWorkActivity}`}>
+            Current saved: {selectedCodeObj.contractualCode} — {selectedCodeObj.jdrWorkActivity}
+          </p>
+        )}
         <Select
-          value={jdrCodeId?.toString() || ""}
-          onValueChange={v => setJdrCodeId(parseInt(v))}
+          value={savedCodeOutsideContext ? "" : jdrCodeId?.toString() || ""}
+          onValueChange={v => {
+            const nextCode = eligibleCodes.find((code) => code.id === parseInt(v));
+            if (!nextCode) return;
+            setJdrCodeId(nextCode.id);
+            setGenericComment(nextCode.genericComment ?? "");
+          }}
         >
           <SelectTrigger className="h-7 min-w-0 bg-background px-2 text-[11px]">
             <SelectValue placeholder="Select code…" />
           </SelectTrigger>
           <SelectContent>
-            {filteredCodes.map(c => (
+            {eligibleCodes.length > 0 ? eligibleCodes.map(c => (
               <SelectItem key={c.id} value={c.id.toString()}>
                 {c.contractualCode} — {c.jdrWorkActivity}
               </SelectItem>
-            ))}
+            )) : (
+              <SelectItem value="no-mapped-codes" disabled>
+                No codes are mapped to this activity
+              </SelectItem>
+            )}
           </SelectContent>
         </Select>
       </TableCell>
       <TableCell className={SHEET_CELL}>
+        {savedCodeOutsideContext && (entry.genericComment || selectedCodeObj.genericComment) && (
+          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={entry.genericComment || selectedCodeObj.genericComment}>
+            Current saved: {entry.genericComment || selectedCodeObj.genericComment}
+          </p>
+        )}
         <Combobox
           options={commentOptions}
-          value={jdrCodeId?.toString() || ""}
+          value={savedCodeOutsideContext ? "" : jdrCodeId?.toString() || ""}
           onValueChange={(val) => {
             // val is the code ID (string) — unambiguous even for duplicate comment texts
-            const matchedCode = filteredCodes.find(c => String(c.id) === val);
+            const matchedCode = eligibleCodes.find(c => String(c.id) === val);
             if (matchedCode) {
               setJdrCodeId(matchedCode.id);
               setGenericComment(matchedCode.genericComment ?? "");
@@ -1042,7 +1068,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
             className="h-7 w-7"
             onClick={handleSave}
             disabled={!canSave || updateMutation.isPending || isUnlocking}
-            title={canSave ? "Mark as Clarified" : "Select a code first"}
+            title={canSave ? "Mark as Clarified" : savedCodeOutsideContext ? "Select a code for this activity first" : "Select a code first"}
             aria-label="Mark as Clarified"
           >
             {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
