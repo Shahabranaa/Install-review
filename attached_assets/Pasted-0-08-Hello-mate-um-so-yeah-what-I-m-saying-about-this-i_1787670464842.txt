@@ -1,0 +1,19 @@
+0:08 Hello mate, um so yeah what I'm saying about this is um obviously you've got your activity group here um but what we want to see basically you want to see extra work and then variation or so whether we show that now we show it I don't know I mean I've zoomed in here that's 100% um so whether it's on 
+0:33 kind of two lines I think maybe here we need to make it a bit fatter anyway because this comment will get probably quite big um So, extra work and then variation, and then here.
+0:45 I don't know why we're seeing all this because these are kind of yeah, they're against probably against extra work, but you don't want to see every single one because each code should be specifically against an activity rather than the activity group.
+1:00 So, maybe that's what's going wrong. But this is specifically against variation, so this is extra work variation, which is why you should see that one.
+1:10 Yeah, and so just added this one a minute ago if you. see you don't necessarily see the NWT in front of it so if we can kind of get away from that and then I'll just see what happens here so yeah again this this space is quite big so maybe we can kind of have it so that they each row expands depending
+1:39 on the information that's in here just so you can kind of see it but this I mean I think this kind of splits pretty good that that's kind of half the page because this is going to take up half a page and this should take up half a page if you like because you should be able to trim this down a bit um
+1:56 but yeah if I jump back to capture I think if I go to clarify It clears it again. So, is there any way that we can kind of like hold the information in there rather than suddenly keep if they jump around for whatever reason it just wipes it out?
+2:10 And I mean, there's no actual yeah, there's no actual kind of bit that I can see being saved to it.
+2:20 So, I mean, would I have to lock it in at that point? Yeah, but then how do I unlock it?
+2:29 Can I do that? Back to the start again. Hmm, yeah. It kind of locks it in now. Okay. Yeah, let's have a look at it.
+3:01 But I think this size is good. Like I said, I think we just need the extra information there and the code.
+3:09 We can get rid of NWT. Yeah, and then the notes are generic notes, and then the comment. Should be editable, but I can't edit it.
+3:23 So, this will kind of almost so it would have the VOR 008, which is the original comment, and then it would pull in the code and the notes.
+3:34 Because the idea in Lautech is that this code and these notes wouldn't get, we don't have a column for it in Lautech, so we need to make this into the comment.
+3:44 So, what I want to do is have this, this, and this in the comment, and then have AI basically look at the comment and then rewrite it so it makes sense to a human, if you like.
+3:56 But yeah, that would be that would be the next stage. I think we could actually. Clarify and then review would be the next one when we kind of look at.
+4:05 So, once these are done, we look at the next page, and then all of these are kind of shrunk down a little bit.
+4:10 And then it's just the comment that we can kind of review the comment, and that's when it's kind of changed by AI.
+4:18 But yeah, have a think about that, mate. Let me know what you think.
