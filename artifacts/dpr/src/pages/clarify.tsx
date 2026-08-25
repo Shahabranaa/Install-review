@@ -19,9 +19,11 @@ import {
   DprActivityGroup,
   DprJdrCode,
   DprTeam,
+  DprTimesheetEntryUpdate,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -855,6 +857,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
 
   const [jdrCodeId, setJdrCodeId] = useState<number | null>(entry.jdrCodeIds?.[0] || null);
   const [genericComment, setGenericComment] = useState<string>(entry.genericComment ?? "");
+  const [comment, setComment] = useState<string>(entry.combinedComment ?? entry.notes ?? "");
 
   const eligibleCodes = useMemo(
     () => filterJdrCodesForEntry(entry, allJdrCodes, allActivities, activityGroups),
@@ -909,7 +912,10 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
 
   const updateMutation = useUpdateDprTimesheetEntry({
     mutation: {
-      onMutate: async () => {
+      onMutate: async ({ data }) => {
+        const isClarifying = data.stage === "clarified";
+        if (!isClarifying) return { snap: undefined, isClarifying };
+
         await queryClient.cancelQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
         const snap = queryClient.getQueryData<{ capturedCount: number; clarifiedCount: number }>(
           getGetDprTimesheetSummaryQueryKey()
@@ -918,45 +924,81 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           getGetDprTimesheetSummaryQueryKey(),
           old => old ? { ...old, capturedCount: Math.max(0, old.capturedCount - 1), clarifiedCount: old.clarifiedCount + 1 } : old
         );
-        return { snap };
+        return { snap, isClarifying };
       },
-      onSuccess: (updated) => {
+      onSuccess: (updated, variables) => {
         queryClient.setQueriesData<DprTimesheetEntry[] | undefined>(
           { queryKey: getListDprTimesheetEntriesQueryKey() },
           old => old?.map(e => e.id === updated.id ? updated : e)
         );
-        queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
-        toast({ title: "Entry clarified" });
+        if (variables.data.stage === "clarified") {
+          queryClient.invalidateQueries({ queryKey: getGetDprTimesheetSummaryQueryKey() });
+          toast({ title: "Entry clarified" });
+        }
       },
-      onError: (err, _, ctx) => {
+      onError: (err, variables, ctx) => {
         if (ctx?.snap !== undefined) queryClient.setQueryData(getGetDprTimesheetSummaryQueryKey(), ctx.snap);
-        toast({ title: "Save failed", description: err.message, variant: "destructive" });
+        toast({
+          title: variables?.data.stage === "clarified" ? "Save failed" : "Autosave failed",
+          description: err.message,
+          variant: "destructive",
+        });
         queryClient.invalidateQueries({ queryKey: getListDprTimesheetEntriesQueryKey() });
       }
     }
   });
 
-  const handleSave = () => {
-    if (!jdrCodeId || savedCodeOutsideContext) return;
-
-    // Derive activity group from the selected code → activity → group chain.
-    // Entries often arrive from Capture with activityGroupId=null, so we must
-    // write the correct group based on the chosen JDR code, not just echo back
-    // whatever was already on the entry.
-    const selectedActivity = selectedCodeObj
-      ? allActivities.find(a => a.id === selectedCodeObj.activityId) ?? null
-      : null;
+  const classificationForCode = (code: DprJdrCode): DprTimesheetEntryUpdate => {
+    const selectedActivity = allActivities.find(a => a.id === code.activityId) ?? null;
     const resolvedGroupId = selectedActivity?.activityGroupId ?? entry.activityGroupId ?? null;
     const resolvedGroup = activityGroups.find(g => g.id === resolvedGroupId) ?? null;
+
+    return {
+      activityTypeId: resolvedGroup?.activityTypeId ?? null,
+      activityGroupId: resolvedGroupId,
+      activityId: code.activityId ?? null,
+      jdrCodeIds: [code.id],
+      genericComment: code.genericComment ?? null,
+    };
+  };
+
+  const autoSaveCode = (code: DprJdrCode) => {
+    setJdrCodeId(code.id);
+    setGenericComment(code.genericComment ?? "");
+    updateMutation.mutate({
+      id: entry.id,
+      data: {
+        ...classificationForCode(code),
+        stage: "captured",
+      },
+    });
+  };
+
+  const autoSaveComment = () => {
+    const nextComment = comment.trim();
+    const previousComment = (entry.combinedComment ?? entry.notes ?? "").trim();
+    if (nextComment === previousComment) return;
 
     updateMutation.mutate({
       id: entry.id,
       data: {
-        activityTypeId: resolvedGroup?.activityTypeId ?? null,
-        activityGroupId: resolvedGroupId,
-        activityId: selectedCodeObj?.activityId ?? null,
-        jdrCodeIds: jdrCodeId ? [jdrCodeId] : [],
+        combinedComment: nextComment || null,
+        stage: "captured",
+      },
+    });
+  };
+
+  const handleSave = () => {
+    if (!jdrCodeId || savedCodeOutsideContext) return;
+
+    if (!selectedCodeObj) return;
+
+    updateMutation.mutate({
+      id: entry.id,
+      data: {
+        ...classificationForCode(selectedCodeObj),
         genericComment: genericComment || null,
+        combinedComment: comment.trim() || null,
         stage: "clarified",
       }
     });
@@ -1016,8 +1058,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           onValueChange={v => {
             const nextCode = eligibleCodes.find((code) => code.id === parseInt(v));
             if (!nextCode) return;
-            setJdrCodeId(nextCode.id);
-            setGenericComment(nextCode.genericComment ?? "");
+            autoSaveCode(nextCode);
           }}
         >
           <SelectTrigger className="h-7 min-w-0 bg-background px-2 text-[11px]">
@@ -1048,10 +1089,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           onValueChange={(val) => {
             // val is the code ID (string) — unambiguous even for duplicate comment texts
             const matchedCode = eligibleCodes.find(c => String(c.id) === val);
-            if (matchedCode) {
-              setJdrCodeId(matchedCode.id);
-              setGenericComment(matchedCode.genericComment ?? "");
-            }
+            if (matchedCode) autoSaveCode(matchedCode);
           }}
           placeholder="Select comment…"
           searchPlaceholder="Search comments…"
@@ -1060,7 +1098,16 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           triggerClassName="h-7 min-w-0 px-2 text-[11px]"
         />
       </TableCell>
-      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")} title={entry.combinedComment || entry.notes || undefined}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={SHEET_CELL}>
+        <Input
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          onBlur={autoSaveComment}
+          placeholder="Add comment…"
+          aria-label="Comment"
+          className="h-7 min-w-[150px] border-transparent bg-transparent px-2 text-xs shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1"
+        />
+      </TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
         <div className="flex justify-end gap-1">
           <Button
