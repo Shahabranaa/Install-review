@@ -23,9 +23,9 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1098,14 +1098,16 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           triggerClassName="h-7 min-w-0 px-2 text-[11px]"
         />
       </TableCell>
-      <TableCell className={SHEET_CELL}>
-        <Input
+      <TableCell className={cn(SHEET_CELL, "align-top")}>
+        <Textarea
           value={comment}
           onChange={(event) => setComment(event.target.value)}
           onBlur={autoSaveComment}
           placeholder="Add comment…"
           aria-label="Comment"
-          className="h-7 min-w-[150px] border-transparent bg-transparent px-2 text-xs shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1"
+          rows={2}
+          wrap="soft"
+          className="min-h-[3.5rem] min-w-[150px] resize-none whitespace-pre-wrap break-words border-transparent bg-transparent px-2 py-1 text-xs leading-5 shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1"
         />
       </TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
