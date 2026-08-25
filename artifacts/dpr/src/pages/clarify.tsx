@@ -43,7 +43,7 @@ import { Combobox, ComboboxOption } from "@/components/ui/combobox";
 import { buildLautecCsv, downloadCsv } from "@/lib/export-csv";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration, cn } from "@/lib/utils";
-import { filterJdrCodesForEntry } from "@/lib/jdr-code-filter";
+import { filterJdrCodesForEntry, formatJdrWorkActivity } from "@/lib/jdr-code-filter";
 import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { compareDprRows } from "@/lib/sorting";
 
@@ -814,7 +814,7 @@ function ClarifiedRow({
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
-      <TableCell className={cn(SHEET_CELL, "text-xs text-muted-foreground")}>{code?.jdrWorkActivity || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-xs text-muted-foreground")}>{code ? formatJdrWorkActivity(code.jdrWorkActivity) : <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
@@ -910,7 +910,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       } else {
         // Append jdrWorkActivity to disambiguate
         for (const code of codes) {
-          opts.push({ value: String(code.id), label: `${comment} (${code.jdrWorkActivity})` });
+          opts.push({ value: String(code.id), label: `${comment} (${formatJdrWorkActivity(code.jdrWorkActivity)})` });
         }
       }
     }
@@ -1057,8 +1057,8 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
         {savedCodeOutsideContext && (
-          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={selectedCodeObj.jdrWorkActivity}>
-            Current saved: {selectedCodeObj.jdrWorkActivity}
+          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={formatJdrWorkActivity(selectedCodeObj.jdrWorkActivity)}>
+            Current saved: {formatJdrWorkActivity(selectedCodeObj.jdrWorkActivity)}
           </p>
         )}
         <Select
@@ -1075,7 +1075,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           <SelectContent>
             {eligibleCodes.length > 0 ? eligibleCodes.map(c => (
               <SelectItem key={c.id} value={c.id.toString()}>
-                {c.jdrWorkActivity}
+                {formatJdrWorkActivity(c.jdrWorkActivity)}
               </SelectItem>
             )) : (
               <SelectItem value="no-mapped-codes" disabled>

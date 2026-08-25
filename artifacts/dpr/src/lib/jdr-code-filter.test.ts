@@ -6,7 +6,7 @@ import type {
   DprJdrCode,
   DprTimesheetEntry,
 } from "@workspace/api-client-react";
-import { filterJdrCodesForEntry } from "./jdr-code-filter.ts";
+import { filterJdrCodesForEntry, formatJdrWorkActivity } from "./jdr-code-filter.ts";
 
 const groups = [
   { id: 10, name: "Installation", activityTypeId: 1 },
@@ -78,4 +78,10 @@ test("does not return a stale saved code from another activity", () => {
     groups,
   );
   assert.deepEqual(result.map((code) => code.id), [1]);
+});
+
+test("hides the legacy NWT prefix in Clarify labels", () => {
+  assert.equal(formatJdrWorkActivity("NWT — VOR-008"), "VOR-008");
+  assert.equal(formatJdrWorkActivity("NWT - Additional mobilisation"), "Additional mobilisation");
+  assert.equal(formatJdrWorkActivity("VOR-008"), "VOR-008");
 });

@@ -44,3 +44,12 @@ export function filterJdrCodesForEntry(
   if (activityIds === null) return allJdrCodes;
   return allJdrCodes.filter((code) => code.activityId != null && activityIds.has(code.activityId));
 }
+
+/**
+ * JDR mappings historically store a non-working-time prefix in the work
+ * activity label. It is contractual reference text, not useful Clarify UI.
+ */
+export function formatJdrWorkActivity(value: string | null | undefined): string {
+  const label = (value ?? "").replace(/^\s*NWT\s*(?:[-–—:]\s*)?/i, "").trim();
+  return label || "—";
+}

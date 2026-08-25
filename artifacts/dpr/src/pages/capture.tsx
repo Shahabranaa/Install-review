@@ -1544,6 +1544,13 @@ export default function CapturePage() {
   const handleApprove = (id: number) => {
     const entry = entries.find((e) => e.id === id);
     if (!entry) return;
+    if (activityOverrides[id]) {
+      toast({
+        title: "Activity is still saving",
+        description: "Wait for the selected activity to save before sending this row to Clarify.",
+      });
+      return;
+    }
     const missing: string[] = [];
     if (!entry.startTime) missing.push("Start time");
     if (!entry.endTime) missing.push("End time");
@@ -2945,6 +2952,7 @@ export default function CapturePage() {
                             className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
                             title="Approve — send to Clarify"
                             onClick={() => handleApprove(entry.id)}
+                            disabled={Boolean(activityOverrides[entry.id])}
                           >
                             {approveMutation.isPending && approveMutation.variables?.id === entry.id
                               ? <Loader2 className="w-4 h-4 animate-spin" />
