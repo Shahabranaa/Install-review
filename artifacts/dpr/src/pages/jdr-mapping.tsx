@@ -1326,7 +1326,7 @@ export default function JdrMappingPage() {
           saving={createActivity.isPending || updateActivity.isPending} />
       )}
       {jdrDialog && (
-        <JdrCodeDialog editing={jdrDialog.editing} defaultActivityId={jdrDialog.defaultActivityId} activities={activities} allJdrCodes={jdrCodes} onClose={() => setJdrDialog(null)}
+        <JdrCodeDialog editing={jdrDialog.editing} defaultActivityId={jdrDialog.defaultActivityId} activities={activities} groups={groups} allJdrCodes={jdrCodes} onClose={() => setJdrDialog(null)}
           onSave={(data) => jdrDialog.editing ? updateJdrCode.mutate({ id: jdrDialog.editing.id, data }) : createJdrCode.mutate({ data })}
           saving={createJdrCode.isPending || updateJdrCode.isPending} />
       )}
@@ -1739,23 +1739,43 @@ function FreeCombobox({ value, onChange, options, placeholder }: {
   );
 }
 
-function JdrCodeDialog({ editing, defaultActivityId, activities, allJdrCodes, onClose, onSave, saving }: {
+function JdrCodeDialog({ editing, defaultActivityId, activities, groups, allJdrCodes, onClose, onSave, saving }: {
   editing: DprJdrCode | null;
   defaultActivityId: number | null;
   activities: DprActivity[];
+  groups: DprActivityGroup[];
   allJdrCodes: DprJdrCode[];
   onClose: () => void;
   onSave: (data: { lautecActivity: string; lautecActivityGroup: string; jdrWorkActivity: string; contractualCode: string; genericComment: string; activityId: number | null }) => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState({
-    lautecActivity: editing?.lautecActivity ?? "",
-    lautecActivityGroup: editing?.lautecActivityGroup ?? "",
-    jdrWorkActivity: editing?.jdrWorkActivity ?? "",
-    contractualCode: editing?.contractualCode ?? "",
-    genericComment: editing?.genericComment ?? "",
-    activityId: editing?.activityId ?? defaultActivityId,
-  });
+  const templateForActivity = (activityId: number | null) =>
+    activityId == null ? undefined : allJdrCodes.find((code) => code.activityId === activityId);
+  const formForActivity = (activityId: number | null) => {
+    const activity = activityId == null ? undefined : activities.find((item) => item.id === activityId);
+    const group = activity ? groups.find((item) => item.id === activity.activityGroupId) : undefined;
+    const template = templateForActivity(activityId);
+    return {
+      lautecActivity: template?.lautecActivity ?? activity?.name ?? "",
+      lautecActivityGroup: template?.lautecActivityGroup ?? group?.name ?? "",
+      jdrWorkActivity: template?.jdrWorkActivity ?? "",
+      contractualCode: template?.contractualCode ?? "",
+      genericComment: template?.genericComment ?? "",
+      activityId,
+    };
+  };
+  const [form, setForm] = useState(() => ({
+    ...(editing
+      ? {
+          lautecActivity: editing.lautecActivity,
+          lautecActivityGroup: editing.lautecActivityGroup,
+          jdrWorkActivity: editing.jdrWorkActivity,
+          contractualCode: editing.contractualCode,
+          genericComment: editing.genericComment,
+          activityId: editing.activityId ?? defaultActivityId,
+        }
+      : formForActivity(defaultActivityId)),
+  }));
   const isValid = form.lautecActivity.trim() && form.lautecActivityGroup.trim() && form.jdrWorkActivity.trim() && form.contractualCode.trim();
 
   // Derive unique Lautec options from existing JDR codes
@@ -1827,7 +1847,17 @@ function JdrCodeDialog({ editing, defaultActivityId, activities, allJdrCodes, on
           {/* Linked activity */}
           <div className="space-y-1.5">
             <Label className="text-xs">Linked Activity <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Select value={form.activityId?.toString() || ""} onValueChange={(v) => setForm({ ...form, activityId: parseInt(v) })}>
+            <Select
+              value={form.activityId?.toString() || ""}
+              onValueChange={(v) => {
+                const activityId = parseInt(v);
+                if (editing) {
+                  setForm((current) => ({ ...current, activityId }));
+                  return;
+                }
+                setForm(formForActivity(activityId));
+              }}
+            >
               <SelectTrigger className="h-9"><SelectValue placeholder="Select activity to link" /></SelectTrigger>
               <SelectContent>{activities.map((a) => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}</SelectContent>
             </Select>
