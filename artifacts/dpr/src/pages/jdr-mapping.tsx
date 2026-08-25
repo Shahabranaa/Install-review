@@ -702,7 +702,7 @@ export default function JdrMappingPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/20">
 
       {/* ── Page header ─────────────────────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/70 bg-card px-4 py-3.5 sm:px-5">
+      <header className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border/70 bg-card px-3 py-2.5 sm:px-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
             <Network className="w-3.5 h-3.5 text-primary" />
@@ -755,7 +755,7 @@ export default function JdrMappingPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
+                  "flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
                   activeTab === tab.id
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"
@@ -771,7 +771,7 @@ export default function JdrMappingPage() {
 
           {/* ══ Tab content ══ */}
           {activeTab !== "activities" ? (
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-4 sm:p-6">
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-3 sm:p-4">
 
               {/* ── Teams ── */}
               {activeTab === "teams" && (
@@ -1039,11 +1039,11 @@ export default function JdrMappingPage() {
             </div>
           ) : (
             /* ══ Activities tab: full-height hierarchy ══ */
-            <div className="flex-1 min-h-0 flex flex-col p-4">
-            <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border/70 overflow-hidden bg-card shadow-sm">
+            <div className="flex-1 min-h-0 flex flex-col p-2 sm:p-3">
+            <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border/70 overflow-hidden bg-card shadow-sm">
 
               {/* Breadcrumb / filter bar */}
-              <div className="flex items-center gap-1.5 px-4 py-2 border-b border-border/50 bg-muted/30 shrink-0 min-h-[32px]">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/50 bg-muted/30 shrink-0 min-h-[28px]">
                 {hasFilter ? (
                   <>
                     <span className="text-[11px] text-muted-foreground">Filtered:</span>
@@ -1432,14 +1432,14 @@ function DrillColumn({ step, icon, label, count, onAdd, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col min-h-0 bg-card">
-      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border/50 bg-muted/20 shrink-0">
+    <div className="flex min-w-0 flex-col min-h-0 bg-card">
+      <div className="flex min-w-0 items-center justify-between px-3 py-2 border-b border-border/50 bg-muted/20 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-bold text-muted-foreground/40 tracking-widest font-mono leading-none">{step}</span>
           <div className="w-px h-3 bg-border/60" />
           <div className="flex items-center gap-1.5 text-muted-foreground">
             {icon}
-            <span className="text-[11px] font-semibold uppercase tracking-widest">{label}</span>
+            <span className="truncate text-[11px] font-semibold uppercase tracking-widest">{label}</span>
           </div>
           <span className="text-[11px] text-muted-foreground/40 font-mono">({count})</span>
         </div>
@@ -1474,7 +1474,7 @@ function DrillCard({ title, meta, secondary, badge, selected, onClick, onEdit, o
     <div
       onClick={onClick}
       className={cn(
-        "group relative flex flex-col gap-0.5 px-3.5 py-2.5 cursor-pointer border-b border-border/30 transition-all select-none",
+        "group relative flex flex-col gap-0.5 px-3 py-2 cursor-pointer border-b border-border/30 transition-all select-none min-h-[52px]",
         selected
           ? "bg-primary/8 border-l-2 border-l-primary pl-3"
           : "hover:bg-muted/30 border-l-2 border-l-transparent"
@@ -1541,7 +1541,7 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, onEdit, onDelete, delete
   const isWdt = code === "WDT";
 
   return (
-    <div className="group relative flex flex-col gap-0.5 px-3.5 py-2.5 border-b border-border/30 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
+    <div className="group relative flex min-h-[52px] flex-col gap-0.5 px-3 py-2 border-b border-border/30 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
       {contractualCode && (
         <span className={cn(
           "absolute top-2.5 right-7 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider leading-none",
@@ -1585,11 +1585,11 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, onEdit, onDelete, delete
 
 function JdrGenericCommentRow({ comment, onEdit }: { comment: string; onEdit: () => void }) {
   return (
-    <div className="group relative flex min-h-[67px] items-start border-b border-border/30 px-3.5 py-2.5 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
+    <div className="group relative flex min-h-[52px] items-start border-b border-border/30 px-3 py-2 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
       <div className={cn(
-        "pr-6 text-[11px] leading-snug",
+        "line-clamp-2 pr-6 text-[11px] leading-snug",
         comment ? "text-muted-foreground/80 italic" : "text-muted-foreground/35"
-      )}>
+      )} title={comment || "No comment set"}>
         {comment || "No comment set"}
       </div>
       <Button
@@ -1608,7 +1608,7 @@ function JdrGenericCommentRow({ comment, onEdit }: { comment: string; onEdit: ()
 
 function EmptyHint() {
   return (
-    <div className="flex flex-col items-center justify-center py-10 gap-1.5 text-muted-foreground/40">
+    <div className="flex flex-col items-center justify-center gap-1.5 py-6 text-muted-foreground/40">
       <div className="w-6 h-6 rounded border-2 border-dashed border-muted-foreground/20 flex items-center justify-center">
         <Plus className="w-3 h-3" />
       </div>
