@@ -630,6 +630,7 @@ export default function ClarifyPage() {
                 <col style={{ width: 130 }} />
                 <col style={{ width: 52 }} />
                 <col style={{ width: 122 }} />
+                 <col style={{ width: 170 }} />
                 <col style={{ width: 170 }} />
                 <col style={{ width: 160 }} />
                 <col style={{ width: 176 }} />
@@ -661,6 +662,7 @@ export default function ClarifyPage() {
                    <TableHead className={SHEET_HEAD}>Location</TableHead>
                    <TableHead className={cn(SHEET_HEAD, "text-center")}>PAX</TableHead>
                   <TableHead className={cn(SHEET_HEAD, "pr-3")}>Activity Group</TableHead>
+                  <TableHead className={SHEET_HEAD}>Activity</TableHead>
                   <TableHead className={SHEET_HEAD}>Code</TableHead>
                   <TableHead className={SHEET_HEAD}>Notes</TableHead>
                    <TableHead className={SHEET_HEAD}>Comment</TableHead>
@@ -692,6 +694,7 @@ export default function ClarifyPage() {
                       currentDate={activeDate}
                       activityTypes={activityTypes}
                       activityGroups={activityGroups}
+                       allActivities={allActivities}
                       rowIndex={idx + 1}
                       selectMode={selectMode}
                       isSelected={selectedIds.has(entry.id)}
@@ -749,6 +752,7 @@ function ClarifiedRow({
   currentDate,
   activityTypes,
   activityGroups,
+  allActivities,
   rowIndex,
   selectMode,
   isSelected,
@@ -760,6 +764,7 @@ function ClarifiedRow({
   currentDate: string | null;
   activityTypes: DprActivityType[];
   activityGroups: DprActivityGroup[];
+  allActivities: DprActivity[];
   rowIndex?: number;
   selectMode: boolean;
   isSelected: boolean;
@@ -814,6 +819,7 @@ function ClarifiedRow({
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{allActivities.find((activity) => activity.id === entry.activityId)?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-xs text-muted-foreground")}>{code ? formatJdrWorkActivity(code.jdrWorkActivity) : <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
@@ -1055,6 +1061,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
+      <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{allActivities.find((activity) => activity.id === entry.activityId)?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={SHEET_CELL}>
         {savedCodeOutsideContext && (
           <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={formatJdrWorkActivity(selectedCodeObj.jdrWorkActivity)}>
