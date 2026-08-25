@@ -49,7 +49,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Loader2, Plus, Pencil, Trash2, Search, X, Check, ChevronsUpDown,
-  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, ChevronRight, TableProperties, ShieldCheck,
+  Network, Users, MapPin, Layers, FolderOpen, Zap, Tag, MessageSquare, ChevronRight, TableProperties, ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -1085,8 +1085,8 @@ export default function JdrMappingPage() {
                 )}
               </div>
 
-              {/* 4 columns */}
-              <div className="flex-1 min-h-0 grid grid-cols-4 divide-x divide-border/60">
+              {/* 5 columns */}
+              <div className="flex-1 min-h-0 grid grid-cols-5 divide-x divide-border/60">
 
                 {/* Col 1 — Category */}
                 <DrillColumn
@@ -1181,11 +1181,28 @@ export default function JdrMappingPage() {
                       key={j.id}
                       jdrWorkActivity={j.jdrWorkActivity}
                       contractualCode={j.contractualCode}
-                      comment={j.genericComment}
                       onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
                       onDelete={() => deleteJdrCode.mutate({ id: j.id })}
                       deletePending={deleteJdrCode.isPending}
                       deleteDescription={`Delete JDR code "${j.jdrWorkActivity}"?`}
+                    />
+                  ))}
+                  {visibleJdrCodes.length === 0 && <EmptyHint />}
+                </DrillColumn>
+
+                {/* Col 5 — Generic Comment */}
+                <DrillColumn
+                  step="05"
+                  icon={<MessageSquare className="w-3.5 h-3.5" />}
+                  label="Generic Comment"
+                  count={visibleJdrCodes.length}
+                  onAdd={() => setJdrDialog({ editing: null, defaultActivityId: selectedActivityId })}
+                >
+                  {visibleJdrCodes.map((j) => (
+                    <JdrGenericCommentRow
+                      key={j.id}
+                      comment={j.genericComment}
+                      onEdit={() => setJdrDialog({ editing: j, defaultActivityId: j.activityId ?? null })}
                     />
                   ))}
                   {visibleJdrCodes.length === 0 && <EmptyHint />}
@@ -1511,10 +1528,9 @@ function DrillCard({ title, meta, secondary, badge, selected, onClick, onEdit, o
 
 // ─── JDR Code row ─────────────────────────────────────────────────────────────
 
-function JdrCodeRow({ jdrWorkActivity, contractualCode, comment, onEdit, onDelete, deletePending, deleteDescription }: {
+function JdrCodeRow({ jdrWorkActivity, contractualCode, onEdit, onDelete, deletePending, deleteDescription }: {
   jdrWorkActivity: string;
   contractualCode: string;
-  comment: string;
   onEdit: () => void;
   onDelete: () => void;
   deletePending: boolean;
@@ -1539,11 +1555,6 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, comment, onEdit, onDelet
       <div className={cn("text-[13px] font-medium leading-snug text-foreground/90", contractualCode ? "pr-12" : "pr-6")}>
         {jdrWorkActivity}
       </div>
-      {comment ? (
-        <div className="text-[11px] text-muted-foreground/80 leading-snug pr-6 italic">{comment}</div>
-      ) : (
-        <div className="text-[11px] text-muted-foreground/35 leading-snug pr-6">No comment set</div>
-      )}
       <div className="absolute top-2 right-1 hidden group-hover:flex items-center" onClick={(e) => e.stopPropagation()}>
         <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onEdit}>
           <Pencil className="w-3 h-3" />
@@ -1568,6 +1579,29 @@ function JdrCodeRow({ jdrWorkActivity, contractualCode, comment, onEdit, onDelet
           </AlertDialogContent>
         </AlertDialog>
       </div>
+    </div>
+  );
+}
+
+function JdrGenericCommentRow({ comment, onEdit }: { comment: string; onEdit: () => void }) {
+  return (
+    <div className="group relative flex min-h-[67px] items-start border-b border-border/30 px-3.5 py-2.5 hover:bg-muted/30 transition-colors border-l-2 border-l-transparent">
+      <div className={cn(
+        "pr-6 text-[11px] leading-snug",
+        comment ? "text-muted-foreground/80 italic" : "text-muted-foreground/35"
+      )}>
+        {comment || "No comment set"}
+      </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="absolute right-1 top-2 h-5 w-5 text-muted-foreground hover:text-foreground hidden group-hover:flex"
+        onClick={onEdit}
+        title="Edit code comment"
+        aria-label="Edit code comment"
+      >
+        <Pencil className="w-3 h-3" />
+      </Button>
     </div>
   );
 }
