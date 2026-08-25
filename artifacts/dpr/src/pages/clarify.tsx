@@ -814,7 +814,7 @@ function ClarifiedRow({
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.location?.name || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-center text-xs tabular-nums text-muted-foreground")}>{entry.pax ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} muted /></TableCell>
-      <TableCell className={cn(SHEET_CELL, "font-mono text-[11px] text-muted-foreground")}>{code?.contractualCode || <span className="text-muted-foreground/40">—</span>}</TableCell>
+      <TableCell className={cn(SHEET_CELL, "text-xs text-muted-foreground")}>{code?.jdrWorkActivity || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.genericComment || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "truncate text-xs text-muted-foreground")}>{entry.combinedComment || entry.notes || <span className="text-muted-foreground/40">—</span>}</TableCell>
       <TableCell className={cn(SHEET_CELL, "text-right")}>
@@ -1057,8 +1057,8 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
       <TableCell className={cn(SHEET_CELL, "pr-3")}><ActivityGroupPill name={activityLabel(entry, activityGroups, activityTypes)} /></TableCell>
       <TableCell className={SHEET_CELL}>
         {savedCodeOutsideContext && (
-          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={`${selectedCodeObj.contractualCode} — ${selectedCodeObj.jdrWorkActivity}`}>
-            Current saved: {selectedCodeObj.contractualCode} — {selectedCodeObj.jdrWorkActivity}
+          <p className="mb-1 truncate text-[10px] text-amber-700 dark:text-amber-300" title={selectedCodeObj.jdrWorkActivity}>
+            Current saved: {selectedCodeObj.jdrWorkActivity}
           </p>
         )}
         <Select
@@ -1075,7 +1075,7 @@ function ClarifyRow({ entry, currentDate, activityTypes, activityGroups, allActi
           <SelectContent>
             {eligibleCodes.length > 0 ? eligibleCodes.map(c => (
               <SelectItem key={c.id} value={c.id.toString()}>
-                {c.contractualCode} — {c.jdrWorkActivity}
+                {c.jdrWorkActivity}
               </SelectItem>
             )) : (
               <SelectItem value="no-mapped-codes" disabled>
