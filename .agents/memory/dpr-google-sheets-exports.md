@@ -33,4 +33,5 @@ the same export.
 **How to apply:** Keep the sheet schema in the exact order: Activity Group,
 Activity, Location, Start, Finish, Comment, Team ID, PAX, Code, Notes, Is
 Clarified. Export the selected JDR work-activity label as Code, the generic
-Clarify comment as Notes, and `Y` only for stage `clarified`; use `N` otherwise.
+Clarify comment as Notes, and `Y` only for stage `captured` (the active
+Clarify queue); use `N` otherwise.

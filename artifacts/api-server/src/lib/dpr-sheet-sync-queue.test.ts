@@ -104,7 +104,7 @@ test("Capture export includes PAX, the selected code, and Clarify notes", () => 
       jdrCodeIds: [41],
       genericComment: "Routine work",
       combinedComment: "Final comment",
-      stage: "clarified",
+      stage: "captured",
     },
     "Platform A",
     new Map([[22, "Effective Working Time"]]),
