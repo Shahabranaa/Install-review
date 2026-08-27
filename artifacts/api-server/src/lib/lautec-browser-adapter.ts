@@ -717,22 +717,33 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
         // (the URL pins one team). Wait for the DPR page, then close whatever
         // modal is open so the baseline is the persisted activities table —
         // otherwise the import grid itself is mistakenly treated as the
-        // pre-import table — and select the requested team explicitly.
+        // pre-import table.
         await page.waitForFunction(
-          `(document.body.innerText || "").includes(${JSON.stringify(dateLabel)})
-            && /${LAUTEC_IMPORT_MODAL_TITLE.source}/.test(document.body.innerText || "")`,
+          `/${LAUTEC_IMPORT_MODAL_TITLE.source}/.test(document.body.innerText || "")
+            || (() => {
+              const controls = Array.from(document.querySelectorAll("body *"));
+              return controls.some((element) => /\\bimport\\s+data\\b/i.test(element.textContent || ""));
+            })()`,
           { timeout: 30_000 },
         );
         await dismissAnyImportModal();
-        await clickTeamTab(teamName);
-        preImportTable = await waitForVisibleDprTable();
-        await clickImportData();
-        await page.waitForFunction(
-          `(document.body.innerText || "").includes(${JSON.stringify(importDialogTitle)})`,
-          { timeout: 30_000 },
-        );
-        await page.waitForSelector('td[data-x="0"][data-y="0"]', { visible: true, timeout: 30_000 });
-        return;
+        const onRequestedDate = await page.evaluate(
+          `(document.body.innerText || "").includes(${JSON.stringify(dateLabel)})`,
+        ) as boolean;
+        if (onRequestedDate) {
+          await clickTeamTab(teamName);
+          preImportTable = await waitForVisibleDprTable();
+          await clickImportData();
+          await page.waitForFunction(
+            `(document.body.innerText || "").includes(${JSON.stringify(importDialogTitle)})`,
+            { timeout: 30_000 },
+          );
+          await page.waitForSelector('td[data-x="0"][data-y="0"]', { visible: true, timeout: 30_000 });
+          return;
+        }
+        // The configured URL pins one specific DPR date. For any other date,
+        // fall back to the visible All DPRs navigation and pick the requested
+        // date card the same way the non-URL flow does.
       }
       await clickDateEdit(date, teamName);
       await clickTeamTab(teamName);
