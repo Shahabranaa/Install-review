@@ -91,6 +91,41 @@ test("Capture export sends the selected activity group to Lautec, not its broade
   );
 });
 
+test("Capture export includes PAX, the selected code, and Clarify notes", () => {
+  const sheetRow = buildCaptureSheetRow(
+    {
+      activityGroupId: 22,
+      activityId: 38,
+      startTime: "08:00",
+      endTime: "16:00",
+      notes: "Original comment",
+      teamId: 7,
+      pax: 3,
+      jdrCodeIds: [41],
+      genericComment: "Routine work",
+      combinedComment: "Final comment",
+    },
+    "Platform A",
+    new Map([[22, "Effective Working Time"]]),
+    new Map([[38, "Cable pull"]]),
+    new Map(),
+    new Map([[41, "VOR-008"]]),
+  );
+
+  assert.deepEqual(sheetRow, [
+    "Effective Working Time",
+    "Cable pull",
+    "Platform A",
+    "08:00",
+    "16:00",
+    "Final comment",
+    "7",
+    "3",
+    "VOR-008",
+    "Routine work",
+  ]);
+});
+
 test("Capture export uses the activity type when a non-working row has no sub-group", () => {
   const sheetRow = buildCaptureSheetRow(
     {

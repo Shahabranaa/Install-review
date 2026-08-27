@@ -4,6 +4,7 @@ import {
   dprActivitiesTable,
   dprActivityGroupsTable,
   dprActivityTypesTable,
+  dprJdrCodesTable,
   dprLocationsTable,
   dprTimesheetEntriesTable,
 } from "@workspace/db";
@@ -12,7 +13,18 @@ import { logger } from "./logger";
 import { createDateTabSyncQueue } from "./dpr-sheet-sync-queue.js";
 
 const CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
-export const CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment", "Team ID"];
+export const CAPTURE_SHEET_HEADERS = [
+  "Activity Group",
+  "Activity",
+  "Location",
+  "Start",
+  "Finish",
+  "Comment",
+  "Team ID",
+  "PAX",
+  "Code",
+  "Notes",
+];
 const DATE_TAB_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export function dprEffectiveDate(entry: { date: unknown; shiftDate?: unknown | null }): string {
   return String(entry.shiftDate ?? entry.date).substring(0, 10);
@@ -27,14 +39,23 @@ export function buildCaptureSheetRow(
     endTime: string | null;
     notes: string | null;
     teamId: number | null;
+    pax?: number | null;
+    jdrCodeIds?: number[] | null;
+    genericComment?: string | null;
+    combinedComment?: string | null;
   },
   locationName: string | null | undefined,
   activityGroupById: Map<number, string>,
   activityById: Map<number, string>,
   activityTypeById = new Map<number, string>(),
+  jdrWorkActivityById = new Map<number, string>(),
 ): string[] {
   const activityType = activityTypeById.get(entry.activityTypeId ?? -1);
   const activityGroup = activityGroupById.get(entry.activityGroupId ?? -1) ?? activityType ?? "";
+  const code = (entry.jdrCodeIds ?? [])
+    .map((id) => jdrWorkActivityById.get(id))
+    .filter((value): value is string => Boolean(value))
+    .join(", ");
   return [
     activityGroup,
     activityById.get(entry.activityId ?? -1)
@@ -43,15 +64,18 @@ export function buildCaptureSheetRow(
     locationName ?? "",
     entry.startTime ?? "",
     entry.endTime ?? "",
-    entry.notes ?? "",
+    entry.combinedComment ?? entry.notes ?? "",
     String(entry.teamId ?? ""),
+    String(entry.pax ?? ""),
+    code,
+    entry.genericComment ?? "",
   ];
 }
 
 /**
- * Date-named Capture tabs are application-managed: columns A:G always mirror
+ * Date-named Capture tabs are application-managed: columns A:J always mirror
  * the Capture database. Any user-maintained notes or formulas belong outside
- * those seven columns (or on a separate tab).
+ * those ten columns (or on a separate tab).
  */
 export async function syncDprDateTabs(dates: string[]): Promise<number> {
   const uniqueDates = [...new Set(dates)].filter((date) => DATE_TAB_PATTERN.test(date));
@@ -62,7 +86,7 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
       sql`COALESCE(${dprTimesheetEntriesTable.shiftDate}, ${dprTimesheetEntriesTable.date}) = ${date}`,
     ),
   );
-  const [rows, activityTypes, activityGroups, activities] = await Promise.all([
+  const [rows, activityTypes, activityGroups, activities, jdrCodes] = await Promise.all([
     db
       .select({
         entry: dprTimesheetEntriesTable,
@@ -79,11 +103,13 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
     db.select().from(dprActivityTypesTable),
     db.select().from(dprActivityGroupsTable),
     db.select().from(dprActivitiesTable),
+    db.select().from(dprJdrCodesTable),
   ]);
 
   const activityTypeById = new Map(activityTypes.map((item) => [item.id, item.name]));
   const activityGroupById = new Map(activityGroups.map((item) => [item.id, item.name]));
   const activityById = new Map(activities.map((item) => [item.id, item.name]));
+  const jdrWorkActivityById = new Map(jdrCodes.map((item) => [item.id, item.jdrWorkActivity]));
   const valuesByDate = new Map(uniqueDates.map((date) => [date, [] as string[][]]));
 
   for (const { entry, location } of rows) {
@@ -96,6 +122,7 @@ export async function syncDprDateTabs(dates: string[]): Promise<number> {
       activityGroupById,
       activityById,
       activityTypeById,
+      jdrWorkActivityById,
     ));
   }
 

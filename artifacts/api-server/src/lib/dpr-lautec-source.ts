@@ -5,6 +5,7 @@ import type { DprLautecSnapshotRow } from "@workspace/db";
 export const DPR_CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
 export const DPR_CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"] as const;
 export const DPR_CAPTURE_TEAM_HEADER = "Team ID";
+export const DPR_CAPTURE_ADDITIONAL_HEADERS = ["PAX", "Code", "Notes"] as const;
 export const MAX_LAUTEC_IMPORT_ROWS = 75;
 
 export class LautecSourceError extends Error {
@@ -34,7 +35,11 @@ function validTime(value: string): boolean {
  * destination fields are required.
  */
 export function normalizeLautecSourceRows(rows: string[][], selectedTeamId: number): DprLautecSnapshotRow[] {
-  const expectedHeaders = [...DPR_CAPTURE_SHEET_HEADERS, DPR_CAPTURE_TEAM_HEADER];
+  const expectedHeaders = [
+    ...DPR_CAPTURE_SHEET_HEADERS,
+    DPR_CAPTURE_TEAM_HEADER,
+    ...DPR_CAPTURE_ADDITIONAL_HEADERS,
+  ];
   const header = (rows[0] ?? []).slice(0, expectedHeaders.length).map(normalizeCell);
   if (
     header.length !== expectedHeaders.length ||
@@ -110,7 +115,11 @@ export function requiresLautecUncertainConfirmation(
 }
 
 export async function getLautecSourceSnapshot(date: string, teamId: number) {
-  const rows = await fetchSheetRowsByTitle(DPR_CAPTURE_SHEET_ID, date, DPR_CAPTURE_SHEET_HEADERS.length + 1).catch((error: unknown) => {
+  const rows = await fetchSheetRowsByTitle(
+    DPR_CAPTURE_SHEET_ID,
+    date,
+    DPR_CAPTURE_SHEET_HEADERS.length + 1 + DPR_CAPTURE_ADDITIONAL_HEADERS.length,
+  ).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "Unable to read the Capture tab.";
     if (message.includes("not found")) throw new LautecSourceError(`Capture tab "${date}" was not found.`, 404);
     throw error;

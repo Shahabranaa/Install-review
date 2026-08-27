@@ -21,3 +21,16 @@ dates cannot repair the entire mirror.
 as automatic mutation syncs. Preserve date tabs with no current rows as
 header-only tabs, and use `RAW` values so user-entered comments are never
 interpreted as formulas.
+
+The Google Sheet keeps the original Lautec source columns first, then appends
+PAX, the selected Clarify code, and Clarify notes. The Comment column remains
+the final user-facing comment.
+
+**Why:** The Lautec importer depends on the established leading columns and
+Team ID position, while operations also need the newer DPR fields visible in
+the same export.
+
+**How to apply:** Keep the sheet schema in the exact order: Activity Group,
+Activity, Location, Start, Finish, Comment, Team ID, PAX, Code, Notes. Export
+the selected JDR work-activity label as Code and the generic Clarify comment as
+Notes.
