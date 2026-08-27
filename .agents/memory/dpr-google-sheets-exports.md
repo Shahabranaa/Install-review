@@ -31,6 +31,6 @@ Team ID position, while operations also need the newer DPR fields visible in
 the same export.
 
 **How to apply:** Keep the sheet schema in the exact order: Activity Group,
-Activity, Location, Start, Finish, Comment, Team ID, PAX, Code, Notes. Export
-the selected JDR work-activity label as Code and the generic Clarify comment as
-Notes.
+Activity, Location, Start, Finish, Comment, Team ID, PAX, Code, Notes, Is
+Clarified. Export the selected JDR work-activity label as Code, the generic
+Clarify comment as Notes, and `Y` only for stage `clarified`; use `N` otherwise.

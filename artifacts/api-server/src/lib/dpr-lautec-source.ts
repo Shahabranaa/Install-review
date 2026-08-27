@@ -5,7 +5,7 @@ import type { DprLautecSnapshotRow } from "@workspace/db";
 export const DPR_CAPTURE_SHEET_ID = "1UWXflQzf1m1MAtnUfNE7dEq7C9YARoFq-TjykDhMQQo";
 export const DPR_CAPTURE_SHEET_HEADERS = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment"] as const;
 export const DPR_CAPTURE_TEAM_HEADER = "Team ID";
-export const DPR_CAPTURE_ADDITIONAL_HEADERS = ["PAX", "Code", "Notes"] as const;
+export const DPR_CAPTURE_ADDITIONAL_HEADERS = ["PAX", "Code", "Notes", "Is Clarified"] as const;
 export const MAX_LAUTEC_IMPORT_ROWS = 75;
 
 export class LautecSourceError extends Error {

@@ -9,11 +9,11 @@ import {
   requiresLautecResendConfirmation,
 } from "./dpr-lautec-source.js";
 
-const header = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment", "Team ID", "PAX", "Code", "Notes"];
-const row = ["Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "Routine check", "7", "3", "VOR-008", "Routine work"];
+const header = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment", "Team ID", "PAX", "Code", "Notes", "Is Clarified"];
+const row = ["Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "Routine check", "7", "3", "VOR-008", "Routine work", "N"];
 
 test("normalizes the managed Capture columns in their original order", () => {
-  const rows = normalizeLautecSourceRows([header, row, ["", "", "", "", "", "", "", "", "", ""], row], 7);
+  const rows = normalizeLautecSourceRows([header, row, ["", "", "", "", "", "", "", "", "", "", ""], row], 7);
   assert.deepEqual(rows, [
     {
       activityGroup: "Effective Working Time",
@@ -40,15 +40,15 @@ test("rejects changed headers, blank required fields, invalid times, and unmanag
     LautecSourceError,
   );
   assert.throws(
-    () => normalizeLautecSourceRows([header, ["", "Inspection", "Platform A", "08:00", "12:30", "", "7", "", "", ""]], 7),
+    () => normalizeLautecSourceRows([header, ["", "Inspection", "Platform A", "08:00", "12:30", "", "7", "", "", "", "N"]], 7),
     /Capture row 2 is missing: Activity Group/,
   );
   assert.throws(
-    () => normalizeLautecSourceRows([header, ["Group", "Inspection", "Platform A", "8:75", "12:30", "", "7", "", "", ""]], 7),
+    () => normalizeLautecSourceRows([header, ["Group", "Inspection", "Platform A", "8:75", "12:30", "", "7", "", "", "", "N"]], 7),
     /valid HH:MM/,
   );
   assert.throws(
-    () => normalizeLautecSourceRows([header, [...row, "unexpected eleventh value"]], 7),
+    () => normalizeLautecSourceRows([header, [...row, "unexpected twelfth value"]], 7),
     /outside the managed source columns/,
   );
 });
@@ -84,7 +84,7 @@ test("isolates the selected team's rows from a shared date tab", () => {
   const rows = normalizeLautecSourceRows([
     header,
     row,
-    ["Effective Working Time", "Other team task", "Platform B", "13:00", "17:00", "", "8", "", "", ""],
+    ["Effective Working Time", "Other team task", "Platform B", "13:00", "17:00", "", "8", "", "", "", "N"],
   ], 7);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].activity, "Inspection");

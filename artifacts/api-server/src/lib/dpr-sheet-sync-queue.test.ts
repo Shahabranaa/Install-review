@@ -104,6 +104,7 @@ test("Capture export includes PAX, the selected code, and Clarify notes", () => 
       jdrCodeIds: [41],
       genericComment: "Routine work",
       combinedComment: "Final comment",
+      stage: "clarified",
     },
     "Platform A",
     new Map([[22, "Effective Working Time"]]),
@@ -123,6 +124,7 @@ test("Capture export includes PAX, the selected code, and Clarify notes", () => 
     "3",
     "VOR-008",
     "Routine work",
+    "Y",
   ]);
 });
 

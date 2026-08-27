@@ -24,6 +24,7 @@ export const CAPTURE_SHEET_HEADERS = [
   "PAX",
   "Code",
   "Notes",
+  "Is Clarified",
 ];
 const DATE_TAB_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export function dprEffectiveDate(entry: { date: unknown; shiftDate?: unknown | null }): string {
@@ -43,6 +44,7 @@ export function buildCaptureSheetRow(
     jdrCodeIds?: number[] | null;
     genericComment?: string | null;
     combinedComment?: string | null;
+    stage?: string | null;
   },
   locationName: string | null | undefined,
   activityGroupById: Map<number, string>,
@@ -69,13 +71,14 @@ export function buildCaptureSheetRow(
     String(entry.pax ?? ""),
     code,
     entry.genericComment ?? "",
+    entry.stage === "clarified" ? "Y" : "N",
   ];
 }
 
 /**
- * Date-named Capture tabs are application-managed: columns A:J always mirror
+ * Date-named Capture tabs are application-managed: columns A:K always mirror
  * the Capture database. Any user-maintained notes or formulas belong outside
- * those ten columns (or on a separate tab).
+ * those eleven columns (or on a separate tab).
  */
 export async function syncDprDateTabs(dates: string[]): Promise<number> {
   const uniqueDates = [...new Set(dates)].filter((date) => DATE_TAB_PATTERN.test(date));
