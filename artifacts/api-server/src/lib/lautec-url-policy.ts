@@ -1,12 +1,13 @@
 const LAUTEC_ORIGIN = "https://dpr.lautec.com";
 const LAUTEC_IDENTITY_ORIGIN = "https://identity.lautec.com";
+const DEFAULT_APPROVED_PATH_PREFIXES = ["/", "/_RjXISwj7iY-/dpr-details"];
 
 function approvedPathPrefixes(): string[] {
   const configured = process.env.LAUTEC_APPROVED_PATH_PREFIXES
     ?.split(",")
     .map((path) => path.trim())
     .filter((path) => path.startsWith("/"));
-  return configured?.length ? configured : ["/"];
+  return configured?.length ? configured : DEFAULT_APPROVED_PATH_PREFIXES;
 }
 
 export function validateLautecUrl(value: string): string | null {

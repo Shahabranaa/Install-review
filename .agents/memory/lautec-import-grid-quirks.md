@@ -9,6 +9,8 @@ Pasted dropdown values can appear in a cell while still carrying an invalid warn
 
 Browser-realm predicates and DOM lookups must be self-contained JavaScript expressions/IIFEs. Build-runtime helpers are not available inside Lautec's page context.
 
+Lautec renders tabs, action controls, and buttons as generic elements, so text-based control lookup must click the deepest visible exact-text match; a click on an outer wrapper never reaches the control. A `?modal=import-data` URL pre-opens one pinned team's import grid — close it and take the persisted-table baseline before reopening, or the empty grid becomes the baseline. Readback of the persisted activities table must expect: a "No records to display" placeholder row on empty tables that vanishes when rows appear; both "ORSTED Comments" and "Comment" columns (the import writes only "Comment", and a naive first-match header lookup lands on the ORSTED one); and `*` rendered in cells the import left empty (PAX, ORSTED Comments), which means blank, not a value.
+
 **Why:** Clicking during the final sign-in redirects returns to login, synthetic Angular clicks can do nothing, and spreadsheet cells can look correct while Lautec still considers them invalid. A same-option click can silently clear a location. Serialized callbacks can also fail only at browser runtime.
 
 **How to apply:** Use the visible DPR list as the authenticated-session checkpoint. Discover visible controls in the page, click their Puppeteer handles, and keep page-executed code free of build-runtime helpers. Verify every cell and warning class, explicitly settle dependent dropdowns, leave PAX blank, and only submit after the grid reads back exactly.

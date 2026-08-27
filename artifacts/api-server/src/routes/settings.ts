@@ -3,6 +3,12 @@ import { eq, inArray } from "drizzle-orm";
 import { db, appSettingsTable } from "@workspace/db";
 import { invalidateCredsCache } from "../lib/wasabi.js";
 import { validateLautecUrl } from "../lib/lautec-url-policy.js";
+import {
+  LAUTEC_LOGIN_SELECTOR_KEYS,
+  LAUTEC_TWO_STEP_LOGIN_DEFAULTS,
+  parseLautecSelectorJson,
+  resolveLautecSelectors,
+} from "../lib/lautec-browser-adapter.js";
 
 const router: IRouter = Router();
 
@@ -15,9 +21,9 @@ const ALL_KEYS              = [KEY_ACCESS_KEY_ID, KEY_SECRET_ACCESS_KEY, KEY_BUC
 const KEY_SHEET_ID  = "google_sheet_id";
 const KEY_SHEET_GID = "google_sheet_gid";
 const KEY_LAUTEC_LOGIN_URL = "lautec_login_url";
+const KEY_LAUTEC_DPR_URL = "lautec_dpr_url";
 const KEY_LAUTEC_UI_SELECTORS = "lautec_ui_selectors";
 const LAUTEC_DEFAULT_LOGIN_URL = "https://dpr.lautec.com/";
-const LAUTEC_LOGIN_SELECTOR_KEYS = ["username", "continueSubmit", "password", "loginSubmit", "loginComplete"] as const;
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
@@ -149,37 +155,47 @@ router.post("/settings/google-sheet", requireAdmin, async (req, res): Promise<vo
 router.get("/settings/lautec", requireAdmin, async (_req, res): Promise<void> => {
   try {
     const rows = await db.select().from(appSettingsTable)
-      .where(inArray(appSettingsTable.key, [KEY_LAUTEC_LOGIN_URL, KEY_LAUTEC_UI_SELECTORS]));
+      .where(inArray(appSettingsTable.key, [KEY_LAUTEC_LOGIN_URL, KEY_LAUTEC_DPR_URL, KEY_LAUTEC_UI_SELECTORS]));
     const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-    let savedSelectors: Record<string, string> = {};
+    let selectors: ReturnType<typeof resolveLautecSelectors> = { ...LAUTEC_TWO_STEP_LOGIN_DEFAULTS };
+    let selectorsError: string | null = null;
     try {
-      savedSelectors = settings[KEY_LAUTEC_UI_SELECTORS] ? JSON.parse(settings[KEY_LAUTEC_UI_SELECTORS]) : {};
+      selectors = resolveLautecSelectors(
+        parseLautecSelectorJson(process.env.LAUTEC_UI_SELECTORS_JSON),
+        parseLautecSelectorJson(settings[KEY_LAUTEC_UI_SELECTORS]),
+      );
     } catch {
-      // The import endpoint reports malformed configuration with actionable detail.
+      selectorsError = "Lautec UI selectors must be valid JSON.";
     }
-    let environmentSelectors: Record<string, string> = {};
-    try {
-      environmentSelectors = process.env.LAUTEC_UI_SELECTORS_JSON ? JSON.parse(process.env.LAUTEC_UI_SELECTORS_JSON) : {};
-    } catch {
-      // The import endpoint reports malformed configuration with actionable detail.
-    }
-    const selectors = { ...environmentSelectors, ...savedSelectors };
+    const loginUrl = settings[KEY_LAUTEC_LOGIN_URL] ?? process.env.LAUTEC_LOGIN_URL ?? LAUTEC_DEFAULT_LOGIN_URL;
+    const loginUrlError = validateLautecUrl(loginUrl);
+    const dprUrl = settings[KEY_LAUTEC_DPR_URL] ?? process.env.LAUTEC_DPR_URL ?? "";
+    const dprUrlError = dprUrl ? validateLautecUrl(dprUrl) : null;
+    const selectorsConfigured = selectorsError === null
+      && ["username", "continueSubmit", "password", "loginSubmit"].every((key) =>
+        Boolean(selectors[key as keyof typeof selectors]?.trim()));
     res.json({
-      loginUrl: settings[KEY_LAUTEC_LOGIN_URL] ?? process.env.LAUTEC_LOGIN_URL ?? LAUTEC_DEFAULT_LOGIN_URL,
+      loginUrl,
+      dprUrl,
       usernameConfigured: Boolean(process.env.LAUTEC_USERNAME),
       passwordConfigured: Boolean(process.env.LAUTEC_PASSWORD),
-      selectorsConfigured: Boolean(
-        selectors.username && selectors.continueSubmit && selectors.password && selectors.loginSubmit
-        && selectors.resetRows && selectors.addRow && selectors.row
-        && selectors.activityGroup && selectors.activity
-        && selectors.location && selectors.start && selectors.finish && selectors.comment
-        && selectors.pax && selectors.submit && selectors.success,
+      selectorsConfigured,
+      loginUrlApproved: loginUrlError === null,
+      dprUrlApproved: dprUrlError === null,
+      configurationReady: Boolean(
+        process.env.LAUTEC_USERNAME
+        && process.env.LAUTEC_PASSWORD
+        && selectorsConfigured
+        && loginUrlError === null
+        && dprUrlError === null,
       ),
+      configurationError: selectorsError
+        ?? (loginUrlError ? `Login URL ${loginUrlError}` : dprUrlError ? `Direct DPR URL ${dprUrlError}` : null),
       loginSelectors: {
-        username: selectors.username ?? 'input[type="email"]',
-        continueSubmit: selectors.continueSubmit ?? selectors.loginSubmit ?? "button[type=submit]",
-        password: selectors.password ?? 'input[type="password"]',
-        loginSubmit: selectors.loginSubmit ?? "button[type=submit]",
+        username: selectors.username,
+        continueSubmit: selectors.continueSubmit,
+        password: selectors.password,
+        loginSubmit: selectors.loginSubmit,
         loginComplete: selectors.loginComplete ?? "",
       },
       source: rows.length > 0 ? "db" : "env",
@@ -194,8 +210,9 @@ router.get("/settings/lautec", requireAdmin, async (_req, res): Promise<void> =>
 // ---------------------------------------------------------------------------
 router.post("/settings/lautec", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { loginUrl, loginSelectors } = req.body as {
+    const { loginUrl, dprUrl, loginSelectors } = req.body as {
       loginUrl?: string;
+      dprUrl?: string;
       loginSelectors?: Record<string, unknown>;
     };
     const value = loginUrl?.trim();
@@ -207,6 +224,20 @@ router.post("/settings/lautec", requireAdmin, async (req, res): Promise<void> =>
       }
       await db.insert(appSettingsTable).values({ key: KEY_LAUTEC_LOGIN_URL, value })
         .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
+    }
+    if (dprUrl !== undefined) {
+      const value = dprUrl.trim();
+      if (value) {
+        const urlError = validateLautecUrl(value);
+        if (urlError) {
+          res.status(400).json({ error: `Direct DPR URL ${urlError}` });
+          return;
+        }
+        await db.insert(appSettingsTable).values({ key: KEY_LAUTEC_DPR_URL, value })
+          .onConflictDoUpdate({ target: appSettingsTable.key, set: { value, updatedAt: new Date() } });
+      } else {
+        await db.delete(appSettingsTable).where(eq(appSettingsTable.key, KEY_LAUTEC_DPR_URL));
+      }
     }
     if (loginSelectors) {
       const [existing] = await db.select().from(appSettingsTable)

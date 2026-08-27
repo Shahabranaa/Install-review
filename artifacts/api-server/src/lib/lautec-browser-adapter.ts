@@ -8,16 +8,6 @@ type SelectorMap = {
   continueSubmit: string;
   loginSubmit: string;
   loginComplete?: string;
-  resetRows?: string;
-  addRow?: string;
-  row?: string;
-  activityGroup?: string;
-  activity?: string;
-  location?: string;
-  start?: string;
-  finish?: string;
-  comment?: string;
-  pax?: string;
   submit?: string;
   success?: string;
   rejectedRows?: string;
@@ -26,6 +16,7 @@ type SelectorMap = {
 
 export type LautecBrowserConfig = {
   loginUrl: string;
+  dprUrl?: string;
   selectors: SelectorMap;
   username: string;
   password: string;
@@ -56,7 +47,15 @@ function configError(message: string): Error {
   return new Error(`Lautec browser configuration is incomplete: ${message}`);
 }
 
-const LAUTEC_TWO_STEP_LOGIN_DEFAULTS: Pick<
+export const LAUTEC_LOGIN_SELECTOR_KEYS = [
+  "username",
+  "continueSubmit",
+  "password",
+  "loginSubmit",
+  "loginComplete",
+] as const;
+
+export const LAUTEC_TWO_STEP_LOGIN_DEFAULTS: Pick<
   SelectorMap,
   "username" | "continueSubmit" | "password" | "loginSubmit"
 > = {
@@ -66,37 +65,69 @@ const LAUTEC_TWO_STEP_LOGIN_DEFAULTS: Pick<
   loginSubmit: "button[type=submit]",
 };
 
+const LAUTEC_SELECTOR_KEYS = [
+  ...LAUTEC_LOGIN_SELECTOR_KEYS,
+  "submit",
+  "success",
+  "rejectedRows",
+  "importDataButton",
+] as const;
+
+export function parseLautecSelectorJson(raw: string | undefined): Partial<SelectorMap> {
+  if (!raw) return {};
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Lautec UI selectors must be a JSON object.");
+  }
+  return parsed as Partial<SelectorMap>;
+}
+
+/**
+ * Resolve the selectors accepted by the browser adapter. Unknown legacy keys
+ * are deliberately discarded: the Import Data grid is driven by its visible
+ * controls, not configurable CSS selectors.
+ */
+export function resolveLautecSelectors(
+  environmentSelectors: Partial<SelectorMap> = {},
+  savedSelectors: Partial<SelectorMap> = {},
+): SelectorMap {
+  const resolved: Record<string, string | undefined> = {
+    ...LAUTEC_TWO_STEP_LOGIN_DEFAULTS,
+  };
+  for (const source of [environmentSelectors, savedSelectors]) {
+    for (const key of LAUTEC_SELECTOR_KEYS) {
+      const value = source[key];
+      if (typeof value === "string") resolved[key] = value;
+    }
+  }
+  return resolved as SelectorMap;
+}
+
 export async function getLautecBrowserConfig(): Promise<LautecBrowserConfig> {
   const configRows = await db.select().from(appSettingsTable)
-    .where(inArray(appSettingsTable.key, ["lautec_login_url", "lautec_ui_selectors"]));
+    .where(inArray(appSettingsTable.key, ["lautec_login_url", "lautec_dpr_url", "lautec_ui_selectors"]));
   const saved = Object.fromEntries(configRows.map((row) => [row.key, row.value]));
   const username = process.env.LAUTEC_USERNAME;
   const password = process.env.LAUTEC_PASSWORD;
   const loginUrl = saved.lautec_login_url ?? process.env.LAUTEC_LOGIN_URL ?? "https://dpr.lautec.com/";
+  const dprUrl = saved.lautec_dpr_url ?? process.env.LAUTEC_DPR_URL;
   const rawSelectors = process.env.LAUTEC_UI_SELECTORS_JSON;
 
   if (!username || !password) throw configError("LAUTEC_USERNAME and LAUTEC_PASSWORD must be set.");
   if (!loginUrl) throw configError("LAUTEC_LOGIN_URL must be set.");
   try {
     assertApprovedLautecUrl(loginUrl);
+    if (dprUrl) assertApprovedLautecUrl(dprUrl);
   } catch (error) {
     throw configError(error instanceof Error ? error.message : "an approved Lautec URL is required.");
   }
 
   let selectors: SelectorMap;
   try {
-    const environmentSelectors = rawSelectors ? JSON.parse(rawSelectors) as Partial<SelectorMap> : {};
-    const savedSelectors = saved.lautec_ui_selectors
-      ? JSON.parse(saved.lautec_ui_selectors) as Partial<SelectorMap>
-      : {};
-    selectors = {
-      ...LAUTEC_TWO_STEP_LOGIN_DEFAULTS,
-      ...environmentSelectors,
-      ...savedSelectors,
-      continueSubmit: savedSelectors.continueSubmit
-        ?? environmentSelectors.continueSubmit
-        ?? LAUTEC_TWO_STEP_LOGIN_DEFAULTS.continueSubmit,
-    } as SelectorMap;
+    selectors = resolveLautecSelectors(
+      parseLautecSelectorJson(rawSelectors),
+      parseLautecSelectorJson(saved.lautec_ui_selectors),
+    );
   } catch {
     throw configError("Lautec UI selectors must be valid JSON.");
   }
@@ -110,6 +141,7 @@ export async function getLautecBrowserConfig(): Promise<LautecBrowserConfig> {
     username,
     password,
     loginUrl,
+    dprUrl,
     selectors,
   };
 }
@@ -169,6 +201,16 @@ function normaliseVisibleText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+// A Lautec Import Data modal always titles itself "<Team>: Import Data". The
+// colon distinguishes the modal title from the plain "Import Data" button, so
+// this is the visible signal that a pre-opened grid is covering the persisted
+// activities table (a ?modal=import-data URL reopens it on every load).
+export const LAUTEC_IMPORT_MODAL_TITLE = /: Import Data/;
+
+export function lautecBodyShowsImportModal(bodyText: string): boolean {
+  return LAUTEC_IMPORT_MODAL_TITLE.test(bodyText);
+}
+
 export type LautecVisibleTableSnapshot = {
   headers: string[];
   rows: string[][];
@@ -176,6 +218,13 @@ export type LautecVisibleTableSnapshot = {
 
 function visibleRowKey(row: string[]): string {
   return JSON.stringify(row.map(normaliseVisibleText));
+}
+
+function isPlaceholderRow(row: string[]): boolean {
+  // An empty Lautec table renders a single spanning placeholder cell. It
+  // disappears once a real row is added, so it must not count as a lost row.
+  const text = normaliseVisibleText(row.join(" "));
+  return text === "" || text === "no records to display";
 }
 
 function addedVisibleRows(
@@ -189,8 +238,11 @@ function addedVisibleRows(
   ) {
     return null;
   }
-  const remaining = current.rows.map((row) => ({ key: visibleRowKey(row), row }));
-  for (const baselineRow of baseline.rows) {
+  const baselineRows = baseline.rows.filter((row) => !isPlaceholderRow(row));
+  const remaining = current.rows
+    .filter((row) => !isPlaceholderRow(row))
+    .map((row) => ({ key: visibleRowKey(row), row }));
+  for (const baselineRow of baselineRows) {
     const key = visibleRowKey(baselineRow);
     const matchIndex = remaining.findIndex((candidate) => candidate.key === key);
     if (matchIndex < 0) return null;
@@ -215,11 +267,16 @@ export function lautecTableDeltaMatchesReviewedRows(
     location: column((header) => header.includes("location") || header.includes("position")),
     start: column((header) => header.includes("start")),
     finish: column((header) => header.includes("finish")),
-    comment: column((header) => header.includes("comment")),
+    // Lautec's persisted table shows "ORSTED Comments" before "Comment"; the
+    // import writes only the managed Comment column, so skip the ORSTED one.
+    comment: column((header) => header.includes("comment") && !header.includes("orsted")),
     pax: column((header) => header.startsWith("pax") || header.includes(" pax")),
   };
   if (Object.values(indexes).some((index) => index < 0)) return false;
-  if (addedRows.some((row) => normaliseVisibleText(row[indexes.pax] ?? "") !== "")) return false;
+  // Lautec renders "*" as the placeholder in empty cells of a not-yet-saved
+  // row; both "" and "*" mean the import left PAX untouched.
+  const blankPax = (value: string) => value === "" || value === "*";
+  if (addedRows.some((row) => !blankPax(normaliseVisibleText(row[indexes.pax] ?? "")))) return false;
 
   const unmatched = [...addedRows];
   for (const row of expectedRows) {
@@ -272,7 +329,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
   // surface for both row handles and the page, so keep this local bridge
   // untyped rather than leaking browser-specific types into the service API.
   const page: any = await browser.newPage();
-  page.setDefaultTimeout(15_000);
+  page.setDefaultTimeout(30_000);
   let requestedRowCount = 0;
   let importDialogTitle = "";
   let currentTeamName = "";
@@ -374,9 +431,11 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
     baseline: LautecVisibleTableSnapshot,
   ): Promise<LautecVisibleTableSnapshot> {
     const deadline = Date.now() + 30_000;
+    let lastSeen: LautecVisibleTableSnapshot | null = null;
     while (Date.now() < deadline) {
       try {
         const current = await visibleDprTableSnapshot();
+        lastSeen = current;
         if (lautecTableDeltaMatchesReviewedRows(baseline, current, expectedRows)) {
           return current;
         }
@@ -385,7 +444,10 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       }
       await pause(500);
     }
-    throw new Error("Lautec did not visibly retain the exact newly reviewed rows with blank PAX.");
+    const seen = lastSeen
+      ? ` Last visible table: ${JSON.stringify({ headers: lastSeen.headers, rows: lastSeen.rows.slice(0, 4) }).slice(0, 900)}`
+      : " No activity table was visible.";
+    throw new Error(`Lautec did not visibly retain the exact newly reviewed rows with blank PAX.${seen}`);
   }
 
   async function assertGridContainsOnlyReviewedRows(): Promise<void> {
@@ -423,8 +485,11 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
           const rect = element.getBoundingClientRect();
           return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
         };
-        return Array.from(document.querySelectorAll("button, a, [role=button]"))
-          .find((element) => visible(element) && pattern.test((element.textContent || "").trim()));
+        const matches = Array.from(document.querySelectorAll("body *"))
+          .filter((element) => visible(element) && pattern.test((element.textContent || "").trim()));
+        // Click the deepest matching element so the event bubbles up through
+        // the real control instead of stopping on an outer layout wrapper.
+        return matches.find((element) => !matches.some((other) => other !== element && element.contains(other))) || null;
       })()`,
     );
     const target = handle.asElement();
@@ -434,6 +499,11 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
     }
     await target.click();
     await handle.dispose();
+  }
+
+  async function openAllDprsList(): Promise<void> {
+    await clickVisibleButton(/^All\s+DPRs$/i);
+    await pause(1_000);
   }
 
   async function gridCell(column: number, row: number) {
@@ -486,7 +556,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
           const rect = element.getBoundingClientRect();
           return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
         };
-        const controls = Array.from(document.querySelectorAll("button, a, [role=button]"));
+        const controls = Array.from(document.querySelectorAll("body *"));
         return controls.some((element) => visible(element) && /\\bimport\\s+data\\b/i.test(element.textContent || ""))
           && controls.some((element) => visible(element) && normalise(element.textContent) === normalise(requestedTeam));
       })()`,
@@ -495,6 +565,9 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
   }
 
   async function clickDateEdit(date: string, teamName: string): Promise<void> {
+    // Lautec now opens the DPR landing view after sign-in. Date cards are
+    // available only after using the visible All DPRs navigation control.
+    await openAllDprsList();
     const label = lautecDateLabel(date);
     const encodedLabel = JSON.stringify(label);
     await page.waitForFunction(
@@ -542,29 +615,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       await page.click(config.selectors.importDataButton);
       return;
     }
-    await page.waitForFunction(
-      `Array.from(document.querySelectorAll("button, a, [role=button]"))
-        .some((element) => /\\bimport\\s+data\\b/i.test(element.textContent || "") && element.getBoundingClientRect().width > 0)`,
-      { timeout: 15_000 },
-    );
-    const handle = await page.evaluateHandle(
-      `(() => {
-        const visible = (element) => {
-          const style = window.getComputedStyle(element);
-          return style.display !== "none" && style.visibility !== "hidden" && element.getBoundingClientRect().width > 0;
-        };
-        const button = Array.from(document.querySelectorAll("button, a, [role=button]"))
-          .find((element) => visible(element) && /\\bimport\\s+data\\b/i.test(element.textContent || ""));
-        return button || null;
-      })()`,
-    );
-    const button = handle.asElement();
-    if (!button) {
-      await handle.dispose();
-      throw new Error("Lautec DPR page did not show an Import Data control.");
-    }
-    await button.click();
-    await handle.dispose();
+    await clickVisibleButton(/^Import\s+Data$/i);
   }
 
   async function clickTeamTab(teamName: string): Promise<void> {
@@ -573,7 +624,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       `(() => {
         const requestedTeam = ${encodedTeamName};
         const normalise = (value) => (value || "").replace(/\\s+/g, "").toLowerCase();
-        return Array.from(document.querySelectorAll("button, a, [role=button]"))
+        return Array.from(document.querySelectorAll("body *"))
           .some((element) => element.getBoundingClientRect().width > 0 && normalise(element.textContent) === normalise(requestedTeam));
       })()`,
       { timeout: 15_000 },
@@ -586,9 +637,9 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
           const style = window.getComputedStyle(element);
           return style.display !== "none" && style.visibility !== "hidden" && element.getBoundingClientRect().width > 0;
         };
-        const target = Array.from(document.querySelectorAll("button, a, [role=button]"))
-          .find((element) => visible(element) && normalise(element.textContent) === normalise(requestedTeam));
-        return target || null;
+        const matches = Array.from(document.querySelectorAll("body *"))
+          .filter((element) => visible(element) && normalise(element.textContent) === normalise(requestedTeam));
+        return matches.find((element) => !matches.some((other) => other !== element && element.contains(other))) || null;
       })()`,
     );
     const target = handle.asElement();
@@ -599,6 +650,24 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
     await target.click();
     await handle.dispose();
     await pause(250);
+  }
+
+  async function dismissAnyImportModal(): Promise<void> {
+    const modalOpen = `/${LAUTEC_IMPORT_MODAL_TITLE.source}/.test(document.body.innerText || "")`;
+    const opened = await page
+      .waitForFunction(modalOpen, { timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) return;
+    const modalGone = `!(${modalOpen})`;
+    try {
+      await clickVisibleButton(/^Cancel$/i);
+      await page.waitForFunction(modalGone, { timeout: 15_000 });
+    } catch {
+      // Lautec can miss a click while the modal is still animating in.
+      await clickVisibleButton(/^Cancel$/i);
+      await page.waitForFunction(modalGone, { timeout: 15_000 });
+    }
   }
 
   return {
@@ -639,11 +708,36 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       currentTeamName = teamName;
       currentDate = date;
       expectedRows = [];
+      importDialogTitle = `${teamName}: Import Data`;
+      if (config.dprUrl) {
+        await page.goto(config.dprUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+        verifyApprovedDprPage();
+        const dateLabel = lautecDateLabel(date);
+        // The configured URL may pre-open another team's Import Data modal
+        // (the URL pins one team). Wait for the DPR page, then close whatever
+        // modal is open so the baseline is the persisted activities table —
+        // otherwise the import grid itself is mistakenly treated as the
+        // pre-import table — and select the requested team explicitly.
+        await page.waitForFunction(
+          `(document.body.innerText || "").includes(${JSON.stringify(dateLabel)})
+            && /${LAUTEC_IMPORT_MODAL_TITLE.source}/.test(document.body.innerText || "")`,
+          { timeout: 30_000 },
+        );
+        await dismissAnyImportModal();
+        await clickTeamTab(teamName);
+        preImportTable = await waitForVisibleDprTable();
+        await clickImportData();
+        await page.waitForFunction(
+          `(document.body.innerText || "").includes(${JSON.stringify(importDialogTitle)})`,
+          { timeout: 30_000 },
+        );
+        await page.waitForSelector('td[data-x="0"][data-y="0"]', { visible: true, timeout: 30_000 });
+        return;
+      }
       await clickDateEdit(date, teamName);
       await clickTeamTab(teamName);
       preImportTable = await waitForVisibleDprTable();
       await clickImportData();
-      importDialogTitle = `${teamName}: Import Data`;
       await page.waitForSelector('td[data-x="0"][data-y="0"]', { visible: true, timeout: 30_000 });
     },
     async ensureRows(rowCount) {
@@ -717,6 +811,12 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       // visible readback can promote the pre-submit checkpoint to success.
       await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
       verifyApprovedDprPage();
+      if (config.dprUrl) {
+        // Reloading a direct URL retains its ?modal=import-data query, so the
+        // pinned team's empty import grid can reopen over the persisted
+        // activities table. Close it again before the final saved readback.
+        await dismissAnyImportModal();
+      }
       await waitForEditorControls(currentTeamName);
       await clickTeamTab(currentTeamName);
       await waitForReviewedTableDelta(preImportTable);

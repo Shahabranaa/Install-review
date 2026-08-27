@@ -21,5 +21,5 @@
 - [Date picker iframe restriction](date-picker-iframe-restriction.md) — native showPicker() throws in Replit’s cross-origin preview iframe; date fields need a safe typed-entry fallback.
 - [DPR flat spreadsheet layout](dpr-flat-spreadsheet-layout.md) — Capture and Clarify should remain uninterrupted sheet grids, not team/date summary-card lists.
 - [Lautec configuration security boundary](lautec-configuration-security.md) — admins may edit safe browser URLs; the dedicated account remains workspace secrets only.
-- [Lautec visible import grid quirks](lautec-import-grid-quirks.md) — wait for the login redirect chain; validate dropdown choices and explicitly commit pasted locations.
+- [Lautec visible import grid quirks](lautec-import-grid-quirks.md) — click deepest exact-text element; baseline the persisted table, not the pre-opened grid; `*` cells and dual Comment columns in readback.
 - [DPR Excel import policy](dpr-excel-revision-policy.md) — import only current rows from the selected DPR date; reject unexpected revision markers.

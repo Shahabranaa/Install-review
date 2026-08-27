@@ -794,17 +794,17 @@ router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Pro
 });
 
 router.post("/dpr/timesheet-entries/resync-google-sheet", async (req, res): Promise<void> => {
-  if (!req.session?.userId || req.session.sessionType === "worker") {
-    res.status(401).json({ error: "An authenticated DPR user is required to resync the Capture sheet." });
-    return;
-  }
+  // A full resync clears and rewrites every managed date tab in the shared
+  // Capture spreadsheet, so it requires a verified active administrator.
+  const actor = await requireDprAdmin(req, res);
+  if (!actor) return;
 
   try {
     const result = await syncAllDprDateTabsNow();
     void logAction(req, {
       action: "dpr_google_sheet_resynced",
       page: "capture",
-      detail: `Fully rebuilt ${result.syncedRows} Capture row${result.syncedRows === 1 ? "" : "s"} across ${result.tabs.length} date tab${result.tabs.length === 1 ? "" : "s"} in Google Sheets.`,
+      detail: `${actor.actorName} fully rebuilt ${result.syncedRows} Capture row${result.syncedRows === 1 ? "" : "s"} across ${result.tabs.length} date tab${result.tabs.length === 1 ? "" : "s"} in Google Sheets.`,
     });
     res.json(result);
   } catch (err: unknown) {

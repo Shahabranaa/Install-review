@@ -159,6 +159,7 @@ function GoogleSheetSettingsPanel() {
 function LautecSettingsPanel() {
   const { toast } = useToast();
   const [loginUrl, setLoginUrl] = useState("https://dpr.lautec.com/");
+  const [dprUrl, setDprUrl] = useState("");
   const [loginSelectors, setLoginSelectors] = useState({
     username: 'input[type="email"]',
     continueSubmit: "button[type=submit]",
@@ -166,16 +167,23 @@ function LautecSettingsPanel() {
     loginSubmit: "button[type=submit]",
     loginComplete: "",
   });
-  const [status, setStatus] = useState<{ usernameConfigured: boolean; passwordConfigured: boolean; selectorsConfigured: boolean } | null>(null);
+  const [status, setStatus] = useState<{
+    usernameConfigured: boolean;
+    passwordConfigured: boolean;
+    selectorsConfigured: boolean;
+    configurationReady: boolean;
+    configurationError: string | null;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const { isLoading } = useQuery({
+  const { isLoading, refetch } = useQuery({
     queryKey: ["/api/settings/lautec"],
     queryFn: async () => {
       const response = await fetch("/api/settings/lautec", { credentials: "include" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not load Lautec settings.");
       setLoginUrl(data.loginUrl ?? "https://dpr.lautec.com/");
+      setDprUrl(data.dprUrl ?? "");
       setLoginSelectors((current) => ({ ...current, ...(data.loginSelectors ?? {}) }));
       setStatus(data);
       return data;
@@ -190,10 +198,11 @@ function LautecSettingsPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ loginUrl: loginUrl.trim(), loginSelectors }),
+        body: JSON.stringify({ loginUrl: loginUrl.trim(), dprUrl: dprUrl.trim(), loginSelectors }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not save Lautec settings.");
+      await refetch();
       toast({ title: "Saved", description: "Lautec browser login settings updated." });
     } catch (error: any) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
@@ -202,7 +211,7 @@ function LautecSettingsPanel() {
     }
   }
 
-  const configured = status?.usernameConfigured && status?.passwordConfigured && status?.selectorsConfigured;
+  const configured = status?.configurationReady;
   return (
     <div className="max-w-lg space-y-6">
       <div>
@@ -219,12 +228,17 @@ function LautecSettingsPanel() {
       ) : (
         <>
           <div className={`rounded-md border px-3 py-2 text-[11px] ${configured ? "border-emerald-200 bg-emerald-500/10 text-emerald-800" : "border-amber-200 bg-amber-500/10 text-amber-800"}`}>
-            {configured ? "Lautec credentials and browser selectors are configured." : "Finish the server-side Lautec setup before sending an import."}
+            {configured ? "Lautec is ready for browser imports." : "Finish the server-side Lautec setup before sending an import."}
           </div>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-[11px]">Login URL</Label>
               <Input value={loginUrl} onChange={(event) => setLoginUrl(event.target.value)} type="url" placeholder="https://dpr.lautec.com/" className="font-mono text-[12px] h-8" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px]">Direct DPR URL <span className="text-muted-foreground">(optional)</span></Label>
+              <Input value={dprUrl} onChange={(event) => setDprUrl(event.target.value)} type="url" placeholder="https://dpr.lautec.com/.../dpr-details/..." className="font-mono text-[12px] h-8" />
+              <p className="text-[10px] text-muted-foreground">Use only for a verified Lautec DPR Import Data page. The browser verifies the selected date and team before filling the grid.</p>
             </div>
             <div className="rounded-md border border-border/70 bg-muted/20 p-3 space-y-3">
               <div>
@@ -256,6 +270,7 @@ function LautecSettingsPanel() {
           <div className="rounded-md border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground space-y-1">
             <p><strong className="text-foreground">Dedicated account:</strong> email {status?.usernameConfigured ? "configured" : "not configured"} · password {status?.passwordConfigured ? "configured" : "not configured"}.</p>
             <p>For security, set the email as <strong>LAUTEC_USERNAME</strong> and the password as <strong>LAUTEC_PASSWORD</strong> in workspace secrets. They are never displayed here or saved to the DPR database.</p>
+            {status?.configurationError && <p className="text-amber-800 dark:text-amber-300">{status.configurationError}</p>}
             {!status?.selectorsConfigured && <p>Browser selectors still need to be configured by a technical administrator.</p>}
           </div>
         </>
