@@ -50,6 +50,26 @@ export function sheetTabRange(title: string, columnCount: number): string {
 }
 
 /**
+ * Lists spreadsheet tabs with their numeric GIDs.
+ * Kept here so callers do not need to know about Google API setup.
+ */
+export async function listSheetTabs(
+  sheetId: string,
+): Promise<Array<{ sheetId: number; title: string }>> {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets(properties(sheetId,title))",
+  });
+  return (meta.data.sheets ?? [])
+    .map((sheet) => ({
+      sheetId: Number(sheet.properties?.sheetId),
+      title: sheet.properties?.title ?? "",
+    }))
+    .filter((sheet) => Number.isInteger(sheet.sheetId) && Boolean(sheet.title));
+}
+
+/**
  * Fetch all values from a sheet tab identified by numeric GID.
  * Returns rows as string arrays (including the header row as row[0]).
  * Throws if GOOGLE_SERVICE_ACCOUNT_JSON is missing or auth fails.

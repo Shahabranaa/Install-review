@@ -8,3 +8,16 @@ Use the project's existing server-side Google Sheets service-account integration
 **Why:** The user already maintains a Google Sheets API setup and explicitly declined the Replit connector flow.
 
 **How to apply:** Keep credentials server-side, use the existing Sheets helper for any related read or write features, and obtain sheet sharing permissions through the established service-account setup.
+
+Full reconciliations must include the union of existing date-named tabs and
+effective dates in the database, clearing and rewriting the managed `A:G`
+range with the current header and rows.
+
+**Why:** A tab can be missing, have an older header without Team ID, or retain
+rows after the database source changes. Rebuilding only currently selected
+dates cannot repair the entire mirror.
+
+**How to apply:** Route a complete rebuild through the same serialized queue
+as automatic mutation syncs. Preserve date tabs with no current rows as
+header-only tabs, and use `RAW` values so user-entered comments are never
+interpreted as formulas.

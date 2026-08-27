@@ -120,7 +120,7 @@ import {
   GetDprLautecImportResponse,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
-import { dprEffectiveDate, scheduleDprDateSheetSync, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
+import { dprEffectiveDate, scheduleDprDateSheetSync, syncAllDprDateTabsNow, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
 import {
   getLautecSourceSnapshot,
   LautecSourceError,
@@ -789,6 +789,40 @@ router.post("/dpr/timesheet-entries/save-to-google-sheet", async (req, res): Pro
       return;
     }
     req.log.error({ err }, "Failed to save Capture rows to Google Sheets");
+    res.status(502).json({ error: message });
+  }
+});
+
+router.post("/dpr/timesheet-entries/resync-google-sheet", async (req, res): Promise<void> => {
+  if (!req.session?.userId || req.session.sessionType === "worker") {
+    res.status(401).json({ error: "An authenticated DPR user is required to resync the Capture sheet." });
+    return;
+  }
+
+  try {
+    const result = await syncAllDprDateTabsNow();
+    void logAction(req, {
+      action: "dpr_google_sheet_resynced",
+      page: "capture",
+      detail: `Fully rebuilt ${result.syncedRows} Capture row${result.syncedRows === 1 ? "" : "s"} across ${result.tabs.length} date tab${result.tabs.length === 1 ? "" : "s"} in Google Sheets.`,
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: number }).code;
+    if (message.includes("GOOGLE_SERVICE_ACCOUNT_JSON")) {
+      res.status(503).json({ error: "Google Sheets service account is not configured." });
+      return;
+    }
+    if (code === 403) {
+      res.status(503).json({ error: "Google Sheets permission denied. Share the target sheet with the service account as an Editor." });
+      return;
+    }
+    if (code === 404) {
+      res.status(503).json({ error: "The configured Google Sheet could not be found." });
+      return;
+    }
+    req.log.error({ err }, "Failed to fully resync Capture rows to Google Sheets");
     res.status(502).json({ error: message });
   }
 });
