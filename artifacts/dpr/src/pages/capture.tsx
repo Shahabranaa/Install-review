@@ -36,7 +36,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DateCalendar } from "@/components/ui/calendar";
-import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, ChevronRight, ArrowLeftRight, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy, FileSpreadsheet } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, X, ClipboardPaste, AlertTriangle, Lock, Info, CheckSquare, Square, Minus, CheckCheck, Users, Calendar, Circle, CheckCircle2, Download, MessageSquare, RefreshCw, Sheet, Send, Copy, FileSpreadsheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay, hoursForEntry, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,13 @@ const GROUP_LABELS: Record<string, string> = {
   "Extra Work": "Extra Work",
   "Re-Work": "Re-Work",
 };
+
+const CAPTURE_ACTIVITY_GROUP_OPTIONS = [
+  { value: "effective-working-time", label: "Effective working time", typeName: "Effective Working Time", groupName: "Effective Working Time" },
+  { value: "extra-work", label: "Extra Work", typeName: "Effective Working Time", groupName: "Extra Work" },
+  { value: "rework", label: "Rework", typeName: "Effective Working Time", groupName: "Re-Work" },
+  { value: "non-working-time", label: "Non Working time", typeName: "Non-Working Time", groupName: null },
+] as const;
 
 type BillingParty = "jdr" | "orsted" | null;
 type LautecProgressState = "complete" | "active" | "waiting" | "error";
@@ -108,114 +115,75 @@ function emptyDraft(defaultActivityTypeId: number | null, defaultGroupId: number
   };
 }
 
-// ─── Two-button Activity Group picker (client redesign) ─────────────────────
-// Button 1 — toggles between Working Time / Non-Working Time
-// Button 2 — cycles sub-group (Effective / Extra Work / Re-Work) when Working;
-//             shows an inactive "—" placeholder when Non-Working
+// ─── Google Sheets-style Activity Group picker ────────────────────────────────
 
 function ActivityGroupPicker({
   allowedTypes,
   allowedGroups,
-  workingTypeId,
   typeValue,
   groupValue,
-  onTypeChange,
-  onGroupChange,
-  onError,
+  onChange,
   isSaving = false,
 }: {
   allowedTypes: { id: number; name: string }[];
   allowedGroups: { id: number; name: string }[];
-  workingTypeId: number | null;
   typeValue: number | null;
   groupValue: number | null;
-  onTypeChange: (id: number) => void;
-  onGroupChange: (id: number) => void;
-  onError?: (msg: string) => void;
+  onChange: (selection: { activityTypeId: number | null; activityGroupId: number | null }) => void;
   isSaving?: boolean;
 }) {
-  const isWorking = typeValue === workingTypeId;
-  const activeType = allowedTypes.find((t) => t.id === typeValue);
-  const activeGroup = allowedGroups.find((g) => g.id === groupValue);
-  const kindLabel = activeType ? (TYPE_LABELS[activeType.name] ?? activeType.name) : "Working Time";
-  const groupLabel = isWorking && activeGroup ? (GROUP_LABELS[activeGroup.name] ?? activeGroup.name) : null;
-  const canToggleType = allowedTypes.length > 1;
-  const canCycleGroup = isWorking && allowedGroups.length > 0;
-
-  const handleTypeClick = () => {
-    if (!canToggleType) {
-      onError?.("Only one activity type is configured — cannot switch.");
-      return;
-    }
-    const nonWorking = allowedTypes.find((t) => t.id !== workingTypeId);
-    if (isWorking && nonWorking) {
-      onTypeChange(nonWorking.id);
-    } else if (workingTypeId) {
-      onTypeChange(workingTypeId);
-    }
-  };
-
-  const handleGroupClick = () => {
-    if (!isWorking) return; // placeholder shown, nothing to do
-    if (allowedGroups.length === 0) {
-      onError?.("No sub-groups are configured for this activity type.");
-      return;
-    }
-    const idx = allowedGroups.findIndex((g) => g.id === groupValue);
-    const next = allowedGroups[(idx + 1) % allowedGroups.length];
-    onGroupChange(next.id);
-  };
+  const selectedOption = CAPTURE_ACTIVITY_GROUP_OPTIONS.find((option) => {
+    const type = allowedTypes.find((item) => item.name === option.typeName);
+    const group = option.groupName
+      ? allowedGroups.find((item) => item.name === option.groupName)
+      : null;
+    return type?.id === typeValue && (option.groupName ? group?.id === groupValue : groupValue == null);
+  });
 
   return (
-    <div className="inline-flex w-fit items-stretch rounded-md border overflow-hidden shadow-sm text-xs font-semibold whitespace-nowrap"
-         style={{ borderColor: isWorking ? "rgb(22 163 74 / 0.4)" : "rgb(234 179 8 / 0.4)" }}>
-      {/* Left — type toggle */}
-      <button
-        type="button"
-        onClick={handleTypeClick}
-        disabled={isSaving}
-        title={isSaving ? "Saving activity group…" : canToggleType ? "Toggle Working / Non-Working Time" : "Only one activity type is configured"}
+    <Select
+      value={selectedOption?.value ?? ""}
+      onValueChange={(value) => {
+        const option = CAPTURE_ACTIVITY_GROUP_OPTIONS.find((item) => item.value === value);
+        if (!option) return;
+        const type = allowedTypes.find((item) => item.name === option.typeName);
+        const group = option.groupName
+          ? allowedGroups.find((item) => item.name === option.groupName)
+          : null;
+        if (!type || (option.groupName && !group)) return;
+        onChange({
+          activityTypeId: type.id,
+          activityGroupId: group?.id ?? null,
+        });
+      }}
+      disabled={isSaving}
+    >
+      <SelectTrigger
         className={cn(
-          "flex items-center gap-1.5 px-2 py-1.5 transition-all duration-150 border-r",
-          isWorking
-            ? "bg-green-500/10 text-green-400 border-r-green-600/30"
-            : "bg-yellow-500/10 text-yellow-400 border-r-yellow-500/30",
-          isSaving ? "cursor-wait opacity-75" : canToggleType ? (isWorking ? "hover:bg-green-500/20" : "hover:bg-yellow-500/20") : "opacity-60 cursor-not-allowed"
+          "h-8 min-w-[170px] bg-background px-2 text-xs font-normal",
+          isSaving && "cursor-wait opacity-75",
         )}
+        title={isSaving ? "Saving activity group…" : "Select activity group"}
       >
-        <span className={cn(
-          "w-1.5 h-1.5 rounded-full shrink-0 ring-1",
-          isWorking ? "bg-green-400 ring-green-400/40" : "bg-yellow-400 ring-yellow-400/40"
-        )} />
-        <span className="leading-none whitespace-nowrap">{kindLabel}</span>
-        {isSaving
-          ? <Loader2 className="w-3 h-3 animate-spin opacity-60 shrink-0 ml-0.5" />
-          : canToggleType && <ArrowLeftRight className="w-2.5 h-2.5 opacity-30 shrink-0 ml-0.5" />}
-      </button>
-
-      {/* Right — sub-group cycler */}
-      {isWorking ? (
-        <button
-          type="button"
-          onClick={handleGroupClick}
-          disabled={isSaving}
-          title={isSaving ? "Saving activity group…" : canCycleGroup ? "Cycle sub-group" : "No sub-groups configured"}
-          className={cn(
-            "flex items-center gap-1 px-2 py-1.5 bg-green-500/5 text-green-300/70 transition-all duration-150",
-            isSaving ? "cursor-wait opacity-75" : canCycleGroup ? "hover:bg-green-500/15 hover:text-green-300" : "opacity-50 cursor-not-allowed"
-          )}
-        >
-          <span className="leading-none whitespace-nowrap">{groupLabel ?? "—"}</span>
-          {isSaving
-            ? <Loader2 className="w-3 h-3 animate-spin opacity-60 shrink-0" />
-            : canCycleGroup && <ChevronRight className="w-3 h-3 opacity-40 shrink-0" />}
-        </button>
-      ) : (
-        <div className="flex items-center px-2 py-1.5 bg-muted/10 text-muted-foreground/25 select-none">
-          <span className="leading-none">—</span>
-        </div>
-      )}
-    </div>
+        {isSaving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : null}
+        <SelectValue placeholder="Select activity group" />
+      </SelectTrigger>
+      <SelectContent>
+        {CAPTURE_ACTIVITY_GROUP_OPTIONS.map((option) => {
+          const typeAvailable = allowedTypes.some((item) => item.name === option.typeName);
+          const groupAvailable = !option.groupName || allowedGroups.some((item) => item.name === option.groupName);
+          return (
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              disabled={!typeAvailable || !groupAvailable}
+            >
+              {option.label}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -1764,26 +1732,6 @@ export default function CapturePage() {
     });
   };
 
-  const handleQuickSetType = (entry: DprTimesheetEntry, activityTypeId: number) => {
-    saveActivitySelection(entry, {
-      activityTypeId,
-      // Sub-groups only apply to Working Time. Keeping the old "Effective"
-      // group here made a Non-Working entry appear as Effective in Clarify.
-      activityGroupId: activityTypeId === workingTypeId
-        ? entry.activityGroupId ?? null
-        : null,
-      activityId: null,
-    });
-  };
-
-  const handleQuickSetGroup = (entry: DprTimesheetEntry, activityGroupId: number) => {
-    saveActivitySelection(entry, {
-      activityTypeId: entry.activityTypeId ?? null,
-      activityGroupId,
-      activityId: null,
-    });
-  };
-
   const handleQuickSetActivity = (entry: DprTimesheetEntry, activityId: number) => {
     const activity = activities.find((item) => item.id === activityId);
     const group = activityGroups.find((item) => item.id === activity?.activityGroupId);
@@ -2565,17 +2513,14 @@ export default function CapturePage() {
                       <ActivityGroupPicker
                         allowedTypes={allowedTypes}
                         allowedGroups={allowedGroups}
-                        workingTypeId={workingTypeId}
                         typeValue={newRow.activityTypeId}
                         groupValue={newRow.activityGroupId}
-                        onTypeChange={(id) => setNewRow({
+                        onChange={({ activityTypeId, activityGroupId }) => setNewRow({
                           ...newRow,
-                          activityTypeId: id,
-                          activityGroupId: id === workingTypeId ? newRow.activityGroupId : null,
+                          activityTypeId,
+                          activityGroupId,
                           activityId: null,
                         })}
-                        onGroupChange={(id) => setNewRow({ ...newRow, activityGroupId: id, activityId: null })}
-                        onError={(msg) => toast({ title: msg, variant: "destructive" })}
                       />
                     </TableCell>
                     <TableCell className="min-w-[220px]">
@@ -2899,12 +2844,13 @@ export default function CapturePage() {
                         <ActivityGroupPicker
                           allowedTypes={allowedTypes}
                           allowedGroups={allowedGroups}
-                          workingTypeId={workingTypeId}
                           typeValue={selectedActivityTypeId}
                           groupValue={selectedActivityGroupId}
-                          onTypeChange={(id) => handleQuickSetType(entry, id)}
-                          onGroupChange={(id) => handleQuickSetGroup(entry, id)}
-                          onError={(msg) => toast({ title: msg, variant: "destructive" })}
+                          onChange={({ activityTypeId, activityGroupId }) => saveActivitySelection(entry, {
+                            activityTypeId,
+                            activityGroupId,
+                            activityId: null,
+                          })}
                           isSaving={Boolean(pendingSelection)}
                         />
                       </TableCell>
@@ -3569,23 +3515,15 @@ export default function CapturePage() {
                               <ActivityGroupPicker
                                 allowedTypes={allowedTypes}
                                 allowedGroups={allowedGroups}
-                                workingTypeId={workingTypeId}
                                 typeValue={row.activityTypeId}
                                 groupValue={row.activityGroupId}
-                                onTypeChange={(activityTypeId) => updatePendingRow(row.key, {
+                                onChange={({ activityTypeId, activityGroupId }) => updatePendingRow(row.key, {
                                   activityTypeId,
-                                  activityGroupId: activityTypeId === workingTypeId ? row.activityGroupId : null,
-                                  activityId: null,
-                                  importedActivityGroupRaw: undefined,
-                                  importedActivityRaw: undefined,
-                                })}
-                                onGroupChange={(activityGroupId) => updatePendingRow(row.key, {
                                   activityGroupId,
                                   activityId: null,
                                   importedActivityGroupRaw: undefined,
                                   importedActivityRaw: undefined,
                                 })}
-                                onError={(message) => toast({ title: message, variant: "destructive" })}
                               />
                             </td>
                           )}
