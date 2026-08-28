@@ -94,6 +94,76 @@ test("browser sequence never submits when verification fails and always closes",
   assert.deepEqual(events, ["login", "open", "rows:1", "populate:0", "verify:0", "close"]);
 });
 
+test("recognises the added row even when it sorts first and renumbers existing rows", () => {
+  // Lautec keeps the activities table sorted by Start. A new 00:00 row lands
+  // at the top and shifts every pre-existing row's "#" cell (1→2, 2→3). The
+  // delta must still match: only semantic columns identify a row.
+  const headers = ["", "#", "Status", "Activity Group", "Activity", "Location", "Start", "Finish", "Duration", "PAX working on task", "ORSTED Comments", "Comment", "Info", ""];
+  const baseline = {
+    headers,
+    rows: [
+      ["", "1", "", "Extra Work", "Variation", "Port of Immingham", "06:00", "18:00", "12:00", "*", "*", "VOR-008", "", ""],
+      ["", "2", "", "Extra Work", "Variation", "Port of Immingham", "08:00", "18:00", "10:00", "4", "*", "VOR-008", "", ""],
+    ],
+  };
+  const afterImport = {
+    headers,
+    rows: [
+      ["", "1", "", "Extra Work", "Variation", "Port of Immingham", "00:00", "18:00", "18:00", "4", "*", "VOR-008", "", ""],
+      ["", "2", "", "Extra Work", "Variation", "Port of Immingham", "06:00", "18:00", "12:00", "*", "*", "VOR-008", "", ""],
+      ["", "3", "", "Extra Work", "Variation", "Port of Immingham", "08:00", "18:00", "10:00", "4", "*", "VOR-008", "", ""],
+    ],
+  };
+  const expected = [{
+    activityGroup: "Extra Work",
+    activity: "Variation",
+    location: "Port of Immingham",
+    start: "00:00",
+    finish: "18:00",
+    comment: "VOR-008",
+    pax: "4",
+  }];
+  assert.equal(lautecTableDeltaMatchesReviewedRows(baseline, afterImport, expected), true);
+  // A resent identical row still counts as exactly one addition.
+  const duplicateResend = {
+    headers,
+    rows: [
+      ...baseline.rows.map((row) => [...row]),
+      ["", "3", "", "Extra Work", "Variation", "Port of Immingham", "08:00", "18:00", "10:00", "4", "*", "VOR-008", "", ""],
+    ],
+  };
+  assert.equal(lautecTableDeltaMatchesReviewedRows(baseline, duplicateResend, [{
+    activityGroup: "Extra Work",
+    activity: "Variation",
+    location: "Port of Immingham",
+    start: "08:00",
+    finish: "18:00",
+    comment: "VOR-008",
+    pax: "4",
+  }]), true);
+  // A baseline row that vanished must still fail the delta.
+  const lostRow = {
+    headers,
+    rows: [
+      ["", "1", "", "Extra Work", "Variation", "Port of Immingham", "00:00", "18:00", "18:00", "4", "*", "VOR-008", "", ""],
+      ["", "2", "", "Extra Work", "Variation", "Port of Immingham", "08:00", "18:00", "10:00", "4", "*", "VOR-008", "", ""],
+    ],
+  };
+  assert.equal(lautecTableDeltaMatchesReviewedRows(baseline, lostRow, expected), false);
+  // A baseline row replaced by one with identical managed columns but a
+  // changed non-positional cell (here ORSTED Comments) must also fail: only
+  // the "#" renumbering is forgiven, not any other visible difference.
+  const replacedRow = {
+    headers,
+    rows: [
+      ["", "1", "", "Extra Work", "Variation", "Port of Immingham", "00:00", "18:00", "18:00", "4", "*", "VOR-008", "", ""],
+      ["", "2", "", "Extra Work", "Variation", "Port of Immingham", "06:00", "18:00", "12:00", "*", "Changed by someone else", "VOR-008", "", ""],
+      ["", "3", "", "Extra Work", "Variation", "Port of Immingham", "08:00", "18:00", "10:00", "4", "*", "VOR-008", "", ""],
+    ],
+  };
+  assert.equal(lautecTableDeltaMatchesReviewedRows(baseline, replacedRow, expected), false);
+});
+
 test("Lautec browser destinations are limited to approved HTTPS pages", () => {
   assert.equal(validateLautecUrl("https://dpr.lautec.com/"), null);
   assert.equal(

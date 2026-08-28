@@ -216,8 +216,69 @@ export type LautecVisibleTableSnapshot = {
   rows: string[][];
 };
 
-function visibleRowKey(row: string[]): string {
-  return JSON.stringify(row.map(normaliseVisibleText));
+type LautecSemanticColumnIndexes = {
+  activityGroup: number;
+  activity: number;
+  location: number;
+  start: number;
+  finish: number;
+  comment: number;
+  pax: number;
+};
+
+function lautecSemanticColumnIndexes(headers: string[]): LautecSemanticColumnIndexes | null {
+  const normalised = headers.map(normaliseVisibleText);
+  const column = (predicate: (header: string) => boolean) => normalised.findIndex(predicate);
+  const indexes = {
+    activityGroup: column((header) => header.includes("activity group")),
+    activity: column((header) => header === "activity"),
+    location: column((header) => header.includes("location") || header.includes("position")),
+    start: column((header) => header.includes("start")),
+    finish: column((header) => header.includes("finish")),
+    // Lautec's persisted table shows "ORSTED Comments" before "Comment"; the
+    // import writes only the managed Comment column, so skip the ORSTED one.
+    comment: column((header) => header.includes("comment") && !header.includes("orsted")),
+    pax: column((header) => header.startsWith("pax") || header.includes(" pax")),
+  };
+  return Object.values(indexes).some((index) => index < 0) ? null : indexes;
+}
+
+// Lautec renders "*" as the placeholder in empty cells of a not-yet-saved
+// row; both "" and "*" mean the import left the cell untouched.
+function isBlankVisibleCell(value: string): boolean {
+  return value === "" || value === "*";
+}
+
+/**
+ * Indexes of purely positional columns — today only "#". Lautec keeps the
+ * activities table sorted by Start, so inserting a row that sorts before
+ * existing ones renumbers the "#" cell of every row below it. A row key
+ * that included "#" would make those untouched rows look changed and the
+ * added-row delta unrecognisable (which once aborted imports before Save).
+ */
+function positionalColumnIndexes(headers: string[]): ReadonlySet<number> {
+  const indexes = new Set<number>();
+  headers.forEach((header, index) => {
+    if (normaliseVisibleText(header) === "#") indexes.add(index);
+  });
+  return indexes;
+}
+
+/**
+ * Identity key for a visible activity row: every cell except positional
+ * ones, so a replaced row differing only in a non-semantic cell still breaks
+ * the baseline match. "*" (Lautec's unsaved-cell placeholder) and "" are the
+ * same blank, because the pre-save view stars cells the persisted view
+ * leaves empty.
+ */
+function visibleRowKey(row: string[], excludeIndexes: ReadonlySet<number>): string {
+  const cells: string[] = [];
+  for (let index = 0; index < row.length; index += 1) {
+    if (excludeIndexes.has(index)) continue;
+    const value = normaliseVisibleText(row[index] ?? "");
+    cells.push(isBlankVisibleCell(value) ? "" : value);
+  }
+  return JSON.stringify(cells);
 }
 
 function isPlaceholderRow(row: string[]): boolean {
@@ -238,12 +299,13 @@ function addedVisibleRows(
   ) {
     return null;
   }
+  const excludeIndexes = positionalColumnIndexes(current.headers);
   const baselineRows = baseline.rows.filter((row) => !isPlaceholderRow(row));
   const remaining = current.rows
     .filter((row) => !isPlaceholderRow(row))
-    .map((row) => ({ key: visibleRowKey(row), row }));
+    .map((row) => ({ key: visibleRowKey(row, excludeIndexes), row }));
   for (const baselineRow of baselineRows) {
-    const key = visibleRowKey(baselineRow);
+    const key = visibleRowKey(baselineRow, excludeIndexes);
     const matchIndex = remaining.findIndex((candidate) => candidate.key === key);
     if (matchIndex < 0) return null;
     remaining.splice(matchIndex, 1);
@@ -259,23 +321,9 @@ export function lautecTableDeltaMatchesReviewedRows(
   const addedRows = addedVisibleRows(baseline, current);
   if (!addedRows || addedRows.length !== expectedRows.length) return false;
 
-  const headers = current.headers.map(normaliseVisibleText);
-  const column = (predicate: (header: string) => boolean) => headers.findIndex(predicate);
-  const indexes = {
-    activityGroup: column((header) => header.includes("activity group")),
-    activity: column((header) => header === "activity"),
-    location: column((header) => header.includes("location") || header.includes("position")),
-    start: column((header) => header.includes("start")),
-    finish: column((header) => header.includes("finish")),
-    // Lautec's persisted table shows "ORSTED Comments" before "Comment"; the
-    // import writes only the managed Comment column, so skip the ORSTED one.
-    comment: column((header) => header.includes("comment") && !header.includes("orsted")),
-    pax: column((header) => header.startsWith("pax") || header.includes(" pax")),
-  };
-  if (Object.values(indexes).some((index) => index < 0)) return false;
-  // Lautec renders "*" as the placeholder in empty cells of a not-yet-saved
-  // row; both "" and "*" mean the import left the cell untouched.
-  const blankCell = (value: string) => value === "" || value === "*";
+  const indexes = lautecSemanticColumnIndexes(current.headers);
+  if (!indexes) return false;
+  const blankCell = isBlankVisibleCell;
 
   const unmatched = [...addedRows];
   for (const row of expectedRows) {
@@ -453,7 +501,7 @@ export async function createPuppeteerLautecUi(
     const seen = lastSeen
       ? ` Last visible table: ${JSON.stringify({ headers: lastSeen.headers, rows: lastSeen.rows.slice(0, 4) }).slice(0, 900)}`
       : " No activity table was visible.";
-    throw new Error(`Lautec did not visibly retain the exact newly reviewed rows with blank PAX.${seen}`);
+    throw new Error(`Lautec did not visibly retain exactly the newly reviewed rows alongside the pre-import ones.${seen}`);
   }
 
   async function assertGridContainsOnlyReviewedRows(): Promise<void> {
