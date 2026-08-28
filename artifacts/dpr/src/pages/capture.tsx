@@ -1201,6 +1201,8 @@ export default function CapturePage() {
   const [excelSkippedOtherDateRows, setExcelSkippedOtherDateRows] = useState(0);
   const [isSavingToGoogleSheet, setIsSavingToGoogleSheet] = useState(false);
   const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
+  // Team whose deliberate "send duplicate" confirmation dialog is open.
+  const [lautecResendConfirmTeamId, setLautecResendConfirmTeamId] = useState<number | null>(null);
   const [lautecPreviewAll, setLautecPreviewAll] = useState<LautecImportPreviewAll | null>(null);
   const [lautecRunId, setLautecRunId] = useState<number | null>(null);
   const [lautecError, setLautecError] = useState<string | null>(null);
@@ -1643,6 +1645,7 @@ export default function CapturePage() {
     setLautecError(null);
     setLautecTeamStates({});
     setLautecActiveTeamId(null);
+    setLautecResendConfirmTeamId(null);
     setLautecSequenceStarted(false);
     lautecQueueRef.current = [];
     processedLautecRunsRef.current = new Set();
@@ -1783,7 +1786,7 @@ export default function CapturePage() {
         continue;
       }
       if (team.alreadyImported && !state.confirmResend) {
-        nextStates[team.teamId] = { ...state, phase: "skipped", skipReason: "Skipped — already synced. Tick re-send to import again." };
+        nextStates[team.teamId] = { ...state, phase: "skipped", skipReason: "Up to date — this exact data is already in Lautec." };
         continue;
       }
       nextStates[team.teamId] = { ...state, phase: "queued" };
@@ -3296,7 +3299,7 @@ export default function CapturePage() {
                           <Badge variant="outline">{team.rowCount} row{team.rowCount === 1 ? "" : "s"}</Badge>
                         </div>
                         <span className={cn("text-xs", isErrorPhase ? "text-destructive" : phase === "success" ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground")}>
-                          {phase === "ready" && (team.runInProgress ? "An import is already running" : team.uncertainPending ? "Needs Lautec check" : team.alreadyImported ? "Already synced" : "Ready")}
+                          {phase === "ready" && (team.runInProgress ? "An import is already running" : team.uncertainPending ? "Needs Lautec check" : team.alreadyImported ? (state?.confirmResend ? "Will re-send (adds a DUPLICATE row)" : "Up to date — will be skipped") : "Ready")}
                           {phase === "queued" && "Waiting…"}
                           {phase === "syncing" && (lautecRunStatus === "submitting" ? "Submitting and saving…" : "Filling and verifying…")}
                           {phase === "success" && `Saved · ${state?.rowsSubmitted ?? team.rowCount} row${(state?.rowsSubmitted ?? team.rowCount) === 1 ? "" : "s"} submitted`}
@@ -3306,21 +3309,30 @@ export default function CapturePage() {
                           {phase === "failed" && "Failed"}
                         </span>
                       </div>
-                      {!lautecSequenceStarted && !team.runInProgress && (team.uncertainPending || team.alreadyImported) && (
+                      {!lautecSequenceStarted && !team.runInProgress && team.uncertainPending && (
                         <div className="mt-2 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
-                          {team.uncertainPending && (
-                            <label className="flex items-start gap-2 text-foreground">
-                              <Checkbox className="mt-0.5" checked={state?.confirmUncertain ?? false} onCheckedChange={(checked) => updateLautecTeamState(team.teamId, { confirmUncertain: checked === true })} />
-                              <span>An earlier submission for this team could not be verified. I checked Lautec and explicitly allow one retry. Untick to leave this team out.</span>
-                            </label>
-                          )}
-                          {team.alreadyImported && (
-                            <label className="flex items-start gap-2 text-foreground">
-                              <Checkbox className="mt-0.5" checked={state?.confirmResend ?? false} onCheckedChange={(checked) => updateLautecTeamState(team.teamId, { confirmResend: checked === true })} />
-                              <span>This exact snapshot was already imported. Re-sending will ADD duplicate rows in Lautec (it never replaces existing ones). Untick to skip this team.</span>
-                            </label>
-                          )}
+                          <label className="flex items-start gap-2 text-foreground">
+                            <Checkbox className="mt-0.5" checked={state?.confirmUncertain ?? false} onCheckedChange={(checked) => updateLautecTeamState(team.teamId, { confirmUncertain: checked === true })} />
+                            <span>An earlier submission for this team could not be verified. Open Lautec and look at this team's rows first: tick ONLY if the rows are NOT there. If they are there, leave this unticked — retrying would add them twice.</span>
+                          </label>
                         </div>
+                      )}
+                      {!lautecSequenceStarted && !team.runInProgress && team.alreadyImported && !team.uncertainPending && (
+                        state?.confirmResend ? (
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs">
+                            <span className="text-destructive">This team will get a DUPLICATE row — the same data is already in Lautec.</span>
+                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => updateLautecTeamState(team.teamId, { confirmResend: false })}>
+                              Cancel re-send
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <span>Nothing to do — this exact data is already in Lautec. This team will be skipped.</span>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => setLautecResendConfirmTeamId(team.teamId)}>
+                              Send again anyway…
+                            </Button>
+                          </div>
+                        )
                       )}
                       {isErrorPhase && state?.error && (
                         <p className="mt-2 text-xs text-destructive">{state.error}</p>
@@ -3386,6 +3398,38 @@ export default function CapturePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={lautecResendConfirmTeamId !== null}
+        onOpenChange={(open) => { if (!open) setLautecResendConfirmTeamId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Add a duplicate row in Lautec for {lautecPreviewAll?.teams.find((team) => team.teamId === lautecResendConfirmTeamId)?.teamName ?? "this team"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This team's data has not changed since it was last synced — Lautec already has exactly these rows.
+              Sending again never replaces anything: it ADDS the same row(s) a second time, and duplicates can
+              only be deleted by hand in Lautec. Only continue if you deleted the rows in Lautec and want them re-created.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it skipped</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (lautecResendConfirmTeamId !== null) {
+                  updateLautecTeamState(lautecResendConfirmTeamId, { confirmResend: true });
+                }
+                setLautecResendConfirmTeamId(null);
+              }}
+            >
+              Yes, add duplicate row(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={pasteOpen} onOpenChange={(open) => { if (!open) closePasteDialog(); else openPasteDialog(); }}>
         <DialogContent className={cn(
