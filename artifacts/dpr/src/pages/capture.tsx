@@ -1308,7 +1308,7 @@ export default function CapturePage() {
       },
       {
         label: "Submit to Lautec",
-        detail: "Send the verified grid with PAX left blank",
+        detail: "Send the verified grid including sheet-supplied PAX",
         state: submitState,
       },
       {
@@ -3030,7 +3030,7 @@ export default function CapturePage() {
               Sync Capture to Lautec
             </DialogTitle>
             <DialogDescription>
-              This sends one selected date and team using Lautec’s visible Import Data form. PAX is intentionally left blank.
+              This sends one selected date and team using Lautec’s visible Import Data form. PAX from the sheet is filled in; blank PAX stays blank.
             </DialogDescription>
           </DialogHeader>
 

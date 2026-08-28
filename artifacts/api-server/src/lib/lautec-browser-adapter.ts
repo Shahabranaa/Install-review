@@ -314,7 +314,9 @@ function pause(milliseconds: number): Promise<void> {
  * Vercel's serverless Linux runtime while LAUTEC_BROWSER_EXECUTABLE_PATH makes
  * local controlled runs possible with a separately installed browser.
  */
-export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Promise<LautecUi> {
+export async function createPuppeteerLautecUi(
+  config: LautecBrowserConfig,
+): Promise<LautecUi & { /** Diagnostic-only escape hatch for probe scripts; never used by the import flow. */ page: unknown }> {
   const puppeteerModule = await import("puppeteer-core");
   const chromiumModule = await import("@sparticuz/chromium");
   const puppeteer = puppeteerModule.default;
@@ -683,6 +685,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
   }
 
   return {
+    page,
     async login(username, password) {
       await page.goto(config.loginUrl, { waitUntil: "domcontentloaded" });
       verifyApprovedPage();
@@ -785,9 +788,11 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       await enterGridText(3, index, row.start);
       await enterGridText(4, index, row.finish);
       await enterGridText(5, index, row.comment);
-      // PAX (column 6) is filled only when the Capture sheet supplies one;
-      // a blank PAX leaves Lautec's cell untouched.
-      if (row.pax) await enterGridText(6, index, row.pax);
+      // PAX (column 6) is a dropdown in Lautec's import grid, not a text
+      // cell. It is filled only when the Capture sheet supplies one; a blank
+      // PAX leaves Lautec's cell untouched. A PAX outside Lautec's offered
+      // options fails loudly with the row number before anything is sent.
+      if (row.pax) await selectGridOption(6, index, row.pax, "PAX");
     },
     async verifyRow(index, row) {
       const expected: Array<[string, number, string, boolean]> = [
