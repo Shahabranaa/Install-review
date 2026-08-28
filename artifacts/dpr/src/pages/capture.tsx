@@ -46,6 +46,7 @@ import { useCaptureNav } from "@/contexts/CaptureNavContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { compareDprRows } from "@/lib/sorting";
 import { DprExcelRow, parseDprExportWorkbook } from "@/lib/dpr-excel";
+import { LautecReconcileDialog } from "@/components/lautec-reconcile-dialog";
 
 const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
@@ -1203,6 +1204,7 @@ export default function CapturePage() {
   const [lautecDialogOpen, setLautecDialogOpen] = useState(false);
   // Team whose deliberate "send duplicate" confirmation dialog is open.
   const [lautecResendConfirmTeamId, setLautecResendConfirmTeamId] = useState<number | null>(null);
+  const [lautecCleanupOpen, setLautecCleanupOpen] = useState(false);
   const [lautecPreviewAll, setLautecPreviewAll] = useState<LautecImportPreviewAll | null>(null);
   const [lautecRunId, setLautecRunId] = useState<number | null>(null);
   const [lautecError, setLautecError] = useState<string | null>(null);
@@ -3386,6 +3388,16 @@ export default function CapturePage() {
           )}
 
           <DialogFooter>
+            {lautecPreviewAll && !lautecSequenceStarted && (
+              <Button
+                variant="outline"
+                className="sm:mr-auto"
+                onClick={() => { closeLautecDialog(); setLautecCleanupOpen(true); }}
+                disabled={isLautecSyncing}
+              >
+                Clean up Lautec…
+              </Button>
+            )}
             <Button variant="outline" onClick={closeLautecDialog} disabled={isLautecSyncing}>
               Close
             </Button>
@@ -3398,6 +3410,15 @@ export default function CapturePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {activeDate && (
+        <LautecReconcileDialog
+          open={lautecCleanupOpen}
+          onOpenChange={setLautecCleanupOpen}
+          date={activeDate}
+          onCleanupFinished={resetLautecSyncState}
+        />
+      )}
 
       <AlertDialog
         open={lautecResendConfirmTeamId !== null}

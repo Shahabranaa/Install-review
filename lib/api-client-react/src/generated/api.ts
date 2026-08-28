@@ -60,6 +60,7 @@ import type {
   GenerateDocumentBody,
   GetDashboardSummaryParams,
   GetDprRosterParams,
+  GetLatestDprLautecReconcileParams,
   GetPhaseStatusesParams,
   HealthStatus,
   ImageDetail,
@@ -71,6 +72,10 @@ import type {
   LautecImportPreviewAllInput,
   LautecImportPreviewInput,
   LautecImportRun,
+  LautecReconcileApplyInput,
+  LautecReconcileLatest,
+  LautecReconcileRun,
+  LautecReconcileStartInput,
   ListDecisionsParams,
   ListDocumentsParams,
   ListDprActivitiesParams,
@@ -6469,4 +6474,378 @@ export function useGetDprLautecImport<TData = Awaited<ReturnType<typeof getDprLa
 
 
 
+
+export const getGetLatestDprLautecReconcileUrl = (params: GetLatestDprLautecReconcileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dpr/lautec-reconciles?${stringifiedParams}` : `/api/dpr/lautec-reconciles`
+}
+
+/**
+ * @summary Get the most recent Lautec cleanup run for one DPR date
+ */
+export const getLatestDprLautecReconcile = async (params: GetLatestDprLautecReconcileParams, options?: RequestInit): Promise<LautecReconcileLatest> => {
+
+  return customFetch<LautecReconcileLatest>(getGetLatestDprLautecReconcileUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLatestDprLautecReconcileQueryKey = (params?: GetLatestDprLautecReconcileParams,) => {
+    return [
+    `/api/dpr/lautec-reconciles`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetLatestDprLautecReconcileQueryOptions = <TData = Awaited<ReturnType<typeof getLatestDprLautecReconcile>>, TError = ErrorType<unknown>>(params: GetLatestDprLautecReconcileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLatestDprLautecReconcile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLatestDprLautecReconcileQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLatestDprLautecReconcile>>> = ({ signal }) => getLatestDprLautecReconcile(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLatestDprLautecReconcile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLatestDprLautecReconcileQueryResult = NonNullable<Awaited<ReturnType<typeof getLatestDprLautecReconcile>>>
+export type GetLatestDprLautecReconcileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the most recent Lautec cleanup run for one DPR date
+ */
+
+export function useGetLatestDprLautecReconcile<TData = Awaited<ReturnType<typeof getLatestDprLautecReconcile>>, TError = ErrorType<unknown>>(
+ params: GetLatestDprLautecReconcileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLatestDprLautecReconcile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLatestDprLautecReconcileQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getStartDprLautecReconcileUrl = () => {
+
+
+
+
+  return `/api/dpr/lautec-reconciles`
+}
+
+/**
+ * @summary Start a read-only Lautec scan that builds a cleanup plan for one DPR date
+ */
+export const startDprLautecReconcile = async (lautecReconcileStartInput: LautecReconcileStartInput, options?: RequestInit): Promise<LautecReconcileRun> => {
+
+  return customFetch<LautecReconcileRun>(getStartDprLautecReconcileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lautecReconcileStartInput,)
+  }
+);}
+
+
+
+
+export const getStartDprLautecReconcileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDprLautecReconcile>>, TError,{data: BodyType<LautecReconcileStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startDprLautecReconcile>>, TError,{data: BodyType<LautecReconcileStartInput>}, TContext> => {
+
+const mutationKey = ['startDprLautecReconcile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startDprLautecReconcile>>, {data: BodyType<LautecReconcileStartInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startDprLautecReconcile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartDprLautecReconcileMutationResult = NonNullable<Awaited<ReturnType<typeof startDprLautecReconcile>>>
+    export type StartDprLautecReconcileMutationBody = BodyType<LautecReconcileStartInput>
+    export type StartDprLautecReconcileMutationError = ErrorType<void>
+
+    /**
+ * @summary Start a read-only Lautec scan that builds a cleanup plan for one DPR date
+ */
+export const useStartDprLautecReconcile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startDprLautecReconcile>>, TError,{data: BodyType<LautecReconcileStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startDprLautecReconcile>>,
+        TError,
+        {data: BodyType<LautecReconcileStartInput>},
+        TContext
+      > => {
+      return useMutation(getStartDprLautecReconcileMutationOptions(options));
+    }
+
+export const getGetDprLautecReconcileUrl = (reconcileId: number,) => {
+
+
+
+
+  return `/api/dpr/lautec-reconciles/${reconcileId}`
+}
+
+/**
+ * @summary Get one Lautec cleanup run, its plan, and its result
+ */
+export const getDprLautecReconcile = async (reconcileId: number, options?: RequestInit): Promise<LautecReconcileRun> => {
+
+  return customFetch<LautecReconcileRun>(getGetDprLautecReconcileUrl(reconcileId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDprLautecReconcileQueryKey = (reconcileId: number,) => {
+    return [
+    `/api/dpr/lautec-reconciles/${reconcileId}`
+    ] as const;
+    }
+
+
+export const getGetDprLautecReconcileQueryOptions = <TData = Awaited<ReturnType<typeof getDprLautecReconcile>>, TError = ErrorType<void>>(reconcileId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprLautecReconcile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDprLautecReconcileQueryKey(reconcileId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDprLautecReconcile>>> = ({ signal }) => getDprLautecReconcile(reconcileId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(reconcileId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDprLautecReconcile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDprLautecReconcileQueryResult = NonNullable<Awaited<ReturnType<typeof getDprLautecReconcile>>>
+export type GetDprLautecReconcileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one Lautec cleanup run, its plan, and its result
+ */
+
+export function useGetDprLautecReconcile<TData = Awaited<ReturnType<typeof getDprLautecReconcile>>, TError = ErrorType<void>>(
+ reconcileId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDprLautecReconcile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDprLautecReconcileQueryOptions(reconcileId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getApplyDprLautecReconcileUrl = (reconcileId: number,) => {
+
+
+
+
+  return `/api/dpr/lautec-reconciles/${reconcileId}/apply`
+}
+
+/**
+ * @summary Apply an approved Lautec cleanup plan (deletes the planned rows)
+ */
+export const applyDprLautecReconcile = async (reconcileId: number,
+    lautecReconcileApplyInput: LautecReconcileApplyInput, options?: RequestInit): Promise<LautecReconcileRun> => {
+
+  return customFetch<LautecReconcileRun>(getApplyDprLautecReconcileUrl(reconcileId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lautecReconcileApplyInput,)
+  }
+);}
+
+
+
+
+export const getApplyDprLautecReconcileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyDprLautecReconcile>>, TError,{reconcileId: number;data: BodyType<LautecReconcileApplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyDprLautecReconcile>>, TError,{reconcileId: number;data: BodyType<LautecReconcileApplyInput>}, TContext> => {
+
+const mutationKey = ['applyDprLautecReconcile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyDprLautecReconcile>>, {reconcileId: number;data: BodyType<LautecReconcileApplyInput>}> = (props) => {
+          const {reconcileId,data} = props ?? {};
+
+          return  applyDprLautecReconcile(reconcileId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyDprLautecReconcileMutationResult = NonNullable<Awaited<ReturnType<typeof applyDprLautecReconcile>>>
+    export type ApplyDprLautecReconcileMutationBody = BodyType<LautecReconcileApplyInput>
+    export type ApplyDprLautecReconcileMutationError = ErrorType<void>
+
+    /**
+ * @summary Apply an approved Lautec cleanup plan (deletes the planned rows)
+ */
+export const useApplyDprLautecReconcile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyDprLautecReconcile>>, TError,{reconcileId: number;data: BodyType<LautecReconcileApplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyDprLautecReconcile>>,
+        TError,
+        {reconcileId: number;data: BodyType<LautecReconcileApplyInput>},
+        TContext
+      > => {
+      return useMutation(getApplyDprLautecReconcileMutationOptions(options));
+    }
+
+export const getCancelDprLautecReconcileUrl = (reconcileId: number,) => {
+
+
+
+
+  return `/api/dpr/lautec-reconciles/${reconcileId}/cancel`
+}
+
+/**
+ * @summary Cancel a Lautec cleanup plan that is awaiting approval
+ */
+export const cancelDprLautecReconcile = async (reconcileId: number, options?: RequestInit): Promise<LautecReconcileRun> => {
+
+  return customFetch<LautecReconcileRun>(getCancelDprLautecReconcileUrl(reconcileId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelDprLautecReconcileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDprLautecReconcile>>, TError,{reconcileId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelDprLautecReconcile>>, TError,{reconcileId: number}, TContext> => {
+
+const mutationKey = ['cancelDprLautecReconcile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelDprLautecReconcile>>, {reconcileId: number}> = (props) => {
+          const {reconcileId} = props ?? {};
+
+          return  cancelDprLautecReconcile(reconcileId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelDprLautecReconcileMutationResult = NonNullable<Awaited<ReturnType<typeof cancelDprLautecReconcile>>>
+
+    export type CancelDprLautecReconcileMutationError = ErrorType<void>
+
+    /**
+ * @summary Cancel a Lautec cleanup plan that is awaiting approval
+ */
+export const useCancelDprLautecReconcile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDprLautecReconcile>>, TError,{reconcileId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelDprLautecReconcile>>,
+        TError,
+        {reconcileId: number},
+        TContext
+      > => {
+      return useMutation(getCancelDprLautecReconcileMutationOptions(options));
+    }
 

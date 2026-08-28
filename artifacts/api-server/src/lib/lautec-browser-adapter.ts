@@ -43,6 +43,21 @@ export interface LautecUi {
   close(): Promise<void>;
 }
 
+/**
+ * Browser operations used by the Lautec cleanup (reconcile) flow. Reads are
+ * side-effect free; `deleteVisibleRow` only stages an unsaved deletion, so
+ * closing the browser before `saveDprChanges` discards everything.
+ */
+export interface LautecReconcileUi {
+  login(username: string, password: string): Promise<void>;
+  openDprDate(date: string, verifyTeamName: string): Promise<void>;
+  readTeamTable(teamName: string): Promise<LautecVisibleTableSnapshot>;
+  deleteVisibleRow(targetRow: string[]): Promise<void>;
+  saveDprChanges(): Promise<void>;
+  reloadDpr(verifyTeamName: string): Promise<void>;
+  close(): Promise<void>;
+}
+
 function configError(message: string): Error {
   return new Error(`Lautec browser configuration is incomplete: ${message}`);
 }
@@ -197,7 +212,7 @@ export function lautecDateLabel(date: string): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-function normaliseVisibleText(value: string): string {
+export function normaliseVisibleText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
@@ -216,7 +231,7 @@ export type LautecVisibleTableSnapshot = {
   rows: string[][];
 };
 
-type LautecSemanticColumnIndexes = {
+export type LautecSemanticColumnIndexes = {
   activityGroup: number;
   activity: number;
   location: number;
@@ -226,7 +241,7 @@ type LautecSemanticColumnIndexes = {
   pax: number;
 };
 
-function lautecSemanticColumnIndexes(headers: string[]): LautecSemanticColumnIndexes | null {
+export function lautecSemanticColumnIndexes(headers: string[]): LautecSemanticColumnIndexes | null {
   const normalised = headers.map(normaliseVisibleText);
   const column = (predicate: (header: string) => boolean) => normalised.findIndex(predicate);
   const indexes = {
@@ -245,7 +260,7 @@ function lautecSemanticColumnIndexes(headers: string[]): LautecSemanticColumnInd
 
 // Lautec renders "*" as the placeholder in empty cells of a not-yet-saved
 // row; both "" and "*" mean the import left the cell untouched.
-function isBlankVisibleCell(value: string): boolean {
+export function isBlankVisibleCell(value: string): boolean {
   return value === "" || value === "*";
 }
 
@@ -256,7 +271,7 @@ function isBlankVisibleCell(value: string): boolean {
  * that included "#" would make those untouched rows look changed and the
  * added-row delta unrecognisable (which once aborted imports before Save).
  */
-function positionalColumnIndexes(headers: string[]): ReadonlySet<number> {
+export function positionalColumnIndexes(headers: string[]): ReadonlySet<number> {
   const indexes = new Set<number>();
   headers.forEach((header, index) => {
     if (normaliseVisibleText(header) === "#") indexes.add(index);
@@ -271,7 +286,7 @@ function positionalColumnIndexes(headers: string[]): ReadonlySet<number> {
  * same blank, because the pre-save view stars cells the persisted view
  * leaves empty.
  */
-function visibleRowKey(row: string[], excludeIndexes: ReadonlySet<number>): string {
+export function visibleRowKey(row: string[], excludeIndexes: ReadonlySet<number>): string {
   const cells: string[] = [];
   for (let index = 0; index < row.length; index += 1) {
     if (excludeIndexes.has(index)) continue;
@@ -281,7 +296,7 @@ function visibleRowKey(row: string[], excludeIndexes: ReadonlySet<number>): stri
   return JSON.stringify(cells);
 }
 
-function isPlaceholderRow(row: string[]): boolean {
+export function isPlaceholderRow(row: string[]): boolean {
   // An empty Lautec table renders a single spanning placeholder cell. It
   // disappears once a real row is added, so it must not count as a lost row.
   const text = normaliseVisibleText(row.join(" "));
@@ -364,7 +379,7 @@ function pause(milliseconds: number): Promise<void> {
  */
 export async function createPuppeteerLautecUi(
   config: LautecBrowserConfig,
-): Promise<LautecUi & { /** Diagnostic-only escape hatch for probe scripts; never used by the import flow. */ page: unknown }> {
+): Promise<LautecUi & LautecReconcileUi & { /** Diagnostic-only escape hatch for probe scripts; never used by the import flow. */ page: unknown }> {
   const puppeteerModule = await import("puppeteer-core");
   const chromiumModule = await import("@sparticuz/chromium");
   const puppeteer = puppeteerModule.default;
@@ -430,7 +445,10 @@ export async function createPuppeteerLautecUi(
     }
   }
 
-  async function visibleDprTableSnapshot(): Promise<LautecVisibleTableSnapshot> {
+  async function visibleDprTableWithHandles(): Promise<{
+    headers: string[];
+    rowEntries: Array<{ handle: any; cells: string[] }>;
+  }> {
     const tables = await page.$$("table, mat-table, [role=table], [role=grid]");
     for (const table of tables) {
       if (!await table.boundingBox()) continue;
@@ -449,7 +467,7 @@ export async function createPuppeteerLautecUi(
         continue;
       }
       const rowElements = await table.$$("tbody tr, tr.mat-mdc-row, tr.mat-row, mat-row, [role=row]");
-      const rows: string[][] = [];
+      const rowEntries: Array<{ handle: any; cells: string[] }> = [];
       for (const row of rowElements) {
         if (!await row.boundingBox()) continue;
         const cellElements = await row.$$(
@@ -460,11 +478,16 @@ export async function createPuppeteerLautecUi(
         for (const cell of cellElements) {
           cells.push((await stringProperty(cell, "textContent") ?? "").trim());
         }
-        rows.push(cells);
+        rowEntries.push({ handle: row, cells });
       }
-      return { headers, rows };
+      return { headers, rowEntries };
     }
     throw new Error("Lautec did not show the selected team's visible activity table.");
+  }
+
+  async function visibleDprTableSnapshot(): Promise<LautecVisibleTableSnapshot> {
+    const { headers, rowEntries } = await visibleDprTableWithHandles();
+    return { headers, rows: rowEntries.map((entry) => entry.cells) };
   }
 
   async function waitForVisibleDprTable(): Promise<LautecVisibleTableSnapshot> {
@@ -912,6 +935,139 @@ export async function createPuppeteerLautecUi(
           .catch(() => null)
         : `Reloaded ${currentDate} / ${currentTeamName} and confirmed ${requestedRowCount} saved row(s)`;
       return { confirmation, rejectedRows };
+    },
+    async openDprDate(date, verifyTeamName) {
+      verifyApprovedDprPage();
+      currentDate = date;
+      if (config.dprUrl) {
+        await page.goto(config.dprUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+        verifyApprovedDprPage();
+        await page.waitForFunction(
+          `/${LAUTEC_IMPORT_MODAL_TITLE.source}/.test(document.body.innerText || "")
+            || (() => {
+              const controls = Array.from(document.querySelectorAll("body *"));
+              return controls.some((element) => /\\bimport\\s+data\\b/i.test(element.textContent || ""));
+            })()`,
+          { timeout: 30_000 },
+        );
+        await dismissAnyImportModal();
+        const onRequestedDate = await page.evaluate(
+          `(document.body.innerText || "").includes(${JSON.stringify(lautecDateLabel(date))})`,
+        ) as boolean;
+        if (onRequestedDate) {
+          await waitForEditorControls(verifyTeamName);
+          return;
+        }
+      }
+      await clickDateEdit(date, verifyTeamName);
+    },
+    async readTeamTable(teamName) {
+      verifyApprovedDprPage();
+      currentTeamName = teamName;
+      await clickTeamTab(teamName);
+      return waitForVisibleDprTable();
+    },
+    async deleteVisibleRow(targetRow) {
+      verifyApprovedDprPage();
+      const before = await visibleDprTableSnapshot();
+      const excludeIndexes = positionalColumnIndexes(before.headers);
+      const targetKey = visibleRowKey(targetRow, excludeIndexes);
+      const expectedRemaining = [...before.rows.filter((row) => !isPlaceholderRow(row))];
+      const removeIndex = expectedRemaining.findIndex(
+        (row) => visibleRowKey(row, excludeIndexes) === targetKey,
+      );
+      if (removeIndex < 0) {
+        throw new Error("Lautec no longer shows the activity row scheduled for deletion; aborting without saving.");
+      }
+      expectedRemaining.splice(removeIndex, 1);
+      const expectedKeys = expectedRemaining
+        .map((row) => visibleRowKey(row, excludeIndexes))
+        .sort();
+
+      const { rowEntries } = await visibleDprTableWithHandles();
+      const target = rowEntries.find(
+        (entry) => !isPlaceholderRow(entry.cells) && visibleRowKey(entry.cells, excludeIndexes) === targetKey,
+      );
+      if (!target) {
+        throw new Error("Lautec no longer shows the activity row scheduled for deletion; aborting without saving.");
+      }
+
+      // A Lautec activity row exposes its actions through the trailing "..."
+      // control. Click the last visible button-like control in the row, then
+      // choose the visible Delete action. Every outcome is verified against
+      // the table itself; a failed or ambiguous click aborts before Save.
+      const rowButtons = await target.handle.$$(
+        'button, [role=button], a[role=menuitem], .mat-mdc-icon-button, [mat-icon-button]',
+      );
+      let menuOpened = false;
+      for (let index = rowButtons.length - 1; index >= 0; index -= 1) {
+        const button = rowButtons[index];
+        if (!await button.boundingBox()) continue;
+        await button.click();
+        menuOpened = await page
+          .waitForFunction(
+            `(() => {
+              const visible = (element) => {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+              };
+              return Array.from(document.querySelectorAll("body *"))
+                .some((element) => visible(element) && /^\\s*Delete\\s*$/i.test(element.textContent || ""));
+            })()`,
+            { timeout: 5_000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (menuOpened) break;
+      }
+      if (!menuOpened) {
+        throw new Error("Lautec did not offer a visible Delete action for the activity row; aborting without saving.");
+      }
+      await clickVisibleButton(/^Delete$/i);
+
+      // The row must visibly disappear. If Lautec interposes a confirmation
+      // dialog, accept it via its visible Delete/Confirm/Yes control.
+      const deadline = Date.now() + 15_000;
+      let confirmedGone = false;
+      while (Date.now() < deadline) {
+        await pause(500);
+        let current: LautecVisibleTableSnapshot;
+        try {
+          current = await visibleDprTableSnapshot();
+        } catch {
+          continue;
+        }
+        const currentKeys = current.rows
+          .filter((row) => !isPlaceholderRow(row))
+          .map((row) => visibleRowKey(row, excludeIndexes))
+          .sort();
+        if (JSON.stringify(currentKeys) === JSON.stringify(expectedKeys)) {
+          confirmedGone = true;
+          break;
+        }
+        await clickVisibleButton(/^(Delete|Confirm|Yes)$/i).catch(() => undefined);
+      }
+      if (!confirmedGone) {
+        throw new Error("Lautec did not visibly remove exactly the requested activity row; aborting without saving.");
+      }
+    },
+    async saveDprChanges() {
+      verifyApprovedDprPage();
+      await clickVisibleButton(/^Save\s+Changes$/i);
+      await page.waitForFunction(
+        `!(document.body.innerText || "").includes("There are unsaved changes")`,
+        { timeout: 30_000 },
+      );
+      await pause(1_000);
+    },
+    async reloadDpr(verifyTeamName) {
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
+      verifyApprovedDprPage();
+      if (config.dprUrl) {
+        await dismissAnyImportModal();
+      }
+      await waitForEditorControls(verifyTeamName);
     },
     async close() {
       await browser.close();

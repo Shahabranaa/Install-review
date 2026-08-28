@@ -37,6 +37,13 @@ export const dprLautecImportRunsTable = pgTable("dpr_lautec_import_runs", {
   errorDetail: text("error_detail"),
   requestedResend: boolean("requested_resend").notNull().default(false),
   confirmedUncertainRetry: boolean("confirmed_uncertain_retry").notNull().default(false),
+  /**
+   * Set when a Lautec cleanup (reconcile) verified this run's rows are no
+   * longer present in Lautec. Such runs stop counting toward the
+   * "already imported" duplicate guard, so the normal sync can re-add rows
+   * without a re-send confirmation.
+   */
+  rowsRemovedByReconcileId: integer("rows_removed_by_reconcile_id"),
   actorId: integer("actor_id").references(() => usersTable.id, { onDelete: "set null" }),
   actorName: text("actor_name").notNull().default("Unknown"),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),

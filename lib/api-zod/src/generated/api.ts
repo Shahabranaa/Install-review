@@ -1650,3 +1650,163 @@ export const GetDprLautecImportResponse = zod.object({
   "startedAt": zod.string(),
   "finishedAt": zod.string().nullable()
 })
+
+
+/**
+ * @summary Get the most recent Lautec cleanup run for one DPR date
+ */
+export const getLatestDprLautecReconcileQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetLatestDprLautecReconcileQueryParams = zod.object({
+  "date": zod.coerce.string().regex(getLatestDprLautecReconcileQueryDateRegExp)
+})
+
+export const GetLatestDprLautecReconcileResponse = zod.object({
+  "reconcile": zod.union([zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "status": zod.enum(['scanning', 'awaiting_approval', 'applying', 'saving', 'success', 'failed', 'interrupted', 'uncertain', 'cancelled']),
+  "plan": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "headers": zod.array(zod.string()),
+  "keeps": zod.array(zod.array(zod.string())).describe('Visible Lautec rows kept because they match the current Capture sheet.'),
+  "deletions": zod.array(zod.array(zod.string())).describe('Visible Lautec rows that will be deleted (created by this system, now outdated or duplicated).'),
+  "unattributed": zod.array(zod.array(zod.string())).describe('Visible Lautec rows this system cannot account for; they are never touched.'),
+  "missingRows": zod.array(zod.object({
+  "activityGroup": zod.string(),
+  "activity": zod.string(),
+  "location": zod.string(),
+  "start": zod.string(),
+  "finish": zod.string(),
+  "comment": zod.string(),
+  "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
+})).describe('Capture rows absent from Lautec; add them with a normal sync after the cleanup.')
+})),
+  "result": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "deletedCount": zod.number(),
+  "runsMarkedRemoved": zod.number(),
+  "uncertainResolved": zod.number(),
+  "detail": zod.string().optional()
+})),
+  "errorDetail": zod.string().nullable(),
+  "approvalToken": zod.string().nullable().describe('Present only while the run is awaiting approval.'),
+  "actorName": zod.string(),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Start a read-only Lautec scan that builds a cleanup plan for one DPR date
+ */
+export const startDprLautecReconcileBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const StartDprLautecReconcileBody = zod.object({
+  "date": zod.string().regex(startDprLautecReconcileBodyDateRegExp)
+})
+
+
+/**
+ * @summary Get one Lautec cleanup run, its plan, and its result
+ */
+export const GetDprLautecReconcileParams = zod.object({
+  "reconcileId": zod.coerce.number()
+})
+
+export const GetDprLautecReconcileResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "status": zod.enum(['scanning', 'awaiting_approval', 'applying', 'saving', 'success', 'failed', 'interrupted', 'uncertain', 'cancelled']),
+  "plan": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "headers": zod.array(zod.string()),
+  "keeps": zod.array(zod.array(zod.string())).describe('Visible Lautec rows kept because they match the current Capture sheet.'),
+  "deletions": zod.array(zod.array(zod.string())).describe('Visible Lautec rows that will be deleted (created by this system, now outdated or duplicated).'),
+  "unattributed": zod.array(zod.array(zod.string())).describe('Visible Lautec rows this system cannot account for; they are never touched.'),
+  "missingRows": zod.array(zod.object({
+  "activityGroup": zod.string(),
+  "activity": zod.string(),
+  "location": zod.string(),
+  "start": zod.string(),
+  "finish": zod.string(),
+  "comment": zod.string(),
+  "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
+})).describe('Capture rows absent from Lautec; add them with a normal sync after the cleanup.')
+})),
+  "result": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "deletedCount": zod.number(),
+  "runsMarkedRemoved": zod.number(),
+  "uncertainResolved": zod.number(),
+  "detail": zod.string().optional()
+})),
+  "errorDetail": zod.string().nullable(),
+  "approvalToken": zod.string().nullable().describe('Present only while the run is awaiting approval.'),
+  "actorName": zod.string(),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Apply an approved Lautec cleanup plan (deletes the planned rows)
+ */
+export const ApplyDprLautecReconcileParams = zod.object({
+  "reconcileId": zod.coerce.number()
+})
+
+export const ApplyDprLautecReconcileBody = zod.object({
+  "approvalToken": zod.string().describe('Returned with the awaiting-approval plan; binds the approval to the exact plan the operator reviewed.')
+})
+
+
+/**
+ * @summary Cancel a Lautec cleanup plan that is awaiting approval
+ */
+export const CancelDprLautecReconcileParams = zod.object({
+  "reconcileId": zod.coerce.number()
+})
+
+export const CancelDprLautecReconcileResponse = zod.object({
+  "id": zod.number(),
+  "date": zod.string(),
+  "status": zod.enum(['scanning', 'awaiting_approval', 'applying', 'saving', 'success', 'failed', 'interrupted', 'uncertain', 'cancelled']),
+  "plan": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "headers": zod.array(zod.string()),
+  "keeps": zod.array(zod.array(zod.string())).describe('Visible Lautec rows kept because they match the current Capture sheet.'),
+  "deletions": zod.array(zod.array(zod.string())).describe('Visible Lautec rows that will be deleted (created by this system, now outdated or duplicated).'),
+  "unattributed": zod.array(zod.array(zod.string())).describe('Visible Lautec rows this system cannot account for; they are never touched.'),
+  "missingRows": zod.array(zod.object({
+  "activityGroup": zod.string(),
+  "activity": zod.string(),
+  "location": zod.string(),
+  "start": zod.string(),
+  "finish": zod.string(),
+  "comment": zod.string(),
+  "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
+})).describe('Capture rows absent from Lautec; add them with a normal sync after the cleanup.')
+})),
+  "result": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "deletedCount": zod.number(),
+  "runsMarkedRemoved": zod.number(),
+  "uncertainResolved": zod.number(),
+  "detail": zod.string().optional()
+})),
+  "errorDetail": zod.string().nullable(),
+  "approvalToken": zod.string().nullable().describe('Present only while the run is awaiting approval.'),
+  "actorName": zod.string(),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
+})

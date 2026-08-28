@@ -763,6 +763,77 @@ export interface LautecImportRun {
   finishedAt: string | null;
 }
 
+export interface LautecReconcileStartInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+}
+
+export interface LautecReconcileApplyInput {
+  /** Returned with the awaiting-approval plan; binds the approval to the exact plan the operator reviewed. */
+  approvalToken: string;
+}
+
+export interface LautecReconcileTeamPlan {
+  teamId: number;
+  teamName: string;
+  headers: string[];
+  /** Visible Lautec rows kept because they match the current Capture sheet. */
+  keeps: string[][];
+  /** Visible Lautec rows that will be deleted (created by this system, now outdated or duplicated). */
+  deletions: string[][];
+  /** Visible Lautec rows this system cannot account for; they are never touched. */
+  unattributed: string[][];
+  /** Capture rows absent from Lautec; add them with a normal sync after the cleanup. */
+  missingRows: LautecImportRow[];
+}
+
+export interface LautecReconcileTeamResult {
+  teamId: number;
+  teamName: string;
+  deletedCount: number;
+  runsMarkedRemoved: number;
+  uncertainResolved: number;
+  detail?: string;
+}
+
+export type LautecReconcileRunStatus = typeof LautecReconcileRunStatus[keyof typeof LautecReconcileRunStatus];
+
+
+export const LautecReconcileRunStatus = {
+  scanning: 'scanning',
+  awaiting_approval: 'awaiting_approval',
+  applying: 'applying',
+  saving: 'saving',
+  success: 'success',
+  failed: 'failed',
+  interrupted: 'interrupted',
+  uncertain: 'uncertain',
+  cancelled: 'cancelled',
+} as const;
+
+export interface LautecReconcileRun {
+  id: number;
+  date: string;
+  status: LautecReconcileRunStatus;
+  plan: LautecReconcileTeamPlan[];
+  result: LautecReconcileTeamResult[];
+  /** @nullable */
+  errorDetail: string | null;
+  /**
+     * Present only while the run is awaiting approval.
+     * @nullable
+     */
+  approvalToken: string | null;
+  actorName: string;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export interface LautecReconcileLatest {
+  reconcile: LautecReconcileRun | null;
+}
+
 export type ListSitesParams = {
 projectId?: number;
 };
@@ -853,5 +924,12 @@ export type ListDprLautecImportsParams = {
  */
 date: string;
 teamId: number;
+};
+
+export type GetLatestDprLautecReconcileParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date: string;
 };
 

@@ -23,6 +23,7 @@ import {
   dprWhatsappImportsTable,
   dprTeamActivityPlansTable,
   dprLautecImportRunsTable,
+  dprLautecReconcileRunsTable,
   usersTable,
   appSettingsTable,
 } from "@workspace/db";
@@ -120,6 +121,15 @@ import {
   StartDprLautecImportBody,
   GetDprLautecImportParams,
   GetDprLautecImportResponse,
+  GetLatestDprLautecReconcileQueryParams,
+  GetLatestDprLautecReconcileResponse,
+  StartDprLautecReconcileBody,
+  GetDprLautecReconcileParams,
+  GetDprLautecReconcileResponse,
+  ApplyDprLautecReconcileParams,
+  ApplyDprLautecReconcileBody,
+  CancelDprLautecReconcileParams,
+  CancelDprLautecReconcileResponse,
 } from "@workspace/api-zod";
 import { serialize } from "../lib/serialize";
 import { dprEffectiveDate, scheduleDprDateSheetSync, syncAllDprDateTabsNow, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
@@ -133,6 +143,13 @@ import {
 } from "../lib/dpr-lautec-source";
 import { getLautecBrowserConfig } from "../lib/lautec-browser-adapter";
 import { dispatchLautecImportRun, interruptStaleLautecImports } from "../lib/dpr-lautec-import-service";
+import {
+  createLautecReconcileApprovalToken,
+  dispatchLautecReconcileApply,
+  dispatchLautecReconcileScan,
+  interruptStaleLautecReconciles,
+  lautecReconcileActiveForDate,
+} from "../lib/dpr-lautec-reconcile-service";
 
 const router: IRouter = Router();
 
@@ -1065,11 +1082,15 @@ router.post("/dpr/lautec-imports/preview-all", async (req, res): Promise<void> =
     teamId: dprLautecImportRunsTable.teamId,
     status: dprLautecImportRunsTable.status,
     snapshotHash: dprLautecImportRunsTable.snapshotHash,
+    rowsRemovedByReconcileId: dprLautecImportRunsTable.rowsRemovedByReconcileId,
   })
     .from(dprLautecImportRunsTable)
     .where(eq(dprLautecImportRunsTable.date, parsed.data.date));
   // Snapshot hashes embed the date and team, so a per-date scan is precise.
-  const successHashes = new Set(dateRuns.filter((run) => run.status === "success").map((run) => run.snapshotHash));
+  // Runs whose rows a Lautec cleanup later deleted no longer block a re-send.
+  const successHashes = new Set(dateRuns
+    .filter((run) => run.status === "success" && run.rowsRemovedByReconcileId === null)
+    .map((run) => run.snapshotHash));
   const teamHasStatus = (teamId: number, statuses: string[]) =>
     dateRuns.some((run) => run.teamId === teamId && statuses.includes(run.status));
   const latestRunIdByTeam = new Map<number, number>();
@@ -1148,6 +1169,16 @@ router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
   }
 
   await interruptStaleLautecImports();
+  await interruptStaleLautecReconciles();
+
+  const activeReconcileId = await lautecReconcileActiveForDate(parsed.data.date);
+  if (activeReconcileId !== null) {
+    res.status(409).json({
+      error: "A Lautec cleanup is currently running for this date. Wait for it to finish before sending imports.",
+      code: "reconcile_in_progress",
+    });
+    return;
+  }
 
   const [running] = await db.select({ id: dprLautecImportRunsTable.id })
     .from(dprLautecImportRunsTable)
@@ -1203,12 +1234,14 @@ router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
   }
 
   // Match both the current hash and the pre-PAX legacy hash so imports
-  // completed before PAX support still require an explicit resend.
+  // completed before PAX support still require an explicit resend. Runs whose
+  // rows a Lautec cleanup later deleted no longer count as completed.
   const [completed] = await db.select({ id: dprLautecImportRunsTable.id })
     .from(dprLautecImportRunsTable)
     .where(and(
       inArray(dprLautecImportRunsTable.snapshotHash, [source.snapshotHash, source.legacySnapshotHash]),
       eq(dprLautecImportRunsTable.status, "success"),
+      isNull(dprLautecImportRunsTable.rowsRemovedByReconcileId),
     ))
     .orderBy(desc(dprLautecImportRunsTable.finishedAt));
   if (requiresLautecResendConfirmation(Boolean(completed), parsed.data.confirmResend)) {
@@ -1254,6 +1287,19 @@ router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
     return;
   }
 
+  // Close the check-then-insert race with the cleanup flow (mirror of the
+  // re-check in POST /dpr/lautec-reconciles): re-check after inserting our
+  // ledger row. Nothing has been dispatched yet, so deleting it is safe.
+  const reconcileStartedMeanwhile = await lautecReconcileActiveForDate(parsed.data.date);
+  if (reconcileStartedMeanwhile !== null) {
+    await db.delete(dprLautecImportRunsTable).where(eq(dprLautecImportRunsTable.id, run.id));
+    res.status(409).json({
+      error: "A Lautec cleanup is currently running for this date. Wait for it to finish before sending imports.",
+      code: "reconcile_in_progress",
+    });
+    return;
+  }
+
   void logAction(req, {
     action: "lautec_import_started",
     page: "capture",
@@ -1279,6 +1325,292 @@ router.get("/dpr/lautec-imports/:runId", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetDprLautecImportResponse.parse(lautecRunResponse(run)));
+});
+
+// ─── Lautec cleanup (reconcile): scan, approve, apply ────────────────────────
+
+function lautecReconcileResponse(run: typeof dprLautecReconcileRunsTable.$inferSelect) {
+  return {
+    id: run.id,
+    date: run.date,
+    status: run.status,
+    plan: run.planJson,
+    result: run.resultJson,
+    errorDetail: run.errorDetail,
+    // The token binds the operator's approval to this exact plan; it is only
+    // meaningful (and only issued) while the plan awaits approval.
+    approvalToken: run.status === "awaiting_approval"
+      ? createLautecReconcileApprovalToken(run.id, run.planJson)
+      : null,
+    actorName: run.actorName,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+  };
+}
+
+router.get("/dpr/lautec-reconciles", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const parsed = GetLatestDprLautecReconcileQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  await interruptStaleLautecReconciles();
+  const [run] = await db.select().from(dprLautecReconcileRunsTable)
+    .where(eq(dprLautecReconcileRunsTable.date, parsed.data.date))
+    .orderBy(desc(dprLautecReconcileRunsTable.id))
+    .limit(1);
+  res.json(GetLatestDprLautecReconcileResponse.parse({ reconcile: run ? lautecReconcileResponse(run) : null }));
+});
+
+router.post("/dpr/lautec-reconciles", async (req, res): Promise<void> => {
+  const actor = await requireDprAdmin(req, res);
+  if (!actor) return;
+  const parsed = StartDprLautecReconcileBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // The scan plans against the current Capture sheet, so it must validate.
+  let snapshots: Awaited<ReturnType<typeof getLautecSourceSnapshotsForDate>>;
+  try {
+    snapshots = await getLautecSourceSnapshotsForDate(parsed.data.date);
+  } catch (error) {
+    if (sendLautecSourceError(error, res)) return;
+    throw error;
+  }
+  if (snapshots.length === 0) {
+    res.status(422).json({ error: "No team has Capture rows for this DPR date, so there is nothing to reconcile." });
+    return;
+  }
+
+  try {
+    await getLautecBrowserConfig();
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Lautec browser is not configured." });
+    return;
+  }
+
+  await interruptStaleLautecImports();
+  await interruptStaleLautecReconciles();
+
+  // The cleanup and the import flow share the Lautec DPR page; never run both.
+  const [activeImport] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, parsed.data.date),
+      inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+    ));
+  if (activeImport) {
+    res.status(409).json({
+      error: "A Lautec import is currently running for this date. Wait for it to finish before scanning.",
+      code: "import_in_progress",
+      runId: activeImport.id,
+    });
+    return;
+  }
+
+  let run: typeof dprLautecReconcileRunsTable.$inferSelect | undefined;
+  try {
+    [run] = await db.insert(dprLautecReconcileRunsTable).values({
+      date: parsed.data.date,
+      status: "scanning",
+      planJson: [],
+      resultJson: [],
+      ...actor,
+    }).returning();
+  } catch {
+    // The partial unique index allows one active cleanup at a time, globally.
+    res.status(409).json({ error: "Another Lautec cleanup is already running. Wait for it to finish.", code: "reconcile_in_progress" });
+    return;
+  }
+  if (!run) {
+    res.status(500).json({ error: "Unable to create the Lautec cleanup ledger entry." });
+    return;
+  }
+
+  // Close the check-then-insert race with the import flow: both sides insert
+  // their ledger row first and re-check the other afterwards, so at least one
+  // of two concurrent requests sees the counterpart and backs out. Nothing
+  // has been dispatched yet, so deleting the row is safe.
+  const [importStartedMeanwhile] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, parsed.data.date),
+      inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+    ));
+  if (importStartedMeanwhile) {
+    await db.delete(dprLautecReconcileRunsTable).where(eq(dprLautecReconcileRunsTable.id, run.id));
+    res.status(409).json({
+      error: "A Lautec import is currently running for this date. Wait for it to finish before scanning.",
+      code: "import_in_progress",
+      runId: importStartedMeanwhile.id,
+    });
+    return;
+  }
+
+  void logAction(req, {
+    action: "lautec_reconcile_started",
+    page: "capture",
+    detail: `Started Lautec cleanup scan #${run.id} for ${run.date}.`,
+    entryDate: run.date,
+    teamId: null,
+  });
+  dispatchLautecReconcileScan(run.id);
+  res.status(202).json(GetDprLautecReconcileResponse.parse(lautecReconcileResponse(run)));
+});
+
+router.get("/dpr/lautec-reconciles/:reconcileId", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const params = GetDprLautecReconcileParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  await interruptStaleLautecReconciles();
+  const [run] = await db.select().from(dprLautecReconcileRunsTable)
+    .where(eq(dprLautecReconcileRunsTable.id, params.data.reconcileId));
+  if (!run) {
+    res.status(404).json({ error: "Lautec cleanup run not found." });
+    return;
+  }
+  res.json(GetDprLautecReconcileResponse.parse(lautecReconcileResponse(run)));
+});
+
+router.post("/dpr/lautec-reconciles/:reconcileId/apply", async (req, res): Promise<void> => {
+  const actor = await requireDprAdmin(req, res);
+  if (!actor) return;
+  const params = ApplyDprLautecReconcileParams.safeParse(req.params);
+  const body = ApplyDprLautecReconcileBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: (params.success ? body : params).error!.message });
+    return;
+  }
+
+  await interruptStaleLautecReconciles();
+  const [run] = await db.select().from(dprLautecReconcileRunsTable)
+    .where(eq(dprLautecReconcileRunsTable.id, params.data.reconcileId));
+  if (!run) {
+    res.status(404).json({ error: "Lautec cleanup run not found." });
+    return;
+  }
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({
+      error: "This cleanup plan is no longer awaiting approval. Run a fresh scan.",
+      code: "not_awaiting_approval",
+    });
+    return;
+  }
+  // The approval must match the exact plan the operator reviewed.
+  if (body.data.approvalToken !== createLautecReconcileApprovalToken(run.id, run.planJson)) {
+    res.status(409).json({
+      error: "The approval is out of date. Review the latest cleanup plan, then approve again.",
+      code: "stale_approval",
+    });
+    return;
+  }
+
+  const [activeImport] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, run.date),
+      inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+    ));
+  if (activeImport) {
+    res.status(409).json({
+      error: "A Lautec import is currently running for this date. Wait for it to finish before applying the cleanup.",
+      code: "import_in_progress",
+      runId: activeImport.id,
+    });
+    return;
+  }
+
+  let approved: typeof dprLautecReconcileRunsTable.$inferSelect | undefined;
+  try {
+    [approved] = await db.update(dprLautecReconcileRunsTable)
+      .set({ status: "applying", approvedAt: new Date() })
+      .where(and(
+        eq(dprLautecReconcileRunsTable.id, run.id),
+        eq(dprLautecReconcileRunsTable.status, "awaiting_approval"),
+      ))
+      .returning();
+  } catch {
+    res.status(409).json({ error: "Another Lautec cleanup is already running. Wait for it to finish.", code: "reconcile_in_progress" });
+    return;
+  }
+  if (!approved) {
+    res.status(409).json({ error: "This cleanup plan is no longer awaiting approval. Run a fresh scan.", code: "not_awaiting_approval" });
+    return;
+  }
+
+  // Close the check-then-transition race with the import flow: re-check after
+  // claiming the active slot. Nothing has been dispatched yet, so reverting
+  // to awaiting_approval is safe.
+  const [importStartedMeanwhile] = await db.select({ id: dprLautecImportRunsTable.id })
+    .from(dprLautecImportRunsTable)
+    .where(and(
+      eq(dprLautecImportRunsTable.date, run.date),
+      inArray(dprLautecImportRunsTable.status, ["running", "submitting"]),
+    ));
+  if (importStartedMeanwhile) {
+    await db.update(dprLautecReconcileRunsTable)
+      .set({ status: "awaiting_approval", approvedAt: null })
+      .where(and(
+        eq(dprLautecReconcileRunsTable.id, run.id),
+        eq(dprLautecReconcileRunsTable.status, "applying"),
+      ));
+    res.status(409).json({
+      error: "A Lautec import is currently running for this date. Wait for it to finish, then approve again.",
+      code: "import_in_progress",
+      runId: importStartedMeanwhile.id,
+    });
+    return;
+  }
+
+  const deletionTotal = run.planJson.reduce((sum, plan) => sum + plan.deletions.length, 0);
+  void logAction(req, {
+    action: "lautec_reconcile_approved",
+    page: "capture",
+    detail: `Approved Lautec cleanup #${run.id} for ${run.date}: ${deletionTotal} row(s) will be deleted.`,
+    entryDate: run.date,
+    teamId: null,
+  });
+  dispatchLautecReconcileApply(run.id);
+  res.status(202).json(GetDprLautecReconcileResponse.parse(lautecReconcileResponse(approved)));
+});
+
+router.post("/dpr/lautec-reconciles/:reconcileId/cancel", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const params = CancelDprLautecReconcileParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [cancelled] = await db.update(dprLautecReconcileRunsTable)
+    .set({ status: "cancelled", finishedAt: new Date() })
+    .where(and(
+      eq(dprLautecReconcileRunsTable.id, params.data.reconcileId),
+      eq(dprLautecReconcileRunsTable.status, "awaiting_approval"),
+    ))
+    .returning();
+  if (!cancelled) {
+    const [existing] = await db.select({ id: dprLautecReconcileRunsTable.id })
+      .from(dprLautecReconcileRunsTable)
+      .where(eq(dprLautecReconcileRunsTable.id, params.data.reconcileId));
+    res.status(existing ? 409 : 404).json({
+      error: existing ? "Only a cleanup plan awaiting approval can be cancelled." : "Lautec cleanup run not found.",
+    });
+    return;
+  }
+  void logAction(req, {
+    action: "lautec_reconcile_cancelled",
+    page: "capture",
+    detail: `Cancelled Lautec cleanup plan #${cancelled.id} for ${cancelled.date}.`,
+    entryDate: cancelled.date,
+    teamId: null,
+  });
+  res.json(CancelDprLautecReconcileResponse.parse(lautecReconcileResponse(cancelled)));
 });
 
 // ── Team date exceptions ──────────────────────────────────────────────────
