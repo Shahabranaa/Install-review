@@ -11,3 +11,9 @@ Rules:
 - Each per-team run keeps all existing server guards (snapshot_changed, uncertain_submission, duplicate_completed_snapshot, one active run per date+team).
 
 **Why:** a lost start response once risked two concurrent Puppeteer sessions appending rows; duplicates in Lautec can only be removed manually by the operator.
+
+## Confirmation token (stale-bundle guard)
+
+Real duplicates happened when a browser tab kept running a stale bundle (Vite HMR "Failed to reload capture.tsx" leaves the old code live) that still auto-ticked confirmations. Client-side fixes never reach a stale tab, so the server now requires re-send/uncertain confirmations to carry a `confirmationToken` minted by the matching preview: HMAC(SESSION_SECRET) over the snapshot hash + latest run id for the date/team. Missing/outdated token → 409 `stale_confirmation` before any run is created; an intervening run invalidates older tokens. Concurrent double-starts are blocked by the partial unique index `dpr_lautec_import_runs_one_active_team` (declared in migrate.mjs, not the Drizzle schema — reviewers reading only the schema will miss it).
+
+**How to apply:** any new dangerous confirmation flag on Lautec endpoints must be preview-token-bound the same way; never trust a bare boolean from the client.

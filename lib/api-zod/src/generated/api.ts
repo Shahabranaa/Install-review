@@ -1532,7 +1532,8 @@ export const PreviewDprLautecImportResponse = zod.object({
   "finish": zod.string(),
   "comment": zod.string(),
   "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
-}))
+})),
+  "confirmationToken": zod.string().describe('Pass back when starting this import with confirmResend or confirmUncertain.')
 })
 
 
@@ -1564,7 +1565,8 @@ export const PreviewAllDprLautecImportsResponse = zod.object({
 })),
   "alreadyImported": zod.boolean().describe('This exact snapshot (or its pre-PAX equivalent) already completed successfully; sending it again appends duplicate rows in Lautec.'),
   "uncertainPending": zod.boolean().describe('An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry.'),
-  "runInProgress": zod.boolean()
+  "runInProgress": zod.boolean(),
+  "confirmationToken": zod.string().describe('Pass back when starting this team\'s import with confirmResend or confirmUncertain.')
 }))
 })
 
@@ -1617,7 +1619,8 @@ export const StartDprLautecImportBody = zod.object({
   "teamId": zod.number(),
   "snapshotHash": zod.string().min(startDprLautecImportBodySnapshotHashMin).max(startDprLautecImportBodySnapshotHashMax),
   "confirmResend": zod.boolean().default(startDprLautecImportBodyConfirmResendDefault),
-  "confirmUncertain": zod.boolean().default(startDprLautecImportBodyConfirmUncertainDefault).describe('Confirms the operator checked Lautec after an earlier submission could not be verified.')
+  "confirmUncertain": zod.boolean().default(startDprLautecImportBodyConfirmUncertainDefault).describe('Confirms the operator checked Lautec after an earlier submission could not be verified.'),
+  "confirmationToken": zod.string().optional().describe('Required whenever confirmResend or confirmUncertain is set. Returned by the matching preview; binds the confirmation to the previewed snapshot and run history so stale or outdated clients cannot silently re-send.')
 })
 
 

@@ -125,6 +125,7 @@ import { serialize } from "../lib/serialize";
 import { dprEffectiveDate, scheduleDprDateSheetSync, syncAllDprDateTabsNow, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
 import {
   getLautecSourceSnapshot,
+  createLautecConfirmationToken,
   getLautecSourceSnapshotsForDate,
   LautecSourceError,
   requiresLautecResendConfirmation,
@@ -1011,6 +1012,14 @@ router.post("/dpr/lautec-imports/preview", async (req, res): Promise<void> => {
 
   try {
     const source = await getLautecSourceSnapshot(parsed.data.date, parsed.data.teamId);
+    const [latestRun] = await db.select({ id: dprLautecImportRunsTable.id })
+      .from(dprLautecImportRunsTable)
+      .where(and(
+        eq(dprLautecImportRunsTable.date, parsed.data.date),
+        eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+      ))
+      .orderBy(desc(dprLautecImportRunsTable.id))
+      .limit(1);
     res.json(PreviewDprLautecImportResponse.parse({
       date: parsed.data.date,
       teamId: team.id,
@@ -1018,6 +1027,7 @@ router.post("/dpr/lautec-imports/preview", async (req, res): Promise<void> => {
       snapshotHash: source.snapshotHash,
       rowCount: source.rows.length,
       rows: source.rows,
+      confirmationToken: createLautecConfirmationToken(source.snapshotHash, latestRun?.id ?? null),
     }));
   } catch (error) {
     if (sendLautecSourceError(error, res)) return;
@@ -1051,6 +1061,7 @@ router.post("/dpr/lautec-imports/preview-all", async (req, res): Promise<void> =
   }
 
   const dateRuns = await db.select({
+    id: dprLautecImportRunsTable.id,
     teamId: dprLautecImportRunsTable.teamId,
     status: dprLautecImportRunsTable.status,
     snapshotHash: dprLautecImportRunsTable.snapshotHash,
@@ -1061,6 +1072,10 @@ router.post("/dpr/lautec-imports/preview-all", async (req, res): Promise<void> =
   const successHashes = new Set(dateRuns.filter((run) => run.status === "success").map((run) => run.snapshotHash));
   const teamHasStatus = (teamId: number, statuses: string[]) =>
     dateRuns.some((run) => run.teamId === teamId && statuses.includes(run.status));
+  const latestRunIdByTeam = new Map<number, number>();
+  for (const run of dateRuns) {
+    if (run.id > (latestRunIdByTeam.get(run.teamId) ?? 0)) latestRunIdByTeam.set(run.teamId, run.id);
+  }
 
   res.json(PreviewAllDprLautecImportsResponse.parse({
     date: parsed.data.date,
@@ -1073,6 +1088,7 @@ router.post("/dpr/lautec-imports/preview-all", async (req, res): Promise<void> =
       alreadyImported: successHashes.has(snapshot.snapshotHash) || successHashes.has(snapshot.legacySnapshotHash),
       uncertainPending: teamHasStatus(snapshot.teamId, ["uncertain"]),
       runInProgress: teamHasStatus(snapshot.teamId, ["running", "submitting"]),
+      confirmationToken: createLautecConfirmationToken(snapshot.snapshotHash, latestRunIdByTeam.get(snapshot.teamId) ?? null),
     })),
   }));
 });
@@ -1143,6 +1159,30 @@ router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
   if (running) {
     res.status(409).json({ error: "A Lautec import is already running for this date and team.", runId: running.id });
     return;
+  }
+
+  // A resend/uncertain confirmation must be minted by a current preview: the
+  // token binds it to the previewed snapshot and the latest run for this
+  // date/team. Stale client bundles (which once auto-ticked confirmations and
+  // never carry the token) and confirmations that predate an intervening run
+  // are refused here instead of silently appending duplicate rows in Lautec.
+  if (parsed.data.confirmResend || parsed.data.confirmUncertain) {
+    const [latestRun] = await db.select({ id: dprLautecImportRunsTable.id })
+      .from(dprLautecImportRunsTable)
+      .where(and(
+        eq(dprLautecImportRunsTable.date, parsed.data.date),
+        eq(dprLautecImportRunsTable.teamId, parsed.data.teamId),
+      ))
+      .orderBy(desc(dprLautecImportRunsTable.id))
+      .limit(1);
+    const expectedToken = createLautecConfirmationToken(source.snapshotHash, latestRun?.id ?? null);
+    if (parsed.data.confirmationToken !== expectedToken) {
+      res.status(409).json({
+        error: "The re-send/retry confirmation is out of date. Reopen the sync dialog to preview the latest state, then confirm again.",
+        code: "stale_confirmation",
+      });
+      return;
+    }
   }
 
   const [uncertain] = await db.select({ id: dprLautecImportRunsTable.id })

@@ -692,6 +692,8 @@ export interface LautecImportInput {
   confirmResend?: boolean;
   /** Confirms the operator checked Lautec after an earlier submission could not be verified. */
   confirmUncertain?: boolean;
+  /** Required whenever confirmResend or confirmUncertain is set. Returned by the matching preview; binds the confirmation to the previewed snapshot and run history so stale or outdated clients cannot silently re-send. */
+  confirmationToken?: string;
 }
 
 export interface LautecImportPreview {
@@ -701,6 +703,8 @@ export interface LautecImportPreview {
   snapshotHash: string;
   rowCount: number;
   rows: LautecImportRow[];
+  /** Pass back when starting this import with confirmResend or confirmUncertain. */
+  confirmationToken: string;
 }
 
 export interface LautecImportPreviewAllInput {
@@ -719,6 +723,8 @@ export interface LautecTeamImportPreview {
   /** An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry. */
   uncertainPending: boolean;
   runInProgress: boolean;
+  /** Pass back when starting this team's import with confirmResend or confirmUncertain. */
+  confirmationToken: string;
 }
 
 export interface LautecImportPreviewAll {

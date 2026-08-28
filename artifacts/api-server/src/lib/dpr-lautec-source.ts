@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { fetchSheetRowsByTitle } from "../googleSheets.js";
 import type { DprLautecSnapshotRow } from "@workspace/db";
 
@@ -126,6 +126,20 @@ export function requiresLautecUncertainConfirmation(
   confirmUncertain: boolean,
 ): boolean {
   return uncertainSubmissionExists && !confirmUncertain;
+}
+
+/**
+ * Binds a resend/uncertain confirmation to the preview it was shown with:
+ * the token embeds the snapshot hash and the latest run id for the
+ * date/team, so a confirmation minted before an intervening run — or sent
+ * by a stale client bundle that never rendered the preview at all — is
+ * refused instead of silently appending duplicate rows in Lautec. Keyed
+ * with the server session secret so clients cannot mint it themselves.
+ */
+export function createLautecConfirmationToken(snapshotHash: string, latestRunId: number | null): string {
+  return createHmac("sha256", process.env.SESSION_SECRET ?? "lautec-confirm-dev-key")
+    .update(`lautec-confirm-v1:${snapshotHash}:${latestRunId ?? "none"}`)
+    .digest("hex");
 }
 
 async function fetchCaptureTabRows(date: string): Promise<string[][]> {

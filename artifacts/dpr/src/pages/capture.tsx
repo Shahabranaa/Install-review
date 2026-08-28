@@ -91,6 +91,7 @@ type QueuedLautecTeam = {
   snapshotHash: string;
   confirmResend: boolean;
   confirmUncertain: boolean;
+  confirmationToken: string;
 };
 type ActivitySelection = {
   activityTypeId: number | null;
@@ -1725,9 +1726,12 @@ export default function CapturePage() {
           teamId: queued.teamId,
           snapshotHash: queued.snapshotHash,
           // Both confirmations are deliberate per-team operator ticks
-          // collected before the sequence starts — never auto-set.
+          // collected before the sequence starts — never auto-set. The token
+          // proves they came from this preview; the server refuses
+          // confirmations minted by an outdated preview or client.
           confirmResend: queued.confirmResend,
           confirmUncertain: queued.confirmUncertain,
+          confirmationToken: queued.confirmationToken,
         },
       },
       {
@@ -1789,6 +1793,7 @@ export default function CapturePage() {
         snapshotHash: team.snapshotHash,
         confirmResend: state.confirmResend,
         confirmUncertain: state.confirmUncertain,
+        confirmationToken: team.confirmationToken,
       });
     }
     setLautecTeamStates(nextStates);

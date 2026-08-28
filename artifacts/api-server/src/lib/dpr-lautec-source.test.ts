@@ -8,6 +8,7 @@ import {
   normalizeLautecSourceRows,
   requiresLautecUncertainConfirmation,
   requiresLautecResendConfirmation,
+  createLautecConfirmationToken,
 } from "./dpr-lautec-source.js";
 
 const header = ["Activity Group", "Activity", "Location", "Start", "Finish", "Comment", "Team ID", "PAX", "Code", "Notes", "Is Clarified"];
@@ -120,4 +121,12 @@ test("isolates the selected team's rows from a shared date tab", () => {
   ], 7);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].activity, "Inspection");
+});
+test("confirmation token binds to the snapshot hash and latest run id", () => {
+  const hash = "a".repeat(64);
+  const token = createLautecConfirmationToken(hash, 41);
+  assert.equal(token, createLautecConfirmationToken(hash, 41));
+  assert.notEqual(token, createLautecConfirmationToken(hash, 42));
+  assert.notEqual(token, createLautecConfirmationToken("b".repeat(64), 41));
+  assert.notEqual(token, createLautecConfirmationToken(hash, null));
 });

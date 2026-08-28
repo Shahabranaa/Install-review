@@ -3033,6 +3033,9 @@ components:
           type: boolean
           description: Confirms the operator checked Lautec after an earlier submission could not be verified.
           default: false
+        confirmationToken:
+          type: string
+          description: Required whenever confirmResend or confirmUncertain is set. Returned by the matching preview; binds the confirmation to the previewed snapshot and run history so stale or outdated clients cannot silently re-send.
       required: [date, teamId, snapshotHash]
 
     LautecImportPreview:
@@ -3052,7 +3055,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LautecImportRow"
-      required: [date, teamId, teamName, snapshotHash, rowCount, rows]
+        confirmationToken:
+          type: string
+          description: Pass back when starting this import with confirmResend or confirmUncertain.
+      required: [date, teamId, teamName, snapshotHash, rowCount, rows, confirmationToken]
 
     LautecImportPreviewAllInput:
       type: object
@@ -3085,7 +3091,10 @@ components:
           description: An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry.
         runInProgress:
           type: boolean
-      required: [teamId, teamName, snapshotHash, rowCount, rows, alreadyImported, uncertainPending, runInProgress]
+        confirmationToken:
+          type: string
+          description: Pass back when starting this team's import with confirmResend or confirmUncertain.
+      required: [teamId, teamName, snapshotHash, rowCount, rows, alreadyImported, uncertainPending, runInProgress, confirmationToken]
 
     LautecImportPreviewAll:
       type: object
