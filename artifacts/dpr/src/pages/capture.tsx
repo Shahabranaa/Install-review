@@ -1631,9 +1631,11 @@ export default function CapturePage() {
           if (apiError.status === 409) {
             if (apiError.data?.code === "uncertain_submission") {
               setRequiresLautecUncertainConfirmation(true);
-            } else {
-              setConfirmLautecResend(true);
             }
+            // For duplicate_completed_snapshot the confirmation checkbox is
+            // rendered from the error state but must NEVER be pre-ticked:
+            // re-sending appends duplicate rows in Lautec, so the tick has to
+            // be a deliberate user action.
           }
         },
       },
@@ -3107,7 +3109,7 @@ export default function CapturePage() {
                   ) : (
                     <label className="mt-3 flex items-center gap-2 text-foreground">
                       <Checkbox checked={confirmLautecResend} onCheckedChange={(checked) => setConfirmLautecResend(checked === true)} />
-                      I understand this exact snapshot was already completed and want to re-send it.
+                      I understand this exact snapshot was already imported, and re-sending will ADD duplicate rows in Lautec (it never replaces existing ones).
                     </label>
                   )}
                 </div>
