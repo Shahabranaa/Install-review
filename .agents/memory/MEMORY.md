@@ -23,3 +23,4 @@
 - [Lautec configuration security boundary](lautec-configuration-security.md) — admins may edit safe browser URLs; the dedicated account remains workspace secrets only.
 - [Lautec visible import grid quirks](lautec-import-grid-quirks.md) — click deepest exact-text element; baseline the persisted table, not the pre-opened grid; `*` cells and dual Comment columns in readback.
 - [DPR Excel import policy](dpr-excel-revision-policy.md) — import only current rows from the selected DPR date; reject unexpected revision markers.
+- [Lautec multi-team sync sequencing](lautec-multi-team-sync.md) — one browser run at a time; a failed start may still have dispatched a run, so reconcile via run list before advancing; per-team confirmations never auto-tick.

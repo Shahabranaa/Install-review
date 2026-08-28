@@ -111,6 +111,8 @@ import {
   DprShiftSessionResponse,
   SaveDprShiftAttendanceBody,
   GetDprShiftSessionQueryParams,
+  PreviewAllDprLautecImportsBody,
+  PreviewAllDprLautecImportsResponse,
   PreviewDprLautecImportBody,
   PreviewDprLautecImportResponse,
   ListDprLautecImportsQueryParams,
@@ -123,6 +125,7 @@ import { serialize } from "../lib/serialize";
 import { dprEffectiveDate, scheduleDprDateSheetSync, syncAllDprDateTabsNow, syncDprDateTabsNow } from "../lib/dpr-sheet-sync";
 import {
   getLautecSourceSnapshot,
+  getLautecSourceSnapshotsForDate,
   LautecSourceError,
   requiresLautecResendConfirmation,
   requiresLautecUncertainConfirmation,
@@ -1020,6 +1023,58 @@ router.post("/dpr/lautec-imports/preview", async (req, res): Promise<void> => {
     if (sendLautecSourceError(error, res)) return;
     throw error;
   }
+});
+
+router.post("/dpr/lautec-imports/preview-all", async (req, res): Promise<void> => {
+  if (!await requireDprAdmin(req, res)) return;
+  const parsed = PreviewAllDprLautecImportsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  let snapshots: Awaited<ReturnType<typeof getLautecSourceSnapshotsForDate>>;
+  try {
+    snapshots = await getLautecSourceSnapshotsForDate(parsed.data.date);
+  } catch (error) {
+    if (sendLautecSourceError(error, res)) return;
+    throw error;
+  }
+
+  const teams = await db.select().from(dprTeamsTable)
+    .where(inArray(dprTeamsTable.id, snapshots.map((snapshot) => snapshot.teamId)));
+  const teamById = new Map(teams.map((team) => [team.id, team]));
+  const unknownTeamIds = snapshots.map((s) => s.teamId).filter((teamId) => !teamById.has(teamId));
+  if (unknownTeamIds.length > 0) {
+    res.status(422).json({ error: `The Capture tab references unknown Team ID(s): ${unknownTeamIds.join(", ")}.` });
+    return;
+  }
+
+  const dateRuns = await db.select({
+    teamId: dprLautecImportRunsTable.teamId,
+    status: dprLautecImportRunsTable.status,
+    snapshotHash: dprLautecImportRunsTable.snapshotHash,
+  })
+    .from(dprLautecImportRunsTable)
+    .where(eq(dprLautecImportRunsTable.date, parsed.data.date));
+  // Snapshot hashes embed the date and team, so a per-date scan is precise.
+  const successHashes = new Set(dateRuns.filter((run) => run.status === "success").map((run) => run.snapshotHash));
+  const teamHasStatus = (teamId: number, statuses: string[]) =>
+    dateRuns.some((run) => run.teamId === teamId && statuses.includes(run.status));
+
+  res.json(PreviewAllDprLautecImportsResponse.parse({
+    date: parsed.data.date,
+    teams: snapshots.map((snapshot) => ({
+      teamId: snapshot.teamId,
+      teamName: teamById.get(snapshot.teamId)!.name,
+      snapshotHash: snapshot.snapshotHash,
+      rowCount: snapshot.rows.length,
+      rows: snapshot.rows,
+      alreadyImported: successHashes.has(snapshot.snapshotHash) || successHashes.has(snapshot.legacySnapshotHash),
+      uncertainPending: teamHasStatus(snapshot.teamId, ["uncertain"]),
+      runInProgress: teamHasStatus(snapshot.teamId, ["running", "submitting"]),
+    })),
+  }));
 });
 
 router.get("/dpr/lautec-imports", async (req, res): Promise<void> => {

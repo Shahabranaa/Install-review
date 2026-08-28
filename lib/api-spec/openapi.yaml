@@ -1765,6 +1765,29 @@ paths:
         "422":
           description: Capture tab validation failed
 
+  /dpr/lautec-imports/preview-all:
+    post:
+      operationId: previewAllDprLautecImports
+      tags: [dpr]
+      summary: Validate and preview every team with Capture rows on one DPR date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LautecImportPreviewAllInput"
+      responses:
+        "200":
+          description: Validated per-team source snapshots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LautecImportPreviewAll"
+        "403":
+          description: Admin access required
+        "422":
+          description: Capture tab validation failed
+
   /dpr/lautec-imports:
     get:
       operationId: listDprLautecImports
@@ -3030,6 +3053,50 @@ components:
           items:
             $ref: "#/components/schemas/LautecImportRow"
       required: [date, teamId, teamName, snapshotHash, rowCount, rows]
+
+    LautecImportPreviewAllInput:
+      type: object
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      required: [date]
+
+    LautecTeamImportPreview:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        teamName:
+          type: string
+        snapshotHash:
+          type: string
+        rowCount:
+          type: integer
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/LautecImportRow"
+        alreadyImported:
+          type: boolean
+          description: This exact snapshot (or its pre-PAX equivalent) already completed successfully; sending it again appends duplicate rows in Lautec.
+        uncertainPending:
+          type: boolean
+          description: An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry.
+        runInProgress:
+          type: boolean
+      required: [teamId, teamName, snapshotHash, rowCount, rows, alreadyImported, uncertainPending, runInProgress]
+
+    LautecImportPreviewAll:
+      type: object
+      properties:
+        date:
+          type: string
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/LautecTeamImportPreview"
+      required: [date, teams]
 
     LautecImportRun:
       type: object

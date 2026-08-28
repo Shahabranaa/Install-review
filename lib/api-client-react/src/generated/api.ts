@@ -67,6 +67,8 @@ import type {
   IssueFlagRecord,
   LautecImportInput,
   LautecImportPreview,
+  LautecImportPreviewAll,
+  LautecImportPreviewAllInput,
   LautecImportPreviewInput,
   LautecImportRun,
   ListDecisionsParams,
@@ -6163,6 +6165,77 @@ export const usePreviewDprLautecImport = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getPreviewDprLautecImportMutationOptions(options));
+    }
+
+export const getPreviewAllDprLautecImportsUrl = () => {
+
+
+
+
+  return `/api/dpr/lautec-imports/preview-all`
+}
+
+/**
+ * @summary Validate and preview every team with Capture rows on one DPR date
+ */
+export const previewAllDprLautecImports = async (lautecImportPreviewAllInput: LautecImportPreviewAllInput, options?: RequestInit): Promise<LautecImportPreviewAll> => {
+
+  return customFetch<LautecImportPreviewAll>(getPreviewAllDprLautecImportsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      lautecImportPreviewAllInput,)
+  }
+);}
+
+
+
+
+export const getPreviewAllDprLautecImportsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewAllDprLautecImports>>, TError,{data: BodyType<LautecImportPreviewAllInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewAllDprLautecImports>>, TError,{data: BodyType<LautecImportPreviewAllInput>}, TContext> => {
+
+const mutationKey = ['previewAllDprLautecImports'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewAllDprLautecImports>>, {data: BodyType<LautecImportPreviewAllInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewAllDprLautecImports(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewAllDprLautecImportsMutationResult = NonNullable<Awaited<ReturnType<typeof previewAllDprLautecImports>>>
+    export type PreviewAllDprLautecImportsMutationBody = BodyType<LautecImportPreviewAllInput>
+    export type PreviewAllDprLautecImportsMutationError = ErrorType<void>
+
+    /**
+ * @summary Validate and preview every team with Capture rows on one DPR date
+ */
+export const usePreviewAllDprLautecImports = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewAllDprLautecImports>>, TError,{data: BodyType<LautecImportPreviewAllInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewAllDprLautecImports>>,
+        TError,
+        {data: BodyType<LautecImportPreviewAllInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewAllDprLautecImportsMutationOptions(options));
     }
 
 export const getListDprLautecImportsUrl = (params: ListDprLautecImportsParams,) => {

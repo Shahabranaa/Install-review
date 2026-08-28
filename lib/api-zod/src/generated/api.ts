@@ -1537,6 +1537,39 @@ export const PreviewDprLautecImportResponse = zod.object({
 
 
 /**
+ * @summary Validate and preview every team with Capture rows on one DPR date
+ */
+export const previewAllDprLautecImportsBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const PreviewAllDprLautecImportsBody = zod.object({
+  "date": zod.string().regex(previewAllDprLautecImportsBodyDateRegExp)
+})
+
+export const PreviewAllDprLautecImportsResponse = zod.object({
+  "date": zod.string(),
+  "teams": zod.array(zod.object({
+  "teamId": zod.number(),
+  "teamName": zod.string(),
+  "snapshotHash": zod.string(),
+  "rowCount": zod.number(),
+  "rows": zod.array(zod.object({
+  "activityGroup": zod.string(),
+  "activity": zod.string(),
+  "location": zod.string(),
+  "start": zod.string(),
+  "finish": zod.string(),
+  "comment": zod.string(),
+  "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
+})),
+  "alreadyImported": zod.boolean().describe('This exact snapshot (or its pre-PAX equivalent) already completed successfully; sending it again appends duplicate rows in Lautec.'),
+  "uncertainPending": zod.boolean().describe('An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry.'),
+  "runInProgress": zod.boolean()
+}))
+})
+
+
+/**
  * @summary List Lautec import attempts for one DPR date and team
  */
 export const listDprLautecImportsQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');

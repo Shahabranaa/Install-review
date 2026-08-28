@@ -703,6 +703,29 @@ export interface LautecImportPreview {
   rows: LautecImportRow[];
 }
 
+export interface LautecImportPreviewAllInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+}
+
+export interface LautecTeamImportPreview {
+  teamId: number;
+  teamName: string;
+  snapshotHash: string;
+  rowCount: number;
+  rows: LautecImportRow[];
+  /** This exact snapshot (or its pre-PAX equivalent) already completed successfully; sending it again appends duplicate rows in Lautec. */
+  alreadyImported: boolean;
+  /** An earlier submission for this date and team could not be verified; the operator must check Lautec before allowing a retry. */
+  uncertainPending: boolean;
+  runInProgress: boolean;
+}
+
+export interface LautecImportPreviewAll {
+  date: string;
+  teams: LautecTeamImportPreview[];
+}
+
 export type LautecImportRunStatus = typeof LautecImportRunStatus[keyof typeof LautecImportRunStatus];
 
 

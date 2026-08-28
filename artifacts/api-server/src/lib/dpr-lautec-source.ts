@@ -128,8 +128,8 @@ export function requiresLautecUncertainConfirmation(
   return uncertainSubmissionExists && !confirmUncertain;
 }
 
-export async function getLautecSourceSnapshot(date: string, teamId: number) {
-  const rows = await fetchSheetRowsByTitle(
+async function fetchCaptureTabRows(date: string): Promise<string[][]> {
+  return fetchSheetRowsByTitle(
     DPR_CAPTURE_SHEET_ID,
     date,
     DPR_CAPTURE_SHEET_HEADERS.length + 1 + DPR_CAPTURE_ADDITIONAL_HEADERS.length,
@@ -138,10 +138,45 @@ export async function getLautecSourceSnapshot(date: string, teamId: number) {
     if (message.includes("not found")) throw new LautecSourceError(`Capture tab "${date}" was not found.`, 404);
     throw error;
   });
-  const normalizedRows = normalizeLautecSourceRows(rows, teamId);
+}
+
+function snapshotForTeam(date: string, teamId: number, sheetRows: string[][]) {
+  const normalizedRows = normalizeLautecSourceRows(sheetRows, teamId);
   return {
     rows: normalizedRows,
     snapshotHash: createLautecSnapshotHash(date, teamId, normalizedRows),
     legacySnapshotHash: createLegacyLautecSnapshotHash(date, teamId, normalizedRows),
   };
+}
+
+export async function getLautecSourceSnapshot(date: string, teamId: number) {
+  return snapshotForTeam(date, teamId, await fetchCaptureTabRows(date));
+}
+
+/**
+ * Distinct Team IDs referenced by non-empty rows of a Capture tab, in
+ * ascending order. Invalid Team ID cells are reported by the per-team
+ * normalization, not here.
+ */
+export function listLautecSourceTeamIds(sheetRows: string[][]): number[] {
+  const teamColumn = DPR_CAPTURE_SHEET_HEADERS.length;
+  const ids = new Set<number>();
+  for (const row of sheetRows.slice(1)) {
+    if (row.every((value) => normalizeCell(value) === "")) continue;
+    const teamId = normalizeCell(row[teamColumn]);
+    if (teamId && Number.isInteger(Number(teamId))) ids.add(Number(teamId));
+  }
+  return [...ids].sort((a, b) => a - b);
+}
+
+/**
+ * One sheet read producing the validated snapshot of every team that has
+ * rows on the requested Capture date. Any invalid row fails the whole
+ * preview, matching the single-team behaviour.
+ */
+export async function getLautecSourceSnapshotsForDate(date: string) {
+  const sheetRows = await fetchCaptureTabRows(date);
+  const teamIds = listLautecSourceTeamIds(sheetRows);
+  if (teamIds.length === 0) throw new LautecSourceError("The selected Capture tab has no rows to send.");
+  return teamIds.map((teamId) => ({ teamId, ...snapshotForTeam(date, teamId, sheetRows) }));
 }
