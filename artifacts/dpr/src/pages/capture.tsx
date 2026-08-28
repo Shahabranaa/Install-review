@@ -3136,7 +3136,7 @@ export default function CapturePage() {
                         <TableCell className="font-mono">{row.start}</TableCell>
                         <TableCell className="font-mono">{row.finish}</TableCell>
                         <TableCell className="max-w-[260px] whitespace-pre-wrap">{row.comment || "—"}</TableCell>
-                        <TableCell className="text-muted-foreground">blank</TableCell>
+                        <TableCell className={row.pax ? "font-mono" : "text-muted-foreground"}>{row.pax || "blank"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

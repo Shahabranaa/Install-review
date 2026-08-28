@@ -61,7 +61,7 @@ export function normalizeLautecSourceRows(rows: string[][], selectedTeamId: numb
       throw new LautecSourceError(`Capture row ${sheetRowNumber} has values outside the managed source columns.`);
     }
 
-    const [activityGroup, activity, location, start, finish, comment, teamId] = values;
+    const [activityGroup, activity, location, start, finish, comment, teamId, pax] = values;
     if (!teamId || !Number.isInteger(Number(teamId))) {
       throw new LautecSourceError(`Capture row ${sheetRowNumber} is missing a valid Team ID.`);
     }
@@ -79,7 +79,10 @@ export function normalizeLautecSourceRows(rows: string[][], selectedTeamId: numb
     if (!validTime(start) || !validTime(finish)) {
       throw new LautecSourceError(`Capture row ${sheetRowNumber} must use valid HH:MM Start and Finish times.`);
     }
-    result.push({ activityGroup, activity, location, start, finish, comment });
+    if (pax !== "" && !/^\d+$/.test(pax)) {
+      throw new LautecSourceError(`Capture row ${sheetRowNumber} must use a whole-number PAX or leave it blank.`);
+    }
+    result.push({ activityGroup, activity, location, start, finish, comment, pax });
   });
 
   if (result.length === 0) throw new LautecSourceError("The selected Capture tab has no rows to send.");
@@ -95,6 +98,17 @@ export function createLautecSnapshotHash(date: string, teamId: number, rows: Dpr
   return createHash("sha256")
     .update(JSON.stringify({ date, teamId, rows }))
     .digest("hex");
+}
+
+/**
+ * The hash the same source rows produced before the PAX column was carried in
+ * the snapshot. Checking it alongside the current hash keeps the "already
+ * imported successfully" resend guard effective for runs recorded before PAX
+ * support.
+ */
+export function createLegacyLautecSnapshotHash(date: string, teamId: number, rows: DprLautecSnapshotRow[]): string {
+  const legacyRows = rows.map(({ pax: _pax, ...rest }) => rest);
+  return createLautecSnapshotHash(date, teamId, legacyRows);
 }
 
 export function requiresLautecResendConfirmation(completedSnapshotExists: boolean, confirmResend: boolean): boolean {
@@ -128,5 +142,6 @@ export async function getLautecSourceSnapshot(date: string, teamId: number) {
   return {
     rows: normalizedRows,
     snapshotHash: createLautecSnapshotHash(date, teamId, normalizedRows),
+    legacySnapshotHash: createLegacyLautecSnapshotHash(date, teamId, normalizedRows),
   };
 }

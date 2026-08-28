@@ -9,6 +9,9 @@ export type DprLautecSnapshotRow = {
   start: string;
   finish: string;
   comment: string;
+  /** Blank means the import leaves Lautec's PAX cell untouched. Optional so
+   * snapshots recorded before PAX support remain valid. */
+  pax?: string;
 };
 
 export type DprLautecRejectedRow = {

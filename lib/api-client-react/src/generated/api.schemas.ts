@@ -665,6 +665,8 @@ export interface LautecImportRow {
   start: string;
   finish: string;
   comment: string;
+  /** Whole-number PAX from the Capture sheet; blank leaves Lautec's PAX cell untouched. Optional for snapshots recorded before PAX support. */
+  pax?: string;
 }
 
 export interface LautecRejectedRow {

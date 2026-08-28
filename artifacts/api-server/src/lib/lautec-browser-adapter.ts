@@ -274,9 +274,8 @@ export function lautecTableDeltaMatchesReviewedRows(
   };
   if (Object.values(indexes).some((index) => index < 0)) return false;
   // Lautec renders "*" as the placeholder in empty cells of a not-yet-saved
-  // row; both "" and "*" mean the import left PAX untouched.
-  const blankPax = (value: string) => value === "" || value === "*";
-  if (addedRows.some((row) => !blankPax(normaliseVisibleText(row[indexes.pax] ?? "")))) return false;
+  // row; both "" and "*" mean the import left the cell untouched.
+  const blankCell = (value: string) => value === "" || value === "*";
 
   const unmatched = [...addedRows];
   for (const row of expectedRows) {
@@ -287,14 +286,19 @@ export function lautecTableDeltaMatchesReviewedRows(
       start: normaliseVisibleText(row.start),
       finish: normaliseVisibleText(row.finish),
       comment: normaliseVisibleText(row.comment),
+      pax: normaliseVisibleText(row.pax ?? ""),
     };
-    const matchIndex = unmatched.findIndex((visibleRow) =>
-      normaliseVisibleText(visibleRow[indexes.activityGroup] ?? "") === expected.activityGroup
-      && normaliseVisibleText(visibleRow[indexes.activity] ?? "") === expected.activity
-      && normaliseVisibleText(visibleRow[indexes.location] ?? "") === expected.location
-      && normaliseVisibleText(visibleRow[indexes.start] ?? "") === expected.start
-      && normaliseVisibleText(visibleRow[indexes.finish] ?? "") === expected.finish
-      && normaliseVisibleText(visibleRow[indexes.comment] ?? "") === expected.comment);
+    const matchIndex = unmatched.findIndex((visibleRow) => {
+      const visiblePax = normaliseVisibleText(visibleRow[indexes.pax] ?? "");
+      const paxMatches = expected.pax === "" ? blankCell(visiblePax) : visiblePax === expected.pax;
+      return paxMatches
+        && normaliseVisibleText(visibleRow[indexes.activityGroup] ?? "") === expected.activityGroup
+        && normaliseVisibleText(visibleRow[indexes.activity] ?? "") === expected.activity
+        && normaliseVisibleText(visibleRow[indexes.location] ?? "") === expected.location
+        && normaliseVisibleText(visibleRow[indexes.start] ?? "") === expected.start
+        && normaliseVisibleText(visibleRow[indexes.finish] ?? "") === expected.finish
+        && normaliseVisibleText(visibleRow[indexes.comment] ?? "") === expected.comment;
+    });
     if (matchIndex < 0) return false;
     unmatched.splice(matchIndex, 1);
   }
@@ -606,6 +610,14 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
     await editButton.click();
     await handle.dispose();
     await waitForEditorControls(teamName);
+    // The Edit click is resolved from a nearby date card; confirm the opened
+    // editor really shows the requested date before any import action.
+    await page.waitForFunction(
+      `document.body.innerText.includes(${encodedLabel})`,
+      { timeout: 15_000 },
+    ).catch(() => {
+      throw new Error(`Lautec opened an editor that does not show the requested date: ${label}.`);
+    });
     await pause(1_000);
   }
 
@@ -773,7 +785,9 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
       await enterGridText(3, index, row.start);
       await enterGridText(4, index, row.finish);
       await enterGridText(5, index, row.comment);
-      // PAX (column 6) is intentionally never populated.
+      // PAX (column 6) is filled only when the Capture sheet supplies one;
+      // a blank PAX leaves Lautec's cell untouched.
+      if (row.pax) await enterGridText(6, index, row.pax);
     },
     async verifyRow(index, row) {
       const expected: Array<[string, number, string, boolean]> = [
@@ -783,7 +797,7 @@ export async function createPuppeteerLautecUi(config: LautecBrowserConfig): Prom
         ["Start", 3, row.start, false],
         ["Finish", 4, row.finish, false],
         ["Comment", 5, row.comment, false],
-        ["PAX", 6, "", false],
+        ["PAX", 6, row.pax ?? "", false],
       ];
       for (const [label, column, expectedValue, caseInsensitive] of expected) {
         const cell = await gridCell(column, index);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createLautecSnapshotHash,
+  createLegacyLautecSnapshotHash,
   LautecSourceError,
   MAX_LAUTEC_IMPORT_ROWS,
   normalizeLautecSourceRows,
@@ -22,6 +23,7 @@ test("normalizes the managed Capture columns in their original order", () => {
       start: "08:00",
       finish: "12:30",
       comment: "Routine check",
+      pax: "3",
     },
     {
       activityGroup: "Effective Working Time",
@@ -30,8 +32,22 @@ test("normalizes the managed Capture columns in their original order", () => {
       start: "08:00",
       finish: "12:30",
       comment: "Routine check",
+      pax: "3",
     },
   ]);
+});
+
+test("PAX must be a whole number or blank", () => {
+  const blankPax = ["Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "", "7", "", "", "", "N"];
+  assert.equal(normalizeLautecSourceRows([header, blankPax], 7)[0].pax, "");
+  assert.throws(
+    () => normalizeLautecSourceRows([header, ["Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "", "7", "three", "", "", "N"]], 7),
+    /whole-number PAX/,
+  );
+  assert.throws(
+    () => normalizeLautecSourceRows([header, ["Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "", "7", "3.5", "", "", "N"]], 7),
+    /whole-number PAX/,
+  );
 });
 
 test("rejects changed headers, blank required fields, invalid times, and unmanaged values", () => {
@@ -58,6 +74,22 @@ test("snapshot fingerprint is deterministic and binds the date and team context"
   assert.equal(createLautecSnapshotHash("2026-08-21", 1, rows), createLautecSnapshotHash("2026-08-21", 1, rows));
   assert.notEqual(createLautecSnapshotHash("2026-08-21", 1, rows), createLautecSnapshotHash("2026-08-22", 1, rows));
   assert.notEqual(createLautecSnapshotHash("2026-08-21", 1, rows), createLautecSnapshotHash("2026-08-21", 2, rows));
+});
+
+test("legacy hash matches what the same rows produced before PAX support", () => {
+  const rows = normalizeLautecSourceRows([header, row], 7);
+  const prePaxRows = rows.map(({ pax: _pax, ...rest }) => rest);
+  // A snapshot recorded before the pax field existed hashed exactly this shape.
+  assert.equal(
+    createLegacyLautecSnapshotHash("2026-08-21", 7, rows),
+    createLautecSnapshotHash("2026-08-21", 7, prePaxRows),
+  );
+  // The current hash must differ once PAX is carried, so edits to PAX alone
+  // still count as a new snapshot.
+  assert.notEqual(
+    createLegacyLautecSnapshotHash("2026-08-21", 7, rows),
+    createLautecSnapshotHash("2026-08-21", 7, rows),
+  );
 });
 
 test("a completed snapshot requires deliberate resend confirmation", () => {

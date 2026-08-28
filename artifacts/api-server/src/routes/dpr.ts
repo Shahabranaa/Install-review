@@ -1107,10 +1107,12 @@ router.post("/dpr/lautec-imports", async (req, res): Promise<void> => {
     return;
   }
 
+  // Match both the current hash and the pre-PAX legacy hash so imports
+  // completed before PAX support still require an explicit resend.
   const [completed] = await db.select({ id: dprLautecImportRunsTable.id })
     .from(dprLautecImportRunsTable)
     .where(and(
-      eq(dprLautecImportRunsTable.snapshotHash, source.snapshotHash),
+      inArray(dprLautecImportRunsTable.snapshotHash, [source.snapshotHash, source.legacySnapshotHash]),
       eq(dprLautecImportRunsTable.status, "success"),
     ))
     .orderBy(desc(dprLautecImportRunsTable.finishedAt));

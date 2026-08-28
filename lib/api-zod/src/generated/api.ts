@@ -1530,7 +1530,8 @@ export const PreviewDprLautecImportResponse = zod.object({
   "location": zod.string(),
   "start": zod.string(),
   "finish": zod.string(),
-  "comment": zod.string()
+  "comment": zod.string(),
+  "pax": zod.string().optional().describe('Whole-number PAX from the Capture sheet; blank leaves Lautec\'s PAX cell untouched. Optional for snapshots recorded before PAX support.')
 }))
 })
 

@@ -2967,6 +2967,9 @@ components:
           type: string
         comment:
           type: string
+        pax:
+          type: string
+          description: Whole-number PAX from the Capture sheet; blank leaves Lautec's PAX cell untouched. Optional for snapshots recorded before PAX support.
       required: [activityGroup, activity, location, start, finish, comment]
 
     LautecRejectedRow:

@@ -183,7 +183,7 @@ test("reads the managed Comment column, not ORSTED Comments, in Lautec's persist
   );
 });
 
-test("unsaved rows may show Lautec's * placeholder in PAX, but a real PAX value is rejected", () => {
+test("unsaved rows may show Lautec's * placeholder in PAX, but a PAX the sheet never supplied is rejected", () => {
   const headers = ["#", "Status", "Activity Group", "Activity", "Location", "Start", "Finish", "Duration", "PAX working on task", "ORSTED Comments", "Comment", "Info"];
   const baseline = { headers, rows: [["No records to display"]] };
   const starredBlanks = ["1", "", "Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "4.5", "*", "*", "Routine check", ""];
@@ -194,6 +194,27 @@ test("unsaved rows may show Lautec's * placeholder in PAX, but a real PAX value 
   const paxFilled = ["1", "", "Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "4.5", "6", "*", "Routine check", ""];
   assert.equal(
     lautecTableDeltaMatchesReviewedRows(baseline, { headers, rows: [paxFilled] }, rows),
+    false,
+  );
+});
+
+test("a sheet-supplied PAX must read back exactly in the persisted table", () => {
+  const headers = ["#", "Status", "Activity Group", "Activity", "Location", "Start", "Finish", "Duration", "PAX working on task", "ORSTED Comments", "Comment", "Info"];
+  const baseline = { headers, rows: [["No records to display"]] };
+  const rowsWithPax = [{ ...rows[0], pax: "3" }];
+  const paxRetained = ["1", "", "Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "4.5", "3", "*", "Routine check", ""];
+  assert.equal(
+    lautecTableDeltaMatchesReviewedRows(baseline, { headers, rows: [paxRetained] }, rowsWithPax),
+    true,
+  );
+  const paxDropped = ["1", "", "Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "4.5", "*", "*", "Routine check", ""];
+  assert.equal(
+    lautecTableDeltaMatchesReviewedRows(baseline, { headers, rows: [paxDropped] }, rowsWithPax),
+    false,
+  );
+  const paxChanged = ["1", "", "Effective Working Time", "Inspection", "Platform A", "08:00", "12:30", "4.5", "6", "*", "Routine check", ""];
+  assert.equal(
+    lautecTableDeltaMatchesReviewedRows(baseline, { headers, rows: [paxChanged] }, rowsWithPax),
     false,
   );
 });
