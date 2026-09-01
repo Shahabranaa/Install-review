@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import crypto, { createHash } from "crypto";
-import { eq, or } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { db, usersTable, workersTable } from "@workspace/db";
 import { serialize } from "../lib/serialize";
 import { logger } from "../lib/logger";
@@ -97,8 +97,16 @@ router.post("/auth/unified-login", async (req, res): Promise<void> => {
 
   const trimmed = identifier.trim();
 
-  // 1. Check admin/staff users table (match by username — usernames are not emails)
-  const [adminUser] = await db.select().from(usersTable).where(eq(usersTable.username, trimmed));
+  // 1. Check admin/staff users table by username or case-insensitive email.
+  // Email addresses are user-facing identifiers and should not depend on the
+  // casing used by the browser or by the admin who entered the account.
+  const [adminUser] = await db
+    .select()
+    .from(usersTable)
+    .where(or(
+      eq(usersTable.username, trimmed),
+      sql`lower(${usersTable.email}) = ${trimmed.toLowerCase()}`,
+    ));
 
   if (adminUser && adminUser.active) {
     const valid = await bcrypt.compare(password, adminUser.passwordHash);
