@@ -52,6 +52,9 @@ const DEFAULT_ACTIVITY_TYPE_NAME = "Effective Working Time";
 const DEFAULT_GROUP_NAME = "Effective Working Time";
 const ALLOWED_TYPE_NAMES = ["Effective Working Time", "Non-Working Time"];
 const ALLOWED_GROUP_NAMES = ["Effective Working Time", "Extra Work", "Re-Work"];
+// Temporarily keep the Lautec sync action out of the Capture toolbar while
+// retaining the implementation for when the action is re-enabled.
+const SHOW_LAUTEC_SYNC_BUTTON = false;
 
 // Display labels — DB name → label shown in the UI
 const TYPE_LABELS: Record<string, string> = {
@@ -2394,7 +2397,7 @@ export default function CapturePage() {
               {isSavingToGoogleSheet ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
               <span className="hidden xs:inline">Save to Sheet</span>
             </Button>
-            {isAdmin && (
+            {isAdmin && SHOW_LAUTEC_SYNC_BUTTON && (
               <Button
                 variant="default"
                 size="sm"
