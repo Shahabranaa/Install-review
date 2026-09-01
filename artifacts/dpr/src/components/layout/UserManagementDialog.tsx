@@ -27,6 +27,8 @@ interface ManagedUser {
   createdAt: string;
 }
 
+const MIN_PASSWORD_LENGTH = 6;
+
 async function fetchUsers(): Promise<ManagedUser[]> {
   const res = await fetch(`${API_BASE}/api/users`, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to load users");
@@ -36,8 +38,10 @@ async function fetchUsers(): Promise<ManagedUser[]> {
 async function createUser(data: {
   username: string;
   displayName: string;
-  email: string;
-}): Promise<{ user: ManagedUser; emailSent: boolean; emailError: string | null }> {
+  email?: string;
+  password?: string;
+  active?: boolean;
+}): Promise<{ user: ManagedUser; emailSent: boolean; emailError: string | null; manualPasswordSet: boolean }> {
   const res = await fetch(`${API_BASE}/api/users`, {
     method: "POST",
     credentials: "include",
@@ -141,24 +145,24 @@ function UserRow({ u, selfId, onEdit, onResetPassword, onResendInvite, onDeactiv
 
       {/* Actions */}
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        {u.invitePending ? (
+        <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={onEdit} title="Edit name / email">
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+        <Button size="icon" variant="ghost" className={cn(
+          "h-7 w-7 text-muted-foreground hover:text-foreground",
+          u.invitePending && "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+        )}
+          onClick={onResetPassword} title={u.invitePending ? "Set password manually" : "Reset password"}>
+          <KeyRound className="w-3.5 h-3.5" />
+        </Button>
+        {u.invitePending && (
           <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
             onClick={onResendInvite} title="Resend invite email" disabled={resendingId === u.id}>
             {resendingId === u.id
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <RefreshCw className="w-3.5 h-3.5" />}
           </Button>
-        ) : (
-          <>
-            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={onEdit} title="Edit name / email">
-              <Pencil className="w-3.5 h-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={onResetPassword} title="Reset password">
-              <KeyRound className="w-3.5 h-3.5" />
-            </Button>
-          </>
         )}
         {!isSelf && !isSeeded && u.active && (
           <AlertDialog>
@@ -228,33 +232,58 @@ function EditUserDialog({ user, onClose, onSave, saving }: {
 function ResetPasswordDialog({ user, onClose, onSave, saving }: {
   user: ManagedUser;
   onClose: () => void;
-  onSave: (password: string) => void;
+  onSave: (data: { password: string; active?: boolean }) => void;
   saving: boolean;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [activate, setActivate] = useState(false);
   const mismatch = confirm.length > 0 && pw !== confirm;
+  const canActivate = !user.active;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle className="text-base">Reset Password — {user.displayName}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="text-base">
+            {user.invitePending ? "Set Password" : "Reset Password"} — {user.displayName}
+          </DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">New Password</Label>
-            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Min 6 characters" />
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={`Minimum ${MIN_PASSWORD_LENGTH} characters`} autoComplete="new-password" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Confirm Password</Label>
             <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              placeholder="Enter it again"
+              autoComplete="new-password"
               className={mismatch ? "border-destructive" : undefined} />
             {mismatch && <p className="text-[11px] text-destructive">Passwords don't match</p>}
           </div>
+          {canActivate && (
+            <label className="flex items-start gap-2 rounded-md border p-2.5 text-xs">
+              <input
+                type="checkbox"
+                checked={activate}
+                onChange={(e) => setActivate(e.target.checked)}
+                className="mt-0.5 accent-primary"
+              />
+              <span>
+                <span className="font-medium">Activate this account now</span>
+                <span className="block text-muted-foreground">
+                  Allow this user to sign in immediately. Leave unchecked to save the password but keep access disabled.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={() => onSave(pw)}
-            disabled={!pw.trim() || pw.length < 6 || pw !== confirm || saving}>
-            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}Reset Password
+          <Button size="sm" onClick={() => onSave({ password: pw, ...(activate ? { active: true } : {}) })}
+            disabled={!pw || pw.length < MIN_PASSWORD_LENGTH || pw !== confirm || saving || pw === "admin123"}>
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+            {user.invitePending ? "Set Password" : "Reset Password"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -265,19 +294,54 @@ function ResetPasswordDialog({ user, onClose, onSave, saving }: {
 // ── New user dialog ───────────────────────────────────────────────────────────
 function NewUserDialog({ onClose, onSave, saving }: {
   onClose: () => void;
-  onSave: (data: { username: string; displayName: string; email: string }) => void;
+  onSave: (data: { username: string; displayName: string; email?: string; password?: string; active?: boolean }) => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState({ username: "", displayName: "", email: "" });
-  const valid = form.username.trim() && form.displayName.trim() && form.email.trim();
+  const [mode, setMode] = useState<"invite" | "manual">("manual");
+  const [form, setForm] = useState({
+    username: "",
+    displayName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    activate: false,
+  });
+  const validIdentity = Boolean(form.username.trim() && form.displayName.trim());
+  const valid = mode === "invite"
+    ? validIdentity && Boolean(form.email.trim())
+    : validIdentity
+      && form.password.length >= MIN_PASSWORD_LENGTH
+      && form.password === form.confirmPassword
+      && form.password !== "admin123";
+  const mismatch = form.confirmPassword.length > 0 && form.password !== form.confirmPassword;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle className="text-base">Invite New User</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="text-base">Add DPR User</DialogTitle></DialogHeader>
         <p className="text-[12px] text-muted-foreground -mt-1">
-          An invite email will be sent so they can set their own password. They'll have access to Capture, Clarify, and Lautec CSV output. Administration stays restricted to admins.
+          Choose whether to set access manually now or send the existing email invitation.
         </p>
+        <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "manual" ? "secondary" : "ghost"}
+            className="h-8 text-xs"
+            onClick={() => setMode("manual")}
+          >
+            Set password manually
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "invite" ? "secondary" : "ghost"}
+            className="h-8 text-xs"
+            onClick={() => setMode("invite")}
+          >
+            Send email invite
+          </Button>
+        </div>
         <div className="space-y-3 pt-1">
           <div className="space-y-1.5">
             <Label className="text-xs">Display Name</Label>
@@ -289,19 +353,74 @@ function NewUserDialog({ onClose, onSave, saving }: {
               placeholder="e.g. jsmith" autoCapitalize="none" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
+            <Label className="text-xs">
+              Email {mode === "invite"
+                ? <span className="text-destructive">*</span>
+                : <span className="text-muted-foreground font-normal">(optional)</span>}
+            </Label>
             <Input value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
               placeholder="user@example.com" type="email" />
-            <p className="text-[11px] text-muted-foreground">The invite link will be sent here.</p>
+            {mode === "invite" && <p className="text-[11px] text-muted-foreground">The invite link will be sent here.</p>}
           </div>
+          {mode === "manual" && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Password</Label>
+                <Input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder={`Minimum ${MIN_PASSWORD_LENGTH} characters`}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Confirm Password</Label>
+                <Input
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={(e) => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                  placeholder="Enter it again"
+                  autoComplete="new-password"
+                  className={mismatch ? "border-destructive" : undefined}
+                />
+                {mismatch && <p className="text-[11px] text-destructive">Passwords don't match</p>}
+              </div>
+              <label className="flex items-start gap-2 rounded-md border p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={form.activate}
+                  onChange={(e) => setForm(f => ({ ...f, activate: e.target.checked }))}
+                  className="mt-0.5 accent-primary"
+                />
+                <span>
+                  <span className="font-medium">Activate this account now</span>
+                  <span className="block text-muted-foreground">
+                    Allow the user to sign in with this password immediately.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={() => onSave({ username: form.username.trim(), displayName: form.displayName.trim(), email: form.email.trim() })}
+          <Button size="sm" onClick={() => onSave(
+            mode === "invite"
+              ? { username: form.username.trim(), displayName: form.displayName.trim(), email: form.email.trim() }
+              : {
+                  username: form.username.trim(),
+                  displayName: form.displayName.trim(),
+                  ...(form.email.trim() ? { email: form.email.trim() } : {}),
+                  password: form.password,
+                  ...(form.activate ? { active: true } : {}),
+                }
+          )}
             disabled={!valid || saving}>
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
-            <MailIcon className="w-3.5 h-3.5 mr-1.5" />
-            Send Invite
+            {mode === "invite"
+              ? <><MailIcon className="w-3.5 h-3.5 mr-1.5" />Send Invite</>
+              : <><KeyRound className="w-3.5 h-3.5 mr-1.5" />Create User</>}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -335,6 +454,13 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
       setNewDialog(false);
       if (result.emailSent) {
         toast({ title: "Invite sent", description: `An email was sent to ${result.user.email}` });
+      } else if (result.manualPasswordSet) {
+        toast({
+          title: "User created",
+          description: result.user.active
+            ? `${result.user.displayName} can sign in now.`
+            : `${result.user.displayName} was created but remains inactive.`,
+        });
       } else {
         toast({
           title: "User created — email not sent",
@@ -382,11 +508,11 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
             <div className="flex items-center justify-between">
               <SheetTitle className="text-base">User Management</SheetTitle>
               <Button size="sm" onClick={() => setNewDialog(true)} className="h-8 gap-1.5 text-xs">
-                <Plus className="w-3.5 h-3.5" />Invite User
+                <Plus className="w-3.5 h-3.5" />Add User
               </Button>
             </div>
             <p className="text-[12px] text-muted-foreground">
-              Invited users receive an email to set their own password. They can access the main DPR workspace; administration stays restricted to admins.
+              Add users with a manual password when email is unavailable, or send the existing invite email. Administration stays restricted to admins.
             </p>
           </SheetHeader>
 
@@ -457,7 +583,7 @@ export function UserManagementSheet({ open, onClose }: { open: boolean; onClose:
         <ResetPasswordDialog
           user={resetTarget}
           onClose={() => setResetTarget(null)}
-          onSave={(password) => updateMut.mutate({ id: resetTarget.id, data: { password } })}
+          onSave={(data) => updateMut.mutate({ id: resetTarget.id, data })}
           saving={updateMut.isPending}
         />
       )}

@@ -8,6 +8,17 @@ import { sendEmail, buildDprInviteHtml } from "../lib/mailjet";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+const MIN_PASSWORD_LENGTH = 6;
+
+function passwordValidationError(password: unknown): string | null {
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (password === "admin123") {
+    return "Choose a different password; this password is not allowed";
+  }
+  return null;
+}
 
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.sessionType === "worker" || req.session?.accessLevel !== "admin") {
@@ -87,25 +98,39 @@ router.get("/users", requireAdmin, async (_req, res): Promise<void> => {
 
 // POST /api/users — create a new user and send invite email (admin only)
 router.post("/users", requireAdmin, async (req, res): Promise<void> => {
-  const { username, displayName, email, title, accessLevel } = req.body as {
+  const { username, displayName, email, title, accessLevel, password, active } = req.body as {
     username?: string;
     displayName?: string;
     email?: string;
     title?: string;
     accessLevel?: string;
+    password?: string;
+    active?: boolean;
   };
+  const manualProvisioning = password !== undefined;
 
   if (!username?.trim() || !displayName?.trim()) {
     res.status(400).json({ error: "username and displayName are required" });
     return;
   }
-  if (!email?.trim()) {
+  if (!manualProvisioning && !email?.trim()) {
     res.status(400).json({ error: "email is required to send the invite" });
     return;
   }
   if (accessLevel && !["admin", "reviewer", "viewer"].includes(accessLevel)) {
     res.status(400).json({ error: "accessLevel must be admin, reviewer, or viewer" });
     return;
+  }
+  if (active !== undefined && typeof active !== "boolean") {
+    res.status(400).json({ error: "active must be true or false" });
+    return;
+  }
+  if (manualProvisioning) {
+    const passwordError = passwordValidationError(password);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
+      return;
+    }
   }
 
   // Check username uniqueness
@@ -117,21 +142,26 @@ router.post("/users", requireAdmin, async (req, res): Promise<void> => {
 
   const [user] = await db.insert(usersTable).values({
     username: username.trim(),
-    passwordHash: null,   // set when they accept the invite
+    passwordHash: manualProvisioning ? await bcrypt.hash(password, 10) : null,
     displayName: displayName.trim(),
-    email: email.trim(),
+    email: email?.trim() || null,
     title: title?.trim() ?? null,
     accessLevel: accessLevel ?? "reviewer",
-    active: false,  // activated on invite acceptance
+    // Manual accounts activate only when the administrator explicitly asks.
+    // Invite accounts stay inactive until the invite is accepted.
+    active: manualProvisioning && active === true,
   }).returning();
 
-  const emailResult = await generateAndSendInvite(req, user);
+  const emailResult = manualProvisioning
+    ? { success: false }
+    : await generateAndSendInvite(req, user);
 
   const responseUser = safeUser(await db.select().from(usersTable).where(eq(usersTable.id, user.id)).then(r => r[0]));
   res.status(201).json({
     user: serialize(responseUser),
     emailSent: emailResult.success,
     emailError: emailResult.error ?? null,
+    manualPasswordSet: manualProvisioning,
   });
 });
 
@@ -178,6 +208,17 @@ router.patch("/users/:id", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "accessLevel must be admin, reviewer, or viewer" });
     return;
   }
+  if (active !== undefined && typeof active !== "boolean") {
+    res.status(400).json({ error: "active must be true or false" });
+    return;
+  }
+  if (password !== undefined) {
+    const passwordError = passwordValidationError(password);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
+      return;
+    }
+  }
 
   const updates: Partial<typeof usersTable.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
   if (displayName !== undefined) updates.displayName = displayName;
@@ -185,7 +226,13 @@ router.patch("/users/:id", requireAdmin, async (req, res): Promise<void> => {
   if (title !== undefined) updates.title = title;
   if (accessLevel !== undefined) updates.accessLevel = accessLevel;
   if (active !== undefined) updates.active = active;
-  if (password?.trim()) updates.passwordHash = await bcrypt.hash(password, 10);
+  if (password !== undefined) {
+    updates.passwordHash = await bcrypt.hash(password, 10);
+    // A manual password replaces any outstanding email invite. This also
+    // makes the account stop appearing as invite-pending in the admin UI.
+    updates.inviteToken = null;
+    updates.inviteTokenExpiresAt = null;
+  }
 
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
