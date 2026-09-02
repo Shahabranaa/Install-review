@@ -143,6 +143,7 @@ import {
 } from "../lib/dpr-lautec-source";
 import { getLautecBrowserConfig } from "../lib/lautec-browser-adapter";
 import { dispatchLautecImportRun, interruptStaleLautecImports } from "../lib/dpr-lautec-import-service";
+import { filterWhatsappRowsByDate, normaliseSheetDate } from "./dpr-whatsapp";
 import {
   createLautecReconcileApprovalToken,
   dispatchLautecReconcileApply,
@@ -2335,18 +2336,6 @@ router.delete("/dpr/custom-roles/:abbr", async (req, res): Promise<void> => {
 
 // ── WhatsApp Bot Import ───────────────────────────────────────────────────────
 
-/** Normalise DD-MM-YYYY → YYYY-MM-DD. */
-function normaliseSheetDate(raw: string): string {
-  const m = raw.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
-  if (m) {
-    const day   = m[1].padStart(2, "0");
-    const month = m[2].padStart(2, "0");
-    const year  = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${year}-${month}-${day}`;
-  }
-  return raw.trim(); // fallback — leave as-is
-}
-
 const ImportWhatsappRowsBody = z.object({
   // Client only sends the hashes it wants to import — row data is re-fetched
   // and validated server-side so the server is the authoritative source.
@@ -2392,9 +2381,7 @@ router.get("/dpr/whatsapp-rows", async (req, res): Promise<void> => {
   });
 
   // Filter by date if requested — normalise the raw sheet date to YYYY-MM-DD for comparison
-  const filtered = dateFilter
-    ? rowsWithHash.filter((row) => normaliseSheetDate(row.date) === dateFilter)
-    : rowsWithHash;
+  const filtered = filterWhatsappRowsByDate(rowsWithHash, dateFilter);
 
   // Match each sheet row against existing timesheet entries by date + team + start + end time.
   // This works regardless of how the row was imported (paste flow, direct, etc.).

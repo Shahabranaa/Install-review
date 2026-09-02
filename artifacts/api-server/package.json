@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:dpr-whatsapp": "node --import tsx --test src/routes/dpr-whatsapp.test.ts",
     "test:dpr-sheet-sync": "node --import tsx --test src/lib/dpr-sheet-sync-queue.test.ts src/googleSheets.test.ts src/lib/dpr-shift-attendance-schema.test.ts",
     "test:lautec-import": "node --import tsx --test src/lib/dpr-lautec-source.test.ts src/lib/lautec-browser-adapter.test.ts src/lib/dpr-lautec-reconcile.test.ts",
     "seed:cvow": "npx tsx src/seed-cvow.ts"
