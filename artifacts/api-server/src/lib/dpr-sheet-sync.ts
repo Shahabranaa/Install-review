@@ -71,7 +71,7 @@ export function buildCaptureSheetRow(
     String(entry.pax ?? ""),
     code,
     entry.genericComment ?? "",
-    entry.stage === "captured" ? "Y" : "N",
+    entry.stage === "captured" || entry.stage === "clarified" ? "Y" : "N",
   ];
 }
 

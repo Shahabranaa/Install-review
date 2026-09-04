@@ -87,6 +87,7 @@ test("Capture export sends the selected activity group to Lautec, not its broade
       start: "08:00",
       finish: "16:00",
       comment: "Corrected cable route",
+      pax: "",
     }],
   );
 });
@@ -126,6 +127,25 @@ test("Capture export includes PAX, the selected code, and Clarify notes", () => 
     "Routine work",
     "Y",
   ]);
+});
+
+test("Capture export keeps Is Clarified marked after clarification is completed", () => {
+  const sheetRow = buildCaptureSheetRow(
+    {
+      activityGroupId: 22,
+      activityId: 38,
+      startTime: "08:00",
+      endTime: "16:00",
+      notes: "Completed clarification",
+      teamId: 7,
+      stage: "clarified",
+    },
+    "Platform A",
+    new Map([[22, "Effective Working Time"]]),
+    new Map([[38, "Cable pull"]]),
+  );
+
+  assert.equal(sheetRow[10], "Y");
 });
 
 test("Capture export uses the activity type when a non-working row has no sub-group", () => {

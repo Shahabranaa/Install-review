@@ -1008,6 +1008,13 @@ router.post("/dpr/timesheet-entries/lock", async (req, res): Promise<void> => {
     teamId,
   });
 
+  // Locking is the Capture → Clarify transition and directly changes the
+  // exported "Is Clarified" column. Start the serialized sheet rebuild now
+  // instead of waiting for another mutation to trigger a delayed sync.
+  void syncDprDateTabsNow(date).catch((err) => {
+    req.log.error({ err, teamId, date }, "Failed to immediately sync locked DPR entries to Google Sheets");
+  });
+
   const withJoins = await Promise.all(updated.map(withRelations));
   res.json(LockDprTimesheetEntriesResponse.parse(serialize(withJoins)));
 });
@@ -1757,7 +1764,17 @@ router.patch("/dpr/timesheet-entries/:id", async (req, res): Promise<void> => {
     detail = `Updated times on entry #${entry.id}`;
   }
   void logAction(req, { action, page, detail, entryId: entry.id, entryDate: String(entry.date).substring(0, 10), teamId: entry.teamId });
-  scheduleDprDateSheetSync(previousDate, dprEffectiveDate(entry));
+  const nextDate = dprEffectiveDate(entry);
+  if (d.stage === "captured" || d.stage === "clarified") {
+    // Stage transitions drive the sheet's "Is Clarified" column. Start the
+    // serialized rebuild immediately instead of waiting for the normal
+    // mutation debounce, while keeping the API response responsive.
+    void syncDprDateTabsNow(previousDate, nextDate).catch((err) => {
+      req.log.error({ err, entryId: entry.id }, "Failed to immediately sync DPR stage transition to Google Sheets");
+    });
+  } else {
+    scheduleDprDateSheetSync(previousDate, nextDate);
+  }
   const withJoins = await withRelations(entry);
   res.json(UpdateDprTimesheetEntryResponse.parse(serialize(withJoins)));
 });
